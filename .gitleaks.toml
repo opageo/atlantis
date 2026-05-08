@@ -1,5 +1,4 @@
 [extend]
 
-[[allowlist.paths]]
-description = "Conda environment files"
+[allowlist]
 paths = ['''gfm_env\.yaml''']
