@@ -1,31 +1,31 @@
 .PHONY: help test lint lint-fix format-fix precommit build clean
 
 help:  ## Show this help message
-@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 test:  ## Run tests (parallel)
-uv run poe test
+	uv run poe test
 
 lint:  ## Run linting
-uv run poe lint
+	uv run poe lint
 
 lint-fix:  ## Run linting and auto-fix
-uv run poe lint-fix
+	uv run poe lint-fix
 
 format-fix:  ## Run formatter and auto-fix
-uv run poe format-fix
+	uv run poe format-fix
 
 precommit:  ## Run pre-commit hooks on all files
-uv run poe precommit
+	uv run poe precommit
 
 build:  ## Build package
-uv build
+	uv build
 
 clean:  ## Clean build artifacts
-rm -rf dist/ build/ *.egg-info/
+	rm -rf dist/ build/ *.egg-info/
 
 dev-install:  ## Install with dev dependencies
-uv sync
+	uv sync
 
 version:  ## Show current version
-@python -c "import atlantis; print(f'Current version: {atlantis.__version__}')"
+	@python -c "import atlantis; print(f'Current version: {atlantis.__version__}')"

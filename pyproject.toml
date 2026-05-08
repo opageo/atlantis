@@ -3,9 +3,9 @@ name = "atlantis"
 version = "0.1.0"
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 readme = "README.md"
-requires-python = ">=3.10, <3.15"
+requires-python = ">=3.11, <3.15"
 authors = [
-  { name = "Lagaras Stelios" },
+  { name = "Stylianos Lagaras" },
   { name = "Ioannis Kalfas" },
 ]
 dependencies = [
@@ -50,7 +50,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv]
-default-groups = "all"
+default-groups = ["dev"]
 
 [tool.ruff]
 line-length = 120
