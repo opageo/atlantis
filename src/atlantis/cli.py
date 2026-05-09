@@ -1,7 +1,6 @@
 """CLI entrypoints for Atlantis."""
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -19,8 +18,8 @@ console = Console()
 @cli.command()
 def fetch(
     event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
-    source: Optional[str] = typer.Option(None, "--source", "-s", help="Data source (gfm, viirs, rfm, all)"),
-    output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory for raw data"),
+    source: str | None = typer.Option(None, "--source", "-s", help="Data source (gfm, viirs, rfm, all)"),
+    output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory for raw data"),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -58,8 +57,8 @@ def fetch(
 def harmonise(
     event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
     source: str = typer.Option(..., "--source", "-s", help="Data source ID"),
-    config_path: Optional[Path] = typer.Option(None, "--config", "-c", help="Harmonisation config file (YAML)"),
-    output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory for harmonised data"),
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Harmonisation config file (YAML)"),
+    output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory for harmonised data"),
 ) -> None:
     """Harmonise fetched data (reproject, tile, normalise).
 
@@ -87,8 +86,8 @@ def harmonise(
 @cli.command()
 def archive(
     event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
-    source: Optional[str] = typer.Option(None, "--source", "-s", help="Data source (default: all available)"),
-    archive_root: Optional[Path] = typer.Option(None, "--archive", "-a", help="Archive root directory"),
+    source: str | None = typer.Option(None, "--source", "-s", help="Data source (default: all available)"),
+    archive_root: Path | None = typer.Option(None, "--archive", "-a", help="Archive root directory"),
     raw_only: bool = typer.Option(False, "--raw-only", help="Only write raw archive (skip ML-ready)"),
 ) -> None:
     """Write harmonised data to Zarr archive (raw + ML-ready).
@@ -120,9 +119,9 @@ def archive(
 
 @cli.command()
 def validate(
-    event: Optional[str] = typer.Option(None, "--event", "-e", help="Event ID to validate"),
-    source: Optional[str] = typer.Option(None, "--source", "-s", help="Source ID to validate"),
-    archive_root: Optional[Path] = typer.Option(None, "--archive", "-a", help="Archive root directory"),
+    event: str | None = typer.Option(None, "--event", "-e", help="Event ID to validate"),
+    source: str | None = typer.Option(None, "--source", "-s", help="Source ID to validate"),
+    archive_root: Path | None = typer.Option(None, "--archive", "-a", help="Archive root directory"),
     check_ml: bool = typer.Option(False, "--check-ml", help="Also run ML validation (PyTorch smoke test)"),
 ) -> None:
     """Validate archive integrity and optionally test ML loading.
@@ -178,7 +177,7 @@ def list_sources_cmd() -> None:
 
 @cli.command("list-events")
 def list_events_cmd(
-    archive_root: Optional[Path] = typer.Option(None, "--archive", "-a", help="Archive root directory"),
+    archive_root: Path | None = typer.Option(None, "--archive", "-a", help="Archive root directory"),
 ) -> None:
     """List all events in the archive.
 

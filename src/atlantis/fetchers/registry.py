@@ -1,5 +1,6 @@
 """Registry for flood data fetchers."""
 
+from collections.abc import Callable
 from typing import Type
 
 from atlantis.fetchers.base import AbstractFloodFetcher
@@ -8,7 +9,7 @@ from atlantis.fetchers.base import AbstractFloodFetcher
 fetcher_registry: dict[str, Type[AbstractFloodFetcher]] = {}
 
 
-def register_fetcher(name: str) -> callable:
+def register_fetcher(name: str) -> Callable[[Type[AbstractFloodFetcher]], Type[AbstractFloodFetcher]]:
     """Decorator to register a fetcher class with the global registry.
 
     Args:

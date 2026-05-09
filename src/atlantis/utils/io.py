@@ -35,8 +35,8 @@ def get_cache_path(url: str, cache_dir: Path | None = None) -> Path:
         Path to cache file.
     """
     cache_dir = cache_dir or DEFAULT_CACHE_DIR
-    # Create a hash of the URL for the filename
-    url_hash = hashlib.md5(url.encode()).hexdigest()
+    # Create a hash of the URL for the filename (non-cryptographic use)
+    url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
     # Use extension from URL if available
     extension = Path(url).suffix or ""
     return cache_dir / f"{url_hash}{extension}"

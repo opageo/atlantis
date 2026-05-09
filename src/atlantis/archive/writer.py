@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from atlantis.config import HarmoniseConfig
 from atlantis.models.event import FloodEvent
 
 if TYPE_CHECKING:
@@ -58,7 +59,7 @@ class ArchiveWriter:
         dataset: "xr.Dataset",
         event: FloodEvent,
         source_id: str,
-        harmonise_config: dict | None = None,
+        harmonise_config: HarmoniseConfig | None = None,
     ) -> Path:
         """Write ML-ready data to Zarr archive.
 

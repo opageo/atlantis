@@ -8,6 +8,20 @@ from atlantis.fetchers.registry import register_fetcher
 from atlantis.models import FloodEvent
 
 
+@pytest.fixture(autouse=True)
+def isolated_registry():
+    """Isolate the fetcher registry for each test to prevent cross-test pollution."""
+    # Ensure real fetchers are imported and registered
+    from atlantis.fetchers import gfm, rfm, viirs  # noqa: F401
+
+    # Save a snapshot of the registry before each test
+    snapshot = dict(fetcher_registry)
+    yield
+    # Restore the snapshot after each test (removes test-only registrations)
+    fetcher_registry.clear()
+    fetcher_registry.update(snapshot)
+
+
 class TestFetcherRegistry:
     """Tests for fetcher registry functionality."""
 

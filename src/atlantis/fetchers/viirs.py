@@ -30,7 +30,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         Args:
             base_url: Optional base URL for VIIRS data. Defaults to NOAA CLASS.
         """
-        self.base_url = base_url or "https://www.class.ngdc.noaa.gov"
+        self.base_url = base_url or "https://www.class.noaa.gov"
 
     def search(self, event: FloodEvent) -> list[SearchResult]:
         """Search for VIIRS data for the given flood event.
