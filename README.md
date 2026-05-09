@@ -9,6 +9,8 @@
 ML-ready archive of satellite-derived flood inundation observations
 (ECMWF Code for Earth 2026).
 
+> **Getting started?** Read [src/README.md](src/README.md) for the full architecture guide — pipeline overview, module layout, core abstractions, and how to extend the system.
+
 [![Python versions][python-badge]][python-url]
 [![Ruff][ruff-badge]][ruff-url]
 [![Gitleaks status][gitleaks-badge]][gitleaks-url]
