@@ -200,6 +200,11 @@ AtlantisConfig
 
 All three share the same interface contract (`AbstractFloodFetcher`), making it trivial to swap or extend them.
 
+> **Status key:**
+>
+> - **Stub** — class exists with correct interface, returns empty results / raises `NotImplementedError`. Real API calls and file I/O still need to be wired in.
+> - **Implemented** — fully functional end-to-end.
+
 ### 4.4 `harmoniser/` — Three-step standardisation
 
 ```
