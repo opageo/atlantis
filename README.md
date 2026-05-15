@@ -51,3 +51,11 @@ uv sync --extra notebooks
 ```
 
 See [`notebooks/README.md`](notebooks/README.md) for details.
+
+## Download Kuro Siwo Dataset
+
+The catalog of Kuro Siwo is stored in the git LFS of this repository, under `./assets/ks_catalogue.gpkg`, before you use it, make sure you have `git lfs` installed (if not install if with `git lfs install`) and the dataset is pulled, the first time you may need to execute:
+
+```bash
+git lfs pull
+```
