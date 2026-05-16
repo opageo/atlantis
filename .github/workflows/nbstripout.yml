@@ -21,4 +21,5 @@ jobs:
       - name: Check notebooks are stripped
         uses: kynan/nbstripout@34071b78c181af3bf5af955c1426466e096fc3db #v0.9.1
         with:
+          python-version: "3.11"
           paths: "**/*.ipynb"
