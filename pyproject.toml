@@ -54,9 +54,13 @@ dev = [
   "nbstripout>=0.9.1",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.uv]
 default-groups = ["dev"]
@@ -89,3 +93,7 @@ lint = "ruff check ."
 lint-fix = "ruff check . --fix"
 format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
