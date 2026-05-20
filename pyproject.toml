@@ -28,7 +28,7 @@ geo = [
   "pyproj>=3.6",
   "shapely>=2.0",
 ]
-ml = ["torch>=2.12.0", "numpy>=2.4.5", "scikit-learn>=1.4", "matplotlib>=3.8"]
+ml = ["torch>=2.12.0", "numpy>=2.4.6", "scikit-learn>=1.4", "matplotlib>=3.8"]
 notebooks = [
   "atlantis[geo,ml]",
   "earthkit-data",
