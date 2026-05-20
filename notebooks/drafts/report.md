@@ -5,6 +5,23 @@
 KuroSiwo catalogue (`catalogue.gpkg`) — 1.73M rows, one row per exported SAR patch.
 Reference: [github.com/Orion-AI-Lab/KuroSiwo](https://github.com/Orion-AI-Lab/KuroSiwo)
 
+## Data model terminology
+
+| Term                          | Definition                                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Event** (`actid`)           | A single flood case. 43 events total (2015–2022).                                                           |
+| **Tile** (`grid_id`)          | A unique 256×256 px spatial location. Each tile belongs to exactly one event. An event has 22–43,349 tiles. |
+| **Patch** (= 1 catalogue row) | A tile observed at one time × one product type. Exported to disk as a `.tif`.                               |
+| **`pflood`**                  | Ground-truth flood label (0–100%) per tile. Static across time — same for pre-flood and flood-time patches. |
+| **`master`**                  | Temporal role: `True` = flood-time, `False` = pre-flood baseline.                                           |
+| **`crank`**                   | Product: `1` = GRD (amplitude), `2` = SLC (complex).                                                        |
+
+**Hierarchy:** Event → Tiles → Patches (1–3 per tile: pre-flood GRD, pre-flood SLC, flood-time GRD)
+
+**Spatial note:** Tile sizes are NOT uniform (1.3–4.9 km², CV=33%) because SAR
+ground-range pixel size varies with latitude and incidence angle. All area calculations
+use geometry-derived areas in EPSG:6933 (equal-area), not a fixed nominal tile size.
+
 ## Field availability summary
 
 One row per flood event (43 total, 2015–2022).
@@ -39,6 +56,18 @@ One row per flood event (43 total, 2015–2022). Full derivation details:
 | `max_flood_extent_km2`     | float     | `sum(geom_patch_area_km² × pflood / 100)` over flood-time GRD patches (`crank=1`) with `pflood > 0`, where `geom_patch_area_km²` is computed from geometry in equal-area CRS (EPSG:6933) |
 | `date_of_max_flood_extent` | date      | Set equal to `date_end` — KuroSiwo provides only one flood-time SAR acquisition per event, so true peak-extent date is not determinable from this dataset (see Limitations)              |
 
+## Critical finding: `pflood` is a static spatial label
+
+**`pflood` is identical for pre-flood and flood-time acquisitions in all 43 events.**
+It encodes the ground-truth flood extent per tile, applied uniformly to all temporal
+acquisitions as an ML training label. It does **not** represent a per-acquisition
+flood signal.
+
+- `pflood` is valid for computing **spatial flood extent** (how much area is labelled as flooded)
+- `pflood` **cannot** be used to assess flood signal intensity per acquisition date
+- Pre-flood images carry the same `pflood` as flood-time — by design for change-detection ML
+  (the model learns to detect SAR change between pre and post, with `pflood` as the shared target)
+
 ## Key assumptions
 
 - **Patch area basis**: patch area is geometry-derived in an equal-area CRS (EPSG:6933), i.e., `geometry.area / 1_000_000` after reprojection. This avoids using a fixed nominal patch size and reduces latitude-driven bias.
@@ -56,6 +85,8 @@ One row per flood event (43 total, 2015–2022). Full derivation details:
 2. **Flood onset and end dates are unknown.** `date_start` and `date_end` are SAR image dates, not hydrological event boundaries. The actual start and end of flooding are not recorded in the catalogue.
 3. **`date_of_max_flood_extent` cannot be verified.** With only one flood-time acquisition per event, it is impossible to confirm that the image captured peak inundation. For some events the acquisition may have occurred during flood recession.
 4. **`max_flood_extent_km2` is patch-level, not pixel-level.** The `pflood` label is a per-patch percentage (256×256 px tiles); sub-patch spatial variability is averaged out. This introduces smoothing error, especially for events with heterogeneous inundation patterns.
+5. **Large temporal gaps.** 10/43 events have >6-month gaps between the last pre-flood and first flood-time acquisition; 2 events exceed 1 year (max: 672 days, Event 1111008). Long baselines may degrade change-detection performance due to land-cover change unrelated to flooding.
+6. **`pflood` is a static label, not a temporal signal.** It is identical across pre-flood and flood-time acquisitions (verified for all 43 events). It cannot be used to distinguish flood signal strength per image — only for spatial extent estimation.
 
 ## Open questions
 
