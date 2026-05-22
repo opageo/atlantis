@@ -92,6 +92,7 @@ dependencies = [
 [package.optional-dependencies]
 geo = [
     { name = "pyproj" },
+    { name = "pystac" },
     { name = "pystac-client" },
     { name = "rioxarray", version = "0.19.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "rioxarray", version = "0.22.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -118,6 +119,7 @@ notebooks = [
     { name = "numpy" },
     { name = "odc-stac" },
     { name = "pyproj" },
+    { name = "pystac" },
     { name = "pystac-client" },
     { name = "rasterio", version = "1.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "rasterio", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -163,6 +165,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pyproj", marker = "extra == 'geo'", specifier = ">=3.6" },
+    { name = "pystac", marker = "extra == 'geo'", specifier = ">=1.9" },
     { name = "pystac-client", marker = "extra == 'geo'", specifier = ">=0.7" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "rasterio", marker = "extra == 'notebooks'", specifier = ">=1.3" },
