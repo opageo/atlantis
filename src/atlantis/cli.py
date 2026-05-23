@@ -49,6 +49,16 @@ def fetch(
     bbox: str | None = typer.Option(None, "--bbox", help="Bounding box as 'west south east north'"),
     start_date: str | None = typer.Option(None, "--start-date", help="Start date in YYYY-MM-DD format"),
     end_date: str | None = typer.Option(None, "--end-date", help="End date in YYYY-MM-DD format"),
+    viirs_backend: str = typer.Option(
+        "noaa_s3",
+        "--viirs-backend",
+        help="VIIRS backend: noaa_s3 or gmu_legacy",
+    ),
+    viirs_format: str = typer.Option(
+        "tif",
+        "--viirs-format",
+        help="VIIRS format: tif, netcdf, shapezip, png. Only tif is implemented.",
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -59,6 +69,8 @@ def fetch(
         bbox: Bounding box as west south east north for direct event construction.
         start_date: Start date for direct event construction in YYYY-MM-DD format.
         end_date: End date for direct event construction in YYYY-MM-DD format.
+        viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
+        viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
     """
     config = get_config()
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
@@ -89,7 +101,10 @@ def fetch(
         try:
             fetcher_cls = get_fetcher(src)
             console.print(f"\n[cyan]Fetching from {src}...[/cyan]")
-            fetcher = fetcher_cls()
+            fetcher_kwargs = {}
+            if src == "viirs":
+                fetcher_kwargs = {"backend": viirs_backend, "data_format": viirs_format}
+            fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
                 console.print(
                     "[yellow]  Event catalogue lookup not yet implemented; "
@@ -140,6 +155,16 @@ def fetch_kurosiwo_viirs(
         "--use-metadata-range",
         help="Use date_start..date_end from the metadata CSV instead of a narrow window around date_end",
     ),
+    viirs_backend: str = typer.Option(
+        "noaa_s3",
+        "--viirs-backend",
+        help="VIIRS backend: noaa_s3 or gmu_legacy",
+    ),
+    viirs_format: str = typer.Option(
+        "tif",
+        "--viirs-format",
+        help="VIIRS format: tif, netcdf, shapezip, png. Only tif is implemented.",
+    ),
 ) -> None:
     """Fetch VIIRS data for KuroSiwo cases.
 
@@ -152,6 +177,8 @@ def fetch_kurosiwo_viirs(
         days_before: Days before the KuroSiwo flood date to search.
         days_after: Days after the KuroSiwo flood date to search.
         use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
+        viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
+        viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
     """
     config = get_config()
     output_root = output_dir or config.fetcher.cache_dir / "raw" / "kurosiwo"
@@ -179,7 +206,7 @@ def fetch_kurosiwo_viirs(
         metadata_source_label = f"derived from {catalogue_path}"
 
     fetcher_cls = get_fetcher("viirs")
-    fetcher = fetcher_cls()
+    fetcher = fetcher_cls(backend=viirs_backend, data_format=viirs_format)
 
     console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_source_label}")
     console.print(f"[bold]Cases selected:[/bold] {len(events)}")

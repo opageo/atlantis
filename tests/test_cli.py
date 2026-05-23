@@ -29,6 +29,9 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
     """Test bbox/date-driven fetch flow for the VIIRS CLI path."""
 
     class DummyFetcher:
+        def __init__(self, **kwargs):
+            assert kwargs == {"backend": "noaa_s3", "data_format": "tif"}
+
         def fetch(self, event, output_dir):
             assert event.event_id == "Yangtze_2020"
             assert event.bbox == (105.0, 28.0, 125.0, 38.0)
@@ -83,6 +86,9 @@ def test_fetch_kurosiwo_viirs_command(monkeypatch, tmp_path):
     """Test metadata-driven KuroSiwo VIIRS CLI flow."""
 
     class DummyFetcher:
+        def __init__(self, **kwargs):
+            assert kwargs == {"backend": "noaa_s3", "data_format": "tif"}
+
         def fetch(self, event, output_dir):
             assert isinstance(event, FloodEvent)
             assert event.event_id == "KuroSiwo_470"
@@ -140,6 +146,9 @@ def test_fetch_kurosiwo_viirs_command_from_catalogue(monkeypatch, tmp_path):
     """Test catalogue-driven KuroSiwo VIIRS CLI flow."""
 
     class DummyFetcher:
+        def __init__(self, **kwargs):
+            assert kwargs == {"backend": "noaa_s3", "data_format": "tif"}
+
         def fetch(self, event, output_dir):
             assert isinstance(event, FloodEvent)
             assert event.event_id == "KuroSiwo_470"
@@ -188,6 +197,54 @@ def test_fetch_kurosiwo_viirs_command_from_catalogue(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert "derived from" in result.stdout
     assert "Total files written: 1" in result.stdout
+
+
+def test_fetch_command_supports_legacy_viirs_backend(monkeypatch, tmp_path):
+    """Test explicit legacy backend selection for generic VIIRS fetch."""
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            assert kwargs == {"backend": "gmu_legacy", "data_format": "tif"}
+
+        def fetch(self, event, output_dir):
+            return [
+                FetchResult(
+                    event_id=event.event_id,
+                    source_id="viirs",
+                    files=[tmp_path / "viirs" / "obs.tif"],
+                    metadata=TileMetadata(
+                        event_id=event.event_id,
+                        source_id="viirs",
+                        fetch_timestamp=datetime.now(timezone.utc),
+                        bbox=event.bbox,
+                    ),
+                )
+            ]
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Yangtze_2020",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "105 28 125 38",
+            "--start-date",
+            "2020-07-22",
+            "--end-date",
+            "2020-07-22",
+            "--viirs-backend",
+            "gmu_legacy",
+        ],
+    )
+
+    assert result.exit_code == 0
 
 
 def test_build_kurosiwo_metadata_command(monkeypatch, tmp_path):

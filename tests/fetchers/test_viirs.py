@@ -47,12 +47,12 @@ def test_search_returns_intersecting_aoi_results(monkeypatch):
     )
 
     hrefs = [
-        "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_35_005day_077.tif.zip",
-        "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_34_005day_078.tif.zip",
-        "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_34_005day_079.tif.zip",
-        "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_31_005day_090.tif.zip",
-        "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_30_005day_091.tif.zip",
-        "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_29_005day_092.tif.zip",
+        "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB077_v1r0_blend_s202007220000000_e202007222359590_c202205240401305.tif",
+        "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB078_v1r0_blend_s202007220000000_e202007222359590_c202205240401363.tif",
+        "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB079_v1r0_blend_s202007220000000_e202007222359590_c202205240401428.tif",
+        "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB090_v1r0_blend_s202007220000000_e202007222359590_c202205240402464.tif",
+        "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB091_v1r0_blend_s202007220000000_e202007222359590_c202205240402523.tif",
+        "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB092_v1r0_blend_s202007220000000_e202007222359590_c202205240402593.tif",
     ]
     monkeypatch.setattr(fetcher, "_get_directory_links", lambda _url: hrefs)
 
@@ -61,6 +61,29 @@ def test_search_returns_intersecting_aoi_results(monkeypatch):
     assert len(results) == 6
     assert {result.properties["aoi_id"] for result in results} == {77, 78, 79, 90, 91, 92}
     assert all(result.properties["date"] == "20200722" for result in results)
+    assert all(result.properties["backend"] == "noaa_s3" for result in results)
+
+
+def test_search_supports_legacy_gmu_backend(monkeypatch):
+    fetcher = VIIRSFetcher(backend="gmu_legacy")
+    event = FloodEvent(
+        event_id="Yangtze_2020",
+        bbox=(105.0, 28.0, 125.0, 38.0),
+        start_date=date(2020, 7, 22),
+        end_date=date(2020, 7, 22),
+        sources=["viirs"],
+    )
+
+    hrefs = [
+        "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_35_005day_077.tif.zip",
+        "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_34_005day_078.tif.zip",
+    ]
+    monkeypatch.setattr(fetcher, "_get_directory_links", lambda _url: hrefs)
+
+    results = fetcher.search(event)
+
+    assert len(results) == 2
+    assert all(result.properties["backend"] == "gmu_legacy" for result in results)
 
 
 def test_fetch_and_to_dataset(tmp_path, monkeypatch):
