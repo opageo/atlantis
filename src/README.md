@@ -12,7 +12,8 @@ Atlantis is part architecture, part implementation. The codebase already has a s
 
 - `VIIRSFetcher` can search, download, mosaic, clip, and write GeoTIFF outputs from the GMU JPSS Flood archive.
 - `atlantis fetch` works for explicit bbox/date VIIRS extraction.
-- `atlantis fetch-kurosiwo-viirs` works from the derived KuroSiwo metadata CSV.
+- `atlantis fetch-kurosiwo-viirs` works directly from the KuroSiwo catalogue or from a precomputed metadata CSV.
+- `atlantis build-kurosiwo-metadata` derives the metadata CSV from the catalogue without using the notebook.
 - `download_file()` is implemented and reuses existing files.
 - KuroSiwo metadata can be converted into `FloodEvent` objects through `utils.kurosiwo`.
 
@@ -117,7 +118,7 @@ src/atlantis/
 └── utils/
     ├── geo.py            # BBox dataclass + validation / intersection helpers
     ├── io.py             # ensure_dir / get_cache_path / download_file
-    └── kurosiwo.py       # Build FloodEvent objects from KuroSiwo metadata CSV
+    └── kurosiwo.py       # Derive KuroSiwo metadata and build FloodEvent objects
 ```
 
 ---
@@ -184,7 +185,7 @@ This section consolidates the operational material that used to live in the sepa
 - `uv` installed
 - Network access to `https://jpssflood.gmu.edu/downloads/pub`
 - Geo dependencies installed
-- For KuroSiwo runs: a metadata CSV such as `notebooks/drafts/kurosiwo_metadata_v1.csv`
+- For KuroSiwo runs: either the catalogue at `assets/ks_catalogue.gpkg` or a precomputed metadata CSV
 
 Install the required dependencies with:
 
@@ -241,11 +242,23 @@ Default output layout:
 
 ### 5.4 KuroSiwo CLI Usage
 
-Use this for VIIRS extraction from the derived KuroSiwo metadata CSV:
+There are now two supported KuroSiwo paths.
+
+Build the metadata CSV directly from the catalogue:
+
+```bash
+uv run python -m atlantis.cli build-kurosiwo-metadata \
+  --catalogue assets/ks_catalogue.gpkg \
+  --output data/metadata/kurosiwo_metadata_v1.csv
+```
+
+Use this when you want a reusable metadata artifact without running a notebook. The CLI default now writes to `data/metadata/kurosiwo_metadata_v1.csv`.
+
+Fetch VIIRS directly from the catalogue, without any pre-generated CSV:
 
 ```bash
 uv run python -m atlantis.cli fetch-kurosiwo-viirs \
-  --metadata notebooks/drafts/kurosiwo_metadata_v1.csv \
+  --catalogue assets/ks_catalogue.gpkg \
   --case KuroSiwo_470 \
   --days-before 0 \
   --days-after 0
@@ -254,7 +267,7 @@ uv run python -m atlantis.cli fetch-kurosiwo-viirs \
 Expected console shape:
 
 ```text
-KuroSiwo metadata: notebooks/drafts/kurosiwo_metadata_v1.csv
+KuroSiwo metadata: derived from assets/ks_catalogue.gpkg
 Cases selected: 1
 Output root: ~/.cache/atlantis/raw/kurosiwo
 
@@ -262,6 +275,16 @@ Fetching KuroSiwo_470 (2020-10-14 -> 2020-10-14)
   Wrote 3 files
 
 Total files written: 3
+```
+
+You can still fetch from a precomputed metadata CSV when you want a stable intermediate artifact:
+
+```bash
+uv run python -m atlantis.cli fetch-kurosiwo-viirs \
+  --metadata data/metadata/kurosiwo_metadata_v1.csv \
+  --case KuroSiwo_470 \
+  --days-before 0 \
+  --days-after 0
 ```
 
 Default output layout:
@@ -281,7 +304,7 @@ Widen the search window around the KuroSiwo flood-time date:
 
 ```bash
 uv run python -m atlantis.cli fetch-kurosiwo-viirs \
-  --metadata notebooks/drafts/kurosiwo_metadata_v1.csv \
+  --metadata data/metadata/kurosiwo_metadata_v1.csv \
   --case KuroSiwo_470 \
   --days-before 2 \
   --days-after 2
@@ -291,7 +314,7 @@ Use the full KuroSiwo metadata range instead:
 
 ```bash
 uv run python -m atlantis.cli fetch-kurosiwo-viirs \
-  --metadata notebooks/drafts/kurosiwo_metadata_v1.csv \
+  --metadata data/metadata/kurosiwo_metadata_v1.csv \
   --case KuroSiwo_470 \
   --use-metadata-range
 ```
@@ -300,7 +323,7 @@ That mode is intentionally not the default because KuroSiwo `date_start -> date_
 
 ### 5.5 KuroSiwo Metadata Mapping
 
-`utils.kurosiwo` interprets the metadata CSV as:
+`utils.kurosiwo` derives metadata directly from the GeoPackage and interprets the resulting event table as:
 
 - `flood_case` → `FloodEvent.event_id`
 - `(lon_min, lat_min, lon_max, lat_max)` → `(west, south, east, north)` bbox
@@ -324,7 +347,7 @@ These are suitable for analysis and for conversion through `to_dataset()`, but t
 - VIIRS currently writes GeoTIFF outputs, not Zarr
 - GFM and RFM source paths are still stubs
 - Harmonise, archive, and validate are not yet operational end to end
-- The KuroSiwo flow depends on a derived CSV rather than a first-class metadata build command in `src/`
+- The KuroSiwo metadata build step is now available in `src/`, and the default derived CSV path now lives under `data/metadata/` rather than notebook drafts.
 
 ---
 
@@ -388,15 +411,17 @@ Validation is still planned. The API surface exists, but the checks themselves r
 
 ## 7. CLI Commands
 
-| Command                                                                              | Purpose                                          | Status      |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------ | ----------- |
-| `atlantis fetch --event E --source viirs --bbox ... --start-date ... --end-date ...` | Fetch VIIRS for an explicit bbox/date window     | implemented |
-| `atlantis fetch-kurosiwo-viirs --metadata ...`                                       | Fetch VIIRS for KuroSiwo cases from metadata CSV | implemented |
-| `atlantis harmonise --event E --source S`                                            | Reproject → tile → normalise                     | planned     |
-| `atlantis archive --event E`                                                         | Write raw + ml-ready Zarr archives               | planned     |
-| `atlantis validate --event E`                                                        | Run archive and ML validation checks             | planned     |
-| `atlantis list-sources`                                                              | Print registered fetchers and descriptions       | implemented |
-| `atlantis list-events`                                                               | List events present in the archive               | planned     |
+| Command                                                                              | Purpose                                                    | Status      |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ----------- |
+| `atlantis fetch --event E --source viirs --bbox ... --start-date ... --end-date ...` | Fetch VIIRS for an explicit bbox/date window               | implemented |
+| `atlantis build-kurosiwo-metadata --catalogue ... --output ...`                      | Derive KuroSiwo metadata CSV from the GeoPackage           | implemented |
+| `atlantis fetch-kurosiwo-viirs --catalogue ...`                                      | Fetch VIIRS for KuroSiwo cases directly from the catalogue | implemented |
+| `atlantis fetch-kurosiwo-viirs --metadata ...`                                       | Fetch VIIRS for KuroSiwo cases from metadata CSV           | implemented |
+| `atlantis harmonise --event E --source S`                                            | Reproject → tile → normalise                               | planned     |
+| `atlantis archive --event E`                                                         | Write raw + ml-ready Zarr archives                         | planned     |
+| `atlantis validate --event E`                                                        | Run archive and ML validation checks                       | planned     |
+| `atlantis list-sources`                                                              | Print registered fetchers and descriptions                 | implemented |
+| `atlantis list-events`                                                               | List events present in the archive                         | planned     |
 
 ---
 

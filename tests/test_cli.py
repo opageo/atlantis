@@ -136,6 +136,82 @@ def test_fetch_kurosiwo_viirs_command(monkeypatch, tmp_path):
     assert "Total files written: 1" in result.stdout
 
 
+def test_fetch_kurosiwo_viirs_command_from_catalogue(monkeypatch, tmp_path):
+    """Test catalogue-driven KuroSiwo VIIRS CLI flow."""
+
+    class DummyFetcher:
+        def fetch(self, event, output_dir):
+            assert isinstance(event, FloodEvent)
+            assert event.event_id == "KuroSiwo_470"
+            assert output_dir == tmp_path / "KuroSiwo_470" / "viirs"
+            return [
+                FetchResult(
+                    event_id=event.event_id,
+                    source_id="viirs",
+                    files=[tmp_path / "KuroSiwo_470" / "viirs" / "obs.tif"],
+                    metadata=TileMetadata(
+                        event_id=event.event_id,
+                        source_id="viirs",
+                        fetch_timestamp=datetime.now(timezone.utc),
+                        bbox=event.bbox,
+                    ),
+                )
+            ]
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+    monkeypatch.setattr(
+        "atlantis.cli.build_kurosiwo_flood_events_from_catalogue",
+        lambda *args, **kwargs: [
+            FloodEvent(
+                event_id="KuroSiwo_470",
+                bbox=(-0.8627, 8.2639, 1.9947, 11.7312),
+                start_date=date(2020, 10, 14),
+                end_date=date(2020, 10, 14),
+                sources=["viirs"],
+            )
+        ],
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch-kurosiwo-viirs",
+            "--catalogue",
+            str(tmp_path / "catalogue.gpkg"),
+            "--case",
+            "KuroSiwo_470",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "derived from" in result.stdout
+    assert "Total files written: 1" in result.stdout
+
+
+def test_build_kurosiwo_metadata_command(monkeypatch, tmp_path):
+    """Test CLI command for deriving KuroSiwo metadata from the catalogue."""
+    monkeypatch.setattr(
+        "atlantis.cli.write_kurosiwo_metadata_csv",
+        lambda catalogue_path, output_path: output_path,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "build-kurosiwo-metadata",
+            "--catalogue",
+            str(tmp_path / "catalogue.gpkg"),
+            "--output",
+            str(tmp_path / "kurosiwo.csv"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Metadata CSV written" in result.stdout
+
+
 def test_validate_command():
     """Test validate command."""
     result = runner.invoke(cli, ["validate"])

@@ -12,7 +12,13 @@ from atlantis.config import HarmoniseConfig, get_config
 # Import fetchers to register them
 from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, rfm, viirs  # noqa: F401
 from atlantis.models.event import FloodEvent
-from atlantis.utils.kurosiwo import build_kurosiwo_flood_events
+from atlantis.utils.kurosiwo import (
+    KUROSIWO_DEFAULT_CATALOGUE,
+    KUROSIWO_DEFAULT_METADATA,
+    build_kurosiwo_flood_events,
+    build_kurosiwo_flood_events_from_catalogue,
+    write_kurosiwo_metadata_csv,
+)
 
 cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.")
 console = Console()
@@ -106,10 +112,15 @@ def fetch(
 
 @cli.command("fetch-kurosiwo-viirs")
 def fetch_kurosiwo_viirs(
-    metadata_path: Path = typer.Option(
-        Path("notebooks/drafts/kurosiwo_metadata_v1.csv"),
+    metadata_path: Path | None = typer.Option(
+        None,
         "--metadata",
-        help="Path to KuroSiwo metadata CSV",
+        help="Path to precomputed KuroSiwo metadata CSV",
+    ),
+    catalogue_path: Path = typer.Option(
+        KUROSIWO_DEFAULT_CATALOGUE,
+        "--catalogue",
+        help="Path to the KuroSiwo GeoPackage catalogue used when metadata CSV is not supplied",
     ),
     case: str | None = typer.Option(None, "--case", help="Only fetch one KuroSiwo flood_case"),
     limit: int | None = typer.Option(None, "--limit", help="Only process the first N cases after filtering"),
@@ -130,23 +141,47 @@ def fetch_kurosiwo_viirs(
         help="Use date_start..date_end from the metadata CSV instead of a narrow window around date_end",
     ),
 ) -> None:
-    """Fetch VIIRS data for KuroSiwo cases using the derived metadata CSV."""
+    """Fetch VIIRS data for KuroSiwo cases.
+
+    Args:
+        metadata_path: Optional precomputed metadata CSV path.
+        catalogue_path: KuroSiwo GeoPackage catalogue path used when metadata CSV is omitted.
+        case: Only fetch one KuroSiwo flood case.
+        limit: Limit the number of cases after filtering.
+        output_dir: Output directory for VIIRS products.
+        days_before: Days before the KuroSiwo flood date to search.
+        days_after: Days after the KuroSiwo flood date to search.
+        use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
+    """
     config = get_config()
     output_root = output_dir or config.fetcher.cache_dir / "raw" / "kurosiwo"
     output_root.mkdir(parents=True, exist_ok=True)
 
-    events = build_kurosiwo_flood_events(
-        metadata_path,
-        case=case,
-        limit=limit,
-        days_before=days_before,
-        days_after=days_after,
-        use_metadata_range=use_metadata_range,
-    )
+    if metadata_path is not None:
+        events = build_kurosiwo_flood_events(
+            metadata_path,
+            case=case,
+            limit=limit,
+            days_before=days_before,
+            days_after=days_after,
+            use_metadata_range=use_metadata_range,
+        )
+        metadata_source_label = str(metadata_path)
+    else:
+        events = build_kurosiwo_flood_events_from_catalogue(
+            catalogue_path,
+            case=case,
+            limit=limit,
+            days_before=days_before,
+            days_after=days_after,
+            use_metadata_range=use_metadata_range,
+        )
+        metadata_source_label = f"derived from {catalogue_path}"
+
     fetcher_cls = get_fetcher("viirs")
     fetcher = fetcher_cls()
 
-    console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_path}")
+    console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_source_label}")
     console.print(f"[bold]Cases selected:[/bold] {len(events)}")
     console.print(f"[bold]Output root:[/bold] {output_root}")
 
@@ -177,6 +212,30 @@ def fetch_kurosiwo_viirs(
         for failed_case, message in failures:
             console.print(f"[red]- {failed_case}: {message}[/red]")
         raise typer.Exit(code=1)
+
+
+@cli.command("build-kurosiwo-metadata")
+def build_kurosiwo_metadata(
+    catalogue_path: Path = typer.Option(
+        KUROSIWO_DEFAULT_CATALOGUE,
+        "--catalogue",
+        help="Path to the KuroSiwo GeoPackage catalogue",
+    ),
+    output_path: Path = typer.Option(
+        KUROSIWO_DEFAULT_METADATA,
+        "--output",
+        help="Path to the output metadata CSV",
+    ),
+) -> None:
+    """Derive the KuroSiwo metadata CSV from the catalogue.
+
+    Args:
+        catalogue_path: Path to the KuroSiwo GeoPackage catalogue.
+        output_path: Destination path for the derived metadata CSV.
+    """
+    written_path = write_kurosiwo_metadata_csv(catalogue_path, output_path)
+    console.print(f"[bold]KuroSiwo catalogue:[/bold] {catalogue_path}")
+    console.print(f"[bold]Metadata CSV written:[/bold] {written_path}")
 
 
 @cli.command()

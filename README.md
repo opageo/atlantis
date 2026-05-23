@@ -31,7 +31,8 @@ uv sync
 ## CLI
 
 - `atlantis fetch` — fetch VIIRS inundation data for an explicit bbox/date window
-- `atlantis fetch-kurosiwo-viirs` — fetch VIIRS for KuroSiwo cases from the derived metadata CSV
+- `atlantis build-kurosiwo-metadata` — derive KuroSiwo metadata CSV from the GeoPackage catalogue
+- `atlantis fetch-kurosiwo-viirs` — fetch VIIRS for KuroSiwo cases directly from the catalogue or a metadata CSV
 - `atlantis archive` — harmonise and write ML-ready archive (placeholder)
 - `atlantis validate` — validate the archive (placeholder)
 
