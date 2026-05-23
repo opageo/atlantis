@@ -1,5 +1,6 @@
 """CLI entrypoints for Atlantis."""
 
+from datetime import date
 from pathlib import Path
 
 import typer
@@ -10,9 +11,28 @@ from atlantis.config import HarmoniseConfig, get_config
 
 # Import fetchers to register them
 from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, rfm, viirs  # noqa: F401
+from atlantis.models.event import FloodEvent
+from atlantis.utils.kurosiwo import build_kurosiwo_flood_events
 
 cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.")
 console = Console()
+
+
+def _parse_bbox(value: str) -> tuple[float, float, float, float]:
+    """Parse a bbox from a four-number string."""
+    parts = value.replace(",", " ").split()
+    if len(parts) != 4:
+        raise typer.BadParameter("BBox must contain exactly four numbers: west south east north")
+    west, south, east, north = (float(part) for part in parts)
+    return (west, south, east, north)
+
+
+def _parse_date(value: str, option_name: str) -> date:
+    """Parse a YYYY-MM-DD date option."""
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise typer.BadParameter(f"{option_name} must be in YYYY-MM-DD format") from exc
 
 
 @cli.command()
@@ -20,6 +40,9 @@ def fetch(
     event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
     source: str | None = typer.Option(None, "--source", "-s", help="Data source (gfm, viirs, rfm, all)"),
     output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory for raw data"),
+    bbox: str | None = typer.Option(None, "--bbox", help="Bounding box as 'west south east north'"),
+    start_date: str | None = typer.Option(None, "--start-date", help="Start date in YYYY-MM-DD format"),
+    end_date: str | None = typer.Option(None, "--end-date", help="End date in YYYY-MM-DD format"),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -27,6 +50,9 @@ def fetch(
         event: Flood event ID to fetch data for.
         source: Data source to fetch from. Options: gfm, viirs, rfm, all.
         output_dir: Directory to save downloaded files.
+        bbox: Bounding box as west south east north for direct event construction.
+        start_date: Start date for direct event construction in YYYY-MM-DD format.
+        end_date: End date for direct event construction in YYYY-MM-DD format.
     """
     config = get_config()
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
@@ -41,16 +67,116 @@ def fetch(
     console.print(f"[bold]Sources:[/bold] {', '.join(sources)}")
     console.print(f"[bold]Output:[/bold] {output_dir}")
 
+    flood_event: FloodEvent | None = None
+    if bbox or start_date or end_date:
+        if not (bbox and start_date and end_date):
+            raise typer.BadParameter("--bbox, --start-date and --end-date must be provided together")
+        flood_event = FloodEvent(
+            event_id=event,
+            bbox=_parse_bbox(bbox),
+            start_date=_parse_date(start_date, "start-date"),
+            end_date=_parse_date(end_date, "end-date"),
+            sources=sources,
+        )
+
     for src in sources:
         try:
             fetcher_cls = get_fetcher(src)
             console.print(f"\n[cyan]Fetching from {src}...[/cyan]")
-            # Validate fetcher can be instantiated
-            _ = fetcher_cls()  # noqa: F841
-            # TODO: Create FloodEvent and call fetcher.search() and fetch()
-            console.print(f"[yellow]  {src}: not yet implemented[/yellow]")
+            fetcher = fetcher_cls()
+            if flood_event is None:
+                console.print(
+                    "[yellow]  Event catalogue lookup not yet implemented; "
+                    "provide --bbox/--start-date/--end-date[/yellow]"
+                )
+                continue
+
+            fetch_results = fetcher.fetch(flood_event, output_dir / src)
+            if not fetch_results:
+                console.print("[yellow]  No files were fetched[/yellow]")
+                continue
+
+            console.print(f"[bold]  Wrote {sum(len(result.files) for result in fetch_results)} files[/bold]")
+            for result in fetch_results:
+                for path in result.files:
+                    console.print(f"  - {path}")
         except KeyError:
             console.print(f"[red]Error: Unknown source '{src}'[/red]")
+
+
+@cli.command("fetch-kurosiwo-viirs")
+def fetch_kurosiwo_viirs(
+    metadata_path: Path = typer.Option(
+        Path("notebooks/drafts/kurosiwo_metadata_v1.csv"),
+        "--metadata",
+        help="Path to KuroSiwo metadata CSV",
+    ),
+    case: str | None = typer.Option(None, "--case", help="Only fetch one KuroSiwo flood_case"),
+    limit: int | None = typer.Option(None, "--limit", help="Only process the first N cases after filtering"),
+    output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory for VIIRS products"),
+    days_before: int = typer.Option(
+        0,
+        "--days-before",
+        help="Days before KuroSiwo date_end to include in the VIIRS search window",
+    ),
+    days_after: int = typer.Option(
+        0,
+        "--days-after",
+        help="Days after KuroSiwo date_end to include in the VIIRS search window",
+    ),
+    use_metadata_range: bool = typer.Option(
+        False,
+        "--use-metadata-range",
+        help="Use date_start..date_end from the metadata CSV instead of a narrow window around date_end",
+    ),
+) -> None:
+    """Fetch VIIRS data for KuroSiwo cases using the derived metadata CSV."""
+    config = get_config()
+    output_root = output_dir or config.fetcher.cache_dir / "raw" / "kurosiwo"
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    events = build_kurosiwo_flood_events(
+        metadata_path,
+        case=case,
+        limit=limit,
+        days_before=days_before,
+        days_after=days_after,
+        use_metadata_range=use_metadata_range,
+    )
+    fetcher_cls = get_fetcher("viirs")
+    fetcher = fetcher_cls()
+
+    console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_path}")
+    console.print(f"[bold]Cases selected:[/bold] {len(events)}")
+    console.print(f"[bold]Output root:[/bold] {output_root}")
+
+    total_files = 0
+    failures: list[tuple[str, str]] = []
+
+    for event in events:
+        console.print(
+            f"\n[cyan]Fetching {event.event_id}[/cyan] ({event.start_date.isoformat()} -> {event.end_date.isoformat()})"
+        )
+        try:
+            fetch_results = fetcher.fetch(event, output_root / event.event_id / "viirs")
+        except Exception as exc:  # pragma: no cover - exercised in real fetch runs
+            failures.append((event.event_id, str(exc)))
+            console.print(f"[red]  Failed: {exc}[/red]")
+            continue
+
+        written = sum(len(result.files) for result in fetch_results)
+        total_files += written
+        if written == 0:
+            console.print("[yellow]  No VIIRS files found for this case[/yellow]")
+            continue
+
+        console.print(f"[bold]  Wrote {written} files[/bold]")
+
+    console.print(f"\n[bold]Total files written:[/bold] {total_files}")
+    if failures:
+        for failed_case, message in failures:
+            console.print(f"[red]- {failed_case}: {message}[/red]")
+        raise typer.Exit(code=1)
 
 
 @cli.command()

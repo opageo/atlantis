@@ -64,13 +64,30 @@ def download_file(
     Raises:
         ImportError: If requests is not installed.
     """
-    # TODO: Implement download with caching
-    # Expected implementation:
-    # 1. Determine output path (cache or explicit)
-    # 2. Check if already cached
-    # 3. Download with progress bar
-    # 4. Return path to downloaded file
-    raise NotImplementedError("Download not yet implemented")
+    try:
+        import requests
+    except ImportError as exc:  # pragma: no cover - exercised by environment setup
+        raise ImportError("requests is required to download files") from exc
+
+    destination = output_path or get_cache_path(url, cache_dir)
+    ensure_dir(destination.parent)
+
+    if destination.exists():
+        return destination
+
+    response = requests.get(url, stream=True, timeout=60)
+    response.raise_for_status()
+
+    with destination.open("wb") as file_handle:
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if chunk:
+                file_handle.write(chunk)
+
+    etag = response.headers.get("ETag")
+    if etag:
+        set_etag(destination, etag)
+
+    return destination
 
 
 def get_etag(path: Path) -> str | None:

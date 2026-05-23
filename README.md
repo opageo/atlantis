@@ -9,7 +9,7 @@
 ML-ready archive of satellite-derived flood inundation observations
 (ECMWF Code for Earth 2026).
 
-> **Getting started?** Read [src/README.md](src/README.md) for the full architecture guide — pipeline overview, module layout, core abstractions, and how to extend the system.
+> **Getting started?** Read [src/README.md](src/README.md) for the current architecture guide, working VIIRS/KuroSiwo extraction commands, pipeline overview, module layout, and extension points.
 
 [![Python versions][python-badge]][python-url]
 [![Ruff][ruff-badge]][ruff-url]
@@ -30,9 +30,12 @@ uv sync
 
 ## CLI
 
-- `atlantis fetch` — fetch raw inundation data (placeholder)
+- `atlantis fetch` — fetch VIIRS inundation data for an explicit bbox/date window
+- `atlantis fetch-kurosiwo-viirs` — fetch VIIRS for KuroSiwo cases from the derived metadata CSV
 - `atlantis archive` — harmonise and write ML-ready archive (placeholder)
 - `atlantis validate` — validate the archive (placeholder)
+
+The exact working VIIRS and KuroSiwo extraction workflow is documented in [src/README.md](src/README.md).
 
 ## Notebooks
 

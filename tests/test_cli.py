@@ -1,9 +1,14 @@
 """Tests for CLI commands."""
 
+from datetime import date, datetime, timezone
+
 from typer.testing import CliRunner
 
 from atlantis import __version__
 from atlantis.cli import cli
+from atlantis.fetchers.base import FetchResult
+from atlantis.models.event import FloodEvent
+from atlantis.models.metadata import TileMetadata
 
 runner = CliRunner()
 
@@ -20,11 +25,115 @@ def test_fetch_command():
     assert "Fetching data for event: Valencia_2024" in result.stdout
 
 
+def test_fetch_command_with_bbox(monkeypatch, tmp_path):
+    """Test bbox/date-driven fetch flow for the VIIRS CLI path."""
+
+    class DummyFetcher:
+        def fetch(self, event, output_dir):
+            assert event.event_id == "Yangtze_2020"
+            assert event.bbox == (105.0, 28.0, 125.0, 38.0)
+            assert output_dir == tmp_path / "viirs"
+            return [
+                FetchResult(
+                    event_id=event.event_id,
+                    source_id="viirs",
+                    files=[tmp_path / "viirs" / "obs.tif", tmp_path / "viirs" / "mask.tif"],
+                    metadata=TileMetadata(
+                        event_id=event.event_id,
+                        source_id="viirs",
+                        fetch_timestamp=datetime.now(timezone.utc),
+                        bbox=event.bbox,
+                    ),
+                )
+            ]
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Yangtze_2020",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "105 28 125 38",
+            "--start-date",
+            "2020-07-22",
+            "--end-date",
+            "2020-07-22",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Wrote 2 files" in result.stdout
+
+
 def test_archive_command():
     """Test archive command with required event argument."""
     result = runner.invoke(cli, ["archive", "--event", "Valencia_2024"])
     assert result.exit_code == 0
     assert "Archiving event: Valencia_2024" in result.stdout
+
+
+def test_fetch_kurosiwo_viirs_command(monkeypatch, tmp_path):
+    """Test metadata-driven KuroSiwo VIIRS CLI flow."""
+
+    class DummyFetcher:
+        def fetch(self, event, output_dir):
+            assert isinstance(event, FloodEvent)
+            assert event.event_id == "KuroSiwo_470"
+            assert event.start_date.isoformat() == "2020-10-14"
+            assert event.end_date.isoformat() == "2020-10-14"
+            assert output_dir == tmp_path / "KuroSiwo_470" / "viirs"
+            return [
+                FetchResult(
+                    event_id=event.event_id,
+                    source_id="viirs",
+                    files=[tmp_path / "KuroSiwo_470" / "viirs" / "obs.tif"],
+                    metadata=TileMetadata(
+                        event_id=event.event_id,
+                        source_id="viirs",
+                        fetch_timestamp=datetime.now(timezone.utc),
+                        bbox=event.bbox,
+                    ),
+                )
+            ]
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+    monkeypatch.setattr(
+        "atlantis.cli.build_kurosiwo_flood_events",
+        lambda *args, **kwargs: [
+            FloodEvent(
+                event_id="KuroSiwo_470",
+                bbox=(-0.8627, 8.2639, 1.9947, 11.7312),
+                start_date=date(2020, 10, 14),
+                end_date=date(2020, 10, 14),
+                sources=["viirs"],
+            )
+        ],
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch-kurosiwo-viirs",
+            "--metadata",
+            str(tmp_path / "kurosiwo.csv"),
+            "--case",
+            "KuroSiwo_470",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Cases selected: 1" in result.stdout
+    assert "Fetching KuroSiwo_470" in result.stdout
+    assert "Total files written: 1" in result.stdout
 
 
 def test_validate_command():
