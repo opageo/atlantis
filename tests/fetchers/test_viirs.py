@@ -54,7 +54,7 @@ def test_search_returns_intersecting_aoi_results(monkeypatch):
         "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB091_v1r0_blend_s202007220000000_e202007222359590_c202205240402523.tif",
         "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB092_v1r0_blend_s202007220000000_e202007222359590_c202205240402593.tif",
     ]
-    monkeypatch.setattr(fetcher, "_get_directory_links", lambda _url: hrefs)
+    monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _base_url, _location, _timeout: hrefs)
 
     results = fetcher.search(event)
 
@@ -78,7 +78,7 @@ def test_search_supports_legacy_gmu_backend(monkeypatch):
         "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_35_005day_077.tif.zip",
         "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_34_005day_078.tif.zip",
     ]
-    monkeypatch.setattr(fetcher, "_get_directory_links", lambda _url: hrefs)
+    monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _base_url, _location, _timeout: hrefs)
 
     results = fetcher.search(event)
 
