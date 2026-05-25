@@ -97,10 +97,13 @@ src/atlantis/
 │   ├── base.py            # AbstractFloodFetcher ABC + SearchResult / FetchResult
 │   ├── registry.py        # @register_fetcher decorator + global registry
 │   ├── gfm.py             # GFMFetcher — planned
-│   ├── viirs.py           # VIIRSFetcher — implemented
 │   ├── rfm.py             # RFMFetcher — planned / Phase C stub
-│   └── data/
-│       └── viirs_aois.geojson  # Packaged VIIRS AOI tile grid
+│   └── viirs/
+│       ├── __init__.py    # VIIRSFetcher — implemented
+│       ├── backend.py     # Backend classes (NoaaS3Backend, GmuLegacyBackend)
+│       ├── processor.py   # Raster processing (ViirsRasterProcessor)
+│       └── data/
+│           └── viirs_aois.geojson  # Packaged VIIRS AOI tile grid
 │
 ├── harmoniser/
 │   ├── reprojector.py     # Planned CRS reprojection + resampling
@@ -197,7 +200,7 @@ uv sync --extra geo
 
 For each requested date and bbox, `VIIRSFetcher`:
 
-1. Loads the packaged global AOI grid from `fetchers/data/viirs_aois.geojson`
+1. Loads the packaged global AOI grid from `fetchers/viirs/data/viirs_aois.geojson`
 2. Selects AOI tiles intersecting the requested bbox
 3. Looks up matching archive entries under the JPSS Flood date directory
 4. Downloads ZIP tiles and reuses existing downloads on rerun

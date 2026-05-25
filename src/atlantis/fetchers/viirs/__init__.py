@@ -15,8 +15,8 @@ from shapely.geometry import box
 from atlantis.config import get_config
 from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResult
 from atlantis.fetchers.registry import register_fetcher
-from atlantis.fetchers.viirs_backend import get_backend, list_backends
-from atlantis.fetchers.viirs_processor import ViirsRasterProcessor
+from atlantis.fetchers.viirs.backend import get_backend, list_backends
+from atlantis.fetchers.viirs.processor import ViirsRasterProcessor
 from atlantis.models.event import FloodEvent
 from atlantis.utils.io import download_file, ensure_dir
 

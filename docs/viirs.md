@@ -147,7 +147,7 @@ The VIIRS fetcher follows clean architecture principles with three focused compo
 Need to add a backend? Implement the `ViirsBackend` protocol:
 
 ```python
-from atlantis.fetchers.viirs_backend import ViirsBackend, ListingLocation
+from atlantis.fetchers.viirs.backend import ViirsBackend, ListingLocation
 
 @register_backend  # (coming soon)
 class MyCustomBackend(ViirsBackend):

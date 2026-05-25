@@ -3,7 +3,7 @@
 from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResult
 from atlantis.fetchers.registry import fetcher_registry, get_fetcher, list_fetchers, register_fetcher
 from atlantis.fetchers.viirs import VIIRSFetcher
-from atlantis.fetchers.viirs_backend import (
+from atlantis.fetchers.viirs.backend import (
     GmuLegacyBackend,
     ListingLocation,
     NoaaS3Backend,
@@ -11,7 +11,7 @@ from atlantis.fetchers.viirs_backend import (
     get_backend,
     list_backends,
 )
-from atlantis.fetchers.viirs_processor import ViirsRasterProcessor
+from atlantis.fetchers.viirs.processor import ViirsRasterProcessor
 
 __all__ = [
     # Base abstractions
