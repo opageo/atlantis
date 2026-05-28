@@ -226,3 +226,6 @@ __marimo__/
 data/
 
 *.csv
+
+.ignore
+assets/kurosiwo/**
