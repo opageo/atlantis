@@ -89,6 +89,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         timeout: int | None = None,
         backend: str | None = None,
         data_format: str | None = None,
+        classify: bool = False,
     ) -> None:
         """Initialize the VIIRS fetcher.
 
@@ -97,6 +98,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
             timeout: Request timeout in seconds.
             backend: VIIRS backend selection.
             data_format: VIIRS data format selection.
+            classify: Whether to classify pixels into discrete layers.
         """
         config = get_config()
 
@@ -105,6 +107,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         self.data_format = _normalise_format(data_format or config.fetcher.viirs_format)
         self.base_url = self._resolve_base_url(base_url, config)
         self.timeout = timeout or config.fetcher.timeout
+        self.classify = classify
 
     def _resolve_base_url(self, override: str | None, config) -> str:
         """Determine the base URL based on backend and configuration."""
@@ -233,7 +236,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
             grouped_results[result.properties["date"]].append(result)
 
         area_geom = box(*event.bbox)
-        processor = ViirsRasterProcessor(area_geom)
+        processor = ViirsRasterProcessor(area_geom, classify=self.classify)
 
         fetch_results: list[FetchResult] = []
 
@@ -259,7 +262,11 @@ class VIIRSFetcher(AbstractFloodFetcher):
                 FetchResult(
                     event_id=event.event_id,
                     source_id=self.source_id,
-                    files=[paths.flood_extent, paths.quality_mask, paths.permanent_water],
+                    files=[
+                        p
+                        for p in (paths.raw, paths.flood_extent, paths.quality_mask, paths.permanent_water)
+                        if p is not None
+                    ],
                     metadata=metadata,
                 )
             )
@@ -282,25 +289,30 @@ class VIIRSFetcher(AbstractFloodFetcher):
             raise ImportError("rioxarray and xarray are required to read VIIRS datasets") from exc
 
         files_by_name = {path.name: path for path in result.files}
-        obs_path = next(path for name, path in files_by_name.items() if name.endswith("_flood_extent.tif"))
-        quality_path = next(path for name, path in files_by_name.items() if name.endswith("_quality_mask.tif"))
-        permanent_water_path = next(
-            path for name, path in files_by_name.items() if name.endswith("_permanent_water.tif")
-        )
 
-        flood_extent = rxr.open_rasterio(obs_path).squeeze(drop=True).astype("float32").rename("flood_extent")
-        quality_mask = rxr.open_rasterio(quality_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
-        permanent_water = (
-            rxr.open_rasterio(permanent_water_path).squeeze(drop=True).astype("uint8").rename("permanent_water")
-        )
+        raw_path = next((path for name, path in files_by_name.items() if name.endswith("_raw.tif")), None)
 
-        dataset = xr.Dataset(
-            {
-                "flood_extent": flood_extent,
-                "quality_mask": quality_mask,
-                "permanent_water": permanent_water,
-            }
-        )
+        variables = {}
+        if raw_path:
+            variables["raw"] = rxr.open_rasterio(raw_path).squeeze(drop=True).rename("raw")
+        else:
+            obs_path = next(path for name, path in files_by_name.items() if name.endswith("_flood_extent.tif"))
+            quality_path = next(path for name, path in files_by_name.items() if name.endswith("_quality_mask.tif"))
+            permanent_water_path = next(
+                path for name, path in files_by_name.items() if name.endswith("_permanent_water.tif")
+            )
+
+            variables["flood_extent"] = (
+                rxr.open_rasterio(obs_path).squeeze(drop=True).astype("float32").rename("flood_extent")
+            )
+            variables["quality_mask"] = (
+                rxr.open_rasterio(quality_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
+            )
+            variables["permanent_water"] = (
+                rxr.open_rasterio(permanent_water_path).squeeze(drop=True).astype("uint8").rename("permanent_water")
+            )
+
+        dataset = xr.Dataset(variables)
         dataset.attrs["source_id"] = self.source_id
         dataset.attrs["event_id"] = result.event_id
         return dataset

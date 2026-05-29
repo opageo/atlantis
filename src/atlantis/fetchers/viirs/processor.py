@@ -34,6 +34,7 @@ class ProcessedTile:
     """Result from processing VIIRS tiles for a single date.
 
     Attributes:
+        raw: Raw tile data.
         flood_extent: Binary flood extent array (0/1).
         quality_mask: Quality mask array (0=bad, 1=good).
         permanent_water: Permanent water mask array (0/1).
@@ -42,21 +43,23 @@ class ProcessedTile:
         cloud_fraction: Fraction of cloud cover (0.0-1.0).
     """
 
-    flood_extent: np.ndarray
-    quality_mask: np.ndarray
-    permanent_water: np.ndarray
     transform: rasterio.Affine
     crs: str
     cloud_fraction: float
+    raw: np.ndarray | None = None
+    flood_extent: np.ndarray | None = None
+    quality_mask: np.ndarray | None = None
+    permanent_water: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
 class OutputPaths:
-    """Paths for the three output files."""
+    """Paths for the output files."""
 
-    flood_extent: Path
-    quality_mask: Path
-    permanent_water: Path
+    raw: Path | None = None
+    flood_extent: Path | None = None
+    quality_mask: Path | None = None
+    permanent_water: Path | None = None
 
 
 class ViirsRasterProcessor:
@@ -73,15 +76,18 @@ class ViirsRasterProcessor:
         crs: Target CRS (default: EPSG:4326).
     """
 
-    def __init__(self, area_geometry: BaseGeometry, crs: str = "EPSG:4326") -> None:
+    def __init__(self, area_geometry: BaseGeometry, crs: str = "EPSG:4326", classify: bool = False) -> None:
         """Initialize the processor.
 
         Args:
             area_geometry: The geometry to clip results to.
             crs: Target CRS for outputs.
+            classify: Whether to classify pixels into discrete flood layers.
+                If False (default), outputs raw data only.
         """
         self.area_geometry = area_geometry
         self.crs = crs
+        self.classify = classify
 
     def process_tiles(
         self, tile_paths: list[Path], event_id: str, date_token: str, output_dir: Path
@@ -105,19 +111,22 @@ class ViirsRasterProcessor:
             return None
 
         base_name = f"{event_id}_{date_token}_viirs"
-        paths = OutputPaths(
-            flood_extent=output_dir / f"{base_name}_flood_extent.tif",
-            quality_mask=output_dir / f"{base_name}_quality_mask.tif",
-            permanent_water=output_dir / f"{base_name}_permanent_water.tif",
-        )
+        if self.classify:
+            paths = OutputPaths(
+                flood_extent=output_dir / f"{base_name}_flood_extent.tif",
+                quality_mask=output_dir / f"{base_name}_quality_mask.tif",
+                permanent_water=output_dir / f"{base_name}_permanent_water.tif",
+            )
+        else:
+            paths = OutputPaths(raw=output_dir / f"{base_name}_raw.tif")
 
         self._write_outputs(processed, paths)
 
         metadata = self._build_metadata(
             event_id=event_id,
             processed=processed,
-            width=processed.flood_extent.shape[1],
-            height=processed.flood_extent.shape[0],
+            width=processed.raw.shape[1] if processed.raw is not None else processed.flood_extent.shape[1],
+            height=processed.raw.shape[0] if processed.raw is not None else processed.flood_extent.shape[0],
         )
 
         return paths, metadata
@@ -160,7 +169,15 @@ class ViirsRasterProcessor:
         elif crs_value is None:
             crs_value = self.crs
 
-        return self._classify_pixels(clipped[0], clipped_transform, str(crs_value))
+        if self.classify:
+            return self._classify_pixels(clipped[0], clipped_transform, str(crs_value))
+        else:
+            return ProcessedTile(
+                raw=clipped[0],
+                transform=clipped_transform,
+                crs=str(crs_value),
+                cloud_fraction=0.0,
+            )
 
     def _classify_pixels(self, data: np.ndarray, transform: rasterio.Affine, crs: str) -> ProcessedTile:
         """Classify pixel values into flood extent, quality mask, and permanent water.
@@ -208,8 +225,8 @@ class ViirsRasterProcessor:
         """
         output_meta = {
             "driver": "GTiff",
-            "height": processed.flood_extent.shape[0],
-            "width": processed.flood_extent.shape[1],
+            "height": processed.raw.shape[0] if processed.raw is not None else processed.flood_extent.shape[0],
+            "width": processed.raw.shape[1] if processed.raw is not None else processed.flood_extent.shape[1],
             "count": 1,
             "dtype": "uint8",
             "crs": processed.crs,
@@ -218,11 +235,18 @@ class ViirsRasterProcessor:
             "compress": "LZW",
         }
 
-        for path, array in (
-            (paths.flood_extent, processed.flood_extent),
-            (paths.quality_mask, processed.quality_mask),
-            (paths.permanent_water, processed.permanent_water),
-        ):
+        outputs_to_write = []
+        if paths.raw is not None and processed.raw is not None:
+            outputs_to_write.append((paths.raw, processed.raw))
+
+        if paths.flood_extent is not None and processed.flood_extent is not None:
+            outputs_to_write.append((paths.flood_extent, processed.flood_extent))
+        if paths.quality_mask is not None and processed.quality_mask is not None:
+            outputs_to_write.append((paths.quality_mask, processed.quality_mask))
+        if paths.permanent_water is not None and processed.permanent_water is not None:
+            outputs_to_write.append((paths.permanent_water, processed.permanent_water))
+
+        for path, array in outputs_to_write:
             with rasterio.open(path, "w", **output_meta) as dst:
                 dst.write(array, 1)
 

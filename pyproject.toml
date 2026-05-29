@@ -16,6 +16,7 @@ dependencies = [
   "matplotlib>=3.10.9",
   "ipympl>=0.10.0",
   "plotly>=6.7.0",
+  "rasterstats>=0.21.0",
 ]
 
 [project.scripts]

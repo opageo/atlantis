@@ -7,14 +7,14 @@ Reference: [github.com/Orion-AI-Lab/KuroSiwo](https://github.com/Orion-AI-Lab/Ku
 
 ## Data model terminology
 
-| Term                          | Definition                                                                                                  |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Event** (`actid`)           | A single flood case. 43 events total (2015–2022).                                                           |
-| **Tile** (`grid_id`)          | A unique 256×256 px spatial location. Each tile belongs to exactly one event. An event has 22–43,349 tiles. |
-| **Patch** (= 1 catalogue row) | A tile observed at one time × one product type. Exported to disk as a `.tif`.                               |
-| **`pflood`**                  | Ground-truth flood label (0–100%) per tile. Static across time — same for pre-flood and flood-time patches. |
-| **`master`**                  | Temporal role: `True` = flood-time, `False` = pre-flood baseline.                                           |
-| **`crank`**                   | Product: `1` = GRD (amplitude), `2` = SLC (complex).                                                        |
+| Term                          | Definition                                                                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Event** (`actid`)           | A single flood case. 43 events total (2015–2022).                                                                      |
+| **Tile** (`grid_id`)          | A unique 224×224 px spatial location (10 m GSD). Each tile belongs to exactly one event. An event has 22–43,349 tiles. |
+| **Patch** (= 1 catalogue row) | A tile observed at one time × one product type. Exported to disk as a `.tif`.                                          |
+| **`pflood`**                  | Ground-truth flood label (0–100%) per tile. Static across time — same for pre-flood and flood-time patches.            |
+| **`master`**                  | Temporal role: `True` = flood-time, `False` = pre-flood baseline.                                                      |
+| **`crank`**                   | Product: `1` = GRD (amplitude), `2` = SLC (complex).                                                                   |
 
 **Hierarchy:** Event → Tiles → Patches (1–3 per tile: pre-flood GRD, pre-flood SLC, flood-time GRD)
 
@@ -84,7 +84,7 @@ flood signal.
 1. **No flood timeline.** Each event has exactly one pre-flood baseline and one flood-time SAR acquisition. There is no multi-temporal stack, so flood growth, peak, or recession cannot be tracked.
 2. **Flood onset and end dates are unknown.** `date_start` and `date_end` are SAR image dates, not hydrological event boundaries. The actual start and end of flooding are not recorded in the catalogue.
 3. **`date_of_max_flood_extent` cannot be verified.** With only one flood-time acquisition per event, it is impossible to confirm that the image captured peak inundation. For some events the acquisition may have occurred during flood recession.
-4. **`max_flood_extent_km2` is patch-level, not pixel-level.** The `pflood` label is a per-patch percentage (256×256 px tiles); sub-patch spatial variability is averaged out. This introduces smoothing error, especially for events with heterogeneous inundation patterns.
+4. **`max_flood_extent_km2` is patch-level, not pixel-level.** The `pflood` label is a per-patch percentage (224×224 px tiles, 10 m GSD); sub-patch spatial variability is averaged out. This introduces smoothing error, especially for events with heterogeneous inundation patterns.
 5. **Large temporal gaps.** 10/43 events have >6-month gaps between the last pre-flood and first flood-time acquisition; 2 events exceed 1 year (max: 672 days, Event 1111008). Long baselines may degrade change-detection performance due to land-cover change unrelated to flooding.
 6. **`pflood` is a static label, not a temporal signal.** It is identical across pre-flood and flood-time acquisitions (verified for all 43 events). It cannot be used to distinguish flood signal strength per image — only for spatial extent estimation.
 

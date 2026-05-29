@@ -65,7 +65,7 @@ def test_search_returns_intersecting_aoi_results(monkeypatch):
 
 
 def test_search_supports_legacy_gmu_backend(monkeypatch):
-    fetcher = VIIRSFetcher(backend="gmu_legacy")
+    fetcher = VIIRSFetcher(backend="gmu_legacy", classify=True)
     event = FloodEvent(
         event_id="Yangtze_2020",
         bbox=(105.0, 28.0, 125.0, 38.0),
@@ -87,7 +87,7 @@ def test_search_supports_legacy_gmu_backend(monkeypatch):
 
 
 def test_fetch_and_to_dataset(tmp_path, monkeypatch):
-    fetcher = VIIRSFetcher()
+    fetcher = VIIRSFetcher(classify=True)
     event = FloodEvent(
         event_id="Yangtze_2020",
         bbox=(105.0, 28.0, 125.0, 38.0),
@@ -169,7 +169,7 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
     )
 
     # ── Search-level equivalence ──────────────────────────────────────
-    noaa_fetcher = VIIRSFetcher(backend="noaa_s3")
+    noaa_fetcher = VIIRSFetcher(backend="noaa_s3", classify=True)
     noaa_hrefs = [
         "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB077_v1r0_blend_s202007220000000_e202007222359590_c202205240401305.tif",
         "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB078_v1r0_blend_s202007220000000_e202007222359590_c202205240401363.tif",
@@ -180,7 +180,7 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
     ]
     monkeypatch.setattr(noaa_fetcher.backend, "get_directory_links", lambda _base_url, _location, _timeout: noaa_hrefs)
 
-    gmu_fetcher = VIIRSFetcher(backend="gmu_legacy")
+    gmu_fetcher = VIIRSFetcher(backend="gmu_legacy", classify=True)
     gmu_hrefs = [
         "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_35_005day_077.tif.zip",
         "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_34_005day_078.tif.zip",
