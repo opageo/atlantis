@@ -12,6 +12,18 @@ Visualisations are saved as PNG files under ``scripts/`` (tracked).
 Downloaded GeoTIFFs are written under ``scripts/data/`` (untracked, see
 ``scripts/data/.gitignore``).
 
+.. note::
+
+    The VIIRS fetcher depends on a global AOI tile grid.  If you haven't run
+    the repo setup yet, do it once before using this demo::
+
+        uv run python scripts/setup.py
+
+    You can also generate the grid from the showcase notebook::
+
+        notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb
+        (section ``### VIIRS AOI grid bootstrap``)
+
 Usage::
 
     # Arbitrary bbox + date range — any region on Earth, no catalogue needed
@@ -37,6 +49,19 @@ from pathlib import Path
 # ── repo root on sys.path so the script works from any cwd ───────────────────
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+# ── guard: the VIIRS AOI grid must exist before either demo mode works ───────
+_AOI_GRID = _REPO_ROOT / "src" / "atlantis" / "fetchers" / "viirs" / "data" / "viirs_aois.geojson"
+if not _AOI_GRID.exists():
+    sys.exit(
+        "The VIIRS AOI tile grid is missing.\n"
+        f"Expected: {_AOI_GRID.relative_to(_REPO_ROOT)}\n\n"
+        "Bootstrapping it is a one-time operation — run:\n"
+        "  uv run python scripts/setup.py\n\n"
+        "You can also generate it from the showcase notebook:\n"
+        "  notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb\n"
+        "(section 'VIIRS AOI grid bootstrap')."
+    )
 
 from datetime import date  # noqa: E402
 
