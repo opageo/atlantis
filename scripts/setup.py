@@ -175,6 +175,7 @@ STEPS: list[tuple[str, Path, callable]] = [
 
 
 def main() -> None:
+    """Run all pending setup steps (idempotent — skips assets that already exist)."""
     print("Atlantis setup\n")
 
     any_missing = False
