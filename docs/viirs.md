@@ -282,6 +282,17 @@ Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 
 ## Next Steps
 
-- See `scripts/viirs_demo.py` for a runnable end-to-end example
-- Explore `notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb` for an interactive walkthrough
-- Read the [architecture guide](../src/README.md) for the full pipeline vision
+- `scripts/viirs_demo.py` — runnable end-to-end example:
+
+  ```bash
+  # Any region, any date
+  uv run python scripts/viirs_demo.py --mode arbitrary \
+    --event-id my_flood --bbox "-1.0 39.0 0.0 40.0" \
+    --start-date 2024-10-29 --end-date 2024-10-29
+
+  # KuroSiwo event (bbox + dates resolved from catalogue)
+  uv run python scripts/viirs_demo.py --mode kurosiwo --ks-case KuroSiwo_470
+  ```
+
+- `notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb` — interactive walkthrough
+- [architecture guide](../src/README.md) — full pipeline vision
