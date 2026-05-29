@@ -59,6 +59,12 @@ def fetch(
         "--viirs-format",
         help="VIIRS format: tif, netcdf, shapezip, png. Only tif is implemented.",
     ),
+    classify: bool = typer.Option(
+        False,
+        "--classify",
+        help="Classify VIIRS pixels into flood-extent, quality-mask, and permanent-water"
+        " layers instead of writing raw data.",
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -71,6 +77,7 @@ def fetch(
         end_date: End date for direct event construction in YYYY-MM-DD format.
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
+        classify: If True, write flood-extent/quality-mask/permanent-water layers instead of raw data.
     """
     config = get_config()
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
@@ -103,7 +110,7 @@ def fetch(
             console.print(f"\n[cyan]Fetching from {src}...[/cyan]")
             fetcher_kwargs = {}
             if src == "viirs":
-                fetcher_kwargs = {"backend": viirs_backend, "data_format": viirs_format}
+                fetcher_kwargs = {"backend": viirs_backend, "data_format": viirs_format, "classify": classify}
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
                 console.print(
@@ -165,6 +172,12 @@ def fetch_kurosiwo_viirs(
         "--viirs-format",
         help="VIIRS format: tif, netcdf, shapezip, png. Only tif is implemented.",
     ),
+    classify: bool = typer.Option(
+        False,
+        "--classify",
+        help="Classify VIIRS pixels into flood-extent, quality-mask, and permanent-water"
+        " layers instead of writing raw data.",
+    ),
 ) -> None:
     """Fetch VIIRS data for KuroSiwo cases.
 
@@ -179,6 +192,7 @@ def fetch_kurosiwo_viirs(
         use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
+        classify: If True, write flood-extent/quality-mask/permanent-water layers instead of raw data.
     """
     config = get_config()
     output_root = output_dir or config.fetcher.cache_dir / "raw" / "kurosiwo"
@@ -206,7 +220,7 @@ def fetch_kurosiwo_viirs(
         metadata_source_label = f"derived from {catalogue_path}"
 
     fetcher_cls = get_fetcher("viirs")
-    fetcher = fetcher_cls(backend=viirs_backend, data_format=viirs_format)
+    fetcher = fetcher_cls(backend=viirs_backend, data_format=viirs_format, classify=classify)
 
     console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_source_label}")
     console.print(f"[bold]Cases selected:[/bold] {len(events)}")
