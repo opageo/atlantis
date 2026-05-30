@@ -38,6 +38,9 @@ Usage::
 
     # Widen the temporal window around the KuroSiwo flood date
     uv run python scripts/viirs_demo.py --mode kurosiwo --days-before 1 --days-after 1
+
+    # Stream tiles (no download) + harmonise to 1 arcmin
+    uv run python scripts/viirs_demo.py --mode arbitrary --stream --harmonise
 """
 
 from __future__ import annotations
@@ -84,16 +87,14 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPTS_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── VIIRS pixel code legend ───────────────────────────────────────────────────
+# ── VIIRS pixel code legend (raw GeoTIFF codes) ───────────────────────────────
 VIIRS_CODES: dict[int, tuple[str, str]] = {
-    1: ("Land", "#8B4513"),
+    1: ("Fill / No data", "#000000"),
     17: ("Permanent water", "#1f77b4"),
     20: ("Seasonal water", "#17becf"),
     30: ("Cloud", "#cccccc"),
     99: ("Open water", "#4682B4"),
-    160: ("Flood (low conf.)", "#FFFF00"),
-    170: ("Flood (medium)", "#FFA500"),
-    200: ("Flood (high conf.)", "#FF0000"),
+    160: ("Flood (≥60% frac)", "#FF0000"),
 }
 
 
@@ -109,7 +110,8 @@ def _legend_patches() -> list[Patch]:
     ]
 
 
-def _pixel_stats(data: np.ndarray) -> None:
+def _pixel_stats_raw(data: np.ndarray) -> None:
+    """Print a breakdown of raw VIIRS pixel codes."""
     vals = data.ravel()
     vals_nonzero = vals[vals > 0]
     if len(vals_nonzero) == 0:
@@ -122,13 +124,29 @@ def _pixel_stats(data: np.ndarray) -> None:
     for i in order[:8]:
         pct = 100 * counts[i] / len(vals_nonzero)
         label = VIIRS_CODES.get(int(unique[i]), ("unknown",))[0]
-        print(f"    {int(unique[i]):3d}  ({label}): {counts[i]:6,} px  ({pct:.1f}%)")
-    flood_px = int(vals_nonzero[vals_nonzero >= 160].sum())
-    print(f"  Flood pixels (≥160): {flood_px:,}")
+        code = int(unique[i])
+        extra = " (flood)" if 101 <= code <= 200 else ""
+        print(f"    {code:3d}  ({label}){extra}: {counts[i]:6,} px  ({pct:.1f}%)")
+    flood_px = int(vals_nonzero[(vals_nonzero >= 101) & (vals_nonzero <= 200)].sum())
+    print(f"  Flood pixels (101–200): {flood_px:,}")
 
 
-def _plot_and_save(raw_da, event_id: str, title: str, output_path: Path) -> None:
-    """Render a raw VIIRS raster with a pixel-code legend and save as PNG."""
+def _pixel_stats_classified(data: np.ndarray, name: str = "flood_extent") -> None:
+    """Print stats for classified (binary or fraction) flood data."""
+    vals = data.ravel()
+    valid = vals[~np.isnan(vals)]
+    if len(valid) == 0:
+        print(f"  {name}: all NaN")
+        return
+    print(
+        f"  {name}: min={float(valid.min()):.3f}, max={float(valid.max()):.3f}, "
+        f"mean={float(valid.mean()):.4f}, "
+        f"flooded={int((valid > 0).sum()):,}/{len(valid):,} px"
+    )
+
+
+def _plot_raw(da, title: str, output_path: Path) -> None:
+    """Render a raw VIIRS raster with the pixel-code legend."""
     fig, (ax, ax_leg) = plt.subplots(
         1,
         2,
@@ -136,8 +154,7 @@ def _plot_and_save(raw_da, event_id: str, title: str, output_path: Path) -> None
         gridspec_kw={"width_ratios": [3, 1]},
         constrained_layout=True,
     )
-
-    raw_da.plot(ax=ax, cmap="turbo", add_colorbar=True, cbar_kwargs={"label": "Pixel code", "shrink": 0.8})
+    da.plot(ax=ax, cmap="turbo", add_colorbar=True, cbar_kwargs={"label": "Pixel code", "shrink": 0.8})
     ax.set_title(title, fontsize=11, fontweight="bold")
     ax.set_xlabel("Longitude (°)")
     ax.set_ylabel("Latitude (°)")
@@ -152,10 +169,56 @@ def _plot_and_save(raw_da, event_id: str, title: str, output_path: Path) -> None
         edgecolor="gray",
     )
     ax_leg.axis("off")
-
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved: {output_path.relative_to(_REPO_ROOT)}")
+
+
+def _plot_classified(da, title: str, output_path: Path, cmap: str = "Blues") -> None:
+    """Render a classified flood raster (binary 0/1 or flood fraction 0–1)."""
+    fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
+    vmin, vmax = 0.0, float(da.max())
+    da.plot(
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=max(vmax, 0.01),
+        add_colorbar=True,
+        cbar_kwargs={"label": "Flood", "shrink": 0.8},
+    )
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_xlabel("Longitude (°)")
+    ax.set_ylabel("Latitude (°)")
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {output_path.relative_to(_REPO_ROOT)}")
+
+
+def _run_harmonise(ds, event_id: str, event_date: date, output_dir: Path, png_basename: str) -> None:
+    """Harmonise a dataset and save both GeoTIFF and PNG."""
+    from atlantis.harmoniser import Harmoniser
+
+    harm_dir = output_dir / "harmonised"
+    harm_dir.mkdir(parents=True, exist_ok=True)
+
+    h = Harmoniser()
+    ds_harm = h.harmonise(ds, source_id="viirs")
+    flood = ds_harm["flood_extent"]
+
+    # Save GeoTIFF
+    date_token = event_date.strftime("%Y%m%d")
+    tif_path = harm_dir / f"{event_id}_{date_token}_viirs_harmonised.tif"
+    flood.rio.to_raster(str(tif_path), dtype="float32", compress="LZW", nodata=float("nan"))
+    print(f"\n  Harmonised GeoTIFF: {tif_path.relative_to(_REPO_ROOT)}")
+
+    # Stats + PNG
+    print(f"  Resolution: 1 arcmin — shape={flood.shape}, dtype={flood.dtype}")
+    _pixel_stats_classified(flood.values, name="flood fraction")
+    _plot_classified(
+        flood,
+        title=f"{event_id}: VIIRS harmonised (1 arcmin flood fraction)",
+        output_path=SCRIPTS_DIR / f"{png_basename}.png",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +231,10 @@ def demo_arbitrary_event(
     bbox: tuple[float, float, float, float],
     start: date,
     end: date,
+    *,
+    stream: bool = False,
+    harmonise: bool = False,
+    flood_threshold: int = 160,
 ) -> None:
     """Fetch VIIRS for a fully user-defined region and date range."""
     print("\n" + "=" * 60)
@@ -184,9 +251,11 @@ def demo_arbitrary_event(
     print(f"  Event ID: {event.event_id}")
     print(f"  BBox:     west={bbox[0]}, south={bbox[1]}, east={bbox[2]}, north={bbox[3]}")
     print(f"  Dates:    {event.start_date} → {event.end_date}")
+    print(f"  Stream:   {'yes' if stream else 'no  (download to raw/)'}")
+    print(f"  Harmonise:{'yes' if harmonise else 'no'}")
     print(f"  Output:   {output_dir.relative_to(_REPO_ROOT)}")
 
-    fetcher = VIIRSFetcher()
+    fetcher = VIIRSFetcher(classify=True, stream=stream, flood_min_code=flood_threshold)
 
     # Search first so we can report what's available
     search_results = fetcher.search(event)
@@ -207,16 +276,30 @@ def demo_arbitrary_event(
 
     # Load and visualise the first result
     ds = fetcher.to_dataset(fetch_results[0])
-    raw_da = ds["raw"]
-    print(f"  Shape: {raw_da.shape}  dtype: {raw_da.dtype}  range: [{int(raw_da.min())}, {int(raw_da.max())}]")
-    _pixel_stats(raw_da.values)
 
-    _plot_and_save(
-        raw_da,
-        event_id=event.event_id,
-        title=f"{event.event_id}: VIIRS raw composite {event.start_date} (375 m)",
-        output_path=SCRIPTS_DIR / "viirs_arbitrary_event.png",
-    )
+    if "flood_extent" in ds:
+        da = ds["flood_extent"]
+        print(f"\n  Classified flood mask: shape={da.shape}, dtype={da.dtype}")
+        _pixel_stats_classified(da.values, name="flood_extent")
+        _plot_classified(
+            da,
+            title=f"{event.event_id}: VIIRS flood extent {event.start_date} (375 m)",
+            output_path=SCRIPTS_DIR / "viirs_arbitrary_event.png",
+        )
+    else:
+        # Raw-mode: keep the original plot with pixel-code legend
+        raw_da = ds["raw"]
+        print(f"\n  Raw data: shape={raw_da.shape}, dtype={raw_da.dtype}")
+        _pixel_stats_raw(raw_da.values)
+        _plot_raw(
+            raw_da,
+            title=f"{event.event_id}: VIIRS raw composite {event.start_date} (375 m)",
+            output_path=SCRIPTS_DIR / "viirs_arbitrary_event.png",
+        )
+
+    # ── Harmonise ─────────────────────────────────────────────────────────
+    if harmonise:
+        _run_harmonise(ds, event.event_id, event.start_date, output_dir, "viirs_arbitrary_harmonised")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -272,7 +355,15 @@ def _pick_random_ks_case() -> str:
     return case
 
 
-def demo_kurosiwo_event(ks_case: str | None, days_before: int, days_after: int) -> None:
+def demo_kurosiwo_event(
+    ks_case: str | None,
+    days_before: int,
+    days_after: int,
+    *,
+    stream: bool = False,
+    harmonise: bool = False,
+    flood_threshold: int = 160,
+) -> None:
     """Fetch VIIRS for a KuroSiwo event (random or specified)."""
     print("\n" + "=" * 60)
     print("KuroSiwo event")
@@ -282,6 +373,8 @@ def demo_kurosiwo_event(ks_case: str | None, days_before: int, days_after: int) 
         ks_case = _pick_random_ks_case()
     else:
         print(f"  Using specified case: {ks_case}")
+    print(f"  Stream:   {'yes' if stream else 'no  (download to raw/)'}")
+    print(f"  Harmonise:{'yes' if harmonise else 'no'}")
 
     events = _resolve_ks_events(ks_case, days_before, days_after)
     if not events:
@@ -295,7 +388,7 @@ def demo_kurosiwo_event(ks_case: str | None, days_before: int, days_after: int) 
     print(f"  Dates:    {event.start_date} → {event.end_date}  (±{days_before}/{days_after} days)")
     print(f"  Output:   {output_dir.relative_to(_REPO_ROOT)}")
 
-    fetcher = VIIRSFetcher()
+    fetcher = VIIRSFetcher(classify=True, stream=stream, flood_min_code=flood_threshold)
 
     search_results = fetcher.search(event)
     print(f"  Found {len(search_results)} VIIRS tile(s) in the NOAA S3 archive")
@@ -314,17 +407,30 @@ def demo_kurosiwo_event(ks_case: str | None, days_before: int, days_after: int) 
             print(f"    {path.relative_to(_REPO_ROOT)}")
 
     ds = fetcher.to_dataset(fetch_results[0])
-    raw_da = ds["raw"]
-    print(f"  Shape: {raw_da.shape}  dtype: {raw_da.dtype}  range: [{int(raw_da.min())}, {int(raw_da.max())}]")
-    _pixel_stats(raw_da.values)
 
     date_label = event.start_date.isoformat()
-    _plot_and_save(
-        raw_da,
-        event_id=event.event_id,
-        title=f"{event.event_id}: VIIRS raw composite {date_label} (375 m)",
-        output_path=SCRIPTS_DIR / "viirs_kurosiwo_event.png",
-    )
+    if "flood_extent" in ds:
+        da = ds["flood_extent"]
+        print(f"\n  Classified flood mask: shape={da.shape}, dtype={da.dtype}")
+        _pixel_stats_classified(da.values, name="flood_extent")
+        _plot_classified(
+            da,
+            title=f"{event.event_id}: VIIRS flood extent {date_label} (375 m)",
+            output_path=SCRIPTS_DIR / "viirs_kurosiwo_event.png",
+        )
+    else:
+        raw_da = ds["raw"]
+        print(f"\n  Raw data: shape={raw_da.shape}, dtype={raw_da.dtype}")
+        _pixel_stats_raw(raw_da.values)
+        _plot_raw(
+            raw_da,
+            title=f"{event.event_id}: VIIRS raw composite {date_label} (375 m)",
+            output_path=SCRIPTS_DIR / "viirs_kurosiwo_event.png",
+        )
+
+    # ── Harmonise ─────────────────────────────────────────────────────────
+    if harmonise:
+        _run_harmonise(ds, event.event_id, event.start_date, output_dir, "viirs_kurosiwo_harmonised")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -394,6 +500,19 @@ def _parse_args() -> argparse.Namespace:
         "--days-after", type=int, default=0, help="Days after the KuroSiwo flood date to include (default: 0)"
     )
 
+    # ── Pipeline flags (both modes) ───────────────────────────────────────────
+    pipe = parser.add_argument_group("Pipeline flags (both modes)")
+    pipe.add_argument("--stream", action="store_true", help="Stream tiles via /vsicurl/ instead of downloading")
+    pipe.add_argument("--harmonise", action="store_true", help="Resample output to 1 arcmin after fetching")
+    pipe.add_argument(
+        "--flood-threshold",
+        type=int,
+        default=160,
+        metavar="101..200",
+        help="Minimum VIIRS pixel code for flood (default: 160, ≥60%% water fraction). "
+        "101=most inclusive, 200=most conservative.",
+    )
+
     return parser.parse_args()
 
 
@@ -406,12 +525,18 @@ if __name__ == "__main__":
             bbox=_parse_bbox(args.bbox),
             start=date.fromisoformat(args.start_date),
             end=date.fromisoformat(args.end_date),
+            stream=args.stream,
+            harmonise=args.harmonise,
+            flood_threshold=args.flood_threshold,
         )
     else:
         demo_kurosiwo_event(
             ks_case=args.ks_case,
             days_before=args.days_before,
             days_after=args.days_after,
+            stream=args.stream,
+            harmonise=args.harmonise,
+            flood_threshold=args.flood_threshold,
         )
 
     print("\nDone.")

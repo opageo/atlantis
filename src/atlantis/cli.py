@@ -65,6 +65,20 @@ def fetch(
         help="Classify VIIRS pixels into flood-extent, quality-mask, and permanent-water"
         " layers instead of writing raw data.",
     ),
+    stream: bool = typer.Option(
+        False,
+        "--stream",
+        help="Stream remote tiles via GDAL /vsicurl/ without downloading to disk"
+        " (saves storage, requires network during processing).",
+    ),
+    flood_threshold: int = typer.Option(
+        160,
+        "--flood-threshold",
+        min=101,
+        max=200,
+        help="Minimum VIIRS pixel code for flood classification (101–200). "
+        "Default: 160 (≥60% water fraction). 101=all flood, 200=most conservative.",
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -78,6 +92,8 @@ def fetch(
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
         classify: If True, write flood-extent/quality-mask/permanent-water layers instead of raw data.
+        stream: If True, stream remote tiles without downloading to disk.
+        flood_threshold: Minimum VIIRS pixel code for flood (101–200, default 160).
     """
     config = get_config()
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
@@ -110,7 +126,13 @@ def fetch(
             console.print(f"\n[cyan]Fetching from {src}...[/cyan]")
             fetcher_kwargs = {}
             if src == "viirs":
-                fetcher_kwargs = {"backend": viirs_backend, "data_format": viirs_format, "classify": classify}
+                fetcher_kwargs = {
+                    "backend": viirs_backend,
+                    "data_format": viirs_format,
+                    "classify": classify,
+                    "stream": stream,
+                    "flood_min_code": flood_threshold,
+                }
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
                 console.print(
@@ -178,6 +200,18 @@ def fetch_kurosiwo_viirs(
         help="Classify VIIRS pixels into flood-extent, quality-mask, and permanent-water"
         " layers instead of writing raw data.",
     ),
+    stream: bool = typer.Option(
+        False,
+        "--stream",
+        help="Stream remote tiles via GDAL /vsicurl/ without downloading to disk.",
+    ),
+    flood_threshold: int = typer.Option(
+        160,
+        "--flood-threshold",
+        min=101,
+        max=200,
+        help="Minimum VIIRS pixel code for flood classification (101–200). Default: 160 (≥60% water fraction).",
+    ),
 ) -> None:
     """Fetch VIIRS data for KuroSiwo cases.
 
@@ -193,6 +227,8 @@ def fetch_kurosiwo_viirs(
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
         classify: If True, write flood-extent/quality-mask/permanent-water layers instead of raw data.
+        stream: If True, stream remote tiles without downloading to disk.
+        flood_threshold: Minimum VIIRS pixel code for flood (101–200, default 160).
     """
     config = get_config()
     output_root = output_dir or config.fetcher.cache_dir / "raw" / "kurosiwo"
@@ -220,7 +256,13 @@ def fetch_kurosiwo_viirs(
         metadata_source_label = f"derived from {catalogue_path}"
 
     fetcher_cls = get_fetcher("viirs")
-    fetcher = fetcher_cls(backend=viirs_backend, data_format=viirs_format, classify=classify)
+    fetcher = fetcher_cls(
+        backend=viirs_backend,
+        data_format=viirs_format,
+        classify=classify,
+        stream=stream,
+        flood_min_code=flood_threshold,
+    )
 
     console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_source_label}")
     console.print(f"[bold]Cases selected:[/bold] {len(events)}")
@@ -283,30 +325,132 @@ def build_kurosiwo_metadata(
 def harmonise(
     event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
     source: str = typer.Option(..., "--source", "-s", help="Data source ID"),
-    config_path: Path | None = typer.Option(None, "--config", "-c", help="Harmonisation config file (YAML)"),
+    input_dir: Path | None = typer.Option(None, "--input", "-i", help="Input directory with fetched data"),
     output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory for harmonised data"),
+    target_resolution: float | None = typer.Option(
+        None,
+        "--target-resolution",
+        help="Target spatial resolution in degrees (default: 0.01667 = 1 arcmin)",
+    ),
+    resampling: str | None = typer.Option(
+        None,
+        "--resampling",
+        help="Resampling method for flood_extent (default: average)",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be done without doing it"),
 ) -> None:
-    """Harmonise fetched data (reproject, tile, normalise).
+    """Harmonise fetched VIIRS data (reproject + normalise) to target resolution.
 
-    Args:
-        event: Flood event ID to harmonise.
-        source: Data source ID.
-        config_path: Optional path to harmonisation config.
-        output_dir: Directory to save harmonised data.
+    Reads processed GeoTIFFs from the fetcher output directory, reprojects
+    them to a uniform 1 arcmin grid, normalises flood extent values to 0-1,
+    and writes the harmonised GeoTIFFs.
     """
-    console.print(f"[bold]Harmonising data for event:[/bold] {event}")
-    console.print(f"[bold]Source:[/bold] {source}")
+    from atlantis.harmoniser import Harmoniser
 
-    if config_path:
-        console.print(f"[bold]Config:[/bold] {config_path}")
-        # TODO: Load config from YAML
+    config = get_config()
+    input_root = input_dir or config.fetcher.cache_dir / "raw" / event
+    output_root = output_dir or config.fetcher.cache_dir / "harmonised" / event
+
+    if not input_root.exists():
+        console.print(f"[yellow]Default input not found: {input_root}[/yellow]")
+
+    # ── Build harmoniser with optional overrides ──────────────────────
+    if target_resolution is not None or resampling is not None:
+        cfg = HarmoniseConfig()
+        if target_resolution is not None:
+            cfg.target_resolution = target_resolution
+            cfg.target_resolution_arcmin = round(target_resolution * 60, 4)
+        if resampling is not None:
+            cfg.resampling = resampling  # type: ignore[assignment]
+            if source == "viirs":
+                cfg.variable_resampling["flood_extent"] = resampling
+        harmoniser = Harmoniser(config=cfg)
     else:
-        harmonise_config = HarmoniseConfig()
-        console.print(
-            f"[bold]Using defaults:[/bold] CRS={harmonise_config.target_crs}, tile_size={harmonise_config.tile_size}"
-        )
+        harmoniser = Harmoniser()
 
-    console.print("[yellow]Harmonisation not yet implemented[/yellow]")
+    # ── Find processed files ──────────────────────────────────────────
+    import rioxarray as rxr
+
+    processed_dir: Path | None = None
+    tif_files: list[Path] = []
+
+    # Search strategy: try the standard layout first, then rglob broadly
+    for root in (input_root, Path.cwd() / "scripts" / "data", Path.cwd()):
+        if not root.exists():
+            continue
+        # Try root/<source>/processed/ first
+        candidate = root / source / "processed"
+        if candidate.exists():
+            hits = sorted(candidate.glob(f"{event}_*_viirs_flood_extent.tif"))
+            if not hits:
+                hits = sorted(candidate.glob(f"{event}_*_viirs_raw.tif"))
+            if hits:
+                processed_dir, tif_files = candidate, hits
+                break
+        # Fallback: check root directly (files may be flat)
+        hits = sorted(root.glob(f"{event}_*_viirs_flood_extent.tif"))
+        if not hits:
+            hits = sorted(root.glob(f"{event}_*_viirs_raw.tif"))
+        if hits:
+            processed_dir, tif_files = root, hits
+            break
+
+        # KuroSiwo deep pattern: <root>/<case>/viirs/processed/<case>_<date>_*.tif
+        for vdir in sorted(root.rglob("viirs/processed/")):
+            hits = sorted(vdir.glob(f"{event}_*_viirs_flood_extent.tif"))
+            if not hits:
+                hits = sorted(vdir.glob(f"{event}_*_viirs_raw.tif"))
+            if hits:
+                processed_dir, tif_files = vdir, hits
+                break
+        if tif_files:
+            break
+
+    if not tif_files:
+        console.print(f"[red]No processed VIIRS files found matching '{event}'[/red]")
+        console.print("  Tried: cache dir, scripts/data/, and repository root.")
+        console.print("  Run 'atlantis fetch' first, or use --input to point to existing data.")
+        raise typer.Exit(code=1)
+
+    output_path = output_root / source / "harmonised"
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    resolution_str = f"{harmoniser.config.target_resolution_arcmin} arcmin"
+    console.print(f"[bold]Harmonising {len(tif_files)} file(s)[/bold]")
+    console.print(f"[bold]Input:[/bold] {processed_dir}")
+    console.print(f"[bold]Output:[/bold] {output_path}")
+    console.print(f"[bold]Target resolution:[/bold] {resolution_str} ({harmoniser.config.target_resolution:.8f}°)")
+    console.print(f"[bold]Resampling:[/bold] {harmoniser.config.resampling}")
+
+    if dry_run:
+        for tf in tif_files:
+            stem = tf.stem.replace("flood_extent", "harmonised").replace("raw", "harmonised")
+            out = output_path / f"{stem}.tif"
+            console.print(f"  Would process: {tf.name} → {out.name}")
+        return
+
+    harmonised_count = 0
+    for tif_path in tif_files:
+        # Determine if this is flood_extent, raw, or quality_mask
+        input_var = "flood_extent" if "flood_extent" in tif_path.name else "raw"
+        stem = tif_path.stem.replace("flood_extent", "harmonised").replace("raw", "harmonised")
+        out_path = output_path / f"{stem}.tif"
+
+        console.print(f"  Processing: {tif_path.name} ...", end="")
+        ds = rxr.open_rasterio(tif_path).squeeze(drop=True).to_dataset(name=input_var)
+        ds_harmonised = harmoniser.harmonise(ds, source_id=source, flood_variable=input_var)
+
+        flood_var = input_var if input_var in ds_harmonised.data_vars else "flood_extent"
+        ds_harmonised[flood_var].rio.to_raster(
+            str(out_path),
+            dtype="float32",
+            compress="LZW",
+            nodata=float("nan"),
+        )
+        harmonised_count += 1
+        console.print(f" done → {out_path.name}")
+
+    console.print(f"\n[bold]Wrote {harmonised_count} harmonised file(s) to {output_path}[/bold]")
 
 
 @cli.command()

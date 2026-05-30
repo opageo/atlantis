@@ -30,7 +30,13 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
 
     class DummyFetcher:
         def __init__(self, **kwargs):
-            assert kwargs == {"backend": "noaa_s3", "data_format": "tif"}
+            assert kwargs == {
+                "backend": "noaa_s3",
+                "data_format": "tif",
+                "classify": False,
+                "stream": False,
+                "flood_min_code": 160,
+            }
 
         def fetch(self, event, output_dir):
             assert event.event_id == "Yangtze_2020"
@@ -87,7 +93,13 @@ def test_fetch_kurosiwo_viirs_command(monkeypatch, tmp_path):
 
     class DummyFetcher:
         def __init__(self, **kwargs):
-            assert kwargs == {"backend": "noaa_s3", "data_format": "tif"}
+            assert kwargs == {
+                "backend": "noaa_s3",
+                "data_format": "tif",
+                "classify": False,
+                "stream": False,
+                "flood_min_code": 160,
+            }
 
         def fetch(self, event, output_dir):
             assert isinstance(event, FloodEvent)
@@ -147,7 +159,13 @@ def test_fetch_kurosiwo_viirs_command_from_catalogue(monkeypatch, tmp_path):
 
     class DummyFetcher:
         def __init__(self, **kwargs):
-            assert kwargs == {"backend": "noaa_s3", "data_format": "tif"}
+            assert kwargs == {
+                "backend": "noaa_s3",
+                "data_format": "tif",
+                "classify": False,
+                "stream": False,
+                "flood_min_code": 160,
+            }
 
         def fetch(self, event, output_dir):
             assert isinstance(event, FloodEvent)
@@ -204,7 +222,13 @@ def test_fetch_command_supports_legacy_viirs_backend(monkeypatch, tmp_path):
 
     class DummyFetcher:
         def __init__(self, **kwargs):
-            assert kwargs == {"backend": "gmu_legacy", "data_format": "tif"}
+            assert kwargs == {
+                "backend": "gmu_legacy",
+                "data_format": "tif",
+                "classify": False,
+                "stream": False,
+                "flood_min_code": 160,
+            }
 
         def fetch(self, event, output_dir):
             return [
@@ -289,9 +313,44 @@ def test_list_sources_command():
     assert "rfm" in result.stdout
 
 
-def test_harmonise_command():
+def test_harmonise_command(tmp_path):
     """Test harmonise command with required arguments."""
-    result = runner.invoke(cli, ["harmonise", "--event", "Valencia_2024", "--source", "gfm"])
-    assert result.exit_code == 0
-    assert "Harmonising data for event: Valencia_2024" in result.stdout
-    assert "Source: gfm" in result.stdout
+    import numpy as np
+    import rioxarray as rxr  # noqa: F401
+    import xarray as xr
+    from rasterio.transform import from_bounds
+
+    input_dir = tmp_path / "inputs"
+    input_dir.mkdir(parents=True)
+    output_dir = tmp_path / "harmonised"
+
+    # Small synthetic flood GeoTIFF
+    ds = xr.Dataset(
+        {"flood_extent": xr.DataArray(np.zeros((10, 10), dtype=np.uint8), dims=["y", "x"])},
+        coords={
+            "x": np.linspace(-0.5, 0.5, 10),
+            "y": np.linspace(40.5, 39.5, 10),
+        },
+    )
+    ds.rio.write_crs("EPSG:4326", inplace=True)
+    ds.rio.write_transform(from_bounds(-0.5, 39.5, 0.5, 40.5, 10, 10), inplace=True)
+    tif_path = input_dir / "Valencia_2024_20241029_viirs_flood_extent.tif"
+    ds["flood_extent"].rio.to_raster(str(tif_path), dtype="uint8", compress="LZW", nodata=0)
+
+    result = runner.invoke(
+        cli,
+        [
+            "harmonise",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "viirs",
+            "--input",
+            str(input_dir),
+            "--output",
+            str(output_dir),
+        ],
+    )
+    assert result.exit_code == 0, f"CLI failed: {result.stdout}"
+    assert "Harmonising" in result.stdout
+    assert "1 file(s)" in result.stdout

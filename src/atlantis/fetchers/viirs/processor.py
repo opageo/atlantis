@@ -4,10 +4,12 @@ This module encapsulates the raster operations (mosaic, clip, classify, write)
 that were previously mixed into the VIIRSFetcher.fetch() method.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 import numpy as np
 import rasterio
@@ -22,12 +24,32 @@ if TYPE_CHECKING:
     from rasterio.io import DatasetReader
 
 
-FLOOD_MIN_CODE = 160
+# Type alias: a tile location can be a local file path or a /vsicurl/ URL
+TilePath = Union[Path, str]
+
+FLOOD_MIN_CODE = 160  #: conservative default: ≥60% water fraction
 FILL_CODES = {0, 1}
 CLOUD_CODES = {30}
 PERMANENT_WATER_CODES = {17}
 SEASONAL_WATER_CODES = {20}
 OPEN_WATER_CODES = {99}
+
+_VSICURL_PREFIX = "/vsicurl/"
+
+
+def _resolve_tile_path(item: TilePath) -> str:
+    """Convert a tile location to a rasterio-compatible path string.
+
+    - If it's a remote URL (https://), prepend ``/vsicurl/``.
+    - If it's a local ``Path``, return its str form.
+    """
+    if isinstance(item, str):
+        if item.startswith(("https://", "http://")):
+            if not item.startswith(_VSICURL_PREFIX):
+                return _VSICURL_PREFIX + item
+            return item
+        return item
+    return str(item)
 
 
 @dataclass(frozen=True)
@@ -72,12 +94,20 @@ class ViirsRasterProcessor:
     3. Classify pixels (flood, cloud, permanent water, etc.)
     4. Write output GeoTIFFs
 
+    Supports both local file paths and ``/vsicurl/`` remote URLs.
+
     Attributes:
         area_geometry: The geometry to clip results to.
         crs: Target CRS (default: EPSG:4326).
     """
 
-    def __init__(self, area_geometry: BaseGeometry, crs: str = "EPSG:4326", classify: bool = False) -> None:
+    def __init__(
+        self,
+        area_geometry: BaseGeometry,
+        crs: str = "EPSG:4326",
+        classify: bool = False,
+        flood_min_code: int = FLOOD_MIN_CODE,
+    ) -> None:
         """Initialize the processor.
 
         Args:
@@ -85,18 +115,24 @@ class ViirsRasterProcessor:
             crs: Target CRS for outputs.
             classify: Whether to classify pixels into discrete flood layers.
                 If False (default), outputs raw data only.
+            flood_min_code: Lower bound for the flood class (default: 160,
+                ≥60% water fraction).  Values 101–159 are marginal water
+                below the conservative threshold.  Set to 101 for the most
+                inclusive flood mask, or 180 for the most conservative.
         """
         self.area_geometry = area_geometry
         self.crs = crs
         self.classify = classify
+        self.flood_min_code = flood_min_code
 
     def process_tiles(
-        self, tile_paths: list[Path], event_id: str, date_token: str, output_dir: Path
+        self, tile_paths: list[TilePath], event_id: str, date_token: str, output_dir: Path
     ) -> tuple[OutputPaths, TileMetadata] | None:
         """Process a group of tiles for a single date.
 
         Args:
-            tile_paths: List of paths to source TIFF tiles.
+            tile_paths: List of source TIFF locations (local ``Path`` or
+                ``/vsicurl/``-prefixed remote URL strings).
             event_id: The flood event identifier.
             date_token: Date string token for filenames.
             output_dir: Directory to write output files.
@@ -132,18 +168,21 @@ class ViirsRasterProcessor:
 
         return paths, metadata
 
-    def _mosaic_and_clip(self, tile_paths: list[Path]) -> ProcessedTile | None:
+    def _mosaic_and_clip(self, tile_paths: list[TilePath]) -> ProcessedTile | None:
         """Mosaic tiles and clip to the area of interest.
 
+        Supports both local ``Path`` objects and ``/vsicurl/`` remote URLs.
+
         Args:
-            tile_paths: List of paths to source TIFF tiles.
+            tile_paths: List of source TIFF locations.
 
         Returns:
             ProcessedTile with classified arrays, or None if processing fails.
         """
         srcs: list[DatasetReader] = []
         try:
-            srcs = [rasterio.open(tile_path) for tile_path in tile_paths]
+            resolved = [_resolve_tile_path(p) for p in tile_paths]
+            srcs = [rasterio.open(rp) for rp in resolved]
             mosaic, transform = merge(srcs)
             meta = srcs[0].meta.copy()
         finally:
@@ -194,7 +233,7 @@ class ViirsRasterProcessor:
         fill = np.isin(data, list(FILL_CODES))
         cloud = np.isin(data, list(CLOUD_CODES))
         permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
-        flood = data >= FLOOD_MIN_CODE
+        flood = data >= self.flood_min_code
 
         flood_extent = np.zeros_like(data, dtype=np.uint8)
         flood_extent[flood] = 1

@@ -90,6 +90,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
         backend: str | None = None,
         data_format: str | None = None,
         classify: bool = False,
+        stream: bool = False,
+        flood_min_code: int = 160,
     ) -> None:
         """Initialize the VIIRS fetcher.
 
@@ -99,6 +101,11 @@ class VIIRSFetcher(AbstractFloodFetcher):
             backend: VIIRS backend selection.
             data_format: VIIRS data format selection.
             classify: Whether to classify pixels into discrete layers.
+            stream: If True, stream remote tiles via GDAL ``/vsicurl/``
+                instead of downloading them to disk. Saves local storage
+                at the cost of network dependency during processing.
+            flood_min_code: Lower bound for the flood class (default: 160,
+                ≥60% water fraction).  Valid range: 101–200.
         """
         config = get_config()
 
@@ -108,6 +115,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
         self.base_url = self._resolve_base_url(base_url, config)
         self.timeout = timeout or config.fetcher.timeout
         self.classify = classify
+        self.stream = stream
+        self.flood_min_code = flood_min_code
 
     def _resolve_base_url(self, override: str | None, config) -> str:
         """Determine the base URL based on backend and configuration."""
@@ -236,24 +245,33 @@ class VIIRSFetcher(AbstractFloodFetcher):
             grouped_results[result.properties["date"]].append(result)
 
         area_geom = box(*event.bbox)
-        processor = ViirsRasterProcessor(area_geom, classify=self.classify)
+        processor = ViirsRasterProcessor(area_geom, classify=self.classify, flood_min_code=self.flood_min_code)
 
         fetch_results: list[FetchResult] = []
 
         for date_token, dated_results in sorted(grouped_results.items()):
-            # Download and materialize tiles
-            tile_paths: list[Path] = []
-            for result in sorted(dated_results, key=lambda item: item.properties["aoi_id"]):
-                filename = result.properties["filename"]
-                download_path = raw_dir / filename
-                download_file(result.url, output_path=download_path)
-                tile_paths.append(self._materialize_tile(download_path, raw_dir))
+            if self.stream:
+                # ── Streaming mode: pass remote URLs directly to processor ──
+                tile_sources: list[Path | str] = [
+                    result.url for result in sorted(dated_results, key=lambda item: item.properties["aoi_id"])
+                ]
+                tile_paths_local: list[Path] = []
+                if not tile_sources:
+                    continue
+                process_result = processor.process_tiles(tile_sources, event.event_id, date_token, processed_dir)
+            else:
+                # ── Download mode (default): download tiles, then process ──
+                tile_paths_local = []
+                for result in sorted(dated_results, key=lambda item: item.properties["aoi_id"]):
+                    filename = result.properties["filename"]
+                    download_path = raw_dir / filename
+                    download_file(result.url, output_path=download_path)
+                    tile_paths_local.append(self._materialize_tile(download_path, raw_dir))
 
-            if not tile_paths:
-                continue
+                if not tile_paths_local:
+                    continue
+                process_result = processor.process_tiles(tile_paths_local, event.event_id, date_token, processed_dir)
 
-            # Process tiles through the raster processor
-            process_result = processor.process_tiles(tile_paths, event.event_id, date_token, processed_dir)
             if process_result is None:
                 continue
 

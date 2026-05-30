@@ -13,8 +13,11 @@ class HarmoniseConfig(BaseSettings):
     Attributes:
         target_crs: Target coordinate reference system.
         target_resolution: Target spatial resolution in degrees.
+        target_resolution_arcmin: Target resolution expressed in arc-minutes (convenience).
         tile_size: Size of square tiles in pixels for ML models.
-        resampling: Resampling method (average, bilinear, nearest).
+        resampling: Default resampling method (average, bilinear, nearest).
+        variable_resampling: Per-variable resampling overrides. Defaults:
+            flood_extent->average, quality_mask->mode, permanent_water->mode, raw->nearest.
         normalise_range: Tuple of (min, max) for value normalisation.
     """
 
@@ -25,9 +28,16 @@ class HarmoniseConfig(BaseSettings):
     )
 
     target_crs: str = "EPSG:4326"
-    target_resolution: float = 0.0002777777777777778  # ~1 arc-second
+    target_resolution: float = 0.016666666666666666  # ~1 arc-minute
+    target_resolution_arcmin: float = 1.0
     tile_size: int = 224
     resampling: Literal["average", "bilinear", "nearest", "cubic"] = "average"
+    variable_resampling: dict[str, Literal["average", "bilinear", "nearest", "cubic", "mode"]] = {
+        "flood_extent": "average",
+        "quality_mask": "mode",
+        "permanent_water": "mode",
+        "raw": "nearest",
+    }
     normalise_range: tuple[float, float] = (0.0, 1.0)
 
 

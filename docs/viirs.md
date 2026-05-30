@@ -50,7 +50,7 @@ uv run atlantis fetch \
 Atlantis will:
 
 1. **Search** VIIRS AOI tiles intersecting your bbox
-2. **Download** raw GeoTIFFs from the NOAA JPSS S3 bucket
+2. **Download** raw GeoTIFFs from the NOAA JPSS S3 bucket (or stream them — see below)
 3. **Mosaic** multiple tiles if the bbox spans more than one VIIRS tile
 4. **Clip** the mosaic to your exact region
 5. **Write** a single raw GeoTIFF:
@@ -73,6 +73,96 @@ This produces:
 - `*_flood_extent.tif` — binary flood mask (1 = flooded pixel)
 - `*_quality_mask.tif` — 0 = cloud/fill, 1 = valid observation
 - `*_permanent_water.tif` — permanent water bodies mask
+
+#### Flood threshold
+
+The ATBD GeoTIFF flood range is **101–200**, where the code encodes water
+fraction (101 = 1 %, 200 = 100 %). By default Atlantis applies a conservative
+threshold of **160** (≥60 % water fraction) to avoid false positives from
+pixels with marginal water contamination.
+
+| Flag                    | Range          | Effect                             |
+| ----------------------- | -------------- | ---------------------------------- |
+| `--flood-threshold 101` | Most inclusive | Captures all VIIRS flood pixels    |
+| `--flood-threshold 160` | **Default**    | Conservative: ≥60 % water fraction |
+| `--flood-threshold 180` | Most stringent | Only high-confidence flood (≥80 %) |
+
+```bash
+# Conservative (default)
+uv run atlantis fetch ... --classify
+
+# Catch marginal flooding — lower threshold
+uv run atlantis fetch ... --classify --flood-threshold 101
+
+# Only highest-confidence pixels
+uv run atlantis fetch ... --classify --flood-threshold 180
+```
+
+Pixels **not** counted as flood at any threshold:
+1, 17, 20, 30, 99 — fill, permanent/seasonal/open water, and cloud are always excluded.
+
+The same flag works on `fetch-kurosiwo-viirs` and through the Python API
+(`VIIRSFetcher(flood_min_code=101)`).
+
+### Stream tiles (no download)
+
+VIIRS tiles (~20 MB each) can be streamed directly from NOAA S3 via GDAL's
+`/vsicurl/` driver instead of downloading them to disk. This is a big win
+when storage is tight or you're processing many events, because no `raw/`
+directory is ever created.
+
+```bash
+# Stream tiles: no local download, no raw/ cache
+uv run atlantis fetch \
+  --event Valencia_2024 \
+  --source viirs \
+  --bbox "-1.0 39.0 0.0 40.0" \
+  --start-date 2024-10-29 \
+  --end-date 2024-10-29 \
+  --classify \
+  --stream
+```
+
+| Mode      | Flag        | Disk per event (typical)  | Network dependency    |
+| --------- | ----------- | ------------------------- | --------------------- |
+| Download  | _(default)_ | ~50–200 MB raw tiles      | Only during fetch     |
+| Streaming | `--stream`  | 0 (only processed output) | During processing too |
+
+> **Note:** `--stream` works with the `noaa_s3` backend only (the default).
+> Streaming is not yet supported for `gmu_legacy`.
+
+### Resample to a uniform grid (harmonise)
+
+After fetching, resample the VIIRS outputs to a common target resolution
+(1 arcmin / 0.0167° by default) so they can be combined across sources:
+
+```bash
+uv run atlantis harmonise \
+  --event Valencia_2024 \
+  --source viirs
+```
+
+This runs the pipeline: **reproject → normalise → quality masks**. The
+output is a single `float32` GeoTIFF with flood-fraction values in `[0, 1]`
+at 1 arcmin resolution, plus a quality mask and a permanent-water mask.
+
+```bash
+# Custom target resolution (e.g. 5 arcmin)
+uv run atlantis harmonise \
+  --event Valencia_2024 \
+  --source viirs \
+  --target-resolution 0.08333
+
+# Dry-run to see what would be processed
+uv run atlantis harmonise \
+  --event Valencia_2024 \
+  --source viirs \
+  --dry-run
+```
+
+> **Tip:** The harmoniser uses `average` resampling for flood extent (produces
+> a flood‑fraction) and `mode` for binary masks (quality, permanent water).
+> You can override these via `ATLANTIS_VARIABLE_RESAMPLING` in `.env`.
 
 ### Use the KuroSiwo catalogue
 
@@ -113,6 +203,16 @@ uv run atlantis fetch-kurosiwo-viirs \
   --classify
 ```
 
+Add `--stream` to skip downloading raw tiles:
+
+```bash
+uv run atlantis fetch-kurosiwo-viirs \
+  --catalogue assets/ks_catalogue.gpkg \
+  --case KuroSiwo_470 \
+  --classify \
+  --stream
+```
+
 Fetch all events (optionally limited):
 
 ```bash
@@ -133,13 +233,15 @@ uv run atlantis fetch-kurosiwo-viirs \
 <output>/
   <case_id>/
     viirs/
-      raw/          # downloaded source tiles from NOAA S3
+      raw/          # downloaded source tiles from NOAA S3  (absent with --stream)
       processed/    # clipped, mosaicked GeoTIFF outputs
         <case_id>_<YYYYMMDD>_viirs_raw.tif
         # with --classify:
         <case_id>_<YYYYMMDD>_viirs_flood_extent.tif
         <case_id>_<YYYYMMDD>_viirs_quality_mask.tif
         <case_id>_<YYYYMMDD>_viirs_permanent_water.tif
+      harmonised/   # with atlantis harmonise: 1-arcmin resampled tifs
+        <case_id>_<YYYYMMDD>_viirs_harmonised.tif
 ```
 
 ## Backends
@@ -209,6 +311,19 @@ events = build_kurosiwo_flood_events(
 )
 ks_results = fetcher.fetch(events[0], Path("data/viirs/KuroSiwo_470"))
 ks_ds = fetcher.to_dataset(ks_results[0])
+
+# ── Streaming mode (no local tiles) ──────────────────────────────────────────
+fetcher_stream = VIIRSFetcher(stream=True, classify=True)
+stream_results = fetcher_stream.fetch(event, Path("data/viirs/Valencia_2024"))
+stream_ds = fetcher_stream.to_dataset(stream_results[0])
+
+# ── Harmonise (resample + normalise) ─────────────────────────────────────────
+from atlantis.harmoniser import Harmoniser
+
+harmoniser = Harmoniser()  # defaults to 1 arcmin target
+ds_harm = harmoniser.harmonise(ds_c, source_id="viirs")
+print(ds_harm["flood_extent"].dtype, ds_harm["flood_extent"].shape)
+# float32, ~6% of original pixels
 ```
 
 ### Display a fetched raster
@@ -482,6 +597,10 @@ Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 ## Tips & Tricks
 
 **Re-run without re-downloading**: Raw tiles are cached in the `raw/` sub-directory; only processing is repeated on subsequent runs.
+
+**Skip downloads entirely**: Use `--stream` to read tiles directly from NOAA S3 via `/vsicurl/`. No `raw/` cache is created — ideal for one-shot analyses or when disk is scarce.
+
+**Resample to a common grid**: `atlantis harmonise` converts VIIRS 375 m rasters to 1 arcmin (~1.85 km) flood-fraction TIFFs. Run it after fetch to produce data ready for ML or cross-source comparison.
 
 **Multiple dates**: The date range is inclusive—`--start-date 2024-10-27 --end-date 2024-10-31` fetches five daily composites.
 
