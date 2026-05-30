@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 
 FLOOD_MIN_CODE = 160
+FILL_CODES = {0, 1}
 CLOUD_CODES = {30}
 PERMANENT_WATER_CODES = {17}
 SEASONAL_WATER_CODES = {20}
@@ -190,22 +191,26 @@ class ViirsRasterProcessor:
         Returns:
             ProcessedTile with classified arrays.
         """
+        fill = np.isin(data, list(FILL_CODES))
         cloud = np.isin(data, list(CLOUD_CODES))
         permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
-        seasonal_water = np.isin(data, list(SEASONAL_WATER_CODES))
-        open_water = np.isin(data, list(OPEN_WATER_CODES))
         flood = data >= FLOOD_MIN_CODE
 
         flood_extent = np.zeros_like(data, dtype=np.uint8)
         flood_extent[flood] = 1
 
+        # Quality mask: 1 = valid clear-sky observation, 0 = unusable (fill or cloud).
+        # Pre-existing water types (permanent/seasonal/open) are valid observations —
+        # exclude them via the permanent_water mask, not here.
         quality_mask = np.ones_like(data, dtype=np.uint8)
-        quality_mask[cloud | permanent_water | seasonal_water | open_water] = 0
+        quality_mask[fill | cloud] = 0
 
         permanent_water_mask = np.zeros_like(data, dtype=np.uint8)
         permanent_water_mask[permanent_water] = 1
 
-        cloud_fraction = float(cloud.sum() / cloud.size) if cloud.size else 0.0
+        # Cloud fraction over non-fill pixels only (fill pixels are not real observations).
+        valid = ~fill
+        cloud_fraction = float(cloud[valid].sum() / valid.sum()) if valid.sum() else 0.0
 
         return ProcessedTile(
             flood_extent=flood_extent,

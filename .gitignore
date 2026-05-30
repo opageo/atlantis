@@ -227,3 +227,6 @@ data/
 
 *.csv
 *.png
+*.pdf
+docs/*.txt
+docs/viirs_atbd.md

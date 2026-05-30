@@ -154,8 +154,15 @@ def test_fetch_and_to_dataset(tmp_path, monkeypatch):
     assert dataset["quality_mask"].dtype == np.uint8
     assert dataset["permanent_water"].dtype == np.uint8
     assert float(dataset["flood_extent"].sum()) > 0
+    # Cloud pixels (code 30) → quality=0; flood pixels (170) → quality=1
     assert int(dataset["quality_mask"].min()) == 0
+    assert int(dataset["quality_mask"].max()) == 1
     assert int(dataset["permanent_water"].max()) == 1
+    # Permanent water pixels (code 17) are valid observations → quality=1, not 0
+    perm_water_mask = dataset["permanent_water"].values.astype(bool)
+    assert (dataset["quality_mask"].values[perm_water_mask] == 1).all(), (
+        "permanent water pixels should have quality=1 (valid observation)"
+    )
 
 
 def test_search_same_results_across_backends(tmp_path, monkeypatch):
@@ -353,10 +360,11 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
     # Columns 10-19 tile 078 rows 5-9 = cloud (30 → flood_extent = 0)
     assert float(noaa_dataset["flood_extent"].isel(x=slice(10, 20), y=slice(5, 10)).sum()) == 0.0
 
-    # Quality mask: flood = valid, non-flood = invalid
-    assert int(noaa_dataset["quality_mask"].isel(x=slice(0, 10)).sum()) == 100  # all valid flood
-    assert int(noaa_dataset["quality_mask"].isel(x=slice(10, 20), y=slice(0, 5)).sum()) == 0  # perm water = invalid
-    assert int(noaa_dataset["quality_mask"].isel(x=slice(10, 20), y=slice(5, 10)).sum()) == 0  # cloud = invalid
+    # Quality mask: 1 = valid clear-sky observation, 0 = fill or cloud only.
+    # Permanent water (17) is a valid sensor observation → quality=1.
+    assert int(noaa_dataset["quality_mask"].isel(x=slice(0, 10)).sum()) == 100  # flood → valid
+    assert int(noaa_dataset["quality_mask"].isel(x=slice(10, 20), y=slice(0, 5)).sum()) == 50  # perm water → valid
+    assert int(noaa_dataset["quality_mask"].isel(x=slice(10, 20), y=slice(5, 10)).sum()) == 0  # cloud → invalid
 
     # Permanent water: right-half top rows only
     assert int(noaa_dataset["permanent_water"].isel(x=slice(0, 10)).sum()) == 0

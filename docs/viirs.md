@@ -2,21 +2,35 @@
 
 **Satellite-based flood mapping at 375 m resolution**
 
-Atlantis integrates VIIRS flood products from the JPSS (Joint Polar Satellite System) constellation—providing global flood detection derived from the Day-Night Band.
+Atlantis integrates VIIRS flood products from the JPSS (Joint Polar Satellite System) constellation—providing global flood detection from the VIIRS Flood Mapping (VFM) product ([NOAA ATBD v1.0, 2021](https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf)).
 
 ## What is VIIRS?
 
-VIIRS (Visible Infrared Imaging Radiometer Suite) instruments aboard Suomi-NPP and NOAA-20 satellites detect floods at **375 metre resolution**. The flood products encode integer pixel codes:
+VIIRS (Visible Infrared Imaging Radiometer Suite) instruments aboard Suomi-NPP
+and NOAA-20 satellites detect floods at **375 metre resolution** using four
+Imager bands: I1 (visible, 0.64 µm), I2 (near-IR, 0.865 µm), I3 (shortwave-IR,
+1.61 µm), and I5 (thermal IR, 11.45 µm). The flood products encode integer pixel
+codes:
 
-| Code | Meaning                                   |
-| ---- | ----------------------------------------- |
-| 0    | No data / fill                            |
-| 1    | Land (no water)                           |
-| 17   | Permanent water                           |
-| 20   | Seasonal water                            |
-| 30   | Cloud cover                               |
-| 99   | Open water                                |
-| ≥160 | **Flood water** (higher = more confident) |
+### Pixel encoding
+
+The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the [ATBD](https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf)'s internal netCDF scheme). Land-type classes are omitted — only water, cloud, and flood appear:
+
+| Code    | Meaning                                                                      |
+| ------- | ---------------------------------------------------------------------------- |
+| 1       | Fill / No data (nodata sentinel)                                             |
+| 17      | Permanent water                                                              |
+| 20      | Seasonal water                                                               |
+| 30      | Cloud cover                                                                  |
+| 99      | Open water                                                                   |
+| 101–200 | **Flood water** — water fraction % = `code − 100`                            |
+| ≥160    | **High-confidence flood** (≥60% water fraction — Atlantis default threshold) |
+
+> **Note:** The ATBD netCDF format uses different codes (e.g. 16=bare land,
+> 17=vegetation). The GeoTIFF distribution simplifies these — land pixels are
+> omitted, and codes 17/20/99 carry water-related meanings instead.
+> The full flood range is 101–200; Atlantis uses `FLOOD_MIN_CODE = 160`
+> in `processor.py` as a conservative threshold, which can be adjusted if needed.
 
 By default Atlantis writes the raw pixel values as-is. Pass `--classify` to derive three binary layers: flood extent, quality mask, and permanent water mask.
 
@@ -204,13 +218,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 viirs_codes = {
-    1:   ("Land",             "#8B4513"),
+    1:   ("Fill / No data",   "#000000"),
     17:  ("Permanent water",  "#1f77b4"),
     20:  ("Seasonal water",   "#17becf"),
     30:  ("Cloud",            "#cccccc"),
     99:  ("Open water",       "#4682B4"),
-    160: ("Flood (low)",      "#FFFF00"),
-    200: ("Flood (high)",     "#FF0000"),
+    130: ("Flood (30% frac)", "#ffeb3b"),
+    160: ("Flood (60% frac)", "#FF9800"),
+    200: ("Flood (100%)",     "#FF0000"),
 }
 
 fig, (ax, ax_leg) = plt.subplots(1, 2, figsize=(14, 7),
@@ -246,6 +261,200 @@ plt.show()
 │ • Filename matching │    │                      │
 └─────────────────────┘    └──────────────────────┘
 ```
+
+## Processing Pipeline
+
+When you run `atlantis fetch --source viirs`, the system executes a five-stage pipeline.
+Stages 3 (Mosaic) and 4 (Clip) are the core raster operations; they're implemented
+in `ViirsRasterProcessor._mosaic_and_clip()` inside `src/atlantis/fetchers/viirs/processor.py`.
+
+### End-to-end flow
+
+```mermaid
+flowchart TD
+    A["🗺️ User provides bbox<br/>& date range"] --> B
+    subgraph B["1. Search — VIIRSFetcher.search()"]
+        B1["Load AOI grid<br/>(viirs_aois.geojson)"]
+        B2["Find intersecting tiles<br/>via shapely intersects()"]
+        B3["Query backend for<br/>matching filenames"]
+        B1 --> B2 --> B3
+    end
+    B --> C
+    subgraph C["2. Download — VIIRSFetcher.fetch()"]
+        C1["Group search results<br/>by date token"]
+        C2["Download each tile<br/>into raw/ directory"]
+        C1 --> C2
+    end
+    C --> D
+    subgraph D["3. Mosaic — rasterio.merge.merge()"]
+        D1["Open all tiles as<br/>rasterio DatasetReader"]
+        D2["Stitch into single array<br/>with shared affine transform"]
+        D3["Handle overlaps:<br/>last-read pixel wins"]
+        D1 --> D2 --> D3
+    end
+    D --> E
+    subgraph E["4. Clip — rasterio.mask.mask()"]
+        E1["Write mosaic to<br/>in-memory GeoTIFF"]
+        E2["Rasterize bbox polygon<br/>against mosaic grid"]
+        E3["Extract pixels inside<br/>polygon; crop tight"]
+        E1 --> E2 --> E3
+    end
+    E --> F
+    subgraph F["5. Write — ViirsRasterProcessor._write_outputs()"]
+        F1["Save as compressed<br/>GeoTIFF (LZW, uint8)"]
+        F2["Optionally classify pixels<br/>into flood/quality/water masks"]
+        F1 --> F2
+    end
+```
+
+### Stage 3 — Mosaic (handling multiple tiles)
+
+VIIRS flood products are pre-tiled into ~10°×10° grid cells called **AOIs** (Areas of Interest).
+If your bounding box straddles a tile boundary, `search()` will return multiple tiles for the same date.
+These must be merged before clipping.
+
+#### How `rasterio.merge.merge()` works
+
+`merge()` takes a list of opened `DatasetReader` objects and produces:
+
+| Output      | Description                                                                       |
+| ----------- | --------------------------------------------------------------------------------- |
+| `mosaic`    | A 3D numpy array `(bands, rows, cols)` spanning the union extent of all inputs    |
+| `transform` | A single `Affine` mapping pixel coordinates to geographic coordinates (EPSG:4326) |
+
+Under the hood it:
+
+1. Computes the **union bounding box** — the smallest rectangle that contains every input tile
+2. Creates an **output grid** at the native resolution (375 m), big enough to hold the union
+3. Copies each input tile's pixels into the correct position within the output grid
+4. Where tiles overlap, the **last-read tile's pixels win** (rasterio's default `method='last'`)
+
+#### Overlap resolution
+
+VIIRS AOI tiles intentionally overlap by a small margin along their edges — this is the
+NOAA product design, not a bug. `merge()`'s default `method='last'` is appropriate here
+because all tiles are from the same sensor at the same resolution; there is no quality
+difference across the overlap zone. The pixels in the seam are identical regardless of
+which tile "wins."
+
+```
+   Tile GLB023                    Tile GLB024
+  ┌──────────────┐              ┌──────────────┐
+  │              │              │              │
+  │    ░░░░░░    │              │    ░░░░░░    │
+  │    ░░░░░░    │              │    ░░░░░░    │
+  │    ░░░░░░    │              │    ░░░░░░    │
+  └──────────────┘              └──────────────┘
+         │                            │
+         └────────── merge() ─────────┘
+                      │
+                      ▼
+             ┌────────────────────┐
+             │     ░░░░░░░░░░     │
+             │     ░░░░░░░░░░     │  ← overlap zone:
+             │     ░░░░░░░░░░     │    GLB024 pixels win
+             └────────────────────┘
+```
+
+For alternative overlap strategies — e.g. averaging, taking the max, or ordering by
+acquisition time — you could pass `method='max'` or `method='first'` to `merge()`.
+
+#### Single-tile shortcut
+
+If only one tile matches your bbox, `merge()` still works — it simply returns that tile
+unchanged (wrapped in a single-element mosaic). No special-casing is needed.
+
+### Stage 4 — Clip (trimming to your bbox)
+
+After mosaicing, the raster covers **all** matching AOI tiles — which is always larger
+than your requested bbox (unless you happen to request exactly one tile's extent).
+The clip step trims it down.
+
+#### How `rasterio.mask.mask()` works
+
+`mask()` takes a raster dataset and one or more Shapely geometries, and returns:
+
+| Output              | Description                                                                       |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `clipped`           | A 3D numpy array `(bands, rows, cols)` containing only pixels inside the geometry |
+| `clipped_transform` | A new `Affine` for the clipped extent                                             |
+
+The key parameter is `crop=True`, which does two things:
+
+1. **Masks** — pixels whose **centers** fall outside the polygon are set to `nodata` (0)
+2. **Crops** — the output array is trimmed to the tight bounding rectangle of the polygon,
+   discarding the surrounding nodata border
+
+This is an **all-or-nothing** mask at the pixel level: a pixel is either fully inside
+(preserved) or fully outside (set to nodata). There is no sub-pixel clipping — that's
+appropriate for 375 m resolution data where fractional pixels would be meaningless.
+
+```
+   Mosaic (union of tiles)          After mask(crop=True)
+  ┌────────────────────────┐       ┌──────────────────┐
+  │  ·  ·  ·  ·  ·  ·  ·  │       │   █  █  █  █  █  │
+  │  ·  ░  ░  ░  ░  ░  ·  │       │   █  █  █  █  █  │
+  │  ·  ░  ░  ░  ░  ░  ·  │  -->  │   █  █  █  █  █  │
+  │  ·  ░  ░  ░  ░  ░  ·  │       │   █  █  █  █  █  │
+  │  ·  ░  ░  ░  ░  ░  ·  │       └──────────────────┘
+  │  ·  ·  ·  ·  ·  ·  ·  │        █ = kept    · = discarded
+  └────────────────────────┘
+     ░ = valid data
+     · = outside bbox
+```
+
+#### In-memory buffering
+
+Notice that `_mosaic_and_clip()` writes the mosaic into a `rasterio.io.MemoryFile`
+before calling `mask()`. This is because `mask()` expects a GDAL-compatible dataset
+handle — it can't operate directly on a numpy array. The `MemoryFile` provides that
+handle without touching disk.
+
+### Stage 5 — Classify (optional pixel decoding)
+
+When `--classify` is passed, `_classify_pixels()` decodes the raw VIIRS integer codes
+into three binary masks using numpy boolean indexing:
+
+| Mask              | Rule               | Meaning                                                                 |
+| ----------------- | ------------------ | ----------------------------------------------------------------------- |
+| `flood_extent`    | `pixel >= 160`     | 1 = flood water (≥60% water fraction — Atlantis conservative threshold) |
+| `quality_mask`    | `pixel ∉ {0,1,30}` | 1 = valid clear-sky observation (0 = fill or cloud cover)               |
+| `permanent_water` | `pixel == 17`      | 1 = known permanent water body                                          |
+
+> Water types (17=permanent, 20=seasonal, 99=open) are **valid observations** — they receive `quality=1` and are excluded from flood masks through their own classification, not through the quality band.
+
+The ATBD GeoTIFF flood range is 101–200, corresponding to 1%–100% water fraction.
+Atlantis defaults its flood threshold at 160 (≥60% water fraction) in `processor.py`'s
+`FLOOD_MIN_CODE` constant. This avoids false positives from pixels with minor water
+contamination. Lower the threshold if you need to capture marginal flooding.
+
+The classification is done **after** mosaic and clip, so it only runs on pixels inside
+your bbox — saving computation on discarded regions.
+
+### Code trace
+
+Here is the exact call chain for a single date:
+
+```
+VIIRSFetcher.fetch()                          # __init__.py:~240
+  ├── VIIRSFetcher.search()                   # __init__.py:~170 — find tiles
+  ├── download_file() × N                     # utils/io.py — fetch TiFFs
+  └── ViirsRasterProcessor.process_tiles()    # processor.py:~107
+        └── _mosaic_and_clip()                # processor.py:~133
+              ├── rasterio.merge.merge()      # step 3
+              ├── rasterio.mask.mask()        # step 4
+              └── _classify_pixels()          # step 5 (if --classify)
+```
+
+### Edge cases
+
+| Scenario                            | Behaviour                                                |
+| ----------------------------------- | -------------------------------------------------------- |
+| Bbox inside a single tile           | `merge()` is a no-op on one tile; `mask()` crops it      |
+| Bbox spans 2+ tiles                 | `merge()` stitches them; `mask()` crops the union        |
+| Bbox covers an entire tile exactly  | `mask()` returns the tile unchanged (crop has no effect) |
+| No tiles match the bbox             | `search()` returns `[]`; `fetch()` returns `[]` early    |
+| Backend returns no files for a date | That date is silently skipped                            |
 
 Add a new data source by implementing the `ViirsBackend` abstract class:
 
