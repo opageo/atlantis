@@ -52,6 +52,7 @@ notebooks = [
 dev = [
   "poethepoet>=0.46.0",
   "pytest>=8.0.0",
+  "pytest-cov>=6.0.0",
   "pytest-xdist>=3.2.0",
   "ruff>=0.15.13",
   "pre-commit>=4.2.0",
@@ -97,6 +98,14 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["atlantis"]
+omit = ["*/tests/*", "*/scripts/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
 
 [tool.poe.tasks]
 test = "pytest -n auto tests/"

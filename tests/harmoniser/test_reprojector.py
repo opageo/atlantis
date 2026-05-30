@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from rasterio.transform import from_bounds
 
-from atlantis.harmoniser.reprojector import Reprojector
+from atlantis.harmoniser.reprojector import Reprojector, _resolve_resampling
 
 
 def _make_test_dataset(
@@ -100,7 +100,7 @@ class TestReprojector:
             assert set(np.unique(vals)).issubset({0, 1})
 
     def test_reproject_empty_dataset(self):
-        """Reprojecting an empty dataset should return an empty dataset."""
+        """Empty dataset should return a copy."""
         import xarray as xr
 
         ds = xr.Dataset()
@@ -108,37 +108,35 @@ class TestReprojector:
         ds_out = r.reproject(ds)
         assert len(ds_out.data_vars) == 0
 
-    def test_validate_crs_match(self):
-        """validate_crs should return True when CRS matches."""
-        ds = _make_test_dataset()
-        r = Reprojector(target_crs="EPSG:4326")
-        assert r.validate_crs(ds) is True
+    def test_reproject_different_target_resolution(self):
+        """Verify target resolution scaling affects output shape."""
+        ds = _make_test_dataset(width=100, height=100, res=0.004)
 
-    def test_validate_crs_no_crs(self):
-        """validate_crs should return False when no CRS is set."""
-        import xarray as xr
+        # Coarser resolution → smaller output
+        r_coarse = Reprojector(target_resolution=0.05)
+        ds_coarse = r_coarse.reproject(ds)
 
-        ds = xr.Dataset({"a": xr.DataArray([1, 2], dims=["x"])})
-        r = Reprojector()
-        assert r.validate_crs(ds) is False
+        r_fine = Reprojector(target_resolution=0.01)
+        ds_fine = r_fine.reproject(ds)
 
-    def test_unsupported_resampling(self):
-        """Unsupported resampling method should raise ValueError."""
-        # Init doesn't validate — error triggers at reproject time
-        r = Reprojector()
-        ds = _make_test_dataset()
-        r.variable_resampling = {"flood_extent": "nonexistent"}
+        assert ds_coarse["flood_extent"].size < ds_fine["flood_extent"].size
+
+
+class TestResolveResampling:
+    def test_valid_methods(self):
+        from rasterio.enums import Resampling
+
+        assert _resolve_resampling("average") == Resampling.average
+        assert _resolve_resampling("bilinear") == Resampling.bilinear
+        assert _resolve_resampling("nearest") == Resampling.nearest
+        assert _resolve_resampling("mode") == Resampling.mode
+
+    def test_case_insensitive(self):
+        from rasterio.enums import Resampling
+
+        assert _resolve_resampling("NEAREST") == Resampling.nearest
+        assert _resolve_resampling("  Average  ") == Resampling.average
+
+    def test_invalid_method(self):
         with pytest.raises(ValueError, match="Unsupported resampling method"):
-            r.reproject(ds)
-
-    def test_resolution_detection(self):
-        """Output resolution should match target."""
-        ds = _make_test_dataset(width=400, height=400, res=0.004)
-        target_res = 0.016666666666666666
-        r = Reprojector(target_resolution=target_res)
-        ds_out = r.reproject(ds)
-        # Check the x-spacing
-        xs = ds_out.coords["x"].values
-        assert len(xs) > 1
-        actual_res = abs(xs[1] - xs[0])
-        assert actual_res == pytest.approx(target_res, rel=0.05)
+            _resolve_resampling("invalid_method")

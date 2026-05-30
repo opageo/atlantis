@@ -8,16 +8,24 @@ from rasterio.transform import from_bounds
 
 from atlantis.config import HarmoniseConfig
 from atlantis.harmoniser import Harmoniser
+from atlantis.harmoniser.normaliser import Normaliser, NormaliserConfig
+from atlantis.harmoniser.reprojector import Reprojector
+from atlantis.harmoniser.tiler import Tiler
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _make_viirs_dataset():
+def _make_viirs_dataset(
+    width: int = 100,
+    height: int = 100,
+    res: float = 0.004,
+    west: float = 20.0,
+    north: float = 35.4,
+):
     """Create a realistic VIIRS-like dataset."""
     import rioxarray  # noqa: F401
     import xarray as xr
 
-    width, height = 100, 100
-    res = 0.004
-    west, north = 20.0, 35.4
     east = west + width * res
     south = north - height * res
 
@@ -45,6 +53,9 @@ def _make_viirs_dataset():
     return ds
 
 
+# ── Harmoniser tests ─────────────────────────────────────────────────────────
+
+
 class TestHarmoniser:
     def test_init_defaults(self):
         h = Harmoniser()
@@ -57,6 +68,13 @@ class TestHarmoniser:
         cfg.target_resolution = 0.008333333333333333  # 0.5 arcmin
         h = Harmoniser(config=cfg)
         assert h.reprojector.target_resolution == pytest.approx(0.008333333333333333)
+
+    def test_init_with_prebuilt_components(self):
+        r = Reprojector(target_crs="EPSG:4326", target_resolution=0.05)
+        n = Normaliser(config=NormaliserConfig(normalise_range=(0.0, 2.0)))
+        h = Harmoniser(reprojector=r, normaliser=n)
+        assert h.reprojector.target_resolution == 0.05
+        assert h.normaliser.config.normalise_range == (0.0, 2.0)
 
     def test_harmonise_full_pipeline(self):
         """End-to-end: resample + normalise + masks."""
@@ -135,3 +153,79 @@ class TestHarmoniser:
         ds_out = h.harmonise(ds, source_id="viirs")
         assert "flood_extent" in ds_out.data_vars
         assert "quality_mask" in ds_out.data_vars  # generated
+
+    def test_harmonise_single_raster(self):
+        """Single small raster should still produce valid output."""
+        import rioxarray  # noqa: F401
+        import xarray as xr
+
+        res = 0.004
+        w, n = 20.0, 35.4
+        transform = from_bounds(w, n - 5 * res, w + 5 * res, n, 5, 5)
+
+        ds = xr.Dataset(
+            {"flood_extent": xr.DataArray(np.ones((5, 5), dtype=np.uint8), dims=["y", "x"])},
+            coords={
+                "x": w + (np.arange(5) + 0.5) * res,
+                "y": n - (np.arange(5) + 0.5) * res,
+            },
+        )
+        ds.rio.write_crs("EPSG:4326", inplace=True)
+        ds.rio.write_transform(transform, inplace=True)
+
+        h = Harmoniser()
+        ds_out = h.harmonise(ds, source_id="test")
+        assert "flood_extent" in ds_out.data_vars
+        # Even small inputs should produce output
+        assert ds_out["flood_extent"].size > 0
+
+
+# ── Tiler tests ──────────────────────────────────────────────────────────────
+
+
+class TestTiler:
+    def test_init_defaults(self):
+        t = Tiler()
+        assert t.tile_size == 224
+        assert t.overlap == 0
+
+    def test_init_custom(self):
+        t = Tiler(tile_size=128, overlap=32)
+        assert t.tile_size == 128
+        assert t.overlap == 32
+
+    def test_tile_size_must_be_positive(self):
+        with pytest.raises(ValueError, match="tile_size must be positive"):
+            Tiler(tile_size=0)
+
+    def test_tile_size_must_be_positive_negative(self):
+        with pytest.raises(ValueError, match="tile_size must be positive"):
+            Tiler(tile_size=-10)
+
+    def test_overlap_must_be_non_negative(self):
+        with pytest.raises(ValueError, match="overlap must be non-negative"):
+            Tiler(tile_size=224, overlap=-1)
+
+    def test_tile_dataset_not_implemented(self):
+        import xarray as xr
+
+        t = Tiler()
+        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((100, 100)))})
+        with pytest.raises(NotImplementedError, match="Tiling not yet implemented"):
+            t.tile_dataset(ds)
+
+    def test_count_tiles_not_implemented(self):
+        import xarray as xr
+
+        t = Tiler()
+        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((100, 100)))})
+        with pytest.raises(NotImplementedError, match="Tile counting not yet implemented"):
+            t.count_tiles(ds)
+
+    def test_get_tile_bbox_not_implemented(self):
+        import xarray as xr
+
+        t = Tiler()
+        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((100, 100)))})
+        with pytest.raises(NotImplementedError, match="Tile bbox calculation not yet implemented"):
+            t.get_tile_bbox(0, 0, ds)

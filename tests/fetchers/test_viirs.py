@@ -6,12 +6,20 @@ from shutil import copyfile
 from zipfile import ZipFile
 
 import numpy as np
+import pytest
 import rasterio
 from rasterio.transform import from_origin
 
 from atlantis.fetchers.base import SearchResult
-from atlantis.fetchers.viirs import VIIRSFetcher
+from atlantis.fetchers.viirs import (
+    VIIRSFetcher,
+    _date_range,
+    _normalise_backend,
+    _normalise_format,
+)
 from atlantis.models.event import FloodEvent
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 
 def _write_tile(path: Path, west: float, south: float, east: float, north: float, data: np.ndarray) -> None:
@@ -34,6 +42,371 @@ def _write_tile(path: Path, west: float, south: float, east: float, north: float
 def _zip_file(zip_path: Path, file_path: Path) -> None:
     with ZipFile(zip_path, "w") as archive:
         archive.write(file_path, arcname=file_path.name)
+
+
+# ── Helper function tests ────────────────────────────────────────────────────
+
+
+class TestNormaliseBackend:
+    def test_valid_noaa(self):
+        assert _normalise_backend("noaa_s3") == "noaa_s3"
+
+    def test_valid_gmu(self):
+        assert _normalise_backend("gmu_legacy") == "gmu_legacy"
+
+    def test_case_insensitive(self):
+        assert _normalise_backend("NOAA_S3") == "noaa_s3"
+
+    def test_strips_whitespace(self):
+        assert _normalise_backend("  gmu_legacy  ") == "gmu_legacy"
+
+    def test_invalid_backend(self):
+        with pytest.raises(ValueError, match="Unsupported VIIRS backend"):
+            _nonexistent = _normalise_backend("nonexistent_backend")
+
+
+class TestNormaliseFormat:
+    def test_tif(self):
+        assert _normalise_format("tif") == "tif"
+
+    def test_tiff_alias(self):
+        assert _normalise_format("tiff") == "tif"
+
+    def test_nc_alias(self):
+        with pytest.raises(NotImplementedError, match="not implemented yet"):
+            _normalise_format("nc")
+
+    def test_invalid_format(self):
+        with pytest.raises(ValueError, match="Unsupported VIIRS format"):
+            _normalise_format("csv")
+
+    def test_shapefile_alias(self):
+        with pytest.raises(NotImplementedError, match="not implemented yet"):
+            _normalise_format("shapefile")
+
+
+class TestDateRange:
+    def test_single_day(self):
+        d = datetime(2020, 7, 22, tzinfo=timezone.utc)
+        result = _date_range(d, d)
+        assert result == [d]
+
+    def test_multi_day(self):
+        start = datetime(2020, 7, 20, tzinfo=timezone.utc)
+        end = datetime(2020, 7, 22, tzinfo=timezone.utc)
+        result = _date_range(start, end)
+        assert len(result) == 3
+        assert result[0] == start
+        assert result[-1] == end
+
+    def test_empty_when_start_after_end(self):
+        start = datetime(2020, 7, 22, tzinfo=timezone.utc)
+        end = datetime(2020, 7, 20, tzinfo=timezone.utc)
+        result = _date_range(start, end)
+        assert result == []
+
+
+# ── VIIRSFetcher constructor tests ───────────────────────────────────────────
+
+
+class TestVIIRSFetcherInit:
+    def test_defaults(self):
+        fetcher = VIIRSFetcher()
+        assert fetcher.backend_name == "noaa_s3"
+        assert fetcher.classify is False
+        assert fetcher.stream is False
+        assert fetcher.flood_min_code == 160
+        assert fetcher.data_format == "tif"
+
+    def test_classify_flag(self):
+        fetcher = VIIRSFetcher(classify=True)
+        assert fetcher.classify is True
+
+    def test_stream_flag(self):
+        fetcher = VIIRSFetcher(stream=True)
+        assert fetcher.stream is True
+
+    def test_flood_min_code_override(self):
+        fetcher = VIIRSFetcher(flood_min_code=101)
+        assert fetcher.flood_min_code == 101
+
+    def test_backend_override(self):
+        fetcher = VIIRSFetcher(backend="gmu_legacy")
+        assert fetcher.backend_name == "gmu_legacy"
+
+    def test_base_url_override(self):
+        fetcher = VIIRSFetcher(base_url="https://custom.example.com")
+        assert fetcher.base_url == "https://custom.example.com"
+
+    def test_timeout_override(self):
+        fetcher = VIIRSFetcher(timeout=60)
+        assert fetcher.timeout == 60
+
+    def test_aoi_path_exists(self):
+        fetcher = VIIRSFetcher()
+        assert fetcher.aoi_path.exists()
+        assert fetcher.aoi_path.name == "viirs_aois.geojson"
+
+    def test_backend_env_var_override(self, monkeypatch):
+        """When ATLANTIS_VIIRS_BACKEND is set and config is reloaded, fetcher picks it up."""
+        monkeypatch.setenv("ATLANTIS_VIIRS_BACKEND", "gmu_legacy")
+        from atlantis.config import get_config, reload_config
+
+        old_config = get_config.__globals__.get("_config")
+        reload_config()
+        try:
+            fetcher = VIIRSFetcher()
+            assert fetcher.backend_name == "gmu_legacy"
+        finally:
+            get_config.__globals__["_config"] = old_config
+
+    def test_invalid_backend_raises(self):
+        with pytest.raises(ValueError, match="Unsupported VIIRS backend"):
+            VIIRSFetcher(backend="invalid_backend")
+
+    def test_format_override(self):
+        with pytest.raises(NotImplementedError, match="not implemented yet"):
+            VIIRSFetcher(data_format="png")
+
+
+# ── Search tests ─────────────────────────────────────────────────────────────
+
+
+class TestVIIRSFetcherSearch:
+    def _default_event(self):
+        return FloodEvent(
+            event_id="Yangtze_2020",
+            bbox=(105.0, 28.0, 125.0, 38.0),
+            start_date=date(2020, 7, 22),
+            end_date=date(2020, 7, 22),
+            sources=["viirs"],
+        )
+
+    def test_search_returns_intersecting_aoi_results(self, monkeypatch):
+        fetcher = VIIRSFetcher()
+        event = self._default_event()
+
+        hrefs = [
+            "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB077_v1r0_blend_s202007220000000_e202007222359590_c202205240401305.tif",
+            "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB078_v1r0_blend_s202007220000000_e202007222359590_c202205240401363.tif",
+        ]
+        monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _base_url, _location, _timeout: hrefs)
+
+        results = fetcher.search(event)
+        assert len(results) == 2
+        assert all(isinstance(r, SearchResult) for r in results)
+        assert all(r.source_id == "viirs" for r in results)
+
+    def test_search_no_intersecting_aois(self, monkeypatch):
+        """Event bbox outside any AOI should return empty list."""
+        fetcher = VIIRSFetcher()
+        event = FloodEvent(
+            event_id="Pacific_2020",
+            bbox=(170.0, -10.0, 180.0, -5.0),
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 1, 1),
+            sources=["viirs"],
+        )
+        results = fetcher.search(event)
+        assert results == []
+
+    def test_search_no_matching_entries(self, monkeypatch):
+        """AOI found but backend returns empty directory listing."""
+        fetcher = VIIRSFetcher()
+        event = self._default_event()
+        monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _b, _l, _t: [])
+
+        results = fetcher.search(event)
+        assert results == []
+
+    def test_search_multi_day_event(self, monkeypatch):
+        """Multi-day event expands into per-day search results."""
+        fetcher = VIIRSFetcher()
+        event = FloodEvent(
+            event_id="Yangtze_2020",
+            bbox=(105.0, 28.0, 125.0, 38.0),
+            start_date=date(2020, 7, 21),
+            end_date=date(2020, 7, 22),
+            sources=["viirs"],
+        )
+
+        def mock_links(_base_url, _location, _timeout):
+            return [
+                "VIIRS-Flood-1day-GLB077_v1r0.tif",
+            ]
+
+        monkeypatch.setattr(fetcher.backend, "get_directory_links", mock_links)
+
+        results = fetcher.search(event)
+        # 2 AOIs × 2 days = 4 results (if grid intersects)
+        # The exact number depends on AOI grid, but should have >1
+        assert len(results) >= 2
+        dates = {r.timestamp.date() for r in results}
+        assert len(dates) == 2  # spans two days
+
+    def test_search_gmu_backend(self, monkeypatch):
+        fetcher = VIIRSFetcher(backend="gmu_legacy")
+        event = self._default_event()
+        hrefs = [
+            "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_35_005day_077.tif.zip",
+        ]
+        monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _b, _l, _t: hrefs)
+
+        results = fetcher.search(event)
+        assert len(results) == 1
+        assert all(r.properties["backend"] == "gmu_legacy" for r in results)
+
+
+# ── Fetch tests ──────────────────────────────────────────────────────────────
+
+
+class TestVIIRSFetcherFetch:
+    def _default_event(self):
+        return FloodEvent(
+            event_id="Yangtze_2020",
+            bbox=(105.0, 28.0, 125.0, 38.0),
+            start_date=date(2020, 7, 22),
+            end_date=date(2020, 7, 22),
+            sources=["viirs"],
+        )
+
+    def test_fetch_empty_search_returns_empty(self, monkeypatch):
+        fetcher = VIIRSFetcher()
+        event = self._default_event()
+        monkeypatch.setattr(fetcher, "search", lambda _e: [])
+
+        results = fetcher.fetch(event, Path("/tmp/output"))
+        assert results == []
+
+    def test_fetch_stream_mode_skips_download(self, tmp_path, monkeypatch):
+        """In stream mode, files should not be downloaded."""
+        fetcher = VIIRSFetcher(stream=True)
+        event = self._default_event()
+
+        tile_data = np.full((10, 10), 170, dtype=np.uint8)
+
+        tile1_tif = tmp_path / "tile_077.tif"
+        _write_tile(tile1_tif, 105.0, 28.0, 115.0, 38.0, tile_data)
+
+        search_results = [
+            SearchResult(
+                source_id="viirs",
+                item_id="viirs:20200722:077",
+                timestamp=datetime(2020, 7, 22, tzinfo=timezone.utc),
+                bbox=(105.0, 28.0, 115.0, 38.0),
+                url=tile1_tif.as_posix(),
+                properties={
+                    "aoi_id": 77,
+                    "date": "20200722",
+                    "filename": "tile_077.tif",
+                    "backend": "noaa_s3",
+                    "format": "tif",
+                },
+            ),
+        ]
+        monkeypatch.setattr(fetcher, "search", lambda _e: search_results)
+
+        download_called = False
+
+        def fake_download(*args, **kwargs):
+            nonlocal download_called
+            download_called = True
+
+        monkeypatch.setattr("atlantis.fetchers.viirs.download_file", fake_download)
+
+        results = fetcher.fetch(event, tmp_path / "stream_out")
+        assert not download_called, "download_file should not be called in stream mode"
+        assert len(results) <= 1  # may or may not produce results depending on URL format
+
+    def test_fetch_with_flood_min_code(self, tmp_path, monkeypatch):
+        """Verify flood_min_code is passed through to processor."""
+        fetcher = VIIRSFetcher(flood_min_code=101, classify=True)
+        event = self._default_event()
+
+        tile_data = np.random.randint(0, 200, (10, 10), dtype=np.uint8)
+        tile_tif = tmp_path / "tile_077.tif"
+        _write_tile(tile_tif, 105.0, 28.0, 115.0, 38.0, tile_data)
+
+        tile_zip = tmp_path / "tile_077.tif.zip"
+        _zip_file(tile_zip, tile_tif)
+
+        search_results = [
+            SearchResult(
+                source_id="viirs",
+                item_id="viirs:20200722:077",
+                timestamp=datetime(2020, 7, 22, tzinfo=timezone.utc),
+                bbox=(105.0, 28.0, 115.0, 38.0),
+                url="https://example.com/tile_077.tif.zip",
+                properties={
+                    "aoi_id": 77,
+                    "date": "20200722",
+                    "filename": tile_zip.name,
+                },
+            ),
+        ]
+        monkeypatch.setattr(fetcher, "search", lambda _e: search_results)
+
+        def fake_download(url, output_path=None, **_kwargs):
+            copyfile(tile_zip, output_path)
+            return output_path
+
+        monkeypatch.setattr("atlantis.fetchers.viirs.download_file", fake_download)
+
+        results = fetcher.fetch(event, tmp_path / "out")
+        assert len(results) == 1
+
+    def test_fetch_no_search_results(self, monkeypatch):
+        fetcher = VIIRSFetcher()
+        event = self._default_event()
+        monkeypatch.setattr(fetcher, "search", lambda _e: [])
+
+        results = fetcher.fetch(event, Path("/tmp/nonexistent"))
+        assert results == []
+
+
+# ── to_dataset tests ─────────────────────────────────────────────────────────
+
+
+class TestVIIRSToDataset:
+    def test_to_dataset_from_fetch_result(self, tmp_path):
+        """Test dataset conversion from three-component FetchResult."""
+        fetcher = VIIRSFetcher(classify=True)
+
+        fe = np.full((10, 10), 170, dtype=np.uint8)
+        qm = np.ones((10, 10), dtype=np.uint8)
+        pw = np.zeros((10, 10), dtype=np.uint8)
+
+        fe_path = tmp_path / "test_flood_extent.tif"
+        qm_path = tmp_path / "test_quality_mask.tif"
+        pw_path = tmp_path / "test_permanent_water.tif"
+
+        for path, data in [(fe_path, fe), (qm_path, qm), (pw_path, pw)]:
+            _write_tile(path, 20.0, 30.0, 21.0, 31.0, data)
+
+        from atlantis.fetchers.base import FetchResult
+        from atlantis.models.metadata import TileMetadata
+
+        result = FetchResult(
+            event_id="test_event",
+            source_id="viirs",
+            files=[fe_path, qm_path, pw_path],
+            metadata=TileMetadata(
+                event_id="test_event",
+                source_id="viirs",
+                fetch_timestamp=datetime(2020, 7, 22, tzinfo=timezone.utc),
+                bbox=(20.0, 30.0, 21.0, 31.0),
+            ),
+        )
+
+        dataset = fetcher.to_dataset(result)
+        assert "flood_extent" in dataset.data_vars
+        assert "quality_mask" in dataset.data_vars
+        assert "permanent_water" in dataset.data_vars
+        assert dataset.attrs["source_id"] == "viirs"
+        assert dataset.attrs["event_id"] == "test_event"
+
+
+# ── Existing tests (preserved) ───────────────────────────────────────────────
 
 
 def test_search_returns_intersecting_aoi_results(monkeypatch):

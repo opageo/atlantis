@@ -1,10 +1,37 @@
 """Configuration management using Pydantic settings."""
 
+from __future__ import annotations
+
+import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, EnvSettingsSource, SettingsConfigDict
+
+
+def _parse_tuple(v: str) -> tuple[float, ...]:
+    """Parse a Python-style tuple string like ``(0.1, 0.9)`` into a tuple."""
+    cleaned = v.strip("()")
+    return tuple(float(x.strip()) for x in cleaned.split(","))
+
+
+class TupleEnvSource(EnvSettingsSource):
+    """EnvSettingsSource that handles Python-style tuples in env vars.
+
+    Pydantic-settings tries ``json.loads()`` on complex types, which fails
+    for Python-style tuples ``(0.1, 0.9)``.  This subclass converts them
+    before parsing.
+    """
+
+    def decode_complex_value(self, field_name: str, field: Any, value: Any) -> Any:
+        """Decode a string env value that may use Python tuple syntax."""
+        if isinstance(value, str) and value.startswith("(") and value.endswith(")"):
+            try:
+                return json.loads(value.replace("(", "[").replace(")", "]"))
+            except json.JSONDecodeError:
+                return _parse_tuple(value)
+        return super().decode_complex_value(field_name, field, value)
 
 
 class HarmoniseConfig(BaseSettings):
@@ -39,6 +66,23 @@ class HarmoniseConfig(BaseSettings):
         "raw": "nearest",
     }
     normalise_range: tuple[float, float] = (0.0, 1.0)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type,
+        init_settings: Any,
+        env_settings: Any,
+        dotenv_settings: Any,
+        file_secret_settings: Any,
+    ) -> tuple[Any, ...]:
+        """Customise env source to handle Python tuple syntax."""
+        return (
+            init_settings,
+            TupleEnvSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
 
 
 class ArchiveConfig(BaseSettings):

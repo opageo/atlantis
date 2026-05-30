@@ -79,12 +79,12 @@ def fetch(
         " (saves storage, requires network during processing).",
     ),
     flood_threshold: int = typer.Option(
-        101,
+        160,
         "--flood-threshold",
         min=101,
         max=200,
         help="Minimum VIIRS pixel code for flood classification (101–200). "
-        "Default: 101 (all flood). 200=most conservative.",
+        "Default: 160 (60%+ water). 101=all flood. 200=most conservative.",
     ),
     plot: bool = typer.Option(
         False,
@@ -279,12 +279,12 @@ def fetch_kurosiwo_viirs(
         help="Stream remote tiles via GDAL /vsicurl/ without downloading to disk.",
     ),
     flood_threshold: int = typer.Option(
-        101,
+        160,
         "--flood-threshold",
         min=101,
         max=200,
         help="Minimum VIIRS pixel code for flood classification (101–200). "
-        "Default: 101 (all flood). 200=most conservative.",
+        "Default: 160 (60%+ water). 101=all flood. 200=most conservative.",
     ),
     plot: bool = typer.Option(
         False,
