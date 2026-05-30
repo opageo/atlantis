@@ -82,22 +82,21 @@ This produces:
 #### Flood threshold
 
 The ATBD GeoTIFF flood range is **101–200**, where the code encodes water
-fraction (101 = 1 %, 200 = 100 %). By default Atlantis applies a conservative
-threshold of **160** (≥60 % water fraction) to avoid false positives from
-pixels with marginal water contamination.
+fraction (101 = 1 %, 200 = 100 %). The CLI defaults to **101** (all flood pixels)
+so no flood signal is missed. Raise it for a more conservative result.
 
 | Flag                    | Range          | Effect                             |
 | ----------------------- | -------------- | ---------------------------------- |
-| `--flood-threshold 101` | Most inclusive | Captures all VIIRS flood pixels    |
-| `--flood-threshold 160` | **Default**    | Conservative: ≥60 % water fraction |
+| `--flood-threshold 101` | **Default**    | Captures all VIIRS flood pixels    |
+| `--flood-threshold 160` | Conservative   | ≥60 % water fraction               |
 | `--flood-threshold 180` | Most stringent | Only high-confidence flood (≥80 %) |
 
 ```bash
-# Conservative (default)
+# Default: all flood pixels
 uv run atlantis fetch ... --classify
 
-# Catch marginal flooding — lower threshold
-uv run atlantis fetch ... --classify --flood-threshold 101
+# Conservative — only ≥60% water fraction
+uv run atlantis fetch ... --classify --flood-threshold 160
 
 # Only highest-confidence pixels
 uv run atlantis fetch ... --classify --flood-threshold 180
