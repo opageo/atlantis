@@ -16,21 +16,21 @@ codes:
 
 The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the [ATBD](https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf)'s internal netCDF scheme). Land-type classes are omitted — only water, cloud, and flood appear:
 
-| Code    | Meaning                                                                      |
-| ------- | ---------------------------------------------------------------------------- |
-| 1       | Fill / No data (nodata sentinel)                                             |
-| 17      | Permanent water                                                              |
-| 20      | Seasonal water                                                               |
-| 30      | Cloud cover                                                                  |
-| 99      | Open water                                                                   |
-| 101–200 | **Flood water** — water fraction % = `code − 100`                            |
-| ≥160    | **High-confidence flood** (≥60% water fraction — Atlantis default threshold) |
+| Code    | Meaning                                           |
+| ------- | ------------------------------------------------- |
+| 1       | Fill / No data (nodata sentinel)                  |
+| 17      | Permanent water                                   |
+| 20      | Seasonal water                                    |
+| 30      | Cloud cover                                       |
+| 99      | Open water                                        |
+| 101–200 | **Flood water** — water fraction % = `code − 100` |
+| ≥160    | High-confidence flood (≥60% water fraction)       |
 
 > **Note:** The ATBD netCDF format uses different codes (e.g. 16=bare land,
 > 17=vegetation). The GeoTIFF distribution simplifies these — land pixels are
 > omitted, and codes 17/20/99 carry water-related meanings instead.
-> The full flood range is 101–200; Atlantis uses `FLOOD_MIN_CODE = 160`
-> in `processor.py` as a conservative threshold, which can be adjusted if needed.
+> The full flood range is 101–200; the Atlantis CLI defaults to `--flood-threshold 101`
+> (all flood pixels). Pass a higher value for a more conservative threshold.
 
 By default Atlantis writes the raw pixel values as-is. Pass `--classify` to derive three binary layers: flood extent, quality mask, and permanent water mask.
 
@@ -38,13 +38,16 @@ By default Atlantis writes the raw pixel values as-is. Pass `--classify` to deri
 
 ### Fetch for any location and date range
 
+The example below uses the **Valencia 2024 flood** (Oct 30–Nov 1 — the flood peaked on
+Oct 31 with 1,562 flooded pixels in this bbox; Oct 29 is cloud-free but pre-flood):
+
 ```bash
 uv run atlantis fetch \
-  --event Valencia_2024 \
+  --event valencia_2024 \
   --source viirs \
-  --bbox "-1.0 39.0 0.0 40.0" \
-  --start-date 2024-10-29 \
-  --end-date 2024-10-29
+  --bbox "-1.2 39.0 0.2 39.8" \
+  --start-date 2024-10-30 \
+  --end-date 2024-11-01
 ```
 
 Atlantis will:
@@ -56,16 +59,18 @@ Atlantis will:
 5. **Write** a single raw GeoTIFF:
    - `<event_id>_<date>_viirs_raw.tif` — integer pixel codes (0–255)
 
-Add `--classify` to also write three derived layers:
+Add `--classify` to write three derived layers, `--plot` to save a PNG of the
+peak-flood date, and `--harmonise` to also produce a resampled 1-arcmin GeoTIFF
+in a single command:
 
 ```bash
 uv run atlantis fetch \
-  --event Valencia_2024 \
+  --event valencia_2024 \
   --source viirs \
-  --bbox "-1.0 39.0 0.0 40.0" \
-  --start-date 2024-10-29 \
-  --end-date 2024-10-29 \
-  --classify
+  --bbox "-1.2 39.0 0.2 39.8" \
+  --start-date 2024-10-30 \
+  --end-date 2024-11-01 \
+  --classify --stream --plot --harmonise
 ```
 
 This produces:
@@ -114,11 +119,11 @@ directory is ever created.
 ```bash
 # Stream tiles: no local download, no raw/ cache
 uv run atlantis fetch \
-  --event Valencia_2024 \
+  --event valencia_2024 \
   --source viirs \
-  --bbox "-1.0 39.0 0.0 40.0" \
-  --start-date 2024-10-29 \
-  --end-date 2024-10-29 \
+  --bbox "-1.2 39.0 0.2 39.8" \
+  --start-date 2024-10-30 \
+  --end-date 2024-11-01 \
   --classify \
   --stream
 ```
@@ -138,7 +143,7 @@ After fetching, resample the VIIRS outputs to a common target resolution
 
 ```bash
 uv run atlantis harmonise \
-  --event Valencia_2024 \
+  --event valencia_2024 \
   --source viirs
 ```
 
@@ -149,13 +154,13 @@ at 1 arcmin resolution, plus a quality mask and a permanent-water mask.
 ```bash
 # Custom target resolution (e.g. 5 arcmin)
 uv run atlantis harmonise \
-  --event Valencia_2024 \
+  --event valencia_2024 \
   --source viirs \
   --target-resolution 0.08333
 
 # Dry-run to see what would be processed
 uv run atlantis harmonise \
-  --event Valencia_2024 \
+  --event valencia_2024 \
   --source viirs \
   --dry-run
 ```
@@ -240,8 +245,10 @@ uv run atlantis fetch-kurosiwo-viirs \
         <case_id>_<YYYYMMDD>_viirs_flood_extent.tif
         <case_id>_<YYYYMMDD>_viirs_quality_mask.tif
         <case_id>_<YYYYMMDD>_viirs_permanent_water.tif
-      harmonised/   # with atlantis harmonise: 1-arcmin resampled tifs
-        <case_id>_<YYYYMMDD>_viirs_harmonised.tif
+      plots/        # with --plot: PNG of peak-flood date
+        <case_id>_<YYYY-MM-DD>_viirs.png
+      harmonised/   # with --harmonise: 1-arcmin resampled GeoTIFF
+        <case_id>_<YYYY-MM-DD>_viirs_harmonised.tif
 ```
 
 ## Backends
@@ -277,25 +284,25 @@ from datetime import date
 from atlantis.fetchers.viirs import VIIRSFetcher
 from atlantis.models.event import FloodEvent
 
-# ── Arbitrary event ───────────────────────────────────────────────────────────
+# ── Arbitrary event (Valencia 2024 flood, peak Oct 31) ───────────────────────
 event = FloodEvent(
-    event_id="Valencia_2024",
-    bbox=(-1.0, 39.0, 0.0, 40.0),   # west, south, east, north
-    start_date=date(2024, 10, 29),
-    end_date=date(2024, 10, 29),
+    event_id="valencia_2024",
+    bbox=(-1.2, 39.0, 0.2, 39.8),   # west, south, east, north
+    start_date=date(2024, 10, 30),
+    end_date=date(2024, 11, 1),
 )
 
 fetcher = VIIRSFetcher()                     # raw mode (default)
-fetch_results = fetcher.fetch(event, Path("data/viirs/Valencia_2024"))
+fetch_results = fetcher.fetch(event, Path("data/viirs/valencia_2024"))
 
 # Load into xarray for analysis / plotting
 ds = fetcher.to_dataset(fetch_results[0])
 raw = ds["raw"]                              # xarray DataArray, CRS=EPSG:4326
 print(raw.shape, raw.dtype)
 
-# ── With classified outputs ───────────────────────────────────────────────────
+# ── With classified outputs ────────────────────────────────────────────
 fetcher_c = VIIRSFetcher(classify=True)
-fetch_results_c = fetcher_c.fetch(event, Path("data/viirs/Valencia_2024_classified"))
+fetch_results_c = fetcher_c.fetch(event, Path("data/viirs/valencia_2024_classified"))
 
 ds_c = fetcher_c.to_dataset(fetch_results_c[0])
 print(ds_c["flood_extent"].sum().item(), "flooded pixels")
@@ -314,7 +321,7 @@ ks_ds = fetcher.to_dataset(ks_results[0])
 
 # ── Streaming mode (no local tiles) ──────────────────────────────────────────
 fetcher_stream = VIIRSFetcher(stream=True, classify=True)
-stream_results = fetcher_stream.fetch(event, Path("data/viirs/Valencia_2024"))
+stream_results = fetcher_stream.fetch(event, Path("data/viirs/valencia_2024"))
 stream_ds = fetcher_stream.to_dataset(stream_results[0])
 
 # ── Harmonise (resample + normalise) ─────────────────────────────────────────
@@ -530,18 +537,18 @@ handle without touching disk.
 When `--classify` is passed, `_classify_pixels()` decodes the raw VIIRS integer codes
 into three binary masks using numpy boolean indexing:
 
-| Mask              | Rule               | Meaning                                                                 |
-| ----------------- | ------------------ | ----------------------------------------------------------------------- |
-| `flood_extent`    | `pixel >= 160`     | 1 = flood water (≥60% water fraction — Atlantis conservative threshold) |
-| `quality_mask`    | `pixel ∉ {0,1,30}` | 1 = valid clear-sky observation (0 = fill or cloud cover)               |
-| `permanent_water` | `pixel == 17`      | 1 = known permanent water body                                          |
+| Mask              | Rule                       | Meaning                                                   |
+| ----------------- | -------------------------- | --------------------------------------------------------- |
+| `flood_extent`    | `pixel >= flood_threshold` | 1 = flood water (configurable; CLI default = 101)         |
+| `quality_mask`    | `pixel ∉ {0,1,30}`         | 1 = valid clear-sky observation (0 = fill or cloud cover) |
+| `permanent_water` | `pixel == 17`              | 1 = known permanent water body                            |
 
 > Water types (17=permanent, 20=seasonal, 99=open) are **valid observations** — they receive `quality=1` and are excluded from flood masks through their own classification, not through the quality band.
 
 The ATBD GeoTIFF flood range is 101–200, corresponding to 1%–100% water fraction.
-Atlantis defaults its flood threshold at 160 (≥60% water fraction) in `processor.py`'s
-`FLOOD_MIN_CODE` constant. This avoids false positives from pixels with minor water
-contamination. Lower the threshold if you need to capture marginal flooding.
+The flood threshold is controlled by `--flood-threshold` (CLI default: **101**, all flood)
+or `VIIRSFetcher(flood_min_code=...)` in Python. Raise it for a more conservative
+classification (e.g. 160 = ≥60% water fraction).
 
 The classification is done **after** mosaic and clip, so it only runs on pixels inside
 your bbox — saving computation on discarded regions.
@@ -610,16 +617,37 @@ Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 
 ## Next Steps
 
-- `scripts/viirs_demo.py` — runnable end-to-end example:
+- `scripts/viirs_demo.py` — runnable end-to-end example using the Python API directly:
 
   ```bash
-  # Any region, any date
-  uv run python scripts/viirs_demo.py --mode arbitrary \
-    --event-id my_flood --bbox "-1.0 39.0 0.0 40.0" \
-    --start-date 2024-10-29 --end-date 2024-10-29
+  # Valencia 2024 flood (default — runs with no extra flags)
+  uv run python scripts/viirs_demo.py arbitrary
+
+  # Custom region + dates
+  uv run python scripts/viirs_demo.py arbitrary \
+    --event-id my_flood --bbox "-1.2 39.0 0.2 39.8" \
+    --start-date 2024-10-30 --end-date 2024-11-01 \
+    --classify --stream --harmonise
 
   # KuroSiwo event (bbox + dates resolved from catalogue)
-  uv run python scripts/viirs_demo.py --mode kurosiwo --ks-case KuroSiwo_470
+  uv run python scripts/viirs_demo.py kurosiwo --ks-case KuroSiwo_1111004 \
+    --classify --stream --harmonise --days-before 1 --days-after 1
+  ```
+
+  Equivalent operations via the `atlantis` CLI (no Python API required):
+
+  ```bash
+  # Arbitrary event
+  uv run atlantis fetch \
+    --event valencia_2024 --source viirs \
+    --bbox "-1.2 39.0 0.2 39.8" \
+    --start-date 2024-10-30 --end-date 2024-11-01 \
+    --classify --stream --plot --harmonise
+
+  # KuroSiwo event
+  uv run atlantis fetch-kurosiwo-viirs \
+    --case KuroSiwo_1111004 --classify --stream \
+    --plot --harmonise --days-before 1 --days-after 1
   ```
 
 - `notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb` — interactive walkthrough

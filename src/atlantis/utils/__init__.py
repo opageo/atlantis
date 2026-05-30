@@ -12,6 +12,15 @@ from atlantis.utils.kurosiwo import (
     load_kurosiwo_metadata,
     write_kurosiwo_metadata_csv,
 )
+from atlantis.utils.plot import (
+    VIIRS_CODES,
+    date_from_filename,
+    legend_patches,
+    pixel_stats_classified,
+    pixel_stats_raw,
+    plot_classified,
+    plot_raw,
+)
 
 __all__ = [
     "bbox_intersects",
@@ -28,4 +37,11 @@ __all__ = [
     "write_kurosiwo_metadata_csv",
     "build_kurosiwo_flood_events",
     "build_kurosiwo_flood_events_from_catalogue",
+    "VIIRS_CODES",
+    "date_from_filename",
+    "legend_patches",
+    "pixel_stats_raw",
+    "pixel_stats_classified",
+    "plot_raw",
+    "plot_classified",
 ]

@@ -19,6 +19,13 @@ from atlantis.utils.kurosiwo import (
     build_kurosiwo_flood_events_from_catalogue,
     write_kurosiwo_metadata_csv,
 )
+from atlantis.utils.plot import (
+    date_from_filename,
+    pixel_stats_classified,
+    pixel_stats_raw,
+    plot_classified,
+    plot_raw,
+)
 
 cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.")
 console = Console()
@@ -72,12 +79,27 @@ def fetch(
         " (saves storage, requires network during processing).",
     ),
     flood_threshold: int = typer.Option(
-        160,
+        101,
         "--flood-threshold",
         min=101,
         max=200,
         help="Minimum VIIRS pixel code for flood classification (101–200). "
-        "Default: 160 (≥60% water fraction). 101=all flood, 200=most conservative.",
+        "Default: 101 (all flood). 200=most conservative.",
+    ),
+    plot: bool = typer.Option(
+        False,
+        "--plot",
+        help="Save a PNG visualisation of the peak-flood date (VIIRS only).",
+    ),
+    plot_dir: Path | None = typer.Option(
+        None,
+        "--plot-dir",
+        help="Directory to write PNG files (default: <output>/plots/).",
+    ),
+    harmonise: bool = typer.Option(
+        False,
+        "--harmonise",
+        help="Harmonise the peak-flood date to 1 arcmin after fetching (VIIRS only).",
     ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
@@ -94,6 +116,9 @@ def fetch(
         classify: If True, write flood-extent/quality-mask/permanent-water layers instead of raw data.
         stream: If True, stream remote tiles without downloading to disk.
         flood_threshold: Minimum VIIRS pixel code for flood (101–200, default 160).
+        plot: Save PNG visualisation of the peak-flood date (VIIRS only).
+        plot_dir: Directory for PNG output (default: <output>/plots/).
+        harmonise: Harmonise the peak-flood date to 1 arcmin (VIIRS only).
     """
     config = get_config()
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
@@ -150,6 +175,54 @@ def fetch(
             for result in fetch_results:
                 for path in result.files:
                     console.print(f"  - {path}")
+
+            # ── Optional plot + harmonise (VIIRS only) ────────────────────
+            if src == "viirs" and (plot or harmonise):
+                best_result = None
+                best_date_label = ""
+                best_flood_count = 0
+                for result in fetch_results:
+                    ds = fetcher.to_dataset(result)
+                    date_label = date_from_filename(result.files[0].name)
+                    if "flood_extent" in ds:
+                        flooded = pixel_stats_classified(ds["flood_extent"].values, name=date_label)
+                        if flooded > best_flood_count:
+                            best_flood_count = flooded
+                            best_result = result
+                            best_date_label = date_label
+                    else:
+                        pixel_stats_raw(ds["raw"].values, name=date_label)
+                if best_result is None:
+                    best_result = fetch_results[0]
+                    best_date_label = date_from_filename(fetch_results[0].files[0].name)
+                best_ds = fetcher.to_dataset(best_result)
+                if plot:
+                    png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{best_date_label}_viirs.png"
+                    if "flood_extent" in best_ds:
+                        plot_classified(
+                            best_ds["flood_extent"],
+                            title=f"{event}: VIIRS flood extent {best_date_label} (375 m)",
+                            output_path=png_out,
+                        )
+                    else:
+                        plot_raw(
+                            best_ds["raw"],
+                            title=f"{event}: VIIRS raw composite {best_date_label} (375 m)",
+                            output_path=png_out,
+                        )
+                if harmonise:
+                    from atlantis.harmoniser import Harmoniser
+
+                    harm_dir = output_dir / src / "harmonised"
+                    harm_dir.mkdir(parents=True, exist_ok=True)
+                    h = Harmoniser()
+                    ds_harm = h.harmonise(best_ds, source_id="viirs")
+                    flood_var = "flood_extent" if "flood_extent" in ds_harm else list(ds_harm.data_vars)[0]
+                    tif_path = harm_dir / f"{event}_{best_date_label}_viirs_harmonised.tif"
+                    ds_harm[flood_var].rio.to_raster(
+                        str(tif_path), dtype="float32", compress="LZW", nodata=float("nan")
+                    )
+                    console.print(f"  Harmonised → {tif_path.name}")
         except KeyError:
             console.print(f"[red]Error: Unknown source '{src}'[/red]")
 
@@ -206,11 +279,27 @@ def fetch_kurosiwo_viirs(
         help="Stream remote tiles via GDAL /vsicurl/ without downloading to disk.",
     ),
     flood_threshold: int = typer.Option(
-        160,
+        101,
         "--flood-threshold",
         min=101,
         max=200,
-        help="Minimum VIIRS pixel code for flood classification (101–200). Default: 160 (≥60% water fraction).",
+        help="Minimum VIIRS pixel code for flood classification (101–200). "
+        "Default: 101 (all flood). 200=most conservative.",
+    ),
+    plot: bool = typer.Option(
+        False,
+        "--plot",
+        help="Save a PNG visualisation of the peak-flood date for each case.",
+    ),
+    plot_dir: Path | None = typer.Option(
+        None,
+        "--plot-dir",
+        help="Directory to write PNG files (default: <output>/plots/).",
+    ),
+    harmonise: bool = typer.Option(
+        False,
+        "--harmonise",
+        help="Harmonise the peak-flood date to 1 arcmin and write a GeoTIFF alongside the fetch output.",
     ),
 ) -> None:
     """Fetch VIIRS data for KuroSiwo cases.
@@ -229,6 +318,9 @@ def fetch_kurosiwo_viirs(
         classify: If True, write flood-extent/quality-mask/permanent-water layers instead of raw data.
         stream: If True, stream remote tiles without downloading to disk.
         flood_threshold: Minimum VIIRS pixel code for flood (101–200, default 160).
+        plot: Save PNG visualisation of the peak-flood date per case.
+        plot_dir: Directory for PNG output (default: <output>/plots/).
+        harmonise: Harmonise the peak-flood date to 1 arcmin.
     """
     config = get_config()
     output_root = output_dir or config.fetcher.cache_dir / "raw" / "kurosiwo"
@@ -275,8 +367,9 @@ def fetch_kurosiwo_viirs(
         console.print(
             f"\n[cyan]Fetching {event.event_id}[/cyan] ({event.start_date.isoformat()} -> {event.end_date.isoformat()})"
         )
+        event_viirs_dir = output_root / event.event_id / "viirs"
         try:
-            fetch_results = fetcher.fetch(event, output_root / event.event_id / "viirs")
+            fetch_results = fetcher.fetch(event, event_viirs_dir)
         except Exception as exc:  # pragma: no cover - exercised in real fetch runs
             failures.append((event.event_id, str(exc)))
             console.print(f"[red]  Failed: {exc}[/red]")
@@ -289,6 +382,60 @@ def fetch_kurosiwo_viirs(
             continue
 
         console.print(f"[bold]  Wrote {written} files[/bold]")
+
+        # ── Per-date stats + best-date selection ──────────────────────────
+        if plot or harmonise:
+            best_result = None
+            best_date_label = ""
+            best_flood_count = 0
+
+            for result in fetch_results:
+                ds = fetcher.to_dataset(result)
+                date_label = date_from_filename(result.files[0].name)
+                console.print(f"  {date_label}", end="")
+
+                if "flood_extent" in ds:
+                    flooded = pixel_stats_classified(ds["flood_extent"].values, name="")
+                    if flooded > best_flood_count:
+                        best_flood_count = flooded
+                        best_result = result
+                        best_date_label = date_label
+                else:
+                    pixel_stats_raw(ds["raw"].values, name="")
+
+            if best_result is None:
+                best_result = fetch_results[0]
+                best_date_label = date_from_filename(fetch_results[0].files[0].name)
+
+            best_ds = fetcher.to_dataset(best_result)
+
+            if plot:
+                png_dir = plot_dir or (event_viirs_dir / "plots")
+                png_path = png_dir / f"{event.event_id}_{best_date_label}_viirs.png"
+                if "flood_extent" in best_ds:
+                    plot_classified(
+                        best_ds["flood_extent"],
+                        title=f"{event.event_id}: VIIRS flood extent {best_date_label} (375 m)",
+                        output_path=png_path,
+                    )
+                else:
+                    plot_raw(
+                        best_ds["raw"],
+                        title=f"{event.event_id}: VIIRS raw composite {best_date_label} (375 m)",
+                        output_path=png_path,
+                    )
+
+            if harmonise:
+                from atlantis.harmoniser import Harmoniser
+
+                harm_dir = event_viirs_dir / "harmonised"
+                harm_dir.mkdir(parents=True, exist_ok=True)
+                h = Harmoniser()
+                ds_harm = h.harmonise(best_ds, source_id="viirs")
+                flood_var = "flood_extent" if "flood_extent" in ds_harm else list(ds_harm.data_vars)[0]
+                tif_path = harm_dir / f"{event.event_id}_{best_date_label}_viirs_harmonised.tif"
+                ds_harm[flood_var].rio.to_raster(str(tif_path), dtype="float32", compress="LZW", nodata=float("nan"))
+                console.print(f"  Harmonised → {tif_path.name}")
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
     if failures:
