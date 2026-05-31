@@ -14,7 +14,7 @@ def _processed(*, flood: np.ndarray | None = None, raw: np.ndarray | None = None
         crs="EPSG:4326",
         cloud_fraction=0.0,
         raw=raw,
-        flood_extent=flood,
+        flood_fraction=flood,
     )
 
 

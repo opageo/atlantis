@@ -76,7 +76,7 @@ def _dummy_fetch_result(
 ) -> tuple[FetchResult, _FakeDataset]:
     """Create a FetchResult + matching FakeDataset for testing."""
     bbox = (105.0, 28.0, 125.0, 38.0)
-    tif_path = tmp_path / f"{event_id}_{date_token}_viirs_flood_extent.tif"
+    tif_path = tmp_path / f"{event_id}_{date_token}_viirs_flood_fraction.tif"
     fetch_result = FetchResult(
         event_id=event_id,
         source_id="viirs",
@@ -87,7 +87,7 @@ def _dummy_fetch_result(
     arr = np.zeros((4, 4), dtype=np.float32)
     flat = arr.ravel()
     flat[: min(flood_pixels, flat.size)] = 1.0
-    ds = _FakeDataset({"flood_extent": arr})
+    ds = _FakeDataset({"flood_fraction": arr})
     return fetch_result, ds
 
 
@@ -113,7 +113,6 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
                 "data_format": "tif",
                 "classify": True,
                 "stream": True,
-                "flood_min_code": 160,
                 "write_processed": True,
             }
 
@@ -177,7 +176,6 @@ def test_fetch_kurosiwo_viirs_command(monkeypatch, tmp_path):
                 "data_format": "tif",
                 "classify": True,
                 "stream": True,
-                "flood_min_code": 160,
                 "write_processed": True,
             }
 
@@ -244,7 +242,6 @@ def test_fetch_kurosiwo_viirs_command_from_catalogue(monkeypatch, tmp_path):
                 "data_format": "tif",
                 "classify": True,
                 "stream": True,
-                "flood_min_code": 160,
                 "write_processed": True,
             }
 
@@ -308,7 +305,6 @@ def test_fetch_command_supports_legacy_viirs_backend(monkeypatch, tmp_path):
                 "data_format": "tif",
                 "classify": True,
                 "stream": True,
-                "flood_min_code": 160,
                 "write_processed": True,
             }
 
@@ -408,7 +404,7 @@ def test_harmonise_command(tmp_path):
 
     # Small synthetic flood GeoTIFF
     ds = xr.Dataset(
-        {"flood_extent": xr.DataArray(np.zeros((10, 10), dtype=np.uint8), dims=["y", "x"])},
+        {"flood_fraction": xr.DataArray(np.zeros((10, 10), dtype=np.float32), dims=["y", "x"])},
         coords={
             "x": np.linspace(-0.5, 0.5, 10),
             "y": np.linspace(40.5, 39.5, 10),
@@ -416,8 +412,8 @@ def test_harmonise_command(tmp_path):
     )
     ds.rio.write_crs("EPSG:4326", inplace=True)
     ds.rio.write_transform(from_bounds(-0.5, 39.5, 0.5, 40.5, 10, 10), inplace=True)
-    tif_path = input_dir / "Valencia_2024_20241029_viirs_flood_extent.tif"
-    ds["flood_extent"].rio.to_raster(str(tif_path), dtype="uint8", compress="LZW", nodata=0)
+    tif_path = input_dir / "Valencia_2024_20241029_viirs_flood_fraction.tif"
+    ds["flood_fraction"].rio.to_raster(str(tif_path), dtype="float32", compress="LZW")
 
     result = runner.invoke(
         cli,
@@ -480,7 +476,7 @@ class TestPlotViirs:
             calls.append({"da": da, "title": title, "path": output_path})
 
         monkeypatch.setattr("atlantis.cli.plot_classified", _capture)
-        ds = _FakeDataset({"flood_extent": np.ones((4, 4), dtype=np.float32)})
+        ds = _FakeDataset({"flood_fraction": np.ones((4, 4), dtype=np.float32)})
         out = tmp_path / "plot.png"
         _plot_viirs(ds, "Ev", "2020-07-22", output_png_path=out)
         assert len(calls) == 1
@@ -585,10 +581,10 @@ def test_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
     harm_da.max.return_value = 0.5
 
     harm_ds = MagicMock()
-    harm_ds.__contains__ = lambda self, k: k == "flood_extent"
+    harm_ds.__contains__ = lambda self, k: k == "flood_fraction"
     harm_ds.__getitem__ = lambda self, k: harm_da
-    harm_ds.__iter__ = lambda self: iter(["flood_extent"])
-    harm_ds.data_vars = ["flood_extent"]
+    harm_ds.__iter__ = lambda self: iter(["flood_fraction"])
+    harm_ds.data_vars = ["flood_fraction"]
 
     mock_harmoniser_cls = MagicMock()
     mock_harmoniser_cls.return_value.harmonise.return_value = harm_ds
@@ -655,10 +651,10 @@ def test_fetch_harmonise_only_skips_processed_on_disk(monkeypatch, tmp_path):
     harm_da.values = harm_flood
 
     harm_ds = MagicMock()
-    harm_ds.__contains__ = lambda self, k: k == "flood_extent"
+    harm_ds.__contains__ = lambda self, k: k == "flood_fraction"
     harm_ds.__getitem__ = lambda self, k: harm_da
-    harm_ds.__iter__ = lambda self: iter(["flood_extent"])
-    harm_ds.data_vars = ["flood_extent"]
+    harm_ds.__iter__ = lambda self: iter(["flood_fraction"])
+    harm_ds.data_vars = ["flood_fraction"]
 
     mock_harmoniser_cls = MagicMock()
     mock_harmoniser_cls.return_value.harmonise.return_value = harm_ds
@@ -770,10 +766,10 @@ def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path)
     harm_da.values = harm_flood
 
     harm_ds = MagicMock()
-    harm_ds.__contains__ = lambda self, k: k == "flood_extent"
+    harm_ds.__contains__ = lambda self, k: k == "flood_fraction"
     harm_ds.__getitem__ = lambda self, k: harm_da
-    harm_ds.__iter__ = lambda self: iter(["flood_extent"])
-    harm_ds.data_vars = ["flood_extent"]
+    harm_ds.__iter__ = lambda self: iter(["flood_fraction"])
+    harm_ds.data_vars = ["flood_fraction"]
 
     mock_harmoniser_cls = MagicMock()
     mock_harmoniser_cls.return_value.harmonise.return_value = harm_ds

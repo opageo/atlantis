@@ -27,7 +27,7 @@ class TestHarmoniseConfig:
 
     def test_variable_resampling_defaults(self):
         cfg = HarmoniseConfig()
-        assert cfg.variable_resampling["flood_extent"] == "average"
+        assert cfg.variable_resampling["flood_fraction"] == "average"
         assert cfg.variable_resampling["quality_mask"] == "mode"
         assert cfg.variable_resampling["permanent_water"] == "mode"
         assert cfg.variable_resampling["raw"] == "nearest"

@@ -58,7 +58,9 @@ class ProcessedTile:
 
     Attributes:
         raw: Raw tile data.
-        flood_extent: Binary flood extent array (0/1).
+        flood_fraction: Continuous flood fraction array (float32, 0.0–1.0).
+            Derived from VIIRS water-fraction codes 101–200 as (code−100)/100.
+            Non-flood codes produce 0.0.
         quality_mask: Quality mask array (0=bad, 1=good).
         permanent_water: Permanent water mask array (0/1).
         transform: Affine transform for the processed data.
@@ -70,7 +72,7 @@ class ProcessedTile:
     crs: str
     cloud_fraction: float
     raw: np.ndarray | None = None
-    flood_extent: np.ndarray | None = None
+    flood_fraction: np.ndarray | None = None
     quality_mask: np.ndarray | None = None
     permanent_water: np.ndarray | None = None
 
@@ -80,7 +82,7 @@ class OutputPaths:
     """Paths for the output files."""
 
     raw: Path | None = None
-    flood_extent: Path | None = None
+    flood_fraction: Path | None = None
     quality_mask: Path | None = None
     permanent_water: Path | None = None
 
@@ -115,7 +117,6 @@ class ViirsRasterProcessor:
         area_geometry: BaseGeometry,
         crs: str = "EPSG:4326",
         classify: bool = False,
-        flood_min_code: int = FLOOD_MIN_CODE,
     ) -> None:
         """Initialize the processor.
 
@@ -124,15 +125,10 @@ class ViirsRasterProcessor:
             crs: Target CRS for outputs.
             classify: Whether to classify pixels into discrete flood layers.
                 If False (default), outputs raw data only.
-            flood_min_code: Lower bound for the flood class (default: 160,
-                ≥60% water fraction).  Values 101–159 are marginal water
-                below the conservative threshold.  Set to 101 for the most
-                inclusive flood mask, or 180 for the most conservative.
         """
         self.area_geometry = area_geometry
         self.crs = crs
         self.classify = classify
-        self.flood_min_code = flood_min_code
 
     def process_tiles(
         self,
@@ -166,7 +162,7 @@ class ViirsRasterProcessor:
         base_name = f"{event_id}_{date_token}_viirs"
         if self.classify:
             paths = OutputPaths(
-                flood_extent=output_dir / f"{base_name}_flood_extent.tif",
+                flood_fraction=output_dir / f"{base_name}_flood_fraction.tif",
                 quality_mask=output_dir / f"{base_name}_quality_mask.tif",
                 permanent_water=output_dir / f"{base_name}_permanent_water.tif",
             )
@@ -179,8 +175,8 @@ class ViirsRasterProcessor:
         metadata = self._build_metadata(
             event_id=event_id,
             processed=processed,
-            width=processed.raw.shape[1] if processed.raw is not None else processed.flood_extent.shape[1],
-            height=processed.raw.shape[0] if processed.raw is not None else processed.flood_extent.shape[0],
+            width=processed.raw.shape[1] if processed.raw is not None else processed.flood_fraction.shape[1],
+            height=processed.raw.shape[0] if processed.raw is not None else processed.flood_fraction.shape[0],
         )
 
         return ProcessTilesResult(paths=paths, metadata=metadata, processed=processed)
@@ -250,10 +246,15 @@ class ViirsRasterProcessor:
         fill = np.isin(data, list(FILL_CODES))
         cloud = np.isin(data, list(CLOUD_CODES))
         permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
-        flood = data >= self.flood_min_code
 
-        flood_extent = np.zeros_like(data, dtype=np.uint8)
-        flood_extent[flood] = 1
+        # Continuous flood fraction: codes 101–200 encode water fraction as (code−100)/100.
+        # All other codes (including non-flood water classes) produce 0.0.
+        flood_mask = (data >= 101) & (data <= 200)
+        flood_fraction = np.where(
+            flood_mask,
+            (data.astype(np.float32) - 100.0) / 100.0,
+            np.float32(0.0),
+        )
 
         # Quality mask: 1 = valid clear-sky observation, 0 = unusable (fill or cloud).
         # Pre-existing water types (permanent/seasonal/open) are valid observations —
@@ -269,7 +270,7 @@ class ViirsRasterProcessor:
         cloud_fraction = float(cloud[valid].sum() / valid.sum()) if valid.sum() else 0.0
 
         return ProcessedTile(
-            flood_extent=flood_extent,
+            flood_fraction=flood_fraction,
             quality_mask=quality_mask,
             permanent_water=permanent_water_mask,
             transform=transform,
@@ -284,32 +285,35 @@ class ViirsRasterProcessor:
             processed: The processed tile data.
             paths: Output file paths.
         """
-        output_meta = {
+        # Determine shape from whichever array is available
+        ref_shape = processed.raw.shape if processed.raw is not None else processed.flood_fraction.shape
+        base_meta = {
             "driver": "GTiff",
-            "height": processed.raw.shape[0] if processed.raw is not None else processed.flood_extent.shape[0],
-            "width": processed.raw.shape[1] if processed.raw is not None else processed.flood_extent.shape[1],
+            "height": ref_shape[0],
+            "width": ref_shape[1],
             "count": 1,
-            "dtype": "uint8",
             "crs": processed.crs,
             "transform": processed.transform,
-            "nodata": 0,
             "compress": "LZW",
         }
 
-        outputs_to_write = []
         if paths.raw is not None and processed.raw is not None:
-            outputs_to_write.append((paths.raw, processed.raw))
+            with rasterio.open(paths.raw, "w", **base_meta, dtype="uint8", nodata=0) as dst:
+                dst.write(processed.raw, 1)
 
-        if paths.flood_extent is not None and processed.flood_extent is not None:
-            outputs_to_write.append((paths.flood_extent, processed.flood_extent))
+        if paths.flood_fraction is not None and processed.flood_fraction is not None:
+            # Store as uint8 percentage (0–100) to save space: 0 = no flood, 1–100 = fraction × 100.
+            pct = np.round(processed.flood_fraction * 100).astype(np.uint8)
+            with rasterio.open(paths.flood_fraction, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(pct, 1)
+
         if paths.quality_mask is not None and processed.quality_mask is not None:
-            outputs_to_write.append((paths.quality_mask, processed.quality_mask))
-        if paths.permanent_water is not None and processed.permanent_water is not None:
-            outputs_to_write.append((paths.permanent_water, processed.permanent_water))
+            with rasterio.open(paths.quality_mask, "w", **base_meta, dtype="uint8", nodata=0) as dst:
+                dst.write(processed.quality_mask, 1)
 
-        for path, array in outputs_to_write:
-            with rasterio.open(path, "w", **output_meta) as dst:
-                dst.write(array, 1)
+        if paths.permanent_water is not None and processed.permanent_water is not None:
+            with rasterio.open(paths.permanent_water, "w", **base_meta, dtype="uint8", nodata=0) as dst:
+                dst.write(processed.permanent_water, 1)
 
     def _build_metadata(self, event_id: str, processed: ProcessedTile, width: int, height: int) -> TileMetadata:
         """Build TileMetadata from processed tile.

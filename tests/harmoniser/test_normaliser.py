@@ -87,7 +87,7 @@ class TestNormaliser:
         """When quality_mask exists, it should be used directly."""
         ds = _make_flood_dataset()
         n = Normaliser()
-        qm = n.generate_quality_mask(ds)
+        qm = n.generate_quality_mask(ds, variable="flood_extent")
         assert qm.dtype == np.uint8
         assert qm.shape == (3, 5)
 

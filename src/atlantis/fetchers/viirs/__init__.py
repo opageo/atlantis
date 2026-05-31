@@ -93,7 +93,6 @@ class VIIRSFetcher(AbstractFloodFetcher):
         data_format: str | None = None,
         classify: bool = False,
         stream: bool = False,
-        flood_min_code: int = 160,
         write_processed: bool = True,
     ) -> None:
         """Initialize the VIIRS fetcher.
@@ -107,8 +106,6 @@ class VIIRSFetcher(AbstractFloodFetcher):
             stream: If True, stream remote tiles via GDAL ``/vsicurl/``
                 instead of downloading them to disk. Saves local storage
                 at the cost of network dependency during processing.
-            flood_min_code: Lower bound for the flood class (default: 160,
-                ≥60% water fraction).  Valid range: 101–200.
             write_processed: When False, process dates in memory and return only
                 the peak-flood date (no ``processed/`` GeoTIFFs).
         """
@@ -121,7 +118,6 @@ class VIIRSFetcher(AbstractFloodFetcher):
         self.timeout = timeout or config.fetcher.timeout
         self.classify = classify
         self.stream = stream
-        self.flood_min_code = flood_min_code
         self.write_processed = write_processed
 
     def _resolve_base_url(self, override: str | None, config) -> str:
@@ -253,7 +249,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
             grouped_results[result.properties["date"]].append(result)
 
         area_geom = box(*event.bbox)
-        processor = ViirsRasterProcessor(area_geom, classify=self.classify, flood_min_code=self.flood_min_code)
+        processor = ViirsRasterProcessor(area_geom, classify=self.classify)
 
         fetch_results: list[FetchResult] = []
         best_in_memory: ProcessTilesResult | None = None
@@ -320,7 +316,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
             event_id=event_id,
             source_id="viirs",
             files=[
-                p for p in (paths.raw, paths.flood_extent, paths.quality_mask, paths.permanent_water) if p is not None
+                p for p in (paths.raw, paths.flood_fraction, paths.quality_mask, paths.permanent_water) if p is not None
             ],
             metadata=process_result.metadata,
             date_token=date_token,
@@ -372,15 +368,15 @@ class VIIRSFetcher(AbstractFloodFetcher):
         if raw_path:
             variables["raw"] = rxr.open_rasterio(raw_path).squeeze(drop=True).rename("raw")
         else:
-            obs_path = next(path for name, path in files_by_name.items() if name.endswith("_flood_extent.tif"))
+            obs_path = next(path for name, path in files_by_name.items() if name.endswith("_flood_fraction.tif"))
             quality_path = next(path for name, path in files_by_name.items() if name.endswith("_quality_mask.tif"))
             permanent_water_path = next(
                 path for name, path in files_by_name.items() if name.endswith("_permanent_water.tif")
             )
 
-            variables["flood_extent"] = (
-                rxr.open_rasterio(obs_path).squeeze(drop=True).astype("float32").rename("flood_extent")
-            )
+            variables["flood_fraction"] = (
+                rxr.open_rasterio(obs_path).squeeze(drop=True).astype("float32") / 100.0
+            ).rename("flood_fraction")
             variables["quality_mask"] = (
                 rxr.open_rasterio(quality_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
             )

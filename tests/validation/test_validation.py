@@ -35,7 +35,7 @@ class TestArchiveChecker:
         import xarray as xr
 
         checker = ArchiveChecker(tmp_path)
-        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((10, 10)))})
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((10, 10)))})
         result = checker.check_spatial_alignment(ds)
         assert isinstance(result, ValidationResult)
         assert result.passed is True
@@ -45,7 +45,7 @@ class TestArchiveChecker:
         import xarray as xr
 
         checker = ArchiveChecker(tmp_path)
-        ds = xr.Dataset({"flood_extent": xr.DataArray(np.ones((10, 10)))})
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.ones((10, 10)))})
         result = checker.check_nan_patterns(ds)
         assert isinstance(result, ValidationResult)
         assert result.passed is True
@@ -55,7 +55,7 @@ class TestArchiveChecker:
         import xarray as xr
 
         checker = ArchiveChecker(tmp_path)
-        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((10, 10)))})
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((10, 10)))})
         result = checker.check_crs_consistency(ds)
         assert isinstance(result, ValidationResult)
         assert result.passed is True
@@ -65,8 +65,8 @@ class TestArchiveChecker:
         import xarray as xr
 
         checker = ArchiveChecker(tmp_path)
-        ds = xr.Dataset({"flood_extent": xr.DataArray(np.array([[0.0, 0.5, 1.0]]))})
-        result = checker.check_value_ranges(ds, "flood_extent", 0.0, 1.0)
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.array([[0.0, 0.5, 1.0]]))})
+        result = checker.check_value_ranges(ds, "flood_fraction", 0.0, 1.0)
         assert isinstance(result, ValidationResult)
         assert result.passed is True
 
@@ -75,7 +75,7 @@ class TestArchiveChecker:
         import xarray as xr
 
         checker = ArchiveChecker(tmp_path)
-        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((5, 5)))})
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((5, 5)))})
         results = checker.run_all_checks(ds)
         assert len(results) == 3
         assert all(isinstance(r, ValidationResult) for r in results)

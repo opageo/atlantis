@@ -46,7 +46,7 @@ class Normaliser:
 
     # ── Public API ────────────────────────────────────────────────────────
 
-    def normalise(self, dataset: "xr.Dataset", variable: str = "flood_extent") -> "xr.Dataset":
+    def normalise(self, dataset: "xr.Dataset", variable: str = "flood_fraction") -> "xr.Dataset":
         """Normalise variable values to the configured range.
 
         Args:
@@ -105,7 +105,7 @@ class Normaliser:
         ds.attrs["normalisation_applied"] = variable
         return ds
 
-    def generate_quality_mask(self, dataset: "xr.Dataset", variable: str = "flood_extent") -> "xr.DataArray":
+    def generate_quality_mask(self, dataset: "xr.Dataset", variable: str = "flood_fraction") -> "xr.DataArray":
         """Generate a quality mask from data values.
 
         The mask is constructed from multiple sources of information:

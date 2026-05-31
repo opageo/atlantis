@@ -26,11 +26,11 @@ def processed_tile_to_dataset(
     if processed.raw is not None:
         variables["raw"] = _as_georeferenced_da(processed.raw, processed, name="raw", dtype=processed.raw.dtype)
     else:
-        if processed.flood_extent is not None:
-            variables["flood_extent"] = _as_georeferenced_da(
-                processed.flood_extent.astype(np.float32),
+        if processed.flood_fraction is not None:
+            variables["flood_fraction"] = _as_georeferenced_da(
+                processed.flood_fraction,
                 processed,
-                name="flood_extent",
+                name="flood_fraction",
                 dtype=np.float32,
             )
         if processed.quality_mask is not None:

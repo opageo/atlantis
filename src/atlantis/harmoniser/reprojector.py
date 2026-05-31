@@ -99,7 +99,7 @@ class Reprojector:
             target_resolution: Target resolution in CRS units.
             resampling_method: Default resampling method.
             variable_resampling: Per-variable overrides, e.g.
-                ``{"flood_extent": "average", "quality_mask": "mode"}``.
+                ``{"flood_fraction": "average", "quality_mask": "mode"}``.
         """
         self.target_crs = target_crs
         self.target_resolution = target_resolution

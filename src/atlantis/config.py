@@ -44,7 +44,7 @@ class HarmoniseConfig(BaseSettings):
         tile_size: Size of square tiles in pixels for ML models.
         resampling: Default resampling method (average, bilinear, nearest).
         variable_resampling: Per-variable resampling overrides. Defaults:
-            flood_extent->average, quality_mask->mode, permanent_water->mode, raw->nearest.
+            flood_fraction->average, quality_mask->mode, permanent_water->mode, raw->nearest.
         normalise_range: Tuple of (min, max) for value normalisation.
     """
 
@@ -60,7 +60,7 @@ class HarmoniseConfig(BaseSettings):
     tile_size: int = 224
     resampling: Literal["average", "bilinear", "nearest", "cubic"] = "average"
     variable_resampling: dict[str, Literal["average", "bilinear", "nearest", "cubic", "mode"]] = {
-        "flood_extent": "average",
+        "flood_fraction": "average",
         "quality_mask": "mode",
         "permanent_water": "mode",
         "raw": "nearest",

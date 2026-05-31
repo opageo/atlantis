@@ -63,13 +63,11 @@ class TestViirsRasterProcessor:
         assert processor.area_geometry == geom
         assert processor.crs == "EPSG:4326"
         assert processor.classify is False
-        assert processor.flood_min_code == 160
 
     def test_init_classify(self):
         geom = box(105.0, 28.0, 125.0, 38.0)
-        processor = ViirsRasterProcessor(area_geometry=geom, classify=True, flood_min_code=101)
+        processor = ViirsRasterProcessor(area_geometry=geom, classify=True)
         assert processor.classify is True
-        assert processor.flood_min_code == 101
 
     def test_process_tiles_no_tiles(self, tmp_path):
         geom = box(105.0, 28.0, 125.0, 38.0)
@@ -93,7 +91,7 @@ class TestViirsRasterProcessor:
         paths, metadata = result.paths, result.metadata
         assert paths.raw is not None
         assert paths.raw.exists()
-        assert paths.flood_extent is None
+        assert paths.flood_fraction is None
         assert paths.quality_mask is None
         assert paths.permanent_water is None
         assert isinstance(metadata, TileMetadata)
@@ -101,7 +99,7 @@ class TestViirsRasterProcessor:
     def test_process_tiles_classify(self, tmp_path):
         """Single tile with classification – should write all three masks."""
         geom = box(105.0, 28.0, 115.0, 38.0)
-        processor = ViirsRasterProcessor(area_geometry=geom, classify=True, flood_min_code=101)
+        processor = ViirsRasterProcessor(area_geometry=geom, classify=True)
 
         tile_path = tmp_path / "tile.tif"
         data = np.full((10, 10), 170, dtype=np.uint8)
@@ -113,8 +111,8 @@ class TestViirsRasterProcessor:
         assert result is not None
         paths = result.paths
         assert paths.raw is None
-        assert paths.flood_extent is not None
-        assert paths.flood_extent.exists()
+        assert paths.flood_fraction is not None
+        assert paths.flood_fraction.exists()
         assert paths.quality_mask is not None
         assert paths.quality_mask.exists()
         assert paths.permanent_water is not None
@@ -123,7 +121,7 @@ class TestViirsRasterProcessor:
     def test_mosaic_two_tiles(self, tmp_path):
         """Two adjacent tiles should be mosaicked, then clipped."""
         geom = box(105.0, 28.0, 125.0, 38.0)
-        processor = ViirsRasterProcessor(area_geometry=geom, classify=True, flood_min_code=101)
+        processor = ViirsRasterProcessor(area_geometry=geom, classify=True)
 
         tile1 = tmp_path / "tile1.tif"
         _write_tile(tile1, 105.0, 28.0, 115.0, 38.0, np.full((10, 10), 170, dtype=np.uint8))
@@ -135,13 +133,13 @@ class TestViirsRasterProcessor:
         )
         assert result is not None
         paths = result.paths
-        assert paths.flood_extent is not None
-        assert paths.flood_extent.exists()
+        assert paths.flood_fraction is not None
+        assert paths.flood_fraction.exists()
 
     def test_classify_pixels_flood(self, tmp_path):
-        """Verify classification logic for known pixel codes."""
+        """Verify continuous flood fraction for known pixel codes."""
         geom = box(105.0, 28.0, 115.0, 38.0)
-        processor = ViirsRasterProcessor(area_geometry=geom, classify=True, flood_min_code=101)
+        processor = ViirsRasterProcessor(area_geometry=geom, classify=True)
 
         # Create tile with mixed codes
         tile_path = tmp_path / "mixed.tif"
@@ -161,15 +159,15 @@ class TestViirsRasterProcessor:
         paths = result.paths
 
         # Read back and verify
-        with rasterio.open(paths.flood_extent) as src:
+        with rasterio.open(paths.flood_fraction) as src:
             flood = src.read(1)
         with rasterio.open(paths.quality_mask) as src:
             quality = src.read(1)
         with rasterio.open(paths.permanent_water) as src:
             water = src.read(1)
 
-        # Flood extent: codes 101, 160, 200 → 1; others → 0
-        expected_flood = np.array([[0, 0, 0, 0], [1, 1, 1, 0]], dtype=np.uint8)
+        # Flood fraction stored as uint8 percentage: codes 101->1, 160->60, 200->100; non-flood -> 0
+        expected_flood = np.array([[0, 0, 0, 0], [1, 60, 100, 0]], dtype=np.uint8)
         np.testing.assert_array_equal(flood, expected_flood)
 
         # Quality: fill(1) and cloud(30) → 0; others → 1
@@ -180,12 +178,12 @@ class TestViirsRasterProcessor:
         expected_water = np.array([[0, 1, 0, 0], [0, 0, 0, 0]], dtype=np.uint8)
         np.testing.assert_array_equal(water, expected_water)
 
-    def test_classify_conservative_threshold(self, tmp_path):
-        """With flood_min_code=160, only codes ≥160 are flood."""
+    def test_classify_continuous_fractions(self, tmp_path):
+        """All flood codes 101-200 produce continuous fractions; threshold no longer gates output."""
         geom = box(105.0, 28.0, 115.0, 38.0)
-        processor = ViirsRasterProcessor(area_geometry=geom, classify=True, flood_min_code=160)
+        processor = ViirsRasterProcessor(area_geometry=geom, classify=True)
 
-        tile_path = tmp_path / "conservative.tif"
+        tile_path = tmp_path / "fractions.tif"
         data = np.array([[101, 130, 160, 200]], dtype=np.uint8)
         _write_tile(tile_path, 105.0, 28.0, 115.0, 38.0, data)
 
@@ -195,9 +193,10 @@ class TestViirsRasterProcessor:
         assert result is not None
         paths = result.paths
 
-        with rasterio.open(paths.flood_extent) as src:
+        with rasterio.open(paths.flood_fraction) as src:
             flood = src.read(1)
-        expected = np.array([[0, 0, 1, 1]], dtype=np.uint8)
+        # On-disk: uint8 percentage (0–100); codes 101->1, 130->30, 160->60, 200->100
+        expected = np.array([[1, 30, 60, 100]], dtype=np.uint8)
         np.testing.assert_array_equal(flood, expected)
 
     def test_metadata_building(self, tmp_path):
@@ -233,11 +232,11 @@ class TestViirsRasterProcessor:
         assert result is not None
         paths = result.paths
 
-        with rasterio.open(paths.flood_extent) as src:
+        with rasterio.open(paths.flood_fraction) as src:
             assert src.crs.to_string() == "EPSG:4326"
             assert src.dtypes[0] == "uint8"
             assert src.compression.value.upper() == "LZW"
-            assert src.nodata == 0
+            assert src.nodata == 255
 
 
 class TestProcessedTile:
@@ -248,7 +247,7 @@ class TestProcessedTile:
             cloud_fraction=0.0,
         )
         assert tile.raw is None
-        assert tile.flood_extent is None
+        assert tile.flood_fraction is None
         assert tile.quality_mask is None
         assert tile.permanent_water is None
 

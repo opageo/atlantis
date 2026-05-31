@@ -115,7 +115,6 @@ class TestVIIRSFetcherInit:
         assert fetcher.backend_name == "noaa_s3"
         assert fetcher.classify is False
         assert fetcher.stream is False
-        assert fetcher.flood_min_code == 160
         assert fetcher.data_format == "tif"
         assert fetcher.write_processed is True
 
@@ -126,10 +125,6 @@ class TestVIIRSFetcherInit:
     def test_stream_flag(self):
         fetcher = VIIRSFetcher(stream=True)
         assert fetcher.stream is True
-
-    def test_flood_min_code_override(self):
-        fetcher = VIIRSFetcher(flood_min_code=101)
-        assert fetcher.flood_min_code == 101
 
     def test_backend_override(self):
         fetcher = VIIRSFetcher(backend="gmu_legacy")
@@ -319,9 +314,9 @@ class TestVIIRSFetcherFetch:
         assert not download_called, "download_file should not be called in stream mode"
         assert len(results) <= 1  # may or may not produce results depending on URL format
 
-    def test_fetch_with_flood_min_code(self, tmp_path, monkeypatch):
-        """Verify flood_min_code is passed through to processor."""
-        fetcher = VIIRSFetcher(flood_min_code=101, classify=True)
+    def test_fetch_classify(self, tmp_path, monkeypatch):
+        """Verify classify=True fetches and produces flood_fraction output."""
+        fetcher = VIIRSFetcher(classify=True)
         event = self._default_event()
 
         tile_data = np.random.randint(0, 200, (10, 10), dtype=np.uint8)
@@ -414,7 +409,7 @@ class TestVIIRSFetcherFetch:
         assert not (out_dir / "processed").exists()
 
         dataset = fetcher.to_dataset(results[0])
-        assert "flood_extent" in dataset.data_vars
+        assert "flood_fraction" in dataset.data_vars
 
 
 # ── to_dataset tests ─────────────────────────────────────────────────────────
@@ -429,7 +424,7 @@ class TestVIIRSToDataset:
         qm = np.ones((10, 10), dtype=np.uint8)
         pw = np.zeros((10, 10), dtype=np.uint8)
 
-        fe_path = tmp_path / "test_flood_extent.tif"
+        fe_path = tmp_path / "test_flood_fraction.tif"
         qm_path = tmp_path / "test_quality_mask.tif"
         pw_path = tmp_path / "test_permanent_water.tif"
 
@@ -452,7 +447,7 @@ class TestVIIRSToDataset:
         )
 
         dataset = fetcher.to_dataset(result)
-        assert "flood_extent" in dataset.data_vars
+        assert "flood_fraction" in dataset.data_vars
         assert "quality_mask" in dataset.data_vars
         assert "permanent_water" in dataset.data_vars
         assert dataset.attrs["source_id"] == "viirs"
@@ -575,11 +570,11 @@ def test_fetch_and_to_dataset(tmp_path, monkeypatch):
 
     dataset = fetcher.to_dataset(result)
 
-    assert set(dataset.data_vars) == {"flood_extent", "quality_mask", "permanent_water"}
-    assert dataset["flood_extent"].dtype == np.float32
+    assert set(dataset.data_vars) == {"flood_fraction", "quality_mask", "permanent_water"}
+    assert dataset["flood_fraction"].dtype == np.float32
     assert dataset["quality_mask"].dtype == np.uint8
     assert dataset["permanent_water"].dtype == np.uint8
-    assert float(dataset["flood_extent"].sum()) > 0
+    assert float(dataset["flood_fraction"].sum()) > 0
     # Cloud pixels (code 30) → quality=0; flood pixels (170) → quality=1
     assert int(dataset["quality_mask"].min()) == 0
     assert int(dataset["quality_mask"].max()) == 1
@@ -754,12 +749,12 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
     gmu_dataset = gmu_fetcher.to_dataset(gmu_fetch_results[0])
 
     # Same data variables present
-    assert set(noaa_dataset.data_vars) == {"flood_extent", "quality_mask", "permanent_water"}
-    assert set(gmu_dataset.data_vars) == {"flood_extent", "quality_mask", "permanent_water"}
+    assert set(noaa_dataset.data_vars) == {"flood_fraction", "quality_mask", "permanent_water"}
+    assert set(gmu_dataset.data_vars) == {"flood_fraction", "quality_mask", "permanent_water"}
 
     # Same array shapes (mosaic of two 10×10 tiles → 10×20 for 1°×1° bbox)
     expected_shape = (10, 20)
-    for var in ("flood_extent", "quality_mask", "permanent_water"):
+    for var in ("flood_fraction", "quality_mask", "permanent_water"):
         noaa_arr = noaa_dataset[var]
         gmu_arr = gmu_dataset[var]
         assert noaa_arr.shape == expected_shape, f"{var} shape mismatch (noaa)"
@@ -767,24 +762,26 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
         assert noaa_arr.shape == gmu_arr.shape, f"{var} shape differs between backends"
 
     # Same dtypes per variable (as documented in docs/viirs.md)
-    assert noaa_dataset["flood_extent"].dtype == np.float32
-    assert gmu_dataset["flood_extent"].dtype == np.float32
+    assert noaa_dataset["flood_fraction"].dtype == np.float32
+    assert gmu_dataset["flood_fraction"].dtype == np.float32
     assert noaa_dataset["quality_mask"].dtype == np.uint8
     assert gmu_dataset["quality_mask"].dtype == np.uint8
     assert noaa_dataset["permanent_water"].dtype == np.uint8
     assert gmu_dataset["permanent_water"].dtype == np.uint8
 
     # Same pixel values — the raster arrays are byte-identical
-    for var in ("flood_extent", "quality_mask", "permanent_water"):
+    for var in ("flood_fraction", "quality_mask", "permanent_water"):
         assert (noaa_dataset[var].values == gmu_dataset[var].values).all(), f"{var} values differ between backends"
 
     # Semantic correctness: left half (077) is all flood, right half (078) is mixed
-    # Columns 0-9 = tile 077 (flood = 170 → flood_extent = 1)
-    assert float(noaa_dataset["flood_extent"].isel(x=slice(0, 10)).sum()) == 100.0, "left tile should be all flood"
-    # Columns 10-19 tile 078 rows 0-4 = permanent water (17 → flood_extent = 0)
-    assert float(noaa_dataset["flood_extent"].isel(x=slice(10, 20), y=slice(0, 5)).sum()) == 0.0
-    # Columns 10-19 tile 078 rows 5-9 = cloud (30 → flood_extent = 0)
-    assert float(noaa_dataset["flood_extent"].isel(x=slice(10, 20), y=slice(5, 10)).sum()) == 0.0
+    # Columns 0-9 = tile 077 (flood code 170 → flood_fraction = 0.70, 100 pixels)
+    assert abs(float(noaa_dataset["flood_fraction"].isel(x=slice(0, 10)).sum()) - 70.0) < 1e-3, (
+        "left tile should be all flood"
+    )
+    # Columns 10-19 tile 078 rows 0-4 = permanent water (17 → flood_fraction = 0.0)
+    assert float(noaa_dataset["flood_fraction"].isel(x=slice(10, 20), y=slice(0, 5)).sum()) == 0.0
+    # Columns 10-19 tile 078 rows 5-9 = cloud (30 → flood_fraction = 0.0)
+    assert float(noaa_dataset["flood_fraction"].isel(x=slice(10, 20), y=slice(5, 10)).sum()) == 0.0
 
     # Quality mask: 1 = valid clear-sky observation, 0 = fill or cloud only.
     # Permanent water (17) is a valid sensor observation → quality=1.

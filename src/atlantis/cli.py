@@ -75,8 +75,8 @@ def _select_best_result(
     for result in fetch_results:
         ds = fetcher.to_dataset(result)
         date_label = _viirs_date_label(result)
-        if "flood_extent" in ds:
-            flooded = pixel_stats_classified(ds["flood_extent"].values, name=date_label)
+        if "flood_fraction" in ds:
+            flooded = pixel_stats_classified(ds["flood_fraction"].values, name=date_label)
             if flooded > best_flood_count:
                 best_flood_count = flooded
                 best_result = result
@@ -99,9 +99,9 @@ def _plot_viirs(
     output_png_path,
 ):
     """Save a PNG visualisation of the VIIRS peak-flood date."""
-    if "flood_extent" in best_ds:
+    if "flood_fraction" in best_ds:
         plot_classified(
-            best_ds["flood_extent"],
+            best_ds["flood_fraction"],
             title=f"{event_id}: VIIRS flood extent {date_label} (375 m)",
             output_path=output_png_path,
         )
@@ -129,14 +129,14 @@ def _harmonise_viirs(
     harm_dir.mkdir(parents=True, exist_ok=True)
     h = Harmoniser()
     ds_harm = h.harmonise(best_ds, source_id="viirs")
-    flood_var = "flood_extent" if "flood_extent" in ds_harm else list(ds_harm.data_vars)[0]
+    flood_var = "flood_fraction" if "flood_fraction" in ds_harm else list(ds_harm.data_vars)[0]
 
     tif_path = harm_dir / f"{event_id}_{date_label}_viirs_harmonised.tif"
     write_harmonised_raster(ds_harm[flood_var], tif_path)
     console.print(f"  Harmonised → {tif_path.name}")
 
     png_harm_path = harm_dir / f"{event_id}_{date_label}_viirs_harmonised.png"
-    if flood_var == "flood_extent":
+    if flood_var == "flood_fraction":
         plot_classified(
             ds_harm[flood_var],
             title=f"{event_id}: VIIRS harmonised flood extent {date_label} (1 arcmin)",
@@ -201,14 +201,6 @@ def fetch(
         " (saves storage, requires network during processing). Default: on."
         " Use --no-stream to download tiles to disk instead.",
     ),
-    flood_threshold: int = typer.Option(
-        160,
-        "--flood-threshold",
-        min=101,
-        max=200,
-        help="Minimum VIIRS pixel code for flood classification (101–200). "
-        "Default: 160 (60%+ water). 101=all flood. 200=most conservative.",
-    ),
     plot: bool = typer.Option(
         False,
         "--plot",
@@ -241,9 +233,8 @@ def fetch(
         end_date: End date for direct event construction in YYYY-MM-DD format.
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
-        classify: If True, write flood-extent/quality-mask/permanent-water layers instead of raw data.
+        classify: If True, write flood-fraction/quality-mask/permanent-water layers instead of raw data.
         stream: If True, stream remote tiles without downloading to disk.
-        flood_threshold: Minimum VIIRS pixel code for flood (101–200, default 160).
         plot: Save PNG visualisation of the peak-flood date (VIIRS only).
         plot_dir: Directory for PNG output (default: <output>/plots/).
         harmonise: Harmonise the peak-flood date to 1 arcmin (VIIRS only).
@@ -285,7 +276,6 @@ def fetch(
                     "data_format": viirs_format,
                     "classify": classify,
                     "stream": stream,
-                    "flood_min_code": flood_threshold,
                     "write_processed": not harmonise_only,
                 }
             fetcher = fetcher_cls(**fetcher_kwargs)
@@ -380,14 +370,6 @@ def fetch_kurosiwo_viirs(
         help="Stream remote tiles via GDAL /vsicurl/ without downloading to disk."
         " Default: on. Use --no-stream to download tiles to disk instead.",
     ),
-    flood_threshold: int = typer.Option(
-        160,
-        "--flood-threshold",
-        min=101,
-        max=200,
-        help="Minimum VIIRS pixel code for flood classification (101–200). "
-        "Default: 160 (60%+ water). 101=all flood. 200=most conservative.",
-    ),
     plot: bool = typer.Option(
         False,
         "--plot",
@@ -422,9 +404,8 @@ def fetch_kurosiwo_viirs(
         use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
-        classify: If True, write flood-extent/quality-mask/permanent-water layers instead of raw data.
+        classify: If True, write flood-fraction/quality-mask/permanent-water layers instead of raw data.
         stream: If True, stream remote tiles without downloading to disk.
-        flood_threshold: Minimum VIIRS pixel code for flood (101–200, default 160).
         plot: Save PNG visualisation of the peak-flood date per case.
         plot_dir: Directory for PNG output (default: <output>/plots/).
         harmonise: Harmonise the peak-flood date to 1 arcmin.
@@ -461,7 +442,6 @@ def fetch_kurosiwo_viirs(
         data_format=viirs_format,
         classify=classify,
         stream=stream,
-        flood_min_code=flood_threshold,
         write_processed=not harmonise_only,
     )
 
@@ -555,7 +535,7 @@ def harmonise(
     resampling: str | None = typer.Option(
         None,
         "--resampling",
-        help="Resampling method for flood_extent (default: average)",
+        help="Resampling method for flood_fraction (default: average)",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be done without doing it"),
 ) -> None:
@@ -583,7 +563,7 @@ def harmonise(
         if resampling is not None:
             cfg.resampling = resampling  # type: ignore[assignment]
             if source == "viirs":
-                cfg.variable_resampling["flood_extent"] = resampling
+                cfg.variable_resampling["flood_fraction"] = resampling
         harmoniser = Harmoniser(config=cfg)
     else:
         harmoniser = Harmoniser()
@@ -601,14 +581,14 @@ def harmonise(
         # Try root/<source>/processed/ first
         candidate = root / source / "processed"
         if candidate.exists():
-            hits = sorted(candidate.glob(f"{event}_*_viirs_flood_extent.tif"))
+            hits = sorted(candidate.glob(f"{event}_*_viirs_flood_fraction.tif"))
             if not hits:
                 hits = sorted(candidate.glob(f"{event}_*_viirs_raw.tif"))
             if hits:
                 processed_dir, tif_files = candidate, hits
                 break
         # Fallback: check root directly (files may be flat)
-        hits = sorted(root.glob(f"{event}_*_viirs_flood_extent.tif"))
+        hits = sorted(root.glob(f"{event}_*_viirs_flood_fraction.tif"))
         if not hits:
             hits = sorted(root.glob(f"{event}_*_viirs_raw.tif"))
         if hits:
@@ -617,7 +597,7 @@ def harmonise(
 
         # KuroSiwo deep pattern: <root>/<case>/viirs/processed/<case>_<date>_*.tif
         for vdir in sorted(root.rglob("viirs/processed/")):
-            hits = sorted(vdir.glob(f"{event}_*_viirs_flood_extent.tif"))
+            hits = sorted(vdir.glob(f"{event}_*_viirs_flood_fraction.tif"))
             if not hits:
                 hits = sorted(vdir.glob(f"{event}_*_viirs_raw.tif"))
             if hits:
@@ -644,23 +624,23 @@ def harmonise(
 
     if dry_run:
         for tf in tif_files:
-            stem = tf.stem.replace("flood_extent", "harmonised").replace("raw", "harmonised")
+            stem = tf.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
             out = output_path / f"{stem}.tif"
             console.print(f"  Would process: {tf.name} → {out.name}")
         return
 
     harmonised_count = 0
     for tif_path in tif_files:
-        # Determine if this is flood_extent, raw, or quality_mask
-        input_var = "flood_extent" if "flood_extent" in tif_path.name else "raw"
-        stem = tif_path.stem.replace("flood_extent", "harmonised").replace("raw", "harmonised")
+        # Determine if this is flood_fraction, raw, or quality_mask
+        input_var = "flood_fraction" if "flood_fraction" in tif_path.name else "raw"
+        stem = tif_path.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
         out_path = output_path / f"{stem}.tif"
 
         console.print(f"  Processing: {tif_path.name} ...", end="")
         ds = rxr.open_rasterio(tif_path).squeeze(drop=True).to_dataset(name=input_var)
         ds_harmonised = harmoniser.harmonise(ds, source_id=source, flood_variable=input_var)
 
-        flood_var = input_var if input_var in ds_harmonised.data_vars else "flood_extent"
+        flood_var = input_var if input_var in ds_harmonised.data_vars else "flood_fraction"
         write_harmonised_raster(ds_harmonised[flood_var], out_path)
         harmonised_count += 1
         console.print(f" done → {out_path.name}")

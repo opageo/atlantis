@@ -7,8 +7,8 @@ from atlantis.fetchers.viirs.processor import ProcessedTile
 
 def flood_pixel_count(processed: ProcessedTile) -> int:
     """Return a comparable flood signal for picking the peak inundation date."""
-    if processed.flood_extent is not None:
-        return int((processed.flood_extent > 0).sum())
+    if processed.flood_fraction is not None:
+        return int((processed.flood_fraction > 0).sum())
     if processed.raw is not None:
         values = processed.raw.ravel()
         return int(((values >= 101) & (values <= 200)).sum())
