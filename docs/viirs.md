@@ -200,6 +200,7 @@ Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 
 ## Further reading
 
+- [Pipeline modes & flowchart](viirs_pipeline.md)
 - [Python API reference](viirs_api.md)
 - [Architecture & internals](viirs_internals.md)
 - [Pipeline vision](../src/README.md)
