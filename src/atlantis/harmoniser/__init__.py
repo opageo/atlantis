@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from atlantis.config import HarmoniseConfig
 from atlantis.harmoniser.normaliser import Normaliser, NormaliserConfig
 from atlantis.harmoniser.reprojector import Reprojector
@@ -13,13 +15,46 @@ from atlantis.harmoniser.tiler import Tiler
 if TYPE_CHECKING:
     import xarray as xr
 
+#: Nodata sentinel for harmonised uint8 outputs.
+HARMONISED_NODATA: int = 255
+
 __all__ = [
+    "HARMONISED_NODATA",
     "Harmoniser",
     "Reprojector",
     "Tiler",
     "Normaliser",
     "NormaliserConfig",
+    "write_harmonised_raster",
 ]
+
+
+def write_harmonised_raster(data_array: "xr.DataArray", output_path: Path | str) -> None:
+    """Write a harmonised DataArray to a uint8 GeoTIFF.
+
+    Flood fraction values in [0, 1] are scaled to [0, 100] (percent).
+    NaN pixels are written as nodata=255. Binary masks (quality, permanent
+    water) are written as-is with the same nodata sentinel.
+
+    Args:
+        data_array: The xarray DataArray to write (float32 in [0,1] or uint8 binary).
+        output_path: Destination file path.
+    """
+    arr = data_array.values
+    if np.issubdtype(arr.dtype, np.floating):
+        # Scale [0, 1] → [0, 100], NaN → 255
+        scaled = np.where(np.isnan(arr), HARMONISED_NODATA, np.round(arr * 100)).astype(np.uint8)
+    else:
+        # Already integer (quality_mask, permanent_water) — just set nodata
+        scaled = arr.astype(np.uint8)
+
+    out_da = data_array.copy(data=scaled)
+    out_da.rio.write_nodata(HARMONISED_NODATA, inplace=True)
+    out_da.rio.to_raster(
+        str(output_path),
+        dtype="uint8",
+        compress="LZW",
+    )
 
 
 class Harmoniser:
@@ -132,10 +167,5 @@ class Harmoniser:
         ds_harm = self.harmonise(ds, source_id=source_id, flood_variable=flood_variable)
 
         # Write only the main flood variable
-        ds_harm[flood_variable].rio.to_raster(
-            str(output_path),
-            dtype="float32",
-            compress="LZW",
-            nodata=float("nan"),
-        )
+        write_harmonised_raster(ds_harm[flood_variable], output_path)
         return output_path

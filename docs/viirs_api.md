@@ -64,12 +64,15 @@ print(ks_ds["flood_extent"].sum().item(), "flooded pixels")
 ## Harmonisation
 
 ```python
-from atlantis.harmoniser import Harmoniser
+from atlantis.harmoniser import Harmoniser, write_harmonised_raster
 
 harmoniser = Harmoniser()  # defaults to 1 arcmin target
 ds_harm = harmoniser.harmonise(ds, source_id="viirs")
 print(ds_harm["flood_extent"].dtype, ds_harm["flood_extent"].shape)
-# float32, ~6% of original pixels
+# float32 in-memory, ~6% of original pixels
+
+# Write to disk as uint8 percentage [0–100], nodata=255
+write_harmonised_raster(ds_harm["flood_extent"], Path("harmonised/output.tif"))
 ```
 
 ## Displaying raw pixel codes

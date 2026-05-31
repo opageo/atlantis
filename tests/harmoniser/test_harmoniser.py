@@ -115,10 +115,13 @@ class TestHarmoniser:
         assert result == output_path
         assert output_path.exists()
 
-        # Verify the output is a float32 GeoTIFF at coarser resolution
+        # Verify the output is a uint8 GeoTIFF at coarser resolution
         with rxr.open_rasterio(output_path) as da:
-            assert da.dtype == np.float32
+            assert da.dtype == np.uint8
             assert da.shape[-1] < 100  # coarser than input
+            # Values should be in [0, 100] with 255 as nodata
+            valid = da.values[da.values != 255]
+            assert valid.max() <= 100
 
     def test_harmonise_empty_dataset(self):
         """Empty dataset should return empty."""

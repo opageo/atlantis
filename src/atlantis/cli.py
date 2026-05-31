@@ -12,6 +12,7 @@ from atlantis.config import HarmoniseConfig, get_config
 # Import fetchers to register them
 from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, rfm, viirs  # noqa: F401
 from atlantis.fetchers.base import FetchResult
+from atlantis.harmoniser import write_harmonised_raster
 from atlantis.models.event import FloodEvent
 from atlantis.utils.kurosiwo import (
     KUROSIWO_DEFAULT_CATALOGUE,
@@ -131,7 +132,7 @@ def _harmonise_viirs(
     flood_var = "flood_extent" if "flood_extent" in ds_harm else list(ds_harm.data_vars)[0]
 
     tif_path = harm_dir / f"{event_id}_{date_label}_viirs_harmonised.tif"
-    ds_harm[flood_var].rio.to_raster(str(tif_path), dtype="float32", compress="LZW", nodata=float("nan"))
+    write_harmonised_raster(ds_harm[flood_var], tif_path)
     console.print(f"  Harmonised → {tif_path.name}")
 
     png_harm_path = harm_dir / f"{event_id}_{date_label}_viirs_harmonised.png"
@@ -660,12 +661,7 @@ def harmonise(
         ds_harmonised = harmoniser.harmonise(ds, source_id=source, flood_variable=input_var)
 
         flood_var = input_var if input_var in ds_harmonised.data_vars else "flood_extent"
-        ds_harmonised[flood_var].rio.to_raster(
-            str(out_path),
-            dtype="float32",
-            compress="LZW",
-            nodata=float("nan"),
-        )
+        write_harmonised_raster(ds_harmonised[flood_var], out_path)
         harmonised_count += 1
         console.print(f" done → {out_path.name}")
 

@@ -594,6 +594,12 @@ def test_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
     mock_harmoniser_cls.return_value.harmonise.return_value = harm_ds
     monkeypatch.setattr("atlantis.harmoniser.Harmoniser", mock_harmoniser_cls)
 
+    write_calls: list = []
+    monkeypatch.setattr(
+        "atlantis.cli.write_harmonised_raster",
+        lambda da, path: write_calls.append(path),
+    )
+
     plot_calls: list = []
     monkeypatch.setattr(
         "atlantis.cli.plot_classified",
@@ -622,8 +628,8 @@ def test_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.stdout
     # Harmonised PNG should have been saved
     assert any("harmonised" in str(p) and p.suffix == ".png" for p in plot_calls)
-    # TIF was written (rio.to_raster called)
-    harm_da.rio.to_raster.assert_called_once()
+    # TIF was written via write_harmonised_raster
+    assert len(write_calls) == 1
     # processed/ should still exist (no --harmonise-only)
     assert processed_dir.exists()
     assert (processed_dir / "dummy.tif").exists()
@@ -779,6 +785,12 @@ def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path)
         lambda da, *, title, output_path: plot_calls.append(output_path),
     )
 
+    write_calls: list = []
+    monkeypatch.setattr(
+        "atlantis.cli.write_harmonised_raster",
+        lambda da, path: write_calls.append(path),
+    )
+
     event_viirs_dir = tmp_path / event_id / "viirs"
     processed_dir = event_viirs_dir / "processed"
 
@@ -799,8 +811,8 @@ def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path)
     assert "Fetching KuroSiwo_470" in result.stdout
     # Harmonised PNG saved
     assert any("harmonised" in str(p) and p.suffix == ".png" for p in plot_calls)
-    # TIF written
-    harm_da.rio.to_raster.assert_called_once()
+    # TIF written via write_harmonised_raster
+    assert len(write_calls) == 1
     assert "processed in memory" in result.stdout
     assert not processed_dir.exists()
     # raw/ should still exist (not created here but not deleted)

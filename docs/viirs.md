@@ -42,7 +42,7 @@ This streams VIIRS tiles from NOAA S3, classifies flood pixels, and writes only 
 
 ```
 harmonised/
-  valencia_2024_2024-10-31_viirs_harmonised.tif   # float32, 1 arcmin, flood fraction [0,1]
+  valencia_2024_2024-10-31_viirs_harmonised.tif   # uint8, 1 arcmin, flood % [0–100], nodata=255
   valencia_2024_2024-10-31_viirs_harmonised.png
 ```
 
@@ -179,9 +179,13 @@ Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
 All GeoTIFFs share these properties:
 
 - **CRS**: EPSG:4326 (WGS84)
-- **Dtype**: uint8 (processed) / float32 (harmonised)
+- **Dtype**: uint8
 - **Compression**: LZW
-- **Nodata**: 0
+- **Nodata**: 0 (processed) / 255 (harmonised)
+
+Harmonised flood extent values are stored as **integer percentages** (0–100),
+where 0 = no flood and 100 = fully flooded. This gives 1% precision while
+using 4× less disk space than float32.
 
 Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 
