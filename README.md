@@ -40,7 +40,16 @@ uv sync
 - `atlantis archive` — write Zarr archives (placeholder)
 - `atlantis validate` — validate the archive (placeholder)
 
-The exact working VIIRS and KuroSiwo extraction workflow is documented in [src/README.md](src/README.md).
+  > **Recommended flags for new users:** add `--harmonise-only` to any
+  > `fetch` or `fetch-kurosiwo-viirs` call. Tiles are streamed from NOAA S3
+  > and flood layers are classified by default — only the final harmonised
+  > 1-arcmin GeoTIFF is written to disk, with no raw downloads and no
+  > intermediate files. Use `--no-stream` to download tiles to disk, or
+  > `--no-classify` for raw pixel codes.
+  > See [docs/viirs.md](docs/viirs.md) for details.
+  >
+  > The exact working VIIRS and KuroSiwo extraction workflow is documented
+  > in [src/README.md](src/README.md).
 
 ## Notebooks
 

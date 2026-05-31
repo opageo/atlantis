@@ -85,6 +85,15 @@ class OutputPaths:
     permanent_water: Path | None = None
 
 
+@dataclass(frozen=True)
+class ProcessTilesResult:
+    """Outcome of processing VIIRS tiles for one date."""
+
+    paths: OutputPaths
+    metadata: TileMetadata
+    processed: ProcessedTile
+
+
 class ViirsRasterProcessor:
     """Processor for VIIRS raster operations.
 
@@ -126,8 +135,14 @@ class ViirsRasterProcessor:
         self.flood_min_code = flood_min_code
 
     def process_tiles(
-        self, tile_paths: list[TilePath], event_id: str, date_token: str, output_dir: Path
-    ) -> tuple[OutputPaths, TileMetadata] | None:
+        self,
+        tile_paths: list[TilePath],
+        event_id: str,
+        date_token: str,
+        output_dir: Path,
+        *,
+        write_outputs: bool = True,
+    ) -> ProcessTilesResult | None:
         """Process a group of tiles for a single date.
 
         Args:
@@ -135,10 +150,11 @@ class ViirsRasterProcessor:
                 ``/vsicurl/``-prefixed remote URL strings).
             event_id: The flood event identifier.
             date_token: Date string token for filenames.
-            output_dir: Directory to write output files.
+            output_dir: Directory for output path construction (and writes when enabled).
+            write_outputs: When False, keep rasters in memory only (no GeoTIFF writes).
 
         Returns:
-            Tuple of (output paths, metadata) if successful, None if no tiles.
+            :class:`ProcessTilesResult` if successful, None if no tiles.
         """
         if not tile_paths:
             return None
@@ -157,7 +173,8 @@ class ViirsRasterProcessor:
         else:
             paths = OutputPaths(raw=output_dir / f"{base_name}_raw.tif")
 
-        self._write_outputs(processed, paths)
+        if write_outputs:
+            self._write_outputs(processed, paths)
 
         metadata = self._build_metadata(
             event_id=event_id,
@@ -166,7 +183,7 @@ class ViirsRasterProcessor:
             height=processed.raw.shape[0] if processed.raw is not None else processed.flood_extent.shape[0],
         )
 
-        return paths, metadata
+        return ProcessTilesResult(paths=paths, metadata=metadata, processed=processed)
 
     def _mosaic_and_clip(self, tile_paths: list[TilePath]) -> ProcessedTile | None:
         """Mosaic tiles and clip to the area of interest.

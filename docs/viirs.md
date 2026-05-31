@@ -6,15 +6,11 @@ Atlantis integrates VIIRS flood products from the JPSS (Joint Polar Satellite Sy
 
 ## What is VIIRS?
 
-VIIRS (Visible Infrared Imaging Radiometer Suite) instruments aboard Suomi-NPP
-and NOAA-20 satellites detect floods at **375 metre resolution** using four
-Imager bands: I1 (visible, 0.64 µm), I2 (near-IR, 0.865 µm), I3 (shortwave-IR,
-1.61 µm), and I5 (thermal IR, 11.45 µm). The flood products encode integer pixel
-codes:
+VIIRS (Visible Infrared Imaging Radiometer Suite) instruments aboard Suomi-NPP and NOAA-20 satellites detect floods at **375 metre resolution** using four Imager bands: I1 (visible, 0.64 µm), I2 (near-IR, 0.865 µm), I3 (shortwave-IR, 1.61 µm), and I5 (thermal IR, 11.45 µm).
 
 ### Pixel encoding
 
-The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the [ATBD](https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf)'s internal netCDF scheme). Land-type classes are omitted — only water, cloud, and flood appear:
+The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the [ATBD](https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf)'s internal netCDF scheme):
 
 | Code    | Meaning                                           |
 | ------- | ------------------------------------------------- |
@@ -26,42 +22,11 @@ The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the
 | 101–200 | **Flood water** — water fraction % = `code − 100` |
 | ≥160    | High-confidence flood (≥60% water fraction)       |
 
-> **Note:** The ATBD netCDF format uses different codes (e.g. 16=bare land,
-> 17=vegetation). The GeoTIFF distribution simplifies these — land pixels are
-> omitted, and codes 17/20/99 carry water-related meanings instead.
-> The full flood range is 101–200; the Atlantis CLI defaults to `--flood-threshold 101`
-> (all flood pixels). Pass a higher value for a more conservative threshold.
+> **Note:** The ATBD netCDF format uses different codes (e.g. 16=bare land, 17=vegetation). The GeoTIFF distribution simplifies these — land pixels are omitted, and codes 17/20/99 carry water-related meanings instead.
 
-By default Atlantis writes the raw pixel values as-is. Pass `--classify` to derive three binary layers: flood extent, quality mask, and permanent water mask.
+By default Atlantis classifies pixels into three binary layers: flood extent, quality mask, and permanent water mask. Pass `--no-classify` to write raw integer pixel codes instead.
 
-## Quick Start
-
-### Fetch for any location and date range
-
-The example below uses the **Valencia 2024 flood** (Oct 30–Nov 1 — the flood peaked on
-Oct 31 with 1,562 flooded pixels in this bbox; Oct 29 is cloud-free but pre-flood):
-
-```bash
-uv run atlantis fetch \
-  --event valencia_2024 \
-  --source viirs \
-  --bbox "-1.2 39.0 0.2 39.8" \
-  --start-date 2024-10-30 \
-  --end-date 2024-11-01
-```
-
-Atlantis will:
-
-1. **Search** VIIRS AOI tiles intersecting your bbox
-2. **Download** raw GeoTIFFs from the NOAA JPSS S3 bucket (or stream them — see below)
-3. **Mosaic** multiple tiles if the bbox spans more than one VIIRS tile
-4. **Clip** the mosaic to your exact region
-5. **Write** a single raw GeoTIFF:
-   - `<event_id>_<date>_viirs_raw.tif` — integer pixel codes (0–255)
-
-Add `--classify` to write three derived layers, `--plot` to save a PNG of the
-peak-flood date, and `--harmonise` to also produce a resampled 1-arcmin GeoTIFF
-in a single command:
+## Quick start
 
 ```bash
 uv run atlantis fetch \
@@ -70,75 +35,47 @@ uv run atlantis fetch \
   --bbox "-1.2 39.0 0.2 39.8" \
   --start-date 2024-10-30 \
   --end-date 2024-11-01 \
-  --classify --stream --plot --harmonise
+  --harmonise-only
 ```
 
-This produces:
+This streams VIIRS tiles from NOAA S3, classifies flood pixels, and writes only the final harmonised 1-arcmin GeoTIFF + PNG:
 
-- `*_flood_extent.tif` — binary flood mask (1 = flooded pixel)
-- `*_quality_mask.tif` — 0 = cloud/fill, 1 = valid observation
-- `*_permanent_water.tif` — permanent water bodies mask
-
-#### Flood threshold
-
-The ATBD GeoTIFF flood range is **101–200**, where the code encodes water
-fraction (101 = 1 %, 200 = 100 %). The CLI defaults to **101** (all flood pixels)
-so no flood signal is missed. Raise it for a more conservative result.
-
-| Flag                    | Range          | Effect                             |
-| ----------------------- | -------------- | ---------------------------------- |
-| `--flood-threshold 101` | **Default**    | Captures all VIIRS flood pixels    |
-| `--flood-threshold 160` | Conservative   | ≥60 % water fraction               |
-| `--flood-threshold 180` | Most stringent | Only high-confidence flood (≥80 %) |
-
-```bash
-# Default: all flood pixels
-uv run atlantis fetch ... --classify
-
-# Conservative — only ≥60% water fraction
-uv run atlantis fetch ... --classify --flood-threshold 160
-
-# Only highest-confidence pixels
-uv run atlantis fetch ... --classify --flood-threshold 180
+```
+harmonised/
+  valencia_2024_2024-10-31_viirs_harmonised.tif   # float32, 1 arcmin, flood fraction [0,1]
+  valencia_2024_2024-10-31_viirs_harmonised.png
 ```
 
-Pixels **not** counted as flood at any threshold:
-1, 17, 20, 30, 99 — fill, permanent/seasonal/open water, and cloud are always excluded.
+## CLI reference
 
-The same flag works on `fetch-kurosiwo-viirs` and through the Python API
-(`VIIRSFetcher(flood_min_code=101)`).
+### `atlantis fetch --source viirs`
 
-### Stream tiles (no download)
-
-VIIRS tiles (~20 MB each) can be streamed directly from NOAA S3 via GDAL's
-`/vsicurl/` driver instead of downloading them to disk. This is a big win
-when storage is tight or you're processing many events, because no `raw/`
-directory is ever created.
+Fetch VIIRS flood data for any location and date range.
 
 ```bash
-# Stream tiles: no local download, no raw/ cache
 uv run atlantis fetch \
-  --event valencia_2024 \
+  --event <event_id> \
   --source viirs \
-  --bbox "-1.2 39.0 0.2 39.8" \
-  --start-date 2024-10-30 \
-  --end-date 2024-11-01 \
-  --classify \
-  --stream
+  --bbox "<west> <south> <east> <north>" \
+  --start-date YYYY-MM-DD \
+  --end-date YYYY-MM-DD \
+  [flags]
 ```
 
-| Mode      | Flag        | Disk per event (typical)  | Network dependency    |
-| --------- | ----------- | ------------------------- | --------------------- |
-| Download  | _(default)_ | ~50–200 MB raw tiles      | Only during fetch     |
-| Streaming | `--stream`  | 0 (only processed output) | During processing too |
+### `atlantis fetch-kurosiwo-viirs`
 
-> **Note:** `--stream` works with the `noaa_s3` backend only (the default).
-> Streaming is not yet supported for `gmu_legacy`.
+Fetch VIIRS for events from the KuroSiwo SAR flood catalogue (bbox and dates resolved automatically):
 
-### Resample to a uniform grid (harmonise)
+```bash
+uv run atlantis fetch-kurosiwo-viirs \
+  --catalogue assets/ks_catalogue.gpkg \
+  --case KuroSiwo_470 \
+  --harmonise-only
+```
 
-After fetching, resample the VIIRS outputs to a common target resolution
-(1 arcmin / 0.0167° by default) so they can be combined across sources:
+### `atlantis harmonise --source viirs`
+
+Resample previously fetched VIIRS outputs to a uniform 1-arcmin grid:
 
 ```bash
 uv run atlantis harmonise \
@@ -146,508 +83,121 @@ uv run atlantis harmonise \
   --source viirs
 ```
 
-This runs the pipeline: **reproject → normalise → quality masks**. The
-output is a single `float32` GeoTIFF with flood-fraction values in `[0, 1]`
-at 1 arcmin resolution, plus a quality mask and a permanent-water mask.
+## Flags
 
-```bash
-# Custom target resolution (e.g. 5 arcmin)
-uv run atlantis harmonise \
-  --event valencia_2024 \
-  --source viirs \
-  --target-resolution 0.08333
+### Output control
 
-# Dry-run to see what would be processed
-uv run atlantis harmonise \
-  --event valencia_2024 \
-  --source viirs \
-  --dry-run
-```
+| Flag               | Default | Effect                                                              |
+| ------------------ | ------- | ------------------------------------------------------------------- |
+| `--classify`       | on      | Produce flood/quality/water binary masks instead of raw pixel codes |
+| `--no-classify`    |         | Write raw integer pixel codes (single GeoTIFF)                      |
+| `--harmonise`      | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF            |
+| `--harmonise-only` | off     | Write only the harmonised output (no intermediate 375 m files)      |
+| `--plot`           | off     | Save a PNG of the peak-flood date                                   |
 
-> **Tip:** The harmoniser uses `average` resampling for flood extent (produces
-> a flood‑fraction) and `mode` for binary masks (quality, permanent water).
-> You can override these via `ATLANTIS_VARIABLE_RESAMPLING` in `.env`.
+### Data access
 
-### Use the KuroSiwo catalogue
+| Flag              | Default   | Effect                                                   |
+| ----------------- | --------- | -------------------------------------------------------- |
+| `--stream`        | on        | Stream tiles from S3 via `/vsicurl/` (no local download) |
+| `--no-stream`     |           | Download tiles to `raw/` for reuse across runs           |
+| `--viirs-backend` | `noaa_s3` | Data source (`noaa_s3` or `gmu_legacy`)                  |
 
-Fetch VIIRS for any event from the KuroSiwo SAR flood dataset:
+### Flood threshold
 
-```bash
-# Directly from the GeoPackage catalogue
-uv run atlantis fetch-kurosiwo-viirs \
-  --catalogue assets/ks_catalogue.gpkg \
-  --case KuroSiwo_470
+| Flag                    | Effect                               |
+| ----------------------- | ------------------------------------ |
+| `--flood-threshold 101` | Most inclusive — all flood pixels    |
+| `--flood-threshold 160` | **Default** — ≥60% water fraction    |
+| `--flood-threshold 180` | Most stringent — ≥80% water fraction |
 
-# Pre-build metadata CSV for faster repeated runs
-uv run atlantis build-kurosiwo-metadata \
-  --catalogue assets/ks_catalogue.gpkg \
-  --output data/metadata/kurosiwo_metadata_v1.csv
+The flood range is 101–200, encoding water fraction (101 = 1%, 200 = 100%). Pixels with codes 1, 17, 20, 30, 99 are never counted as flood.
 
-uv run atlantis fetch-kurosiwo-viirs \
-  --metadata data/metadata/kurosiwo_metadata_v1.csv \
-  --case KuroSiwo_470
-```
+### KuroSiwo-specific
 
-Widen the temporal window around the flood peak with `--days-before` / `--days-after`:
+| Flag            | Default | Effect                                          |
+| --------------- | ------- | ----------------------------------------------- |
+| `--catalogue`   |         | Path to KuroSiwo GeoPackage                     |
+| `--metadata`    |         | Path to pre-built metadata CSV (faster lookups) |
+| `--case`        |         | Single case ID (omit to fetch all events)       |
+| `--limit`       |         | Process only the first N events                 |
+| `--days-before` | 1       | Days before flood peak to include               |
+| `--days-after`  | 1       | Days after flood peak to include                |
 
-```bash
-uv run atlantis fetch-kurosiwo-viirs \
-  --catalogue assets/ks_catalogue.gpkg \
-  --case KuroSiwo_470 \
-  --days-before 2 \
-  --days-after 2
-```
+### Harmonisation
 
-Add `--classify` for derived layers:
+| Flag                  | Default | Effect                                      |
+| --------------------- | ------- | ------------------------------------------- |
+| `--target-resolution` | 0.0167° | Target grid spacing (1 arcmin default)      |
+| `--dry-run`           |         | Show what would be processed without acting |
 
-```bash
-uv run atlantis fetch-kurosiwo-viirs \
-  --catalogue assets/ks_catalogue.gpkg \
-  --case KuroSiwo_470 \
-  --classify
-```
+> **Tip:** The harmoniser uses `average` resampling for flood extent (produces a flood-fraction) and `mode` for binary masks. Override via `ATLANTIS_VARIABLE_RESAMPLING` in `.env`.
 
-Add `--stream` to skip downloading raw tiles:
+## Streaming vs downloading
 
-```bash
-uv run atlantis fetch-kurosiwo-viirs \
-  --catalogue assets/ks_catalogue.gpkg \
-  --case KuroSiwo_470 \
-  --classify \
-  --stream
-```
+VIIRS tiles (~20 MB each) are streamed directly from NOAA S3 via GDAL's `/vsicurl/` driver by default. This is ideal when disk space is limited or you only need a single run, since no `raw/` directory is created.
 
-Fetch all events (optionally limited):
+| Mode     | Flag          | Disk usage (typical)      | Network dependency             |
+| -------- | ------------- | ------------------------- | ------------------------------ |
+| Stream   | `--stream`    | 0 (processed output only) | Required throughout processing |
+| Download | `--no-stream` | ~50–200 MB raw tiles      | Only during fetch              |
 
-```bash
-# All KuroSiwo events
-uv run atlantis fetch-kurosiwo-viirs \
-  --catalogue assets/ks_catalogue.gpkg \
-  --output /path/to/output
-
-# First 5 events only
-uv run atlantis fetch-kurosiwo-viirs \
-  --catalogue assets/ks_catalogue.gpkg \
-  --limit 5
-```
-
-### Output structure
-
-```
-<output>/
-  <case_id>/
-    viirs/
-      raw/          # downloaded source tiles from NOAA S3  (absent with --stream)
-      processed/    # clipped, mosaicked GeoTIFF outputs
-        <case_id>_<YYYYMMDD>_viirs_raw.tif
-        # with --classify:
-        <case_id>_<YYYYMMDD>_viirs_flood_extent.tif
-        <case_id>_<YYYYMMDD>_viirs_quality_mask.tif
-        <case_id>_<YYYYMMDD>_viirs_permanent_water.tif
-      plots/        # with --plot: PNG of peak-flood date
-        <case_id>_<YYYY-MM-DD>_viirs.png
-      harmonised/   # with --harmonise: 1-arcmin resampled GeoTIFF
-        <case_id>_<YYYY-MM-DD>_viirs_harmonised.tif
-```
+> Streaming works with the `noaa_s3` backend only (the default). Use `--no-stream` if you need `gmu_legacy`.
 
 ## Backends
-
-Two VIIRS data sources are supported:
 
 | Backend      | Description                                                 | Default |
 | ------------ | ----------------------------------------------------------- | ------- |
 | `noaa_s3`    | NOAA JPSS public S3 bucket (`noaa-jpss`) — 1-day composites | ✅      |
 | `gmu_legacy` | GMU legacy HTTP archive — 5-day composites                  |         |
 
-Switch with `--viirs-backend`:
+Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
 
-```bash
-uv run atlantis fetch-kurosiwo-viirs \
-  --catalogue assets/ks_catalogue.gpkg \
-  --case KuroSiwo_470 \
-  --viirs-backend gmu_legacy
-```
-
-Or set a default via environment variable:
-
-```bash
-export ATLANTIS_VIIRS_BACKEND=gmu_legacy
-```
-
-## Python API
-
-```python
-from pathlib import Path
-from datetime import date
-
-from atlantis.fetchers.viirs import VIIRSFetcher
-from atlantis.models.event import FloodEvent
-
-# ── Arbitrary event (Valencia 2024 flood, peak Oct 31) ───────────────────────
-event = FloodEvent(
-    event_id="valencia_2024",
-    bbox=(-1.2, 39.0, 0.2, 39.8),   # west, south, east, north
-    start_date=date(2024, 10, 30),
-    end_date=date(2024, 11, 1),
-)
-
-fetcher = VIIRSFetcher()                     # raw mode (default)
-fetch_results = fetcher.fetch(event, Path("data/viirs/valencia_2024"))
-
-# Load into xarray for analysis / plotting
-ds = fetcher.to_dataset(fetch_results[0])
-raw = ds["raw"]                              # xarray DataArray, CRS=EPSG:4326
-print(raw.shape, raw.dtype)
-
-# ── With classified outputs ────────────────────────────────────────────
-fetcher_c = VIIRSFetcher(classify=True)
-fetch_results_c = fetcher_c.fetch(event, Path("data/viirs/valencia_2024_classified"))
-
-ds_c = fetcher_c.to_dataset(fetch_results_c[0])
-print(ds_c["flood_extent"].sum().item(), "flooded pixels")
-
-# ── KuroSiwo event via metadata CSV ──────────────────────────────────────────
-from atlantis.utils.kurosiwo import build_kurosiwo_flood_events
-
-events = build_kurosiwo_flood_events(
-    Path("data/metadata/kurosiwo_metadata_v1.csv"),
-    case="KuroSiwo_470",
-    days_before=1,
-    days_after=1,
-)
-ks_results = fetcher.fetch(events[0], Path("data/viirs/KuroSiwo_470"))
-ks_ds = fetcher.to_dataset(ks_results[0])
-
-# ── Streaming mode (no local tiles) ──────────────────────────────────────────
-fetcher_stream = VIIRSFetcher(stream=True, classify=True)
-stream_results = fetcher_stream.fetch(event, Path("data/viirs/valencia_2024"))
-stream_ds = fetcher_stream.to_dataset(stream_results[0])
-
-# ── Harmonise (resample + normalise) ─────────────────────────────────────────
-from atlantis.harmoniser import Harmoniser
-
-harmoniser = Harmoniser()  # defaults to 1 arcmin target
-ds_harm = harmoniser.harmonise(ds_c, source_id="viirs")
-print(ds_harm["flood_extent"].dtype, ds_harm["flood_extent"].shape)
-# float32, ~6% of original pixels
-```
-
-### Display a fetched raster
-
-```python
-import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
-
-viirs_codes = {
-    1:   ("Fill / No data",   "#000000"),
-    17:  ("Permanent water",  "#1f77b4"),
-    20:  ("Seasonal water",   "#17becf"),
-    30:  ("Cloud",            "#cccccc"),
-    99:  ("Open water",       "#4682B4"),
-    130: ("Flood (30% frac)", "#ffeb3b"),
-    160: ("Flood (60% frac)", "#FF9800"),
-    200: ("Flood (100%)",     "#FF0000"),
-}
-
-fig, (ax, ax_leg) = plt.subplots(1, 2, figsize=(14, 7),
-                                  gridspec_kw={"width_ratios": [3, 1]})
-raw.plot(ax=ax, cmap="turbo", add_colorbar=True)
-ax.set_title("VIIRS raw composite (375 m)")
-
-patches = [Patch(facecolor=c, label=f"{k}: {l}") for k, (l, c) in viirs_codes.items()]
-ax_leg.legend(handles=patches, loc="center", title="Pixel codes")
-ax_leg.axis("off")
-plt.tight_layout()
-plt.show()
-```
-
-## Architecture
+## Output structure
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    VIIRSFetcher                         │
-│              (orchestrates the flow)                    │
-└─────────────┬───────────────────────┬───────────────────┘
-              │                       │
-              ▼                       ▼
-┌─────────────────────┐    ┌──────────────────────┐
-│   Backend Layer     │    │  ViirsRasterProcessor │
-│                     │    │                      │
-│ • NoaaS3Backend     │    │ • Mosaic tiles       │
-│ • GmuLegacyBackend  │    │ • Clip to AOI        │
-│                     │    │ • Classify pixels    │
-│ Handles:            │    │ • Write GeoTIFFs     │
-│ • URL building      │    │                      │
-│ • Directory listing │    │                      │
-│ • Filename matching │    │                      │
-└─────────────────────┘    └──────────────────────┘
+<output>/
+  <event_id>/
+    viirs/
+      raw/          # only with --no-stream
+      processed/    # absent with --harmonise-only
+        # --classify (default):
+        <event_id>_<YYYYMMDD>_viirs_flood_extent.tif
+        <event_id>_<YYYYMMDD>_viirs_quality_mask.tif
+        <event_id>_<YYYYMMDD>_viirs_permanent_water.tif
+        # --no-classify:
+        <event_id>_<YYYYMMDD>_viirs_raw.tif
+      plots/        # with --plot
+        <event_id>_<YYYY-MM-DD>_viirs.png
+      harmonised/   # with --harmonise or --harmonise-only
+        <event_id>_<YYYY-MM-DD>_viirs_harmonised.tif
+        <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
 ```
 
-## Processing Pipeline
+## Output format
 
-When you run `atlantis fetch --source viirs`, the system executes a five-stage pipeline.
-Stages 3 (Mosaic) and 4 (Clip) are the core raster operations; they're implemented
-in `ViirsRasterProcessor._mosaic_and_clip()` inside `src/atlantis/fetchers/viirs/processor.py`.
-
-### End-to-end flow
-
-```mermaid
-flowchart TD
-    A["🗺️ User provides bbox<br/>& date range"] --> B
-    subgraph B["1. Search — VIIRSFetcher.search()"]
-        B1["Load AOI grid<br/>(viirs_aois.geojson)"]
-        B2["Find intersecting tiles<br/>via shapely intersects()"]
-        B3["Query backend for<br/>matching filenames"]
-        B1 --> B2 --> B3
-    end
-    B --> C
-    subgraph C["2. Download — VIIRSFetcher.fetch()"]
-        C1["Group search results<br/>by date token"]
-        C2["Download each tile<br/>into raw/ directory"]
-        C1 --> C2
-    end
-    C --> D
-    subgraph D["3. Mosaic — rasterio.merge.merge()"]
-        D1["Open all tiles as<br/>rasterio DatasetReader"]
-        D2["Stitch into single array<br/>with shared affine transform"]
-        D3["Handle overlaps:<br/>last-read pixel wins"]
-        D1 --> D2 --> D3
-    end
-    D --> E
-    subgraph E["4. Clip — rasterio.mask.mask()"]
-        E1["Write mosaic to<br/>in-memory GeoTIFF"]
-        E2["Rasterize bbox polygon<br/>against mosaic grid"]
-        E3["Extract pixels inside<br/>polygon; crop tight"]
-        E1 --> E2 --> E3
-    end
-    E --> F
-    subgraph F["5. Write — ViirsRasterProcessor._write_outputs()"]
-        F1["Save as compressed<br/>GeoTIFF (LZW, uint8)"]
-        F2["Optionally classify pixels<br/>into flood/quality/water masks"]
-        F1 --> F2
-    end
-```
-
-### Stage 3 — Mosaic (handling multiple tiles)
-
-VIIRS flood products are pre-tiled into ~10°×10° grid cells called **AOIs** (Areas of Interest).
-If your bounding box straddles a tile boundary, `search()` will return multiple tiles for the same date.
-These must be merged before clipping.
-
-#### How `rasterio.merge.merge()` works
-
-`merge()` takes a list of opened `DatasetReader` objects and produces:
-
-| Output      | Description                                                                       |
-| ----------- | --------------------------------------------------------------------------------- |
-| `mosaic`    | A 3D numpy array `(bands, rows, cols)` spanning the union extent of all inputs    |
-| `transform` | A single `Affine` mapping pixel coordinates to geographic coordinates (EPSG:4326) |
-
-Under the hood it:
-
-1. Computes the **union bounding box** — the smallest rectangle that contains every input tile
-2. Creates an **output grid** at the native resolution (375 m), big enough to hold the union
-3. Copies each input tile's pixels into the correct position within the output grid
-4. Where tiles overlap, the **last-read tile's pixels win** (rasterio's default `method='last'`)
-
-#### Overlap resolution
-
-VIIRS AOI tiles intentionally overlap by a small margin along their edges — this is the
-NOAA product design, not a bug. `merge()`'s default `method='last'` is appropriate here
-because all tiles are from the same sensor at the same resolution; there is no quality
-difference across the overlap zone. The pixels in the seam are identical regardless of
-which tile "wins."
-
-```
-   Tile GLB023                    Tile GLB024
-  ┌──────────────┐              ┌──────────────┐
-  │              │              │              │
-  │    ░░░░░░    │              │    ░░░░░░    │
-  │    ░░░░░░    │              │    ░░░░░░    │
-  │    ░░░░░░    │              │    ░░░░░░    │
-  └──────────────┘              └──────────────┘
-         │                            │
-         └────────── merge() ─────────┘
-                      │
-                      ▼
-             ┌────────────────────┐
-             │     ░░░░░░░░░░     │
-             │     ░░░░░░░░░░     │  ← overlap zone:
-             │     ░░░░░░░░░░     │    GLB024 pixels win
-             └────────────────────┘
-```
-
-For alternative overlap strategies — e.g. averaging, taking the max, or ordering by
-acquisition time — you could pass `method='max'` or `method='first'` to `merge()`.
-
-#### Single-tile shortcut
-
-If only one tile matches your bbox, `merge()` still works — it simply returns that tile
-unchanged (wrapped in a single-element mosaic). No special-casing is needed.
-
-### Stage 4 — Clip (trimming to your bbox)
-
-After mosaicing, the raster covers **all** matching AOI tiles — which is always larger
-than your requested bbox (unless you happen to request exactly one tile's extent).
-The clip step trims it down.
-
-#### How `rasterio.mask.mask()` works
-
-`mask()` takes a raster dataset and one or more Shapely geometries, and returns:
-
-| Output              | Description                                                                       |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `clipped`           | A 3D numpy array `(bands, rows, cols)` containing only pixels inside the geometry |
-| `clipped_transform` | A new `Affine` for the clipped extent                                             |
-
-The key parameter is `crop=True`, which does two things:
-
-1. **Masks** — pixels whose **centers** fall outside the polygon are set to `nodata` (0)
-2. **Crops** — the output array is trimmed to the tight bounding rectangle of the polygon,
-   discarding the surrounding nodata border
-
-This is an **all-or-nothing** mask at the pixel level: a pixel is either fully inside
-(preserved) or fully outside (set to nodata). There is no sub-pixel clipping — that's
-appropriate for 375 m resolution data where fractional pixels would be meaningless.
-
-```
-   Mosaic (union of tiles)          After mask(crop=True)
-  ┌────────────────────────┐       ┌──────────────────┐
-  │  ·  ·  ·  ·  ·  ·  ·  │       │   █  █  █  █  █  │
-  │  ·  ░  ░  ░  ░  ░  ·  │       │   █  █  █  █  █  │
-  │  ·  ░  ░  ░  ░  ░  ·  │  -->  │   █  █  █  █  █  │
-  │  ·  ░  ░  ░  ░  ░  ·  │       │   █  █  █  █  █  │
-  │  ·  ░  ░  ░  ░  ░  ·  │       └──────────────────┘
-  │  ·  ·  ·  ·  ·  ·  ·  │        █ = kept    · = discarded
-  └────────────────────────┘
-     ░ = valid data
-     · = outside bbox
-```
-
-#### In-memory buffering
-
-Notice that `_mosaic_and_clip()` writes the mosaic into a `rasterio.io.MemoryFile`
-before calling `mask()`. This is because `mask()` expects a GDAL-compatible dataset
-handle — it can't operate directly on a numpy array. The `MemoryFile` provides that
-handle without touching disk.
-
-### Stage 5 — Classify (optional pixel decoding)
-
-When `--classify` is passed, `_classify_pixels()` decodes the raw VIIRS integer codes
-into three binary masks using numpy boolean indexing:
-
-| Mask              | Rule                       | Meaning                                                   |
-| ----------------- | -------------------------- | --------------------------------------------------------- |
-| `flood_extent`    | `pixel >= flood_threshold` | 1 = flood water (configurable; CLI default = 101)         |
-| `quality_mask`    | `pixel ∉ {0,1,30}`         | 1 = valid clear-sky observation (0 = fill or cloud cover) |
-| `permanent_water` | `pixel == 17`              | 1 = known permanent water body                            |
-
-> Water types (17=permanent, 20=seasonal, 99=open) are **valid observations** — they receive `quality=1` and are excluded from flood masks through their own classification, not through the quality band.
-
-The ATBD GeoTIFF flood range is 101–200, corresponding to 1%–100% water fraction.
-The flood threshold is controlled by `--flood-threshold` (CLI default: **101**, all flood)
-or `VIIRSFetcher(flood_min_code=...)` in Python. Raise it for a more conservative
-classification (e.g. 160 = ≥60% water fraction).
-
-The classification is done **after** mosaic and clip, so it only runs on pixels inside
-your bbox — saving computation on discarded regions.
-
-### Code trace
-
-Here is the exact call chain for a single date:
-
-```
-VIIRSFetcher.fetch()                          # __init__.py:~240
-  ├── VIIRSFetcher.search()                   # __init__.py:~170 — find tiles
-  ├── download_file() × N                     # utils/io.py — fetch TiFFs
-  └── ViirsRasterProcessor.process_tiles()    # processor.py:~107
-        └── _mosaic_and_clip()                # processor.py:~133
-              ├── rasterio.merge.merge()      # step 3
-              ├── rasterio.mask.mask()        # step 4
-              └── _classify_pixels()          # step 5 (if --classify)
-```
-
-### Edge cases
-
-| Scenario                            | Behaviour                                                |
-| ----------------------------------- | -------------------------------------------------------- |
-| Bbox inside a single tile           | `merge()` is a no-op on one tile; `mask()` crops it      |
-| Bbox spans 2+ tiles                 | `merge()` stitches them; `mask()` crops the union        |
-| Bbox covers an entire tile exactly  | `mask()` returns the tile unchanged (crop has no effect) |
-| No tiles match the bbox             | `search()` returns `[]`; `fetch()` returns `[]` early    |
-| Backend returns no files for a date | That date is silently skipped                            |
-
-Add a new data source by implementing the `ViirsBackend` abstract class:
-
-```python
-from atlantis.fetchers.viirs.backend import ViirsBackend, ListingLocation
-
-class MyBackend(ViirsBackend):
-    def get_listing_location(self, base_url, event_date, data_format) -> ListingLocation: ...
-    def get_directory_links(self, base_url, location, timeout) -> list[str]: ...
-    def find_remote_filename(self, aoi_id, entries) -> str | None: ...
-    def build_result_url(self, base_url, listing_location, filename) -> str: ...
-```
-
-## Output Format
-
-All outputs are GeoTIFFs with:
+All GeoTIFFs share these properties:
 
 - **CRS**: EPSG:4326 (WGS84)
-- **Dtype**: uint8
+- **Dtype**: uint8 (processed) / float32 (harmonised)
 - **Compression**: LZW
 - **Nodata**: 0
 
 Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 
-## Tips & Tricks
+## Tips
 
-**Re-run without re-downloading**: Raw tiles are cached in the `raw/` sub-directory; only processing is repeated on subsequent runs.
+- **Multiple dates** — The date range is inclusive: `--start-date 2024-10-27 --end-date 2024-10-31` fetches five daily composites.
+- **Large regions** — VIIRS tiles cover ~10°×10°. Large bboxes automatically trigger multi-tile mosaicing.
+- **Cloud contamination** — Always check the quality mask. VIIRS is an optical sensor and cloud cover masks flood signal.
+- **Re-run without re-fetching** — With `--no-stream`, raw tiles are cached in `raw/` and reused on subsequent runs.
+- **Batch KuroSiwo runs** — Use `--harmonise-only` to save ~100 MB of intermediate files per event.
+- **Pre-build metadata** — Run `atlantis build-kurosiwo-metadata` once to speed up repeated `fetch-kurosiwo-viirs` calls.
 
-**Skip downloads entirely**: Use `--stream` to read tiles directly from NOAA S3 via `/vsicurl/`. No `raw/` cache is created — ideal for one-shot analyses or when disk is scarce.
+## Further reading
 
-**Resample to a common grid**: `atlantis harmonise` converts VIIRS 375 m rasters to 1 arcmin (~1.85 km) flood-fraction TIFFs. Run it after fetch to produce data ready for ML or cross-source comparison.
-
-**Multiple dates**: The date range is inclusive—`--start-date 2024-10-27 --end-date 2024-10-31` fetches five daily composites.
-
-**Large regions**: VIIRS tiles cover ~10°×10°. Large bboxes automatically trigger multi-tile mosaicing.
-
-**Cloud contamination**: Always check the quality mask when using `--classify`—VIIRS is an optical sensor.
-
-## Next Steps
-
-- `scripts/viirs_demo.py` — runnable end-to-end example using the Python API directly:
-
-  ```bash
-  # Valencia 2024 flood (default — runs with no extra flags)
-  uv run python scripts/viirs_demo.py arbitrary
-
-  # Custom region + dates
-  uv run python scripts/viirs_demo.py arbitrary \
-    --event-id my_flood --bbox "-1.2 39.0 0.2 39.8" \
-    --start-date 2024-10-30 --end-date 2024-11-01 \
-    --classify --stream --harmonise
-
-  # KuroSiwo event (bbox + dates resolved from catalogue)
-  uv run python scripts/viirs_demo.py kurosiwo --ks-case KuroSiwo_1111004 \
-    --classify --stream --harmonise --days-before 1 --days-after 1
-  ```
-
-  Equivalent operations via the `atlantis` CLI (no Python API required):
-
-  ```bash
-  # Arbitrary event
-  uv run atlantis fetch \
-    --event valencia_2024 --source viirs \
-    --bbox "-1.2 39.0 0.2 39.8" \
-    --start-date 2024-10-30 --end-date 2024-11-01 \
-    --classify --stream --plot --harmonise
-
-  # KuroSiwo event
-  uv run atlantis fetch-kurosiwo-viirs \
-    --case KuroSiwo_1111004 --classify --stream \
-    --plot --harmonise --days-before 1 --days-after 1
-  ```
-
+- [Python API reference](viirs_api.md)
+- [Architecture & internals](viirs_internals.md)
+- [Pipeline vision](../src/README.md)
+- `scripts/viirs_demo.py` — runnable end-to-end example
 - `notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb` — interactive walkthrough
-- [architecture guide](../src/README.md) — full pipeline vision

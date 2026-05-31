@@ -90,7 +90,7 @@ class TestViirsRasterProcessor:
             tile_paths=[tile_path], event_id="test", date_token="20200722", output_dir=tmp_path
         )
         assert result is not None
-        paths, metadata = result
+        paths, metadata = result.paths, result.metadata
         assert paths.raw is not None
         assert paths.raw.exists()
         assert paths.flood_extent is None
@@ -111,7 +111,7 @@ class TestViirsRasterProcessor:
             tile_paths=[tile_path], event_id="test", date_token="20200722", output_dir=tmp_path
         )
         assert result is not None
-        paths, metadata = result
+        paths = result.paths
         assert paths.raw is None
         assert paths.flood_extent is not None
         assert paths.flood_extent.exists()
@@ -134,7 +134,7 @@ class TestViirsRasterProcessor:
             tile_paths=[tile1, tile2], event_id="test", date_token="20200722", output_dir=tmp_path
         )
         assert result is not None
-        paths, metadata = result
+        paths = result.paths
         assert paths.flood_extent is not None
         assert paths.flood_extent.exists()
 
@@ -158,7 +158,7 @@ class TestViirsRasterProcessor:
             tile_paths=[tile_path], event_id="test", date_token="20200722", output_dir=tmp_path
         )
         assert result is not None
-        paths, metadata = result
+        paths = result.paths
 
         # Read back and verify
         with rasterio.open(paths.flood_extent) as src:
@@ -193,7 +193,7 @@ class TestViirsRasterProcessor:
             tile_paths=[tile_path], event_id="test", date_token="20200722", output_dir=tmp_path
         )
         assert result is not None
-        paths, metadata = result
+        paths = result.paths
 
         with rasterio.open(paths.flood_extent) as src:
             flood = src.read(1)
@@ -212,7 +212,7 @@ class TestViirsRasterProcessor:
             tile_paths=[tile_path], event_id="my_event", date_token="20200722", output_dir=tmp_path
         )
         assert result is not None
-        paths, metadata = result
+        metadata = result.metadata
         assert metadata.event_id == "my_event"
         assert metadata.source_id == "viirs"
         assert metadata.crs == "EPSG:4326"
@@ -231,7 +231,7 @@ class TestViirsRasterProcessor:
             tile_paths=[tile_path], event_id="test", date_token="20200722", output_dir=tmp_path
         )
         assert result is not None
-        paths, metadata = result
+        paths = result.paths
 
         with rasterio.open(paths.flood_extent) as src:
             assert src.crs.to_string() == "EPSG:4326"

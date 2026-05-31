@@ -117,6 +117,7 @@ class TestVIIRSFetcherInit:
         assert fetcher.stream is False
         assert fetcher.flood_min_code == 160
         assert fetcher.data_format == "tif"
+        assert fetcher.write_processed is True
 
     def test_classify_flag(self):
         fetcher = VIIRSFetcher(classify=True)
@@ -362,6 +363,58 @@ class TestVIIRSFetcherFetch:
 
         results = fetcher.fetch(event, Path("/tmp/nonexistent"))
         assert results == []
+
+    def test_fetch_write_processed_false_keeps_peak_in_memory(self, tmp_path, monkeypatch):
+        """In-memory mode returns one peak-flood result and skips processed/ writes."""
+        fetcher = VIIRSFetcher(classify=True, write_processed=False, stream=True)
+        event = FloodEvent(
+            event_id="Yangtze_2020",
+            bbox=(105.0, 28.0, 125.0, 38.0),
+            start_date=date(2020, 7, 21),
+            end_date=date(2020, 7, 22),
+            sources=["viirs"],
+        )
+
+        low_flood = np.zeros((10, 10), dtype=np.uint8)
+        low_flood[0, 0] = 170
+        high_flood = np.full((10, 10), 170, dtype=np.uint8)
+
+        tile_low = tmp_path / "tile_low.tif"
+        tile_high = tmp_path / "tile_high.tif"
+        _write_tile(tile_low, 105.0, 28.0, 115.0, 38.0, low_flood)
+        _write_tile(tile_high, 105.0, 28.0, 115.0, 38.0, high_flood)
+
+        search_results = [
+            SearchResult(
+                source_id="viirs",
+                item_id="viirs:20200721:077",
+                timestamp=datetime(2020, 7, 21, tzinfo=timezone.utc),
+                bbox=(105.0, 28.0, 115.0, 38.0),
+                url=tile_low.as_posix(),
+                properties={"aoi_id": 77, "date": "20200721", "filename": "tile_low.tif"},
+            ),
+            SearchResult(
+                source_id="viirs",
+                item_id="viirs:20200722:077",
+                timestamp=datetime(2020, 7, 22, tzinfo=timezone.utc),
+                bbox=(105.0, 28.0, 115.0, 38.0),
+                url=tile_high.as_posix(),
+                properties={"aoi_id": 77, "date": "20200722", "filename": "tile_high.tif"},
+            ),
+        ]
+        monkeypatch.setattr(fetcher, "search", lambda _e: search_results)
+
+        out_dir = tmp_path / "memory_out"
+        results = fetcher.fetch(event, out_dir)
+
+        assert len(results) == 1
+        assert results[0].files == []
+        assert results[0].dataset is not None
+        assert results[0].date_token == "20200722"
+        assert not (out_dir / "processed").exists()
+
+        dataset = fetcher.to_dataset(results[0])
+        assert "flood_extent" in dataset.data_vars
 
 
 # ── to_dataset tests ─────────────────────────────────────────────────────────

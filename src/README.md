@@ -209,7 +209,29 @@ For each requested date and bbox, `VIIRSFetcher`:
 
 ### 5.3 Explicit Region CLI Usage
 
-Use this for direct bbox/date extraction:
+Use this for direct bbox/date extraction. Tiles are streamed from NOAA S3 and flood layers are classified by default. The recommended invocation just adds `--harmonise-only` to keep only the final harmonised result — no raw tiles downloaded, no intermediate GeoTIFFs:
+
+```bash
+uv run atlantis fetch \
+  --event Yangtze_2020 \
+  --source viirs \
+  --bbox "105 28 125 38" \
+  --start-date 2020-07-22 \
+  --end-date 2020-07-22 \
+  --harmonise-only
+```
+
+This writes only:
+
+```text
+~/.cache/atlantis/raw/Yangtze_2020/
+└── viirs/
+    └── harmonised/
+        ├── Yangtze_2020_2020-07-22_viirs_harmonised.tif
+        └── Yangtze_2020_2020-07-22_viirs_harmonised.png
+```
+
+Without any optional flags (still streams and classifies by default, writes all intermediate files):
 
 ```bash
 uv run python -m atlantis.cli fetch \
@@ -231,17 +253,18 @@ Fetching from viirs...
   Wrote 3 files
 ```
 
-Default output layout:
+Default output layout (no flags, streaming and classify on):
 
 ```text
 ~/.cache/atlantis/raw/Yangtze_2020/
 └── viirs/
-    ├── raw/
     └── processed/
         ├── Yangtze_2020_20200722_viirs_flood_extent.tif
         ├── Yangtze_2020_20200722_viirs_quality_mask.tif
         └── Yangtze_2020_20200722_viirs_permanent_water.tif
 ```
+
+Use `--no-stream` to cache raw tiles to disk for reuse across runs. Use `--no-classify` to write raw integer pixel codes instead of the derived layers.
 
 ### 5.4 KuroSiwo CLI Usage
 
@@ -257,7 +280,16 @@ uv run python -m atlantis.cli build-kurosiwo-metadata \
 
 Use this when you want a reusable metadata artifact without running a notebook. The CLI default now writes to `data/metadata/kurosiwo_metadata_v1.csv`.
 
-Fetch VIIRS directly from the catalogue, without any pre-generated CSV:
+Recommended invocation — tiles are streamed and classified by default; add `--harmonise-only` to keep only the final harmonised result. Especially valuable for batch runs across many events (saves ~100 MB of intermediates per event):
+
+```bash
+uv run python -m atlantis.cli fetch-kurosiwo-viirs \
+  --catalogue assets/ks_catalogue.gpkg \
+  --case KuroSiwo_470 \
+  --harmonise-only
+```
+
+Fetch VIIRS directly from the catalogue without `--harmonise-only` if you need 375 m intermediates for later processing:
 
 ```bash
 uv run python -m atlantis.cli fetch-kurosiwo-viirs \
@@ -290,7 +322,7 @@ uv run python -m atlantis.cli fetch-kurosiwo-viirs \
   --days-after 0
 ```
 
-Default output layout:
+Default output layout (without `--harmonise-only`, streaming on by default):
 
 ```text
 ~/.cache/atlantis/raw/kurosiwo/
