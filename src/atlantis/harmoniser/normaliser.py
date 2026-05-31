@@ -26,7 +26,7 @@ class NormaliserConfig:
     normalise_range: tuple[float, float] = (0.0, 1.0)
     fill_value: float = -9999.0
     clip: bool = True
-    skip_normalise_vars: set[str] = field(default_factory=lambda: {"quality_mask", "permanent_water"})
+    skip_normalise_vars: set[str] = field(default_factory=lambda: {"quality_mask", "permanent_water", "raw"})
 
 
 class Normaliser:

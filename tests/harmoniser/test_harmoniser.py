@@ -38,7 +38,7 @@ def _make_viirs_dataset(
 
     ds = xr.Dataset(
         {
-            "flood_extent": xr.DataArray(flood, dims=["y", "x"]),
+            "flood_fraction": xr.DataArray(flood, dims=["y", "x"]),
             "quality_mask": xr.DataArray(quality, dims=["y", "x"]),
             "permanent_water": xr.DataArray(np.zeros((height, width), dtype=np.uint8), dims=["y", "x"]),
         },
@@ -83,18 +83,18 @@ class TestHarmoniser:
         ds_out = h.harmonise(ds, source_id="viirs")
 
         # Check output structure
-        assert "flood_extent" in ds_out.data_vars
+        assert "flood_fraction" in ds_out.data_vars
         assert "quality_mask" in ds_out.data_vars
         assert "permanent_water" in ds_out.data_vars
 
         # Resolution reduced
-        assert ds_out["flood_extent"].shape[0] < ds["flood_extent"].shape[0]
-        assert ds_out["flood_extent"].shape[1] < ds["flood_extent"].shape[1]
+        assert ds_out["flood_fraction"].shape[0] < ds["flood_fraction"].shape[0]
+        assert ds_out["flood_fraction"].shape[1] < ds["flood_fraction"].shape[1]
 
         # Float32 flood extent in 0-1
-        assert ds_out["flood_extent"].dtype == np.float32
-        assert ds_out["flood_extent"].min().values >= 0.0
-        assert ds_out["flood_extent"].max().values <= 1.0
+        assert ds_out["flood_fraction"].dtype == np.float32
+        assert ds_out["flood_fraction"].min().values >= 0.0
+        assert ds_out["flood_fraction"].max().values <= 1.0
 
         # Provenance attrs
         assert ds_out.attrs["source_id"] == "viirs"
@@ -107,7 +107,7 @@ class TestHarmoniser:
 
         ds = _make_viirs_dataset()
         input_path = tmp_path / "input.tif"
-        ds["flood_extent"].rio.to_raster(str(input_path), dtype="uint8", compress="LZW", nodata=0)
+        ds["flood_fraction"].rio.to_raster(str(input_path), dtype="uint8", compress="LZW", nodata=0)
 
         output_path = tmp_path / "output.tif"
         h = Harmoniser()
@@ -143,7 +143,7 @@ class TestHarmoniser:
         transform = from_bounds(w, n - 50 * res, w + 50 * res, n, 50, 50)
 
         ds = xr.Dataset(
-            {"flood_extent": xr.DataArray(np.zeros((50, 50), dtype=np.uint8), dims=["y", "x"])},
+            {"flood_fraction": xr.DataArray(np.zeros((50, 50), dtype=np.uint8), dims=["y", "x"])},
             coords={
                 "x": w + (np.arange(50) + 0.5) * res,
                 "y": n - (np.arange(50) + 0.5) * res,
@@ -154,7 +154,7 @@ class TestHarmoniser:
 
         h = Harmoniser()
         ds_out = h.harmonise(ds, source_id="viirs")
-        assert "flood_extent" in ds_out.data_vars
+        assert "flood_fraction" in ds_out.data_vars
         assert "quality_mask" in ds_out.data_vars  # generated
 
     def test_harmonise_single_raster(self):
@@ -167,7 +167,7 @@ class TestHarmoniser:
         transform = from_bounds(w, n - 5 * res, w + 5 * res, n, 5, 5)
 
         ds = xr.Dataset(
-            {"flood_extent": xr.DataArray(np.ones((5, 5), dtype=np.uint8), dims=["y", "x"])},
+            {"flood_fraction": xr.DataArray(np.ones((5, 5), dtype=np.uint8), dims=["y", "x"])},
             coords={
                 "x": w + (np.arange(5) + 0.5) * res,
                 "y": n - (np.arange(5) + 0.5) * res,
@@ -178,9 +178,9 @@ class TestHarmoniser:
 
         h = Harmoniser()
         ds_out = h.harmonise(ds, source_id="test")
-        assert "flood_extent" in ds_out.data_vars
+        assert "flood_fraction" in ds_out.data_vars
         # Even small inputs should produce output
-        assert ds_out["flood_extent"].size > 0
+        assert ds_out["flood_fraction"].size > 0
 
 
 # ── Tiler tests ──────────────────────────────────────────────────────────────
@@ -213,7 +213,7 @@ class TestTiler:
         import xarray as xr
 
         t = Tiler()
-        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((100, 100)))})
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((100, 100)))})
         with pytest.raises(NotImplementedError, match="Tiling not yet implemented"):
             t.tile_dataset(ds)
 
@@ -221,7 +221,7 @@ class TestTiler:
         import xarray as xr
 
         t = Tiler()
-        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((100, 100)))})
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((100, 100)))})
         with pytest.raises(NotImplementedError, match="Tile counting not yet implemented"):
             t.count_tiles(ds)
 
@@ -229,6 +229,6 @@ class TestTiler:
         import xarray as xr
 
         t = Tiler()
-        ds = xr.Dataset({"flood_extent": xr.DataArray(np.zeros((100, 100)))})
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((100, 100)))})
         with pytest.raises(NotImplementedError, match="Tile bbox calculation not yet implemented"):
             t.get_tile_bbox(0, 0, ds)

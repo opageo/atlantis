@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -99,7 +100,7 @@ class Harmoniser:
         self,
         dataset: xr.Dataset,
         source_id: str = "viirs",
-        flood_variable: str = "flood_extent",
+        flood_variable: str = "flood_fraction",
     ) -> xr.Dataset:
         """Run the full harmonisation pipeline on a dataset.
 
@@ -119,6 +120,14 @@ class Harmoniser:
             normalised flood values and quality masks.
         """
         ds = dataset.copy(deep=True)
+
+        # ── Warn if harmonising raw integer codes ─────────────────────
+        if flood_variable == "raw":
+            logging.getLogger(__name__).warning(
+                "Harmonising raw VIIRS codes: nearest-neighbour resampling preserves codes "
+                "but the result is not a continuous flood fraction. "
+                "Use --classify for semantically meaningful harmonised output."
+            )
 
         # ── Step 1: Reproject / resample ──────────────────────────────
         ds = self.reprojector.reproject(ds)
@@ -146,7 +155,7 @@ class Harmoniser:
         input_path: Path,
         output_path: Path,
         source_id: str = "viirs",
-        flood_variable: str = "flood_extent",
+        flood_variable: str = "flood_fraction",
     ) -> Path:
         """Read a GeoTIFF, harmonise, and write the result.
 
