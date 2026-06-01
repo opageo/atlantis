@@ -1,8 +1,8 @@
-"""Build a static self-contained STAC catalog for the KuroSiwo SAR flood dataset.
+"""Build a self-contained STAC catalog for the KuroSiwo SAR flood dataset stored in S3.
 
-On-disk input layout
---------------------
-assets/kurosiwo/{actid}/
+S3 input layout
+---------------
+s3://{bucket}/{kurosiwo_prefix}/{actid}/
     {aoiid_dir}/          '00' = unlabeled (aoiid=null), '01','02',... = labeled
         [{2char}/{hash}/] unlabeled: 2-level hash-sharded directories
         [{hash}/]         labeled:   flat tile directories
@@ -33,25 +33,27 @@ ks:slavecov, ks:mastercov, ks:gvalid, ks:aoiid, ks:flood_date
 
 Usage (CLI)
 -----------
-    # PoC — single event
-    python -m atlantis.stac_catalog --event 1111002
+    # PoC — single event (default bucket=atlantis, prefix=kurosiwo, output=stac)
+    python -m atlantis.stac.stac_catalog --event 1111002
 
-    # All events (once downloaded)
-    python -m atlantis.stac_catalog --event 1111002 --event 1111003 ...
+    # All events
+    python -m atlantis.stac.stac_catalog --event 1111002 --event 1111003 ...
 
-    # Custom paths
-    python -m atlantis.stac_catalog \\
-        --root /data/kurosiwo \\
-        --output /output/stac \\
+    # Custom S3 locations
+    python -m atlantis.stac.stac_catalog \\
+        --bucket my-bucket \\
+        --prefix datasets/kurosiwo \\
+        --output catalogs/kurosiwo-stac \\
         --event 1111002
 """
 
 import json
-import re
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
+import boto3
 import pyproj
 import pystac
 import typer
@@ -71,8 +73,8 @@ KS_UNLABELED_ID = "kurosiwo-unlabeled"
 
 KS_DESCRIPTION = (
     "KuroSiwo: Large-scale multi-temporal SAR dataset for flood detection. "
-    "43 real flood events, 1.73 M catalogue entries, ~1.6 M exported patches. "
-    "Source: Orion-AI-Lab/KuroSiwo — SAR Sentinel-1 GRD, EPSG:3857, 256×256 px tiles (~2.24 km)."
+    "43 real flood events. "
+    "Source: Orion-AI-Lab/KuroSiwo — SAR Sentinel-1 GRD, EPSG:3857, 224×224 px tiles (~2.24 km)."
 )
 
 # pname → (title, media_type)
@@ -99,9 +101,6 @@ _UNLABELED_ROLES: dict[str, list[str]] = {
     "IVH": ["data"],
     "MNA": ["data"],  # water mask only — no flood label context
 }
-
-# Numeric regex for aoiid directory names ("00", "01", ...)
-_AOIID_DIR_RE = re.compile(r"^\d+$")
 
 # Single shared EPSG:3857 → EPSG:4326 transformer (thread-safe after construction)
 _TRANSFORMER = pyproj.Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
@@ -138,33 +137,62 @@ def _to_wgs84(geom_wkt: str) -> tuple[dict, list[float]]:
 
 
 # ---------------------------------------------------------------------------
-# Tile discovery
+# S3 tile discovery
 # ---------------------------------------------------------------------------
 
 
-def _iter_tile_dirs(event_root: Path) -> Iterator[Path]:
-    """Yield every tile directory (containing info.json) under an event root.
+def _iter_tile_prefixes(
+    s3: Any,
+    bucket: str,
+    actid_prefix: str,
+) -> Iterator[tuple[str, set[str]]]:
+    """Yield ``(tile_prefix, sibling_keys)`` for every tile under *actid_prefix* in S3.
 
-    Handles both layouts:
+    *tile_prefix* is the S3 key prefix of the tile directory (ending with ``/``),
+    e.g. ``kurosiwo/1111002/01/09dd5f42e6845c5782d8141078640c62/``.
+
+    *sibling_keys* is the set of all S3 keys sharing that prefix (used to check
+    asset existence without additional ``head_object`` calls).
+
+    Handles both on-disk layouts as stored in S3:
     - unlabeled (``00/``): 2-level hash-prefix sharding  → ``00/{2chars}/{hash}/``
     - labeled   (``01/``, ``02/``, ...): flat            → ``{aoiid}/{hash}/``
     """
-    for aoiid_dir in sorted(event_root.iterdir()):
-        if not aoiid_dir.is_dir() or not _AOIID_DIR_RE.match(aoiid_dir.name):
-            continue
+    paginator = s3.get_paginator("list_objects_v2")
 
-        if int(aoiid_dir.name) == 0:
-            # Unlabeled: hash-sharded
-            for prefix_dir in sorted(aoiid_dir.iterdir()):
-                if prefix_dir.is_dir():
-                    for tile_dir in sorted(prefix_dir.iterdir()):
-                        if tile_dir.is_dir() and (tile_dir / "info.json").exists():
-                            yield tile_dir
-        else:
-            # Labeled: flat
-            for tile_dir in sorted(aoiid_dir.iterdir()):
-                if tile_dir.is_dir() and (tile_dir / "info.json").exists():
-                    yield tile_dir
+    # Collect all keys under the actid prefix in one paginated pass.
+    # Group them by their tile prefix (everything up to and including the
+    # hash-directory component).
+    tile_keys: dict[str, set[str]] = {}
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=actid_prefix):
+        for obj in page.get("Contents", []):
+            key: str = obj["Key"]
+            # Determine the tile prefix from the key depth.
+            # Key structure relative to actid_prefix:
+            #   labeled:   {aoiid}/{hash}/{filename}        → depth 3 from actid_prefix
+            #   unlabeled: 00/{2chars}/{hash}/{filename}    → depth 4 from actid_prefix
+            relative = key[len(actid_prefix):]  # strip leading prefix
+            parts = relative.split("/")
+
+            aoiid = parts[0]
+            if not aoiid.isdigit():
+                continue  # skip unexpected keys
+
+            if int(aoiid) == 0 and len(parts) >= 4:
+                # unlabeled: parts = ['00', '<2chars>', '<hash>', '<filename>']
+                tile_prefix = actid_prefix + "/".join(parts[:3]) + "/"
+            elif int(aoiid) != 0 and len(parts) >= 3:
+                # labeled: parts = ['<aoiid>', '<hash>', '<filename>']
+                tile_prefix = actid_prefix + "/".join(parts[:2]) + "/"
+            else:
+                continue
+
+            tile_keys.setdefault(tile_prefix, set()).add(key)
+
+    for tile_prefix, keys in sorted(tile_keys.items()):
+        if tile_prefix + "info.json" in keys:
+            yield tile_prefix, keys
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +214,26 @@ def _parse_dt(date_str: str) -> datetime:
     return datetime.fromisoformat(date_str.replace(" ", "T")).replace(tzinfo=timezone.utc)
 
 
-def build_item(tile_dir: Path, info: dict) -> pystac.Item:
-    """Build a :class:`pystac.Item` from a tile directory and its ``info.json``."""
+def build_item(
+    tile_prefix: str,
+    bucket: str,
+    info: dict,
+    existing_keys: set[str],
+) -> pystac.Item:
+    """Build a :class:`pystac.Item` from an S3 tile prefix and its parsed ``info.json``.
+
+    Parameters
+    ----------
+    tile_prefix:
+        S3 key prefix of the tile directory (ending with ``/``).
+    bucket:
+        S3 bucket name.
+    info:
+        Parsed contents of the tile's ``info.json``.
+    existing_keys:
+        Set of S3 keys known to exist under *tile_prefix* (used to skip
+        missing assets without additional ``head_object`` calls).
+    """
     is_labeled = info.get("aoiid") is not None
     roles_map = _LABELED_ROLES if is_labeled else _UNLABELED_ROLES
 
@@ -239,10 +285,10 @@ def build_item(tile_dir: Path, info: dict) -> pystac.Item:
     actid: int = info["actid"]
     for ds_name, ds_meta in info["datasets"].items():
         pname: str = ds_meta["pname"]
-        tif_path = tile_dir / f"{ds_name}.tif"
+        tif_key = f"{tile_prefix}{ds_name}.tif"
 
-        if not tif_path.exists():
-            logger.warning(f"Asset file missing, skipping: {tif_path}")
+        if tif_key not in existing_keys:
+            logger.warning(f"Asset key missing in S3, skipping: s3://{bucket}/{tif_key}")
             continue
 
         title_base, media_type = _ASSET_META.get(pname, (pname, pystac.MediaType.GEOTIFF))
@@ -251,7 +297,7 @@ def build_item(tile_dir: Path, info: dict) -> pystac.Item:
         item.add_asset(
             key=_asset_key(ds_name, actid),
             asset=pystac.Asset(
-                href=str(tif_path.resolve()),
+                href=f"s3://{bucket}/{tif_key}",
                 media_type=media_type,
                 title=f"{title_base} [{ds_meta['source_date']}]",
                 roles=roles,
@@ -293,30 +339,45 @@ def _extent_from_items(items: list[pystac.Item]) -> pystac.Extent:
 
 def build_event_collections(
     actid: int,
-    event_root: Path,
+    s3: Any,
+    bucket: str,
+    kurosiwo_prefix: str,
 ) -> tuple[pystac.Collection | None, pystac.Collection | None]:
-    """Build labeled and unlabeled sub-collections for a single flood event.
+    """Build labeled and unlabeled sub-collections for a single flood event from S3.
+
+    Parameters
+    ----------
+    actid:
+        Flood event activation ID.
+    s3:
+        Boto3 S3 client.
+    bucket:
+        S3 bucket name.
+    kurosiwo_prefix:
+        S3 key prefix for the kurosiwo root (e.g. ``kurosiwo/``).
 
     Returns
     -------
     (labeled_collection, unlabeled_collection)
-    Either may be ``None`` if no tiles of that type exist on disk.
+        Either may be ``None`` if no tiles of that type exist in S3.
     """
+    actid_prefix = f"{kurosiwo_prefix}{actid}/"
     labeled_items: list[pystac.Item] = []
     unlabeled_items: list[pystac.Item] = []
 
-    for tile_dir in _iter_tile_dirs(event_root):
-        info_path = tile_dir / "info.json"
+    for tile_prefix, existing_keys in _iter_tile_prefixes(s3, bucket, actid_prefix):
+        info_key = f"{tile_prefix}info.json"
         try:
-            info = json.loads(info_path.read_text())
+            body = s3.get_object(Bucket=bucket, Key=info_key)["Body"].read()
+            info = json.loads(body)
         except Exception as exc:
-            logger.error(f"Failed to read {info_path}: {exc}")
+            logger.error(f"Failed to read s3://{bucket}/{info_key}: {exc}")
             continue
 
         try:
-            item = build_item(tile_dir, info)
+            item = build_item(tile_prefix, bucket, info, existing_keys)
         except Exception as exc:
-            logger.error(f"Failed to build item for {tile_dir}: {exc}")
+            logger.error(f"Failed to build item for s3://{bucket}/{tile_prefix}: {exc}")
             continue
 
         if info.get("aoiid") is not None:
@@ -361,29 +422,83 @@ def _placeholder_extent() -> pystac.Extent:
     )
 
 
-def build_catalog(
-    kurosiwo_root: Path,
-    events: list[int],
-    output_dir: Path,
-    labeled_only: bool = True,
-) -> pystac.Catalog:
-    """Build and save a self-contained STAC catalog for the given events.
+def _save_catalog_to_s3(
+    catalog: pystac.Catalog,
+    s3: Any,
+    bucket: str,
+    output_prefix: str,
+) -> None:
+    """Serialize a STAC catalog to S3.
+
+    Uses a temporary local directory as an intermediate staging area (required
+    by pystac's ``save()`` API), then uploads every ``.json`` file to S3 under
+    *output_prefix*.
 
     Parameters
     ----------
-    kurosiwo_root:
-        Directory that contains one sub-directory per ``actid``
-        (e.g. ``assets/kurosiwo/``).
+    catalog:
+        The fully-assembled in-memory STAC catalog.
+    s3:
+        Boto3 S3 client.
+    bucket:
+        Destination S3 bucket.
+    output_prefix:
+        S3 key prefix for the catalog root (e.g. ``stac/kurosiwo``).
+        A trailing ``/`` is added if absent.
+    """
+    if not output_prefix.endswith("/"):
+        output_prefix += "/"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        catalog.normalize_hrefs(tmp_dir)
+        catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+
+        tmp_root = Path(tmp_dir)
+        uploaded = 0
+        for json_path in tmp_root.rglob("*.json"):
+            relative = json_path.relative_to(tmp_root)
+            s3_key = output_prefix + str(relative)
+            s3.upload_file(
+                Filename=str(json_path),
+                Bucket=bucket,
+                Key=s3_key,
+                ExtraArgs={"ContentType": "application/json"},
+            )
+            uploaded += 1
+
+    logger.info(f"Catalog saved → s3://{bucket}/{output_prefix} ({uploaded} JSON files)")
+
+
+def build_catalog(
+    bucket: str,
+    kurosiwo_prefix: str,
+    events: list[int],
+    output_prefix: str,
+    labeled_only: bool = True,
+) -> pystac.Catalog:
+    """Build and save a self-contained STAC catalog for the given events from S3.
+
+    Parameters
+    ----------
+    bucket:
+        S3 bucket that holds the KuroSiwo data (e.g. ``atlantis``).
+    kurosiwo_prefix:
+        S3 key prefix for the kurosiwo root within the bucket
+        (e.g. ``kurosiwo``).  A trailing ``/`` is added if absent.
     events:
         List of ``actid`` integers to include.
-    output_dir:
-        Directory where the STAC JSON tree will be written
-        (e.g. ``data/stac/``).
+    output_prefix:
+        S3 key prefix where the STAC catalog JSON tree will be written
+        (e.g. ``stac``).
     labeled_only:
-        When ``True`` (default) only the labeled partition (``kurosiwo-labeled``)
-        is built and written.  Set to ``False`` to also include the unlabeled
-        background tiles (``kurosiwo-unlabeled``).
+        When ``True`` (default) only the labeled partition is built.
+        Set to ``False`` to also include unlabeled background tiles.
     """
+    if not kurosiwo_prefix.endswith("/"):
+        kurosiwo_prefix += "/"
+
+    s3: Any = boto3.client("s3")
+
     catalog = pystac.Catalog(
         id=KS_CATALOG_ID,
         description=KS_DESCRIPTION,
@@ -415,13 +530,15 @@ def build_catalog(
     total_labeled = total_unlabeled = 0
 
     for actid in events:
-        event_root = kurosiwo_root / str(actid)
-        if not event_root.exists():
-            logger.warning(f"Event directory not found: {event_root} — skipping")
+        # Quick existence check: does any key exist under the actid prefix?
+        actid_prefix = f"{kurosiwo_prefix}{actid}/"
+        probe = s3.list_objects_v2(Bucket=bucket, Prefix=actid_prefix, MaxKeys=1)
+        if not probe.get("Contents"):
+            logger.warning(f"No S3 objects found under s3://{bucket}/{actid_prefix} — skipping")
             continue
 
         logger.info(f"Processing event actid={actid} …")
-        labeled_col, unlabeled_col = build_event_collections(actid, event_root)
+        labeled_col, unlabeled_col = build_event_collections(actid, s3, bucket, kurosiwo_prefix)
 
         if labeled_col is not None:
             labeled_top.add_child(labeled_col)
@@ -441,10 +558,7 @@ def build_catalog(
         + f" across {len(events)} event(s)."
     )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    catalog.normalize_hrefs(str(output_dir))
-    catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
-    logger.info(f"Catalog saved → {output_dir}")
+    _save_catalog_to_s3(catalog, s3, bucket, output_prefix)
 
     return catalog
 
@@ -453,7 +567,7 @@ def build_catalog(
 # CLI
 # ---------------------------------------------------------------------------
 
-app = typer.Typer(help="Generate a KuroSiwo STAC catalog from the on-disk dataset.")
+app = typer.Typer(help="Generate a KuroSiwo STAC catalog from data stored in S3.")
 
 
 @app.command()
@@ -464,25 +578,31 @@ def main(
         "-e",
         help="actid(s) to include. Repeat for multiple events.",
     ),
-    root: Path = typer.Option(
-        Path("assets/kurosiwo"),
-        "--root",
-        "-r",
-        help="KuroSiwo root directory (contains one sub-dir per actid).",
+    bucket: str = typer.Option(
+        "atlantis",
+        "--bucket",
+        "-b",
+        help="S3 bucket that holds the KuroSiwo data.",
     ),
-    output: Path = typer.Option(
-        Path("data/stac"),
+    prefix: str = typer.Option(
+        "kurosiwo",
+        "--prefix",
+        "-p",
+        help="S3 key prefix for the kurosiwo root within the bucket.",
+    ),
+    output: str = typer.Option(
+        "stac",
         "--output",
         "-o",
-        help="Output directory for the static STAC catalog JSON tree.",
+        help="S3 key prefix where the STAC catalog JSON tree will be written.",
     ),
     labeled_only: bool = typer.Option(
         True,
         "--labeled/--all",
-        help="Build only the labeled partition (default). Pass --all to also include unlabeled background tiles.",
+        help="Build only the labeled partition (default). Pass --all to also include unlabeled tiles.",
     ),
 ) -> None:
-    build_catalog(root, list(event), output, labeled_only=labeled_only)
+    build_catalog(bucket, prefix, list(event), output, labeled_only=labeled_only)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,16 @@
-"""Demo: querying the static KuroSiwo STAC catalog.
+"""Demo: querying the KuroSiwo STAC catalog stored in S3.
 
-Shows four query patterns against the self-contained catalog written to
-``data/stac/`` by ``python -m atlantis.stac_catalog``:
+Reads the self-contained STAC catalog produced by ``python -m atlantis.stac.stac_catalog``
+directly from S3 (``s3://atlantis/stac/``) using a lightweight boto3-backed
+:class:`S3StacIO` so pystac can follow the relative JSON links transparently.
+
+Five query patterns are demonstrated:
 
 1. By event   — retrieve all items for a specific ``actid``
 2. By geometry — spatial intersection with a WGS84 bounding box
 3. By datetime — temporal range filter on ``ks:flood_date``
-4. By KuroSiwo properties — predicate on ``ks:pflood``, ``ks:gvalid``, etc.
+4. By property — predicate on ``ks:pflood``, ``ks:gvalid``, ``ks:pcovered``
+5. Chained    — spatial + property filter with asset-href inspection
 
 Run from the project root (venv active):
 
@@ -16,24 +20,51 @@ Run from the project root (venv active):
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
+from urllib.parse import urlparse
 
+import boto3
 import pystac
+import pystac.stac_io
+from pystac.stac_io import DefaultStacIO
 from shapely.geometry import box, shape
 
 # ---------------------------------------------------------------------------
-# Paths
+# S3-aware StacIO
 # ---------------------------------------------------------------------------
 
-CATALOG_PATH = Path("data/stac/catalog.json")
+CATALOG_URI = "s3://atlantis/stac/catalog.json"
+
+
+class S3StacIO(pystac.StacIO):
+    """pystac StacIO implementation that reads JSON objects from S3.
+
+    Falls back to the default implementation for ``http(s)://`` and local paths.
+    """
+
+    def __init__(self, s3_client: Any | None = None) -> None:
+        self._s3 = s3_client or boto3.client("s3")
+        self._default = DefaultStacIO()
+
+    def read_text(self, source: pystac.stac_io.HREF, *args: Any, **kwargs: Any) -> str:  # type: ignore[override]
+        href = str(source)
+        if href.startswith("s3://"):
+            parsed = urlparse(href)
+            bucket = parsed.netloc
+            key = parsed.path.lstrip("/")
+            return self._s3.get_object(Bucket=bucket, Key=key)["Body"].read().decode("utf-8")
+        return self._default.read_text(source, *args, **kwargs)
+
+    def write_text(self, dest: pystac.stac_io.HREF, txt: str, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]
+        self._default.write_text(dest, txt, *args, **kwargs)
+
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Query helpers
 # ---------------------------------------------------------------------------
 
 
-def _prop(item: pystac.Item, key: str):
+def _prop(item: pystac.Item, key: str) -> Any:
     """Shorthand for ``item.properties[key]`` with a safe default."""
     return item.properties.get(key)
 
@@ -45,11 +76,10 @@ def _item_geometry(item: pystac.Item):
 
 def items_for_event(catalog: pystac.Catalog, actid: int) -> list[pystac.Item]:
     """Return all labeled items belonging to a single flood event (``actid``)."""
-    event_col_id = f"kurosiwo-labeled-{actid}"
     labeled_col = catalog.get_child("kurosiwo-labeled")
     if labeled_col is None:
         return []
-    event_col = labeled_col.get_child(event_col_id)
+    event_col = labeled_col.get_child(f"kurosiwo-labeled-{actid}")
     if event_col is None:
         return []
     return list(event_col.get_items())
@@ -80,7 +110,7 @@ def items_in_date_range(
     end: datetime,
     field: str = "ks:flood_date",
 ) -> Iterator[pystac.Item]:
-    """Yield items whose ``field`` (a date string) falls within [start, end].
+    """Yield items whose ``field`` date falls within [start, end].
 
     ``field`` defaults to ``ks:flood_date``.  Pass ``start_datetime`` or
     ``end_datetime`` to filter on the SAR acquisition window instead.
@@ -89,7 +119,7 @@ def items_in_date_range(
         raw = _prop(item, field)
         if raw is None:
             continue
-        dt = datetime.fromisoformat(raw.replace(" ", "T")).replace(tzinfo=timezone.utc)
+        dt = datetime.fromisoformat(str(raw).replace(" ", "T")).replace(tzinfo=timezone.utc)
         if start <= dt <= end:
             yield item
 
@@ -132,7 +162,6 @@ def items_by_property(
 
 
 def _print_item(item: pystac.Item, indent: str = "  ") -> None:
-    _ = item.properties
     flood_date = _prop(item, "ks:flood_date")
     pflood = _prop(item, "ks:pflood")
     pcovered = _prop(item, "ks:pcovered")
@@ -155,8 +184,12 @@ def _print_item(item: pystac.Item, indent: str = "  ") -> None:
 
 
 def main() -> None:
-    catalog = pystac.Catalog.from_file(str(CATALOG_PATH))
-    print(f"Opened catalog: {catalog.id!r}  ({CATALOG_PATH})\n")
+    stac_io = S3StacIO()
+    catalog = pystac.Catalog.from_file(CATALOG_URI, stac_io=stac_io)
+    print(f"Opened catalog : {catalog.id!r}")
+    print(f"Catalog URI    : {CATALOG_URI}")
+    top_collections = [c.id for c in catalog.get_children()]
+    print(f"Top-level cols : {top_collections}\n")
 
     # ------------------------------------------------------------------
     # 1. Query by event (actid)
@@ -167,11 +200,12 @@ def main() -> None:
     print(f"{'─' * 60}")
     event_items = items_for_event(catalog, ACTID)
     print(f"   Total labeled tiles: {len(event_items)}")
-    _print_item(event_items[0])
+    if event_items:
+        _print_item(event_items[0])
 
     # ------------------------------------------------------------------
-    # 2. Spatial filter — bbox around the Lake Chad / Logone-Chari region
-    #    (event 1111002 is the 2020 Logone-Chari floods, Chad/Cameroon)
+    # 2. Spatial filter — bbox around the Logone-Chari region
+    #    (event 1111002 = 2020 Chad/Cameroon floods, ~14.8°E 12.3°N)
     # ------------------------------------------------------------------
     ROI_BBOX = (14.70, 12.20, 14.95, 12.50)  # (min_lon, min_lat, max_lon, max_lat)
     print(f"{'─' * 60}")
@@ -214,10 +248,10 @@ def main() -> None:
         _print_item(item)
 
     # ------------------------------------------------------------------
-    # 5. Chained filter — spatial + property
+    # 5. Chained filter — spatial + property + asset-href inspection
     # ------------------------------------------------------------------
     print(f"{'─' * 60}")
-    print("5. Chained — spatial ROI + pflood≥5 % + gvalid=True")
+    print("5. Chained — spatial ROI + pflood≥5 % + gvalid=True  →  asset hrefs")
     print(f"{'─' * 60}")
     chained = list(
         items_by_property(
@@ -228,13 +262,12 @@ def main() -> None:
     )
     print(f"   Matching tiles: {len(chained)}")
     for item in chained:
-        # Show master (flood-time) SAR asset href
-        master_assets = [
-            (key, asset) for key, asset in item.assets.items() if asset.extra_fields.get("ks:master") is True
-        ]
-        for key, asset in master_assets:
-            print(f"    {key:12s}  →  {asset.href}")
-    print()
+        print(f"  {item.id}")
+        for key, asset in item.assets.items():
+            role_tag = ",".join(asset.roles or [])
+            master_tag = " [master]" if asset.extra_fields.get("ks:master") else ""
+            print(f"    {key:12s}  [{role_tag:9s}]{master_tag}  →  {asset.href}")
+        print()
 
 
 if __name__ == "__main__":

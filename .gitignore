@@ -229,3 +229,4 @@ data/
 
 .ignore
 assets/kurosiwo/**
+*.debug/**
