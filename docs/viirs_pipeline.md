@@ -15,28 +15,23 @@ flowchart TD
     VSICURL --> MOSAIC["Mosaic & clip to bbox"]
     DOWNLOAD --> MOSAIC
 
-    MOSAIC --> CLASSIFY{--classify?}
+    MOSAIC --> STRATEGY{--strategy?}
 
-    %% ─── Classify path ───────────────────────────────
-    CLASSIFY -->|"Yes (default)"| CLASS_OUT["Classify pixels into layers"]
-    CLASS_OUT --> LAYERS["flood_fraction — float32 [0.0–1.0]<br/>quality_mask — uint8 binary<br/>permanent_water — uint8 binary"]
+    STRATEGY -->|peak| PEAK["Pick peak flood date"]
+    STRATEGY -->|aggregate| AGG["Aggregate (mean/mode)"]
+    STRATEGY -->|all| ALL["Keep all dates"]
 
-    LAYERS --> HARM_ONLY{--harmonise-only?}
-    HARM_ONLY -->|Yes| SKIP_PROC["Skip writing 375 m files"]
-    HARM_ONLY -->|No| WRITE_PROC["Write processed/ GeoTIFFs<br/>(uint8, LZW, nodata=0 or 255)"]
+    PEAK --> KEEP_PROC{--keep-processed?}
+    AGG --> KEEP_PROC
+    ALL --> KEEP_PROC
+
+    KEEP_PROC -->|Yes| WRITE_PROC["Write processed/ GeoTIFFs<br/>(uint8, LZW, nodata=0 or 255)"]
+    KEEP_PROC -->|No| SKIP_PROC["Skip writing 375 m files"]
 
     WRITE_PROC --> HARM{--harmonise?}
-    HARM -->|No| DONE_PROC["Done — processed outputs only"]
-    HARM -->|Yes| HARMONISE
-
-    SKIP_PROC --> HARMONISE["Harmonise to 1-arcmin grid"]
-
-    %% ─── Raw path ────────────────────────────────────
-    CLASSIFY -->|"No (--no-classify)"| RAW_OUT["Keep raw integer codes<br/>(uint8, values 0–200)"]
-    RAW_OUT --> WRITE_RAW["Write processed/<br/>*_raw.tif"]
-    WRITE_RAW --> HARM_RAW{--harmonise?}
-    HARM_RAW -->|No| DONE_RAW["Done — raw GeoTIFF only"]
-    HARM_RAW -->|Yes| HARMONISE_RAW["Harmonise (nearest resampling)<br/>⚠️ Warning: codes preserved<br/>but not a continuous fraction"]
+    SKIP_PROC --> HARM
+    HARM -->|No| DONE_PROC["Done"]
+    HARM -->|Yes| HARMONISE["Harmonise to 1-arcmin grid"]
 
     %% ─── Harmonisation detail ────────────────────────
     HARMONISE --> HARM_STEPS["Reproject to EPSG:4326<br/>Resample flood_fraction (average)<br/>Resample masks (mode)"]
@@ -45,20 +40,19 @@ flowchart TD
     PLOT -->|Yes| PNG["Write harmonised/ PNG"]
     PLOT -->|No| DONE_HARM["Done"]
     PNG --> DONE_HARM
-
-    HARMONISE_RAW --> HARM_RAW_WRITE["Write harmonised/ GeoTIFF<br/>uint8 raw codes, nodata=255<br/>Normalisation skipped"]
-    HARM_RAW_WRITE --> DONE_RAW_HARM["Done"]
 ```
 
 ## Mode summary
 
-| Flags                       | Intermediate output                      | Final output                  | Flood variable                           |
-| --------------------------- | ---------------------------------------- | ----------------------------- | ---------------------------------------- |
-| _(defaults)_                | `processed/*_flood_fraction.tif` + masks | —                             | `flood_fraction` (uint8 pct, nodata=255) |
-| `--harmonise`               | `processed/*_flood_fraction.tif` + masks | `harmonised/*_harmonised.tif` | `flood_fraction` (uint8 pct, nodata=255) |
-| `--harmonise-only`          | _(none)_                                 | `harmonised/*_harmonised.tif` | `flood_fraction` (uint8 pct, nodata=255) |
-| `--no-classify`             | `processed/*_raw.tif`                    | —                             | `raw` (uint8 codes 0–200)                |
-| `--no-classify --harmonise` | `processed/*_raw.tif`                    | `harmonised/*_harmonised.tif` | `raw` (uint8 codes, nearest resampling)  |
+| Strategy    | --keep-processed | Intermediate output              | Final output | Flood variable               |
+| :---------- | :--------------- | :------------------------------- | :----------- | :--------------------------- |
+| `peak`      | Yes              | `processed/*_flood_fraction.tif` | —            | `flood_fraction` (uint8 pct) |
+| `peak`      | No               | _(none)_                         | —            | `flood_fraction` (uint8 pct) |
+| `aggregate` | Yes              | `processed/*_flood_fraction.tif` | —            | `flood_fraction` (mean)      |
+| `all`       | Yes              | `processed/*_flood_fraction.tif` | —            | `flood_fraction` (N dates)   |
+| `all`       | No               | _(none)_                         | —            | `flood_fraction` (N dates)   |
+
+_Note: `--harmonise` adds a final `harmonised/_\_harmonised.tif` output for any strategy.\*
 
 ## Data encoding at each stage
 
@@ -87,7 +81,7 @@ Harmonised (raw)             uint8   raw codes 0–200     ~1 arcmin, nodata=255
 
 ## Notes
 
-- **Harmonise-only** skips writing intermediate 375 m files — saves ~100 MB per event.
+- **No-keep-processed** skips writing intermediate 375 m files — saves ~100 MB per event.
 - **Raw + harmonise** uses nearest-neighbour resampling (preserves integer codes) but emits a warning that the result is not a continuous flood fraction.
 - The normaliser's `skip_normalise_vars` set includes `"raw"` — raw codes are never min-max normalised even if passed through the full harmonisation pipeline.
 - **Resampling methods** are configured in `variable_resampling`: `flood_fraction → average`, `quality_mask → mode`, `permanent_water → mode`, `raw → nearest`.

@@ -343,3 +343,97 @@ class ViirsRasterProcessor:
             quality_bitmask=0,
             permanent_water_mask_available=True,
         )
+
+    @staticmethod
+    def aggregate_tiles(tiles: list[ProcessedTile]) -> ProcessedTile:
+        """Aggregate multiple ``ProcessedTile`` instances across time.
+
+        Uses mean for continuous variables (flood_fraction) and mode for
+        categorical variables (quality_mask, permanent_water, raw).
+
+        Args:
+            tiles: Sequence of ``ProcessedTile`` instances sharing the same
+                CRS and spatial footprint. At least one tile is required.
+
+        Returns:
+            A single ``ProcessedTile`` with aggregated arrays.
+
+        Raises:
+            ValueError: If *tiles* is empty.
+        """
+        if not tiles:
+            raise ValueError("Cannot aggregate an empty list of tiles")
+
+        if len(tiles) == 1:
+            return tiles[0]
+
+        ref = tiles[0]
+
+        # ── flood_fraction: mean across time ────────────────────────────
+        flood_arrays = [t.flood_fraction for t in tiles if t.flood_fraction is not None]
+        flood_fraction: np.ndarray | None = None
+        if flood_arrays:
+            stack = np.stack(flood_arrays, axis=0)
+            flood_fraction = np.nanmean(stack, axis=0).astype(np.float32)
+
+        # ── quality_mask: mode across time ──────────────────────────────
+        quality_arrays = [t.quality_mask for t in tiles if t.quality_mask is not None]
+        quality_mask: np.ndarray | None = None
+        if quality_arrays:
+            stack = np.stack(quality_arrays, axis=0).astype(np.uint8)
+            quality_mask = _mode_uint8(stack)
+
+        # ── permanent_water: mode across time ───────────────────────────
+        pw_arrays = [t.permanent_water for t in tiles if t.permanent_water is not None]
+        permanent_water: np.ndarray | None = None
+        if pw_arrays:
+            stack = np.stack(pw_arrays, axis=0).astype(np.uint8)
+            permanent_water = _mode_uint8(stack)
+
+        # ── raw: mode across time ───────────────────────────────────────
+        raw_arrays = [t.raw for t in tiles if t.raw is not None]
+        raw: np.ndarray | None = None
+        if raw_arrays:
+            stack = np.stack(raw_arrays, axis=0).astype(np.uint8)
+            raw = _mode_uint8(stack)
+
+        # ── cloud_fraction: mean ────────────────────────────────────────
+        cloud_fraction = float(np.mean([t.cloud_fraction for t in tiles]))
+
+        return ProcessedTile(
+            raw=raw,
+            flood_fraction=flood_fraction,
+            quality_mask=quality_mask,
+            permanent_water=permanent_water,
+            transform=ref.transform,
+            crs=ref.crs,
+            cloud_fraction=cloud_fraction,
+        )
+
+
+def _mode_uint8(stack: np.ndarray) -> np.ndarray:
+    """Compute element-wise mode of a uint8 stack along axis 0.
+
+    Uses bincount on flattened values per pixel position. Falls back to
+    sorting-based mode if scipy is not available.
+
+    Args:
+        stack: 3D array ``(time, height, width)`` of uint8 values.
+
+    Returns:
+        2D array ``(height, width)`` with the most frequent value per pixel.
+    """
+    try:
+        from scipy.stats import mode as scipy_mode
+
+        result, _ = scipy_mode(stack, axis=0, keepdims=False)
+        return result.astype(np.uint8)
+    except ImportError:
+        # Fallback: bincount approach — ~2× slower but no dependency required
+        height, width = stack.shape[1], stack.shape[2]
+        flat = stack.reshape(stack.shape[0], -1)
+        modes = np.empty(flat.shape[1], dtype=np.uint8)
+        for i in range(flat.shape[1]):
+            counts = np.bincount(flat[:, i].astype(np.int16))
+            modes[i] = counts.argmax()
+        return modes.reshape(height, width)

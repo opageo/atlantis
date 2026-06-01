@@ -68,3 +68,20 @@ def _as_georeferenced_da(
     da.rio.write_crs(processed.crs, inplace=True)
     da.rio.write_transform(processed.transform, inplace=True)
     return da
+
+
+def processed_tiles_to_multi_dataset(
+    tiles: list[tuple[str, ProcessedTile]],
+    event_id: str,
+    source_id: str = "viirs",
+) -> xr.Dataset:
+    """Convert multiple ProcessedTiles to a multi-date xarray Dataset."""
+    import xarray as xr
+
+    datasets = []
+    for date_token, result in tiles:
+        ds = processed_tile_to_dataset(result.processed, event_id, source_id)
+        ds = ds.expand_dims(time=[date_token])
+        datasets.append(ds)
+
+    return xr.concat(datasets, dim="time")

@@ -35,7 +35,7 @@ uv run atlantis fetch \
   --bbox "-1.2 39.0 0.2 39.8" \
   --start-date 2024-10-30 \
   --end-date 2024-11-01 \
-  --harmonise-only
+  --no-keep-processed --harmonise
 ```
 
 This streams VIIRS tiles from NOAA S3, classifies flood pixels, and writes only the final harmonised 1-arcmin GeoTIFF + PNG:
@@ -70,7 +70,7 @@ Fetch VIIRS for events from the KuroSiwo SAR flood catalogue (bbox and dates res
 uv run atlantis fetch-kurosiwo-viirs \
   --catalogue assets/ks_catalogue.gpkg \
   --case KuroSiwo_470 \
-  --harmonise-only
+  --no-keep-processed --harmonise
 ```
 
 ### `atlantis harmonise --source viirs`
@@ -87,13 +87,13 @@ uv run atlantis harmonise \
 
 ### Output control
 
-| Flag               | Default | Effect                                                              |
-| ------------------ | ------- | ------------------------------------------------------------------- |
-| `--classify`       | on      | Produce flood/quality/water binary masks instead of raw pixel codes |
-| `--no-classify`    |         | Write raw integer pixel codes (single GeoTIFF)                      |
-| `--harmonise`      | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF            |
-| `--harmonise-only` | off     | Write only the harmonised output (no intermediate 375 m files)      |
-| `--plot`           | off     | Save a PNG of the peak-flood date                                   |
+| Flag                  | Default | Effect                                                              |
+| --------------------- | ------- | ------------------------------------------------------------------- |
+| `--classify`          | on      | Produce flood/quality/water binary masks instead of raw pixel codes |
+| `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                      |
+| `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF            |
+| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate 375 m files)      |
+| `--plot`              | off     | Save a PNG of the peak-flood date                                   |
 
 ### Data access
 
@@ -160,7 +160,7 @@ Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
   <event_id>/
     viirs/
       raw/          # only with --no-stream
-      processed/    # absent with --harmonise-only
+      processed/    # absent with --no-keep-processed
         # --classify (default):
         <event_id>_<YYYYMMDD>_viirs_flood_extent.tif
         <event_id>_<YYYYMMDD>_viirs_quality_mask.tif
@@ -169,7 +169,7 @@ Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
         <event_id>_<YYYYMMDD>_viirs_raw.tif
       plots/        # with --plot
         <event_id>_<YYYY-MM-DD>_viirs.png
-      harmonised/   # with --harmonise or --harmonise-only
+      harmonised/   # with --harmonise or --no-keep-processed
         <event_id>_<YYYY-MM-DD>_viirs_harmonised.tif
         <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
 ```
@@ -195,7 +195,7 @@ Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 - **Large regions** — VIIRS tiles cover ~10°×10°. Large bboxes automatically trigger multi-tile mosaicing.
 - **Cloud contamination** — Always check the quality mask. VIIRS is an optical sensor and cloud cover masks flood signal.
 - **Re-run without re-fetching** — With `--no-stream`, raw tiles are cached in `raw/` and reused on subsequent runs.
-- **Batch KuroSiwo runs** — Use `--harmonise-only` to save ~100 MB of intermediate files per event.
+- **Batch KuroSiwo runs** — Use `--no-keep-processed` to save ~100 MB of intermediate files per event.
 - **Pre-build metadata** — Run `atlantis build-kurosiwo-metadata` once to speed up repeated `fetch-kurosiwo-viirs` calls.
 
 ## Further reading

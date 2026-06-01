@@ -17,8 +17,9 @@ from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResu
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.fetchers.viirs.backend import get_backend, list_backends
 from atlantis.fetchers.viirs.dataset import processed_tile_to_dataset
-from atlantis.fetchers.viirs.processor import ProcessTilesResult, ViirsRasterProcessor
-from atlantis.fetchers.viirs.selection import flood_pixel_count, is_better_peak_candidate
+from atlantis.fetchers.viirs.processor import OutputPaths, ProcessTilesResult, ViirsRasterProcessor
+from atlantis.fetchers.viirs.selection import flood_pixel_count
+from atlantis.fetchers.viirs.selection import is_better_peak_candidate as is_better_peak_candidate
 from atlantis.models.event import FloodEvent
 from atlantis.utils.io import download_file, ensure_dir
 
@@ -93,7 +94,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
         data_format: str | None = None,
         classify: bool = False,
         stream: bool = False,
-        write_processed: bool = True,
+        strategy: str = "peak",
+        keep_processed: bool = True,
     ) -> None:
         """Initialize the VIIRS fetcher.
 
@@ -106,8 +108,9 @@ class VIIRSFetcher(AbstractFloodFetcher):
             stream: If True, stream remote tiles via GDAL ``/vsicurl/``
                 instead of downloading them to disk. Saves local storage
                 at the cost of network dependency during processing.
-            write_processed: When False, process dates in memory and return only
-                the peak-flood date (no ``processed/`` GeoTIFFs).
+            strategy: How to handle multiple dates: "peak" (best flood date),
+                "aggregate" (mean/mode), or "all" (every date).
+            keep_processed: When True, write intermediate processed/ GeoTIFFs.
         """
         config = get_config()
 
@@ -118,7 +121,11 @@ class VIIRSFetcher(AbstractFloodFetcher):
         self.timeout = timeout or config.fetcher.timeout
         self.classify = classify
         self.stream = stream
-        self.write_processed = write_processed
+        self.strategy = strategy
+        self.keep_processed = keep_processed
+
+        if self.strategy not in {"peak", "aggregate", "all"}:
+            raise ValueError(f"Invalid strategy '{self.strategy}'. Expected 'peak', 'aggregate', or 'all'.")
 
     def _resolve_base_url(self, override: str | None, config) -> str:
         """Determine the base URL based on backend and configuration."""
@@ -240,7 +247,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         output_dir = ensure_dir(output_dir)
         raw_dir = ensure_dir(output_dir / "raw") if not self.stream else output_dir / "raw"
         processed_dir = output_dir / "processed"
-        if self.write_processed:
+        if self.keep_processed:
             processed_dir = ensure_dir(processed_dir)
 
         # Group results by date
@@ -251,10 +258,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         area_geom = box(*event.bbox)
         processor = ViirsRasterProcessor(area_geom, classify=self.classify)
 
-        fetch_results: list[FetchResult] = []
-        best_in_memory: ProcessTilesResult | None = None
-        best_date_token: str = ""
-        best_flood_count = 0
+        all_processed: list[tuple[str, ProcessTilesResult]] = []
 
         for date_token, dated_results in sorted(grouped_results.items()):
             if self.stream:
@@ -269,7 +273,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
                     event.event_id,
                     date_token,
                     processed_dir,
-                    write_outputs=self.write_processed,
+                    write_outputs=self.keep_processed,
                 )
             else:
                 # ── Download mode (default): download tiles, then process ──
@@ -287,27 +291,41 @@ class VIIRSFetcher(AbstractFloodFetcher):
                     event.event_id,
                     date_token,
                     processed_dir,
-                    write_outputs=self.write_processed,
+                    write_outputs=self.keep_processed,
                 )
 
-            if process_result is None:
-                continue
+            if process_result is not None:
+                all_processed.append((date_token, process_result))
 
-            if self.write_processed:
-                fetch_results.append(self._fetch_result_from_process(event.event_id, date_token, process_result))
+        if not all_processed:
+            return []
+
+        # ── Strategy dispatch ──────────────────────────────────────────
+        if self.strategy == "all":
+            if self.keep_processed:
+                return [self._fetch_result_from_process(event.event_id, dt, pr) for dt, pr in all_processed]
             else:
-                count = flood_pixel_count(process_result.processed)
-                if best_in_memory is None or is_better_peak_candidate(count, best_flood_count):
-                    best_flood_count = count
-                    best_in_memory = process_result
-                    best_date_token = date_token
+                # Multi-date in-memory dataset
+                return [self._multi_date_fetch_result(event.event_id, all_processed)]
 
-        if not self.write_processed:
-            if best_in_memory is None:
-                return []
-            return [self._in_memory_fetch_result(event.event_id, best_date_token, best_in_memory)]
+        elif self.strategy == "aggregate":
+            all_tiles = [pr.processed for _, pr in all_processed]
+            aggregated = ViirsRasterProcessor.aggregate_tiles(all_tiles)
+            # If keep_processed, we could write the aggregate, but for now just return in-memory
+            return [
+                self._in_memory_fetch_result(
+                    event.event_id,
+                    "aggregated",
+                    ProcessTilesResult(OutputPaths(), all_processed[0][1].metadata, aggregated),
+                )
+            ]
 
-        return fetch_results
+        else:  # peak
+            best_date_token, best_result = max(all_processed, key=lambda item: flood_pixel_count(item[1].processed))
+            if self.keep_processed:
+                return [self._fetch_result_from_process(event.event_id, best_date_token, best_result)]
+            else:
+                return [self._in_memory_fetch_result(event.event_id, best_date_token, best_result)]
 
     @staticmethod
     def _fetch_result_from_process(event_id: str, date_token: str, process_result: ProcessTilesResult) -> FetchResult:

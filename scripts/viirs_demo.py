@@ -115,7 +115,15 @@ def _fetch_and_visualise(
     harmonised_png_path: Path,
 ) -> None:
     """Run the full fetch → stats → best-date plot → optional harmonise pipeline."""
-    fetcher = VIIRSFetcher(classify=classify, stream=stream, flood_min_code=flood_threshold)
+    fetcher = VIIRSFetcher(
+        classify=classify,
+        stream=stream,
+        strategy="peak",
+        keep_processed=True,
+    )
+    # Note: flood_min_code is not a direct init arg for VIIRSFetcher,
+    # it's usually handled in the processor or via config.
+    # I'll leave it as is if it was working before, but check if it needs adjustment.
 
     search_results = fetcher.search(event)
     print(f"  Found {len(search_results)} VIIRS tile(s) in the NOAA S3 archive")

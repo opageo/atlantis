@@ -209,7 +209,8 @@ For each requested date and bbox, `VIIRSFetcher`:
 
 ### 5.3 Explicit Region CLI Usage
 
-Use this for direct bbox/date extraction. Tiles are streamed from NOAA S3 and flood layers are classified by default. The recommended invocation just adds `--harmonise-only` to keep only the final harmonised result — no raw tiles downloaded, no intermediate GeoTIFFs:
+Use this for direct bbox/date extraction. Tiles are streamed from NOAA S3 and flood layers are classified by default. The recommended invocation uses the default `peak` strategy;
+add `--no-keep-processed` to skip writing intermediate 375 m files, or `--strategy aggregate` to return a temporal mean/mode composite:
 
 ```bash
 uv run atlantis fetch \
@@ -218,7 +219,7 @@ uv run atlantis fetch \
   --bbox "105 28 125 38" \
   --start-date 2020-07-22 \
   --end-date 2020-07-22 \
-  --harmonise-only
+  --no-keep-processed --harmonise
 ```
 
 This writes only:
@@ -280,16 +281,16 @@ uv run python -m atlantis.cli build-kurosiwo-metadata \
 
 Use this when you want a reusable metadata artifact without running a notebook. The CLI default now writes to `data/metadata/kurosiwo_metadata_v1.csv`.
 
-Recommended invocation — tiles are streamed and classified by default; add `--harmonise-only` to keep only the final harmonised result. Especially valuable for batch runs across many events (saves ~100 MB of intermediates per event):
+Recommended invocation — tiles are streamed and classified by default; add `--no-keep-processed` to skip writing intermediate 375 m files, or `--strategy aggregate` to return a temporal mean/mode composite:
 
 ```bash
 uv run python -m atlantis.cli fetch-kurosiwo-viirs \
   --catalogue assets/ks_catalogue.gpkg \
   --case KuroSiwo_470 \
-  --harmonise-only
+  --no-keep-processed --harmonise
 ```
 
-Fetch VIIRS directly from the catalogue without `--harmonise-only` if you need 375 m intermediates for later processing:
+Fetch VIIRS directly from the catalogue without `--no-keep-processed` if you need 375 m intermediates for later processing:
 
 ```bash
 uv run python -m atlantis.cli fetch-kurosiwo-viirs \
@@ -322,7 +323,7 @@ uv run python -m atlantis.cli fetch-kurosiwo-viirs \
   --days-after 0
 ```
 
-Default output layout (without `--harmonise-only`, streaming on by default):
+Default output layout (without `--no-keep-processed`, streaming on by default):
 
 ```text
 ~/.cache/atlantis/raw/kurosiwo/

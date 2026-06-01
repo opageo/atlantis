@@ -113,7 +113,8 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
                 "data_format": "tif",
                 "classify": True,
                 "stream": True,
-                "write_processed": True,
+                "strategy": "peak",
+                "keep_processed": True,
             }
 
         def fetch(self, event, output_dir):
@@ -176,7 +177,7 @@ def test_fetch_kurosiwo_viirs_command(monkeypatch, tmp_path):
                 "data_format": "tif",
                 "classify": True,
                 "stream": True,
-                "write_processed": True,
+                "keep_processed": True,
             }
 
         def fetch(self, event, output_dir):
@@ -242,7 +243,7 @@ def test_fetch_kurosiwo_viirs_command_from_catalogue(monkeypatch, tmp_path):
                 "data_format": "tif",
                 "classify": True,
                 "stream": True,
-                "write_processed": True,
+                "keep_processed": True,
             }
 
         def fetch(self, event, output_dir):
@@ -305,7 +306,8 @@ def test_fetch_command_supports_legacy_viirs_backend(monkeypatch, tmp_path):
                 "data_format": "tif",
                 "classify": True,
                 "stream": True,
-                "write_processed": True,
+                "strategy": "peak",
+                "keep_processed": True,
             }
 
         def fetch(self, event, output_dir):
@@ -498,7 +500,7 @@ class TestPlotViirs:
         assert "raw composite" in calls[0]["title"]
 
 
-# ── CLI integration tests for --plot / --harmonise / --harmonise-only ────────
+# ── CLI integration tests for --plot / --harmonise ────────
 
 
 def _make_fetcher_ds_map(tmp_path, event_id="Yangtze_2020", date_token="20200722"):
@@ -518,7 +520,7 @@ def _make_fetcher_ds_map(tmp_path, event_id="Yangtze_2020", date_token="20200722
             self.kwargs = kwargs
 
         def fetch(self, event, output_dir):
-            if self.kwargs.get("write_processed", True):
+            if self.kwargs.get("keep_processed", True):
                 return [fetch_result]
             return [in_memory_result]
 
@@ -626,13 +628,13 @@ def test_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
     assert any("harmonised" in str(p) and p.suffix == ".png" for p in plot_calls)
     # TIF was written via write_harmonised_raster
     assert len(write_calls) == 1
-    # processed/ should still exist (no --harmonise-only)
+    # processed/ should still exist
     assert processed_dir.exists()
     assert (processed_dir / "dummy.tif").exists()
 
 
-def test_fetch_harmonise_only_skips_processed_on_disk(monkeypatch, tmp_path):
-    """``--harmonise-only`` should fetch in memory and not create processed/."""
+def test_fetch_no_keep_processed_skips_processed_on_disk(monkeypatch, tmp_path):
+    """``--no-keep-processed`` should fetch in memory and not create processed/."""
     DummyFetcher, fetch_result, ds = _make_fetcher_ds_map(tmp_path)
     captured_kwargs: list[dict] = []
 
@@ -678,12 +680,13 @@ def test_fetch_harmonise_only_skips_processed_on_disk(monkeypatch, tmp_path):
             "2020-07-22",
             "--end-date",
             "2020-07-22",
-            "--harmonise-only",
+            "--no-keep-processed",
+            "--harmonise",
         ],
     )
     assert result.exit_code == 0, result.stdout
-    assert captured_kwargs and captured_kwargs[0].get("write_processed") is False
-    assert "processed in memory" in result.stdout
+    assert captured_kwargs and captured_kwargs[0].get("keep_processed") is False
+    assert "Peak-flood date" in result.stdout
     assert not processed_dir.exists()
 
 
@@ -718,7 +721,7 @@ def test_fetch_plot_without_harmonise_no_harmonised_dir(monkeypatch, tmp_path):
 
 
 def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path):
-    """KuroSiwo command: ``--harmonise-only`` harmonises and removes processed/."""
+    """KuroSiwo command: harmonise and remove processed/."""
     fetched_date_token = "20201014"
     event_id = "KuroSiwo_470"
     fetch_result, ds = _dummy_fetch_result(event_id, tmp_path, date_token=fetched_date_token, flood_pixels=5)
@@ -737,7 +740,7 @@ def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path)
             self.kwargs = kwargs
 
         def fetch(self, event, output_dir):
-            if self.kwargs.get("write_processed", True):
+            if self.kwargs.get("keep_processed", True):
                 return [fetch_result]
             return [in_memory_result]
 
@@ -800,7 +803,8 @@ def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path)
             event_id,
             "--output",
             str(tmp_path),
-            "--harmonise-only",
+            "--no-keep-processed",
+            "--harmonise",
         ],
     )
     assert result.exit_code == 0, result.stdout

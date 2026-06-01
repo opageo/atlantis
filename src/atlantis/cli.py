@@ -46,7 +46,7 @@ def _viirs_date_label(result: FetchResult) -> str:
     return "unknown"
 
 
-def _report_viirs_fetch_writes(fetch_results: list[FetchResult], *, harmonise_only: bool) -> None:
+def _report_viirs_fetch_writes(fetch_results: list[FetchResult], *, keep_processed: bool) -> None:
     """Print what the VIIRS fetcher persisted (disk vs in-memory peak date)."""
     disk_files = sum(len(result.files) for result in fetch_results)
     if disk_files:
@@ -55,7 +55,7 @@ def _report_viirs_fetch_writes(fetch_results: list[FetchResult], *, harmonise_on
             for path in result.files:
                 console.print(f"  - {path}")
         return
-    if fetch_results and harmonise_only:
+    if fetch_results and not keep_processed:
         label = _viirs_date_label(fetch_results[0])
         console.print(f"[bold]  Peak-flood date {label}: processed in memory (no processed/ GeoTIFFs)[/bold]")
 
@@ -216,10 +216,15 @@ def fetch(
         "--harmonise",
         help="Harmonise the peak-flood date to 1 arcmin after fetching (VIIRS only).",
     ),
-    harmonise_only: bool = typer.Option(
-        False,
-        "--harmonise-only",
-        help="Skip saving processed files; only write harmonised output (implies --harmonise).",
+    strategy: str = typer.Option(
+        "peak",
+        "--strategy",
+        help="How to handle multiple dates: peak (best flood date), aggregate (mean/mode), all (every date)",
+    ),
+    keep_processed: bool = typer.Option(
+        True,
+        "--keep-processed/--no-keep-processed",
+        help="Write intermediate processed/ GeoTIFFs. Use --no-keep-processed to save disk space.",
     ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
@@ -238,7 +243,8 @@ def fetch(
         plot: Save PNG visualisation of the peak-flood date (VIIRS only).
         plot_dir: Directory for PNG output (default: <output>/plots/).
         harmonise: Harmonise the peak-flood date to 1 arcmin (VIIRS only).
-        harmonise_only: Skip processed files, only save harmonised output.
+        strategy: How to handle multiple dates: peak, aggregate, all.
+        keep_processed: Write intermediate processed/ GeoTIFFs.
     """
     config = get_config()
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
@@ -276,7 +282,8 @@ def fetch(
                     "data_format": viirs_format,
                     "classify": classify,
                     "stream": stream,
-                    "write_processed": not harmonise_only,
+                    "strategy": strategy,
+                    "keep_processed": keep_processed,
                 }
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
@@ -292,27 +299,46 @@ def fetch(
                 continue
 
             if src == "viirs":
-                _report_viirs_fetch_writes(fetch_results, harmonise_only=harmonise_only)
+                _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
             else:
                 console.print(f"[bold]  Wrote {sum(len(result.files) for result in fetch_results)} files[/bold]")
                 for result in fetch_results:
                     for path in result.files:
                         console.print(f"  - {path}")
 
-            actual_harmonise = harmonise or harmonise_only
-
             # ── Optional plot + harmonise (VIIRS only) ────────────────────
-            if src == "viirs" and (plot or actual_harmonise):
-                best_result, best_date_label = _select_best_result(fetcher, fetch_results)
-                best_ds = fetcher.to_dataset(best_result)
+            if src == "viirs" and (plot or harmonise):
+                # Dispatch based on strategy
+                if strategy == "peak":
+                    best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+                    best_ds = fetcher.to_dataset(best_result)
+                    if plot:
+                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{best_date_label}_viirs.png"
+                        _plot_viirs(best_ds, event, best_date_label, output_png_path=png_out)
+                    if harmonise:
+                        harm_dir = output_dir / src / "harmonised"
+                        _harmonise_viirs(best_ds, event, best_date_label, harm_dir=harm_dir)
 
-                if plot:
-                    png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{best_date_label}_viirs.png"
-                    _plot_viirs(best_ds, event, best_date_label, output_png_path=png_out)
+                elif strategy == "aggregate":
+                    ds = fetcher.to_dataset(fetch_results[0])
+                    label = "aggregated"
+                    if plot:
+                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{label}_viirs.png"
+                        _plot_viirs(ds, event, label, output_png_path=png_out)
+                    if harmonise:
+                        harm_dir = output_dir / src / "harmonised"
+                        _harmonise_viirs(ds, event, label, harm_dir=harm_dir)
 
-                if actual_harmonise:
-                    harm_dir = output_dir / src / "harmonised"
-                    _harmonise_viirs(best_ds, event, best_date_label, harm_dir=harm_dir)
+                elif strategy == "all":
+                    for result in fetch_results:
+                        date_label = _viirs_date_label(result)
+                        ds = fetcher.to_dataset(result)
+                        if plot:
+                            png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{date_label}_viirs.png"
+                            _plot_viirs(ds, event, date_label, output_png_path=png_out)
+                        if harmonise:
+                            harm_dir = output_dir / src / "harmonised"
+                            _harmonise_viirs(ds, event, date_label, harm_dir=harm_dir)
         except KeyError:
             console.print(f"[red]Error: Unknown source '{src}'[/red]")
 
@@ -385,10 +411,10 @@ def fetch_kurosiwo_viirs(
         "--harmonise",
         help="Harmonise the peak-flood date to 1 arcmin and write a GeoTIFF alongside the fetch output.",
     ),
-    harmonise_only: bool = typer.Option(
-        False,
-        "--harmonise-only",
-        help="Skip saving processed files; only write harmonised output (implies --harmonise).",
+    keep_processed: bool = typer.Option(
+        True,
+        "--keep-processed/--no-keep-processed",
+        help="Write intermediate processed/ GeoTIFFs. Use --no-keep-processed to save disk space.",
     ),
 ) -> None:
     """Fetch VIIRS data for KuroSiwo cases.
@@ -409,7 +435,7 @@ def fetch_kurosiwo_viirs(
         plot: Save PNG visualisation of the peak-flood date per case.
         plot_dir: Directory for PNG output (default: <output>/plots/).
         harmonise: Harmonise the peak-flood date to 1 arcmin.
-        harmonise_only: Skip processed files, only save harmonised output.
+        keep_processed: Write intermediate processed/ GeoTIFFs.
     """
     config = get_config()
     output_root = output_dir or config.fetcher.cache_dir / "raw" / "kurosiwo"
@@ -442,7 +468,7 @@ def fetch_kurosiwo_viirs(
         data_format=viirs_format,
         classify=classify,
         stream=stream,
-        write_processed=not harmonise_only,
+        keep_processed=keep_processed,
     )
 
     console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_source_label}")
@@ -452,7 +478,7 @@ def fetch_kurosiwo_viirs(
     total_files = 0
     failures: list[tuple[str, str]] = []
 
-    actual_harmonise = harmonise or harmonise_only
+    actual_harmonise = harmonise
 
     for event in events:
         console.print(
@@ -466,7 +492,7 @@ def fetch_kurosiwo_viirs(
             console.print(f"[red]  Failed: {exc}[/red]")
             continue
 
-        _report_viirs_fetch_writes(fetch_results, harmonise_only=harmonise_only)
+        _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
         written = sum(len(result.files) for result in fetch_results)
         total_files += written
         has_in_memory = any(result.dataset is not None for result in fetch_results)
@@ -487,8 +513,6 @@ def fetch_kurosiwo_viirs(
             if actual_harmonise:
                 harm_dir = event_viirs_dir / "harmonised"
                 _harmonise_viirs(best_ds, event.event_id, best_date_label, harm_dir=harm_dir)
-                if harmonise_only:
-                    total_files += 2  # harmonised GeoTIFF + PNG
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
     if failures:

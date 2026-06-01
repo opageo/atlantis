@@ -116,7 +116,8 @@ class TestVIIRSFetcherInit:
         assert fetcher.classify is False
         assert fetcher.stream is False
         assert fetcher.data_format == "tif"
-        assert fetcher.write_processed is True
+        assert fetcher.strategy == "peak"
+        assert fetcher.keep_processed is True
 
     def test_classify_flag(self):
         fetcher = VIIRSFetcher(classify=True)
@@ -359,9 +360,9 @@ class TestVIIRSFetcherFetch:
         results = fetcher.fetch(event, Path("/tmp/nonexistent"))
         assert results == []
 
-    def test_fetch_write_processed_false_keeps_peak_in_memory(self, tmp_path, monkeypatch):
+    def test_fetch_strategy_peak_no_keep_processed(self, tmp_path, monkeypatch):
         """In-memory mode returns one peak-flood result and skips processed/ writes."""
-        fetcher = VIIRSFetcher(classify=True, write_processed=False, stream=True)
+        fetcher = VIIRSFetcher(classify=True, strategy="peak", keep_processed=False, stream=True)
         event = FloodEvent(
             event_id="Yangtze_2020",
             bbox=(105.0, 28.0, 125.0, 38.0),
