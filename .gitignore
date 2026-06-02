@@ -225,6 +225,9 @@ __marimo__/
 # Large data files (KuroSiwo, GRD, SLC, etc.)
 data/
 
+# But track the packaged VIIRS AOI grid shipped with the fetcher
+!src/atlantis/fetchers/viirs/data/viirs_aois.geojson
+
 *.csv
 *.png
 *.pdf
