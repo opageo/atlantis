@@ -29,6 +29,11 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 STEPS: list[tuple[str, Path]] = [
     (
+        # VIIRS AOI grid — shared across all backends (noaa_s3, gmu_legacy).
+        # Both backends use the same 15° × 15° land-intersecting tile grid with
+        # matching AOI_ID → GLB tile numbering. If a future backend uses a
+        # different grid or numbering scheme, it will need its own GeoJSON file
+        # (or a backend-specific AOI_ID translation layer).
         "VIIRS AOI grid",
         _REPO_ROOT / "src" / "atlantis" / "fetchers" / "viirs" / "data" / "viirs_aois.geojson",
     ),
