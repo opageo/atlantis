@@ -141,7 +141,13 @@ class VIIRSFetcher(AbstractFloodFetcher):
 
     @property
     def aoi_path(self) -> Path:
-        """Return the packaged AOI grid path."""
+        """Return the packaged AOI grid path.
+
+        The GeoJSON lives alongside the fetcher code (not in ``assets/``)
+        so it ships inside the wheel and is available after ``pip install``
+        without requiring git or LFS.  In development,
+        ``uv run atlantis setup`` ensures it is present.
+        """
         return Path(__file__).with_name("data") / "viirs_aois.geojson"
 
     def _load_aois(self) -> gpd.GeoDataFrame:
