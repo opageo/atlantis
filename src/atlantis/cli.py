@@ -771,6 +771,11 @@ def setup(
         "--check-only",
         help="Only verify assets are present without modifying anything.",
     ),
+    update_hashes: bool = typer.Option(
+        False,
+        "--update-hashes",
+        help="Recompute SHA-256 hashes and write them to config/asset_hashes.json.",
+    ),
 ) -> None:
     """Bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue).
 
@@ -779,7 +784,7 @@ def setup(
     """
     from atlantis.utils.setup import run_setup
 
-    success = run_setup(auto_fix=not check_only, output=console)
+    success = run_setup(auto_fix=not check_only, output=console, update_hashes=update_hashes)
     if not success:
         raise typer.Exit(code=1)
 

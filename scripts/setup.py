@@ -16,6 +16,7 @@ Usage::
 
 For auto-restore (default), missing tracked files are restored from git.
 Use ``--check-only`` to only verify without modifying anything.
+Use ``--update-hashes`` to recompute SHA-256 hashes.
 """
 
 from __future__ import annotations
@@ -34,7 +35,8 @@ from atlantis.utils.setup import run_setup  # noqa: E402
 def main() -> None:
     """Bootstrap required data assets."""
     auto_fix = "--check-only" not in sys.argv
-    success = run_setup(auto_fix=auto_fix, output=Console())
+    update_hashes = "--update-hashes" in sys.argv
+    success = run_setup(auto_fix=auto_fix, output=Console(), update_hashes=update_hashes)
     sys.exit(0 if success else 1)
 
 
