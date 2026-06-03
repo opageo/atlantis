@@ -9,18 +9,38 @@
 ML-ready archive of satellite-derived flood inundation observations
 (ECMWF Code for Earth 2026).
 
-> **Getting started?** Read [src/README.md](src/README.md) for the full architecture guide — pipeline overview, module layout, core abstractions, and how to extend the system.
+> **Getting started?** Read [src/README.md](src/README.md) for the current architecture guide, working VIIRS/KuroSiwo extraction commands, pipeline overview, module layout, and extension points.
 
 [![Python versions][python-badge]][python-url]
 [![Ruff][ruff-badge]][ruff-url]
+[![cov][cov-badge]][cov-url]
 [![Gitleaks status][gitleaks-badge]][gitleaks-url]
 
 [python-badge]: https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue
 [python-url]: https://github.com/opageo/atlantis
 [ruff-badge]: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
 [ruff-url]: https://github.com/astral-sh/ruff
+[cov-badge]: https://ECMWFCode4Earth.github.io/atlantis/badges/coverage.svg
+[cov-url]: https://github.com/ECMWFCode4Earth/atlantis/actions
 [gitleaks-badge]: https://github.com/opageo/atlantis/actions/workflows/gitleaks.yml/badge.svg
 [gitleaks-url]: https://github.com/opageo/atlantis/actions/workflows/gitleaks.yml
+
+## Quick Start
+
+Three commands to go from clone to VIIRS flood data:
+
+```bash
+make setup   # install deps + restore data assets
+make demo    # run the Valencia 2024 flood example
+```
+
+Or equivalently:
+
+```bash
+uv sync --extra geo
+uv run atlantis setup
+uv run atlantis demo
+```
 
 ## Installation
 
@@ -30,9 +50,24 @@ uv sync
 
 ## CLI
 
-- `atlantis fetch` — fetch raw inundation data (placeholder)
-- `atlantis archive` — harmonise and write ML-ready archive (placeholder)
+- `atlantis setup` — bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue)
+- `atlantis demo` — run the Valencia 2024 flood example end-to-end
+- `atlantis fetch` — fetch VIIRS inundation data for an explicit bbox/date window
+- `atlantis build-kurosiwo-metadata` — derive KuroSiwo metadata CSV from the GeoPackage catalogue
+- `atlantis fetch-kurosiwo-viirs` — fetch VIIRS for KuroSiwo cases directly from the catalogue or a metadata CSV
+- `atlantis harmonise` — resample fetched outputs to a uniform grid (1 arcmin) with normalisation
+- `atlantis archive` — write Zarr archives (placeholder)
 - `atlantis validate` — validate the archive (placeholder)
+
+  > **Recommended flags for new users:** The default `peak` strategy
+  > fetches and processes all dates, then keeps only the peak-flood date in memory.
+  > Add `--no-keep-processed` to skip writing intermediate 375 m files, or
+  > `--strategy aggregate` to return a temporal mean/mode composite.
+  > Use `--no-stream` to download tiles to disk, or `--no-classify` for raw pixel codes.
+  > See [docs/viirs.md](docs/viirs.md) for details.
+  >
+  > The exact working VIIRS and KuroSiwo extraction workflow is documented
+  > in [src/README.md](src/README.md).
 
 ## Notebooks
 

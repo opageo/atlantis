@@ -1,5 +1,7 @@
 """Base classes for flood data fetchers."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -61,6 +63,8 @@ class FetchResult:
         files: List of downloaded file paths.
         metadata: Tile metadata.
         timestamp: Fetch timestamp.
+        date_token: VIIRS date token (``YYYYMMDD``) when no files were written.
+        dataset: In-memory xarray Dataset when fetch skipped disk writes.
     """
 
     event_id: str
@@ -68,6 +72,8 @@ class FetchResult:
     files: list[Path]
     metadata: TileMetadata
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    date_token: str | None = None
+    dataset: xr.Dataset | None = None
 
 
 class AbstractFloodFetcher(ABC):

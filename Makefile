@@ -1,7 +1,14 @@
-.PHONY: help test lint lint-fix format-fix precommit build clean
+.PHONY: help test lint lint-fix format-fix precommit build clean setup demo
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+setup:  ## Bootstrap data assets and install dependencies
+	uv sync --extra geo
+	uv run python scripts/setup.py
+
+demo:  ## Run the Valencia 2024 flood demo (see Valencia_2024_CLI_Examples.md for options)
+	uv run atlantis demo
 
 test:  ## Run tests (parallel)
 	uv run poe test

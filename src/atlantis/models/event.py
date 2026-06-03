@@ -29,7 +29,10 @@ class FloodEvent:
             raise ValueError("Longitude values must be between -180 and 180")
         if not (-90 <= south <= 90 and -90 <= north <= 90):
             raise ValueError("Latitude values must be between -90 and 90")
-        if west > east:
+        # Allow dateline-crossing: west > 0 and east < 0 indicates the bbox
+        # straddles the antimeridian (e.g., 170 → -170 in the Pacific).
+        dateline_crossing = west > east and west > 0 and east < 0
+        if not dateline_crossing and west > east:
             raise ValueError("West longitude must be <= East longitude")
         if south > north:
             raise ValueError("South latitude must be <= North latitude")

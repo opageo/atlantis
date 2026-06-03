@@ -1,13 +1,34 @@
 # Atlantis — Architecture Guide
 
-> **What is Atlantis?** An ML-ready archive pipeline for
-> satellite-derived flood inundation observations. It fetches raw data
-> from multiple EO sources, harmonises them to a common grid, and writes
-> chunked Zarr archives immediately usable by PyTorch / scikit-learn.
+> **What is Atlantis?** An evolving flood-observation pipeline that aims to fetch raw EO flood data, harmonise it to a common grid, and eventually archive ML-ready products. Today, the most complete path is VIIRS extraction for explicit regions and KuroSiwo-derived locations.
 
 ---
 
-## 1. Pipeline at a Glance
+## 1. Current State
+
+Atlantis is part architecture, part implementation. The codebase already has a strong domain model and fetcher registry, but only one source path is currently working end to end in `src/`.
+
+### Implemented today
+
+- `VIIRSFetcher` can search, download, mosaic, clip, and write GeoTIFF outputs from the GMU JPSS Flood archive.
+- `atlantis fetch` works for explicit bbox/date VIIRS extraction.
+- `atlantis fetch-kurosiwo-viirs` works directly from the KuroSiwo catalogue or from a precomputed metadata CSV.
+- `atlantis build-kurosiwo-metadata` derives the metadata CSV from the catalogue without using the notebook.
+- `download_file()` is implemented and reuses existing files.
+- KuroSiwo metadata can be converted into `FloodEvent` objects through `utils.kurosiwo`.
+
+### Still planned / mostly stubbed
+
+- GFM and RFM fetchers
+- Harmoniser pipeline
+- Raw and ML-ready archive writing
+- Archive validation and ML smoke-test pipeline
+
+The rest of this document reflects both the target architecture and the current implementation status.
+
+---
+
+## 2. Pipeline At A Glance
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -18,14 +39,14 @@
                ▼                                      │
 ┌──────────────────────────────┐                       │
 │           FETCHERS           │                       │
-│  AbstractFloodFetcher +       │                       │
+│  AbstractFloodFetcher +      │                       │
 │  @register_fetcher registry  │                       │
 │                              │                       │
-│  GFMFetcher  ──► STAC/EODC   │                       │
-│  VIIRSFetcher ──► NOAA CLASS │                       │
-│  RFMFetcher  ──► (Phase C)   │                       │
+│  GFMFetcher   ──► STAC/EODC  │  planned              │
+│  VIIRSFetcher ──► JPSS Flood │  implemented          │
+│  RFMFetcher   ──► Phase C    │  planned              │
 └──────────────┬───────────────┘                       │
-               │ raw raster files (GeoTIFF, HDF, …)     │
+               │ raw raster files (GeoTIFF, ZIP, …)    │
                ▼                                        │
 ┌──────────────────────────────┐                       │
 │         HARMONISER           │                       │
@@ -33,319 +54,462 @@
 │  Normaliser                  │                       │
 │                              │                       │
 │  Target: EPSG:4326, 224×224  │                       │
-│  tiles, values → [0, 1]     │                       │
+│  tiles, values → [0, 1]      │                       │
 └──────────────┬───────────────┘                       │
-               │ harmonised xarray Datasets             │
-               ▼                                        │
+               │ harmonised xarray Datasets            │
+               ▼                                       │
 ┌──────────────────────────────┐                       │
 │           ARCHIVE            │                       │
 │                              │                       │
 │  ArchiveWriter               │                       │
-│    └─► raw/  (Zarr, as-is)   │                       │
-│    └─► ml-ready/ (Zarr,      │                       │
-│           tiled & normalised) │                       │
+│    └─► raw/                  │  planned              │
+│    └─► ml-ready/             │  planned              │
 │                              │                       │
 │  ArchiveReader               │                       │
-│    └─► read_raw()            │                       │
-│    └─► read_ml_ready()       │                       │
 │                              │                       │
-│  Checkpoint markers (.done)  │                       │
-│  for resumable pipelines     │                       │
+│  Checkpoint markers (.done)  │  implemented          │
 └──────────────┬───────────────┘                       │
                │                                       │
                ▼                                       │
 ┌──────────────────────────────┐                       │
-│          VALIDATION           │                       │
+│          VALIDATION          │                       │
 │                              │                       │
-│  ArchiveChecker              │                       │
-│    ├─► spatial alignment      │                       │
-│    ├─► NaN patterns           │                       │
-│    ├─► CRS consistency       │                       │
-│    └─► value ranges           │                       │
-│                              │                       │
-│  MLLoaderValidator           │                       │
-│    ├─► PyTorch Dataset smoke  │                       │
-│    ├─► DataLoader batching   │                       │
-│    └─► GPU transfer          │                       │
+│  ArchiveChecker              │  planned              │
+│  MLLoaderValidator           │  planned              │
 └──────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Package Layout
+## 3. Package Layout
 
 ```
 src/atlantis/
 ├── __init__.py            # Package entry point, version
-├── cli.py                 # Typer CLI — fetch / harmonise / archive / validate
+├── cli.py                 # Typer CLI — fetch / fetch-kurosiwo-viirs / harmonise / archive / validate
 ├── config.py              # Pydantic settings hierarchy (env-var driven)
 │
-├── models/                # Domain data structures
+├── models/
 │   ├── event.py           # FloodEvent dataclass
 │   └── metadata.py        # TileMetadata / SourceMetadata (Pydantic)
 │
-├── fetchers/              # Pluggable data-source adapters
-│   ├── base.py            # AbstractFloodFetcher ABC + SearchResult /
-│   │                      #   FetchResult dataclasses + FloodFetcher Protocol
+├── fetchers/
+│   ├── base.py            # AbstractFloodFetcher ABC + SearchResult / FetchResult
 │   ├── registry.py        # @register_fetcher decorator + global registry
-│   ├── gfm.py             # GFMFetcher — STAC/EODC Sentinel-1/2/3
-│   ├── viirs.py           # VIIRSFetcher — NOAA Day-Night Band
-│   └── rfm.py            # RFMFetcher — Regional Flood Model (Phase C stub)
+│   ├── gfm.py             # GFMFetcher — planned
+│   ├── rfm.py             # RFMFetcher — planned / Phase C stub
+│   └── viirs/
+│       ├── __init__.py    # VIIRSFetcher — implemented
+│       ├── backend.py     # Backend classes (NoaaS3Backend, GmuLegacyBackend)
+│       ├── processor.py   # Raster processing (ViirsRasterProcessor)
+│       └── data/
+│           └── viirs_aois.geojson  # Packaged VIIRS AOI tile grid
 │
-├── harmoniser/            # Raw → standard grid transformation
-│   ├── reprojector.py     # CRS reprojection + resampling (rioxarray)
-│   ├── tiler.py           # Uniform grid tiling (default 224×224 px)
-│   └── normaliser.py      # Value scaling + quality mask generation
+├── harmoniser/
+│   ├── reprojector.py     # Planned CRS reprojection + resampling
+│   ├── tiler.py           # Planned uniform grid tiling
+│   └── normaliser.py      # Planned value scaling + quality mask generation
 │
-├── archive/               # Zarr storage layer
-│   ├── writer.py          # ArchiveWriter — write raw / ml-ready Zarr
-│   └── reader.py          # ArchiveReader — read Zarr back to xarray
+├── archive/
+│   ├── writer.py          # Planned raw / ml-ready Zarr writing + working checkpoints
+│   └── reader.py          # Planned archive reader
 │
-├── validation/            # Integrity and ML smoke tests
-│   ├── checker.py         # ArchiveChecker — spatial / NaN / CRS checks
-│   └── ml_loader.py       # MLLoaderValidator — PyTorch smoke tests
+├── validation/
+│   ├── checker.py         # Planned archive checks
+│   └── ml_loader.py       # Planned PyTorch smoke tests
 │
-└── utils/                 # Shared helpers
-    ├── geo.py             # BBox dataclass + validate / intersects / tile_bbox
-    └── io.py              # ensure_dir / get_cache_path / download_file
+└── utils/
+    ├── geo.py            # BBox dataclass + validation / intersection helpers
+    ├── io.py             # ensure_dir / get_cache_path / download_file
+    └── kurosiwo.py       # Derive KuroSiwo metadata and build FloodEvent objects
 ```
 
 ---
 
-## 3. Core Abstractions
+## 4. Core Abstractions
 
-### 3.1 `FloodEvent` — the unit of work
+### 4.1 `FloodEvent`
 
 ```python
 @dataclass
 class FloodEvent:
-    event_id: str                                    # e.g. "Valencia_2024"
-    bbox: tuple[float, float, float, float]         # (west, south, east, north)
+    event_id: str
+    bbox: tuple[float, float, float, float]  # (west, south, east, north)
     start_date: date
     end_date: date
-    sources: list[str]                              # ["gfm", "viirs"]
+    sources: list[str]
 ```
 
-A `FloodEvent` fully describes **what to process**: where, when, and
-from which satellites. It is the primary input to every pipeline stage.
+`FloodEvent` is still the fundamental unit of work. It captures a region, a time window, and a set of sources. The current VIIRS path and the KuroSiwo helper both converge on this type.
 
-### 3.2 `AbstractFloodFetcher` — pluggable source adapters
+### 4.2 `AbstractFloodFetcher`
 
-Sources are **not hardcoded** into the pipeline. New EO products are added by:
+Sources are discovered through the registry rather than hardcoded branch logic.
 
-1. Subclassing `AbstractFloodFetcher`
-2. Implementing `search()` → `list[SearchResult]` and `fetch()` → `list[FetchResult]`
-3. Decorating with `@register_fetcher("source_name")`
+To add a new source:
 
-The decorator registers the class in `fetcher_registry`, and the CLI / pipeline can enumerate or select sources at runtime without any conditional logic.
+1. Subclass `AbstractFloodFetcher`
+2. Implement `search()` and `fetch()`
+3. Optionally implement `to_dataset()`
+4. Register with `@register_fetcher("name")`
 
-### 3.3 Dual-archive strategy
+That keeps the CLI and pipeline entrypoints source-agnostic.
 
-| Archive     | Purpose      | Contents                                                       |
-| ----------- | ------------ | -------------------------------------------------------------- |
-| `raw/`      | Preservation | Original data as-downloaded, with source CRS & resolution      |
-| `ml-ready/` | Training     | Harmonised (reprojected, tiled, normalised) with quality masks |
+### 4.3 `FetchResult` and `TileMetadata`
 
-The raw archive acts as a **lossless source of truth**; the ML-ready archive is a derived product that can be regenerated from raw if the harmonisation config changes.
+The fetch layer returns `FetchResult` objects that point at written files plus `TileMetadata` describing provenance such as bbox, resolution, CRS, and cloud fraction.
 
-### 3.4 Checkpoint system
+For VIIRS, one `FetchResult` currently corresponds to one processed date, not one raw tile.
 
-`ArchiveWriter.write_checkpoint()` drops a `.done` marker file after each pipeline stage (fetch, harmonise, archive). `is_checkpointed()` lets the pipeline skip completed stages on re-run — enabling **resumable, failure-safe** processing of large flood events.
+### 4.4 Dual-archive strategy
+
+The intended long-term design still distinguishes:
+
+| Archive     | Purpose                                         | Status  |
+| ----------- | ----------------------------------------------- | ------- |
+| `raw/`      | Preservation of fetched source data             | planned |
+| `ml-ready/` | Harmonised, tiled, normalised training products | planned |
+
+This strategy is still valid architecturally, but only the fetch layer is operational today.
+
+### 4.5 Checkpoints
+
+`ArchiveWriter.write_checkpoint()` and `is_checkpointed()` already exist and are accurate to the design. Checkpointing is one of the few implemented pieces in the archive layer.
 
 ---
 
-## 4. Module Deep-Dive
+## 5. Working VIIRS Flow
 
-### 4.1 `config.py` — Settings hierarchy
+This section consolidates the operational material that used to live in the separate VIIRS document.
 
-All settings are Pydantic `BaseSettings` subclasses, read from environment variables prefixed with `ATLANTIS_` and optionally from a `.env` file:
+### 5.1 What You Need
 
-```python
-AtlantisConfig
-├── harmonise: HarmoniseConfig
-│   ├── target_crs: str          # default "EPSG:4326"
-│   ├── target_resolution: float  # ~1 arc-second
-│   ├── tile_size: int           # 224 (pixels, square)
-│   ├── resampling: str          # "average" | "bilinear" | "nearest" | "cubic"
-│   └── normalise_range: tuple   # (0.0, 1.0)
-│
-├── archive: ArchiveConfig
-│   ├── archive_root: Path        # default ~/atlantis-data
-│   ├── raw_subdir: str          # "raw"
-│   ├── ml_subdir: str           # "ml-ready"
-│   ├── checkpoint_dir: str      # ".checkpoints"
-│   └── default_chunk_size: int  # 224
-│
-└── fetcher: FetcherConfig
-    ├── cache_dir: Path           # default ~/.cache/atlantis
-    ├── timeout: int             # 300 s
-    ├── max_retries: int         # 3
-    ├── gfm_api_url: str | None
-    └── viirs_base_url: str | None
+- A checked out copy of this repository
+- `uv` installed
+- Network access to `https://jpssflood.gmu.edu/downloads/pub`
+- Geo dependencies installed
+- For KuroSiwo runs: either the catalogue at `assets/ks_catalogue.gpkg` or a precomputed metadata CSV
+
+Install the required dependencies with:
+
+```bash
+uv sync --extra geo
 ```
 
-### 4.2 `models/` — Domain types
+### 5.2 How The VIIRS Fetcher Works
 
-- **`FloodEvent`** — Pure dataclass, validated in `__post_init__` (lon/lat bounds, west≤east, south≤north, end_date≥start_date).
-- **`TileMetadata`** — Pydantic model for per-tile provenance: CRS, resolution, bbox, cloud fraction, snow flag, quality bitmask, permanent-water availability.
-- **`SourceMetadata`** — Pydantic model describing a data source's license, temporal/spatial coverage.
+For each requested date and bbox, `VIIRSFetcher`:
 
-### 4.3 `fetchers/` — Source adapters
+1. Loads the packaged global AOI grid from `fetchers/viirs/data/viirs_aois.geojson`
+2. Selects AOI tiles intersecting the requested bbox
+3. Looks up matching archive entries under the JPSS Flood date directory
+4. Downloads ZIP tiles and reuses existing downloads on rerun
+5. Extracts TIFFs, mosaics them, and clips them to the bbox
+6. Writes three processed GeoTIFF outputs
 
-| Fetcher        | Data                           | Interface               | Status         |
-| -------------- | ------------------------------ | ----------------------- | -------------- |
-| `GFMFetcher`   | Sentinel-1/2/3 SAR flood maps  | STAC API (EODC)         | Stub           |
-| `VIIRSFetcher` | Day-Night Band flood detection | NOAA CLASS web scraping | Stub           |
-| `RFMFetcher`   | Modelled flood extent          | TBD (EFAS/GloFAS)       | Stub / Phase C |
+### 5.3 Explicit Region CLI Usage
 
-All three share the same interface contract (`AbstractFloodFetcher`), making it trivial to swap or extend them.
+Use this for direct bbox/date extraction. Tiles are streamed from NOAA S3 and flood layers are classified by default. The recommended invocation uses the default `peak` strategy;
+add `--no-keep-processed` to skip writing intermediate 375 m files, or `--strategy aggregate` to return a temporal mean/mode composite:
 
-> **Status key:**
->
-> - **Stub** — class exists with correct interface, returns empty results / raises `NotImplementedError`. Real API calls and file I/O still need to be wired in.
-> - **Implemented** — fully functional end-to-end.
-
-### 4.4 `harmoniser/` — Three-step standardisation
-
-```
-Raw xarray.Dataset
-       │
-       ▼  1. Reprojector.reproject()
-   Target CRS + resolution (default EPSG:4326, ~1″)
-       │
-       ▼  2. Tiler.tile_dataset()
-   List[(tile_dataset, tile_metadata)]
-       │
-       ▼  3. Normaliser.normalise() + generate_quality_mask()
-   Harmonised Dataset — values ∈ [0, 1], NaN → quality flags
+```bash
+uv run atlantis fetch \
+  --event Yangtze_2020 \
+  --source viirs \
+  --bbox "105 28 125 38" \
+  --start-date 2020-07-22 \
+  --end-date 2020-07-22 \
+  --no-keep-processed --harmonise
 ```
 
-- **`Reprojector`** — Uses `rioxarray` for CRS reprojection and resampling.
-- **`Tiler`** — Chunks the grid into square tiles (default 224×224, matching common CNN input sizes). Supports overlap.
-- **`Normaliser`** — Scales values to `[0, 1]`; generates a `uint8` quality mask with bit flags for fill, cloud, snow, and out-of-AOI pixels.
+This writes only:
 
-### 4.5 `archive/` — Zarr persistence
-
-`ArchiveWriter` organises data as:
-
-```
-{archive_root}/
-├── raw/
-│   └── {event_id}/
-│       └── {source_id}.zarr/
-├── ml-ready/
-│   └── {event_id}/
-│       └── {source_id}.zarr/
-└── .checkpoints/
-    └── {event_id}/
-        ├── {source_id}_fetch.done
-        ├── {source_id}_harmonise.done
-        └── {source_id}_archive.done
+```text
+~/.cache/atlantis/raw/Yangtze_2020/
+└── viirs/
+    └── harmonised/
+        ├── Yangtze_2020_2020-07-22_viirs_harmonised.tif
+        └── Yangtze_2020_2020-07-22_viirs_harmonised.png
 ```
 
-`ArchiveReader` exposes `read_raw()`, `read_ml_ready()`, `list_events()`, and `list_sources()` as the complement to the writer.
+Without any optional flags (still streams and classifies by default, writes all intermediate files):
 
-### 4.6 `validation/` — Quality gates
+```bash
+uv run python -m atlantis.cli fetch \
+  --event Yangtze_2020 \
+  --source viirs \
+  --bbox "105 28 125 38" \
+  --start-date 2020-07-22 \
+  --end-date 2020-07-22
+```
 
-- **`ArchiveChecker`** runs **four checks** (all placeholder implementations currently):
-  - Spatial alignment across variables
-  - NaN / missing-data fraction
-  - CRS consistency
-  - Value range validation
-- **`MLLoaderValidator`** runs **three PyTorch smoke tests**:
-  - `Dataset.__len__` / `__getitem__`
-  - `DataLoader` batching
-  - GPU tensor transfer (if CUDA available)
+Expected console shape:
 
-Both are intended to run as CI gates or pre-training sanity checks.
+```text
+Fetching data for event: Yangtze_2020
+Sources: viirs
+Output: ~/.cache/atlantis/raw/Yangtze_2020
 
-### 4.7 `utils/` — Shared helpers
+Fetching from viirs...
+  Wrote 3 files
+```
 
-- **`geo.py`** — `BBox` dataclass, `validate_bbox()`, `bbox_intersects()`, `bbox_area()`, `tile_bbox()`.
-- **`io.py`** — `ensure_dir()`, `get_cache_path()` (MD5-hashed URL filenames), `download_file()` with ETag-based cache validation.
+Default output layout (no flags, streaming and classify on):
+
+```text
+~/.cache/atlantis/raw/Yangtze_2020/
+└── viirs/
+    └── processed/
+        ├── Yangtze_2020_20200722_viirs_flood_extent.tif
+        ├── Yangtze_2020_20200722_viirs_quality_mask.tif
+        └── Yangtze_2020_20200722_viirs_permanent_water.tif
+```
+
+Use `--no-stream` to cache raw tiles to disk for reuse across runs. Use `--no-classify` to write raw integer pixel codes instead of the derived layers.
+
+### 5.4 KuroSiwo CLI Usage
+
+There are now two supported KuroSiwo paths.
+
+Build the metadata CSV directly from the catalogue:
+
+```bash
+uv run python -m atlantis.cli build-kurosiwo-metadata \
+  --catalogue assets/ks_catalogue.gpkg \
+  --output data/metadata/kurosiwo_metadata_v1.csv
+```
+
+Use this when you want a reusable metadata artifact without running a notebook. The CLI default now writes to `data/metadata/kurosiwo_metadata_v1.csv`.
+
+Recommended invocation — tiles are streamed and classified by default; add `--no-keep-processed` to skip writing intermediate 375 m files, or `--strategy aggregate` to return a temporal mean/mode composite:
+
+```bash
+uv run python -m atlantis.cli fetch-kurosiwo-viirs \
+  --catalogue assets/ks_catalogue.gpkg \
+  --case KuroSiwo_470 \
+  --no-keep-processed --harmonise
+```
+
+Fetch VIIRS directly from the catalogue without `--no-keep-processed` if you need 375 m intermediates for later processing:
+
+```bash
+uv run python -m atlantis.cli fetch-kurosiwo-viirs \
+  --catalogue assets/ks_catalogue.gpkg \
+  --case KuroSiwo_470 \
+  --days-before 0 \
+  --days-after 0
+```
+
+Expected console shape:
+
+```text
+KuroSiwo metadata: derived from assets/ks_catalogue.gpkg
+Cases selected: 1
+Output root: ~/.cache/atlantis/raw/kurosiwo
+
+Fetching KuroSiwo_470 (2020-10-14 -> 2020-10-14)
+  Wrote 3 files
+
+Total files written: 3
+```
+
+You can still fetch from a precomputed metadata CSV when you want a stable intermediate artifact:
+
+```bash
+uv run python -m atlantis.cli fetch-kurosiwo-viirs \
+  --metadata data/metadata/kurosiwo_metadata_v1.csv \
+  --case KuroSiwo_470 \
+  --days-before 0 \
+  --days-after 0
+```
+
+Default output layout (without `--no-keep-processed`, streaming on by default):
+
+```text
+~/.cache/atlantis/raw/kurosiwo/
+└── KuroSiwo_470/
+    └── viirs/
+        ├── raw/
+        └── processed/
+            ├── KuroSiwo_470_20201014_viirs_flood_extent.tif
+            ├── KuroSiwo_470_20201014_viirs_quality_mask.tif
+            └── KuroSiwo_470_20201014_viirs_permanent_water.tif
+```
+
+Widen the search window around the KuroSiwo flood-time date:
+
+```bash
+uv run python -m atlantis.cli fetch-kurosiwo-viirs \
+  --metadata data/metadata/kurosiwo_metadata_v1.csv \
+  --case KuroSiwo_470 \
+  --days-before 2 \
+  --days-after 2
+```
+
+Use the full KuroSiwo metadata range instead:
+
+```bash
+uv run python -m atlantis.cli fetch-kurosiwo-viirs \
+  --metadata data/metadata/kurosiwo_metadata_v1.csv \
+  --case KuroSiwo_470 \
+  --use-metadata-range
+```
+
+That mode is intentionally not the default because KuroSiwo `date_start -> date_end` often spans long SAR baseline windows and can trigger many daily VIIRS archive checks.
+
+### 5.5 KuroSiwo Metadata Mapping
+
+`utils.kurosiwo` derives metadata directly from the GeoPackage and interprets the resulting event table as:
+
+- `flood_case` → `FloodEvent.event_id`
+- `(lon_min, lat_min, lon_max, lat_max)` → `(west, south, east, north)` bbox
+- Default time window → `date_end` only
+- Optional widened window → `date_end ± N days`
+- Optional full-range mode → `date_start .. date_end`
+
+### 5.6 VIIRS Output Semantics
+
+Current VIIRS processed outputs are:
+
+- `*_flood_extent.tif` — binary flood mask derived from VIIRS values `>= 160`
+- `*_quality_mask.tif` — `0` where cloud or water masks invalidate the pixel, `1` otherwise
+- `*_permanent_water.tif` — binary mask derived from VIIRS permanent-water code `17`
+
+These are suitable for analysis and for conversion through `to_dataset()`, but they are not yet wired into the harmoniser/archive stages.
+
+### 5.7 Current Limitations
+
+- Only the non-NRT JPSS archive is supported
+- VIIRS currently writes GeoTIFF outputs, not Zarr
+- GFM and RFM source paths are still stubs
+- Harmonise, archive, and validate are not yet operational end to end
+- The KuroSiwo metadata build step is now available in `src/`, and the default derived CSV path now lives under `data/metadata/` rather than notebook drafts.
 
 ---
 
-## 5. CLI Commands
+## 6. Module Deep Dive
 
-| Command                                   | Purpose                                    |
-| ----------------------------------------- | ------------------------------------------ |
-| `atlantis fetch --event E --source S`     | Download raw raster data for a flood event |
-| `atlantis harmonise --event E --source S` | Reproject → tile → normalise               |
-| `atlantis archive --event E`              | Write raw + ml-ready Zarr archives         |
-| `atlantis validate --event E`             | Run spatial and ML validation checks       |
-| `atlantis list-sources`                   | Print registered fetchers and descriptions |
-| `atlantis list-events`                    | List events present in the archive         |
+### 6.1 `config.py`
+
+Configuration is still centered on `AtlantisConfig`, which combines:
+
+- `HarmoniseConfig`
+- `ArchiveConfig`
+- `FetcherConfig`
+
+Important current fetcher settings:
+
+- `cache_dir` defaults to `~/.cache/atlantis`
+- `timeout` defaults to 300 seconds
+- `viirs_base_url` can override the JPSS archive base URL
+
+### 6.2 `models/`
+
+- `FloodEvent` is accurate and actively used
+- `TileMetadata` is accurate and actively used by VIIRS
+- `SourceMetadata` exists but is not yet central to the working flow
+
+### 6.3 `fetchers/`
+
+| Fetcher        | Data                            | Backend                | Status      |
+| -------------- | ------------------------------- | ---------------------- | ----------- |
+| `GFMFetcher`   | SAR flood maps                  | STAC/EODC              | stub        |
+| `VIIRSFetcher` | Archived VIIRS flood composites | GMU JPSS Flood archive | implemented |
+| `RFMFetcher`   | Modelled flood extent           | Phase C                | stub        |
+
+`VIIRSFetcher` is no longer a placeholder. It is the current reference implementation for how a full fetcher should behave.
+
+### 6.4 `harmoniser/`
+
+The intended three-step design remains:
+
+1. Reproject
+2. Tile
+3. Normalise and mask
+
+But the main classes remain planned. The documentation should be read here as target architecture, not current capability.
+
+### 6.5 `archive/`
+
+The archive layout and dual raw / ml-ready concept remain the intended design. `ArchiveWriter` currently provides working checkpoint helpers, but raw and ML-ready Zarr writing are still not implemented.
+
+### 6.6 `validation/`
+
+Validation is still planned. The API surface exists, but the checks themselves remain placeholders.
+
+### 6.7 `utils/`
+
+- `geo.py` provides bbox validation and geometric helpers
+- `io.py` provides directory creation, cache naming, and a working streaming downloader
+- `kurosiwo.py` converts KuroSiwo metadata rows into `FloodEvent` objects for VIIRS extraction
 
 ---
 
-## 6. Dependency Groups
+## 7. CLI Commands
+
+| Command                                                                              | Purpose                                                    | Status      |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ----------- |
+| `atlantis fetch --event E --source viirs --bbox ... --start-date ... --end-date ...` | Fetch VIIRS for an explicit bbox/date window               | implemented |
+| `atlantis build-kurosiwo-metadata --catalogue ... --output ...`                      | Derive KuroSiwo metadata CSV from the GeoPackage           | implemented |
+| `atlantis fetch-kurosiwo-viirs --catalogue ...`                                      | Fetch VIIRS for KuroSiwo cases directly from the catalogue | implemented |
+| `atlantis fetch-kurosiwo-viirs --metadata ...`                                       | Fetch VIIRS for KuroSiwo cases from metadata CSV           | implemented |
+| `atlantis harmonise --event E --source S`                                            | Reproject → tile → normalise                               | planned     |
+| `atlantis archive --event E`                                                         | Write raw + ml-ready Zarr archives                         | planned     |
+| `atlantis validate --event E`                                                        | Run archive and ML validation checks                       | planned     |
+| `atlantis list-sources`                                                              | Print registered fetchers and descriptions                 | implemented |
+| `atlantis list-events`                                                               | List events present in the archive                         | planned     |
+
+---
+
+## 8. Dependency Groups
 
 ```bash
 uv sync                           # Core only
-uv sync --extra geo               # xarray, zarr, rioxarray, STAC client, pyproj, shapely
+uv sync --extra geo               # xarray, zarr, rioxarray, pystac-client, pyproj, shapely, rasterio, requests, beautifulsoup4
 uv sync --extra ml                # torch, numpy, scikit-learn, matplotlib
-uv sync --extra notebooks         # geo + ml + rasterio, cartopy, geopandas, odc-stac, etc.
+uv sync --extra notebooks         # geo + ml + notebook-only tooling such as earthkit-data, cartopy, odc-stac, metview
 ```
+
+For the working VIIRS path, `uv sync --extra geo` is the relevant setup step.
 
 ---
 
-## 7. Extending Atlantis — Adding a New Fetcher
+## 9. Extending Atlantis
 
-Suppose you want to add a fetcher for a new EO product, e.g. **Sentinel-2 L2A** via Copernicus Data Space:
+The extension pattern remains the same: add a fetcher, register it, and keep source-specific logic inside the adapter rather than the CLI.
 
-**Step 1 — Create the fetcher class**
+Minimal example:
 
 ```python
-# src/atlantis/fetchers/sentinel2.py
 from pathlib import Path
+
 from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResult
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.models.event import FloodEvent
+
 
 @register_fetcher("sentinel2")
 class Sentinel2Fetcher(AbstractFloodFetcher):
     source_id: str = "sentinel2"
 
-    def __init__(self, api_url: str | None = None) -> None:
-        self.api_url = api_url or "https://catalogue.dataspace.copernicus.eu/..."
-
     def search(self, event: FloodEvent) -> list[SearchResult]:
-        # TODO: implement STAC query within event.bbox and date range
         ...
 
     def fetch(self, event: FloodEvent, output_dir: Path) -> list[FetchResult]:
-        # TODO: download files, return FetchResult objects
-        ...
-
-    def to_dataset(self, result: FetchResult) -> "xr.Dataset":
-        # TODO: convert to standard xarray with flood_extent variable
         ...
 ```
 
-**Step 2 — Import in `cli.py`**
-
-```python
-from atlantis.fetchers import ..., sentinel2  # noqa: F401
-```
-
-**Step 3 — Use it**
-
-```bash
-atlantis fetch --event Valencia_2024 --source sentinel2
-```
-
-No changes to `cli.py` logic, `harmoniser`, `archive`, or `validation` are needed — the registry pattern keeps the pipeline fully decoupled from individual sources.
+Importing the module in `cli.py` is still enough to expose it through the registry.
 
 ---
 
-## 8. Design Principles
+## 10. Design Principles
 
-| Principle                | How Atlantis implements it                                                        |
-| ------------------------ | --------------------------------------------------------------------------------- |
-| **Pluggable sources**    | `@register_fetcher` decorator + global registry dict                              |
-| **Lossless raw archive** | Raw Zarr never modified; ML-ready always derived                                  |
-| **Resumable pipelines**  | `.done` checkpoint files per stage                                                |
-| **Config-driven**        | All paths, CRS, tile sizes from env vars / `.env`                                 |
-| **ML-first output**      | Tiled, chunked Zarr with quality masks — zero preprocessing                       |
-| **Type-safe core**       | Pydantic models for metadata, dataclasses for events, Protocol/ABC for interfaces |
+| Principle               | How Atlantis implements it                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| Pluggable sources       | `@register_fetcher` decorator + global registry                                                  |
+| Config-driven behavior  | Paths, timeouts, CRS, tile settings from config/env                                              |
+| Separation of concerns  | Fetchers, harmoniser, archive, validation are distinct layers                                    |
+| Type-safe core          | Dataclasses for events, Pydantic models for metadata                                             |
+| Resumable processing    | Checkpoint markers in the archive layer                                                          |
+| Evolving implementation | Current code can expose partial but useful workflows while preserving the long-term architecture |

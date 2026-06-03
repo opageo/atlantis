@@ -15,6 +15,9 @@ dependencies = [
   "geopandas>=1.1.3",
   "boto3",
   "matplotlib>=3.10.9",
+  "ipympl>=0.10.0",
+  "plotly>=6.7.0",
+  "rasterstats>=0.21.0",
 ]
 
 [project.scripts]
@@ -29,8 +32,11 @@ geo = [
   "pystac-client>=0.7",
   "pyproj>=3.6",
   "shapely>=2.0",
+  "rasterio>=1.3",
+  "beautifulsoup4>=4.12",
+  "requests>=2.34.2",
 ]
-ml = ["torch>=2.12.0", "numpy>=1.26", "scikit-learn>=1.4", "matplotlib>=3.8"]
+ml = ["torch>=2.12.0", "numpy>=2.4.5", "scikit-learn>=1.4", "matplotlib>=3.8"]
 notebooks = [
   "atlantis[geo,ml]",
   "earthkit-data",
@@ -46,8 +52,9 @@ notebooks = [
 
 [dependency-groups]
 dev = [
-  "poethepoet>=0.24.0",
+  "poethepoet>=0.46.0",
   "pytest>=8.0.0",
+  "pytest-cov>=6.0.0",
   "pytest-xdist>=3.2.0",
   "ruff>=0.15.13",
   "pre-commit>=4.2.0",
@@ -63,6 +70,15 @@ explicit = true
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
+
+[tool.hatch.build]
+include = ["src/atlantis/fetchers/viirs/data/*.geojson"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atlantis"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/atlantis", "/tests", "/docs", "/README.md", "/pyproject.toml"]
 
 [tool.uv]
 default-groups = ["dev"]
@@ -88,6 +104,14 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["atlantis"]
+omit = ["*/tests/*", "*/scripts/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
 
 [tool.poe.tasks]
 test = "pytest -n auto tests/"

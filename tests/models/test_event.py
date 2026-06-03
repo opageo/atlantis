@@ -84,3 +84,55 @@ class TestFloodEvent:
                 start_date=date(2024, 1, 5),
                 end_date=date(2024, 1, 1),
             )
+
+    def test_single_day_event(self):
+        """Test event with identical start and end dates."""
+        event = FloodEvent(
+            event_id="SameDay",
+            bbox=(0, 0, 1, 1),
+            start_date=date(2024, 6, 15),
+            end_date=date(2024, 6, 15),
+        )
+        assert event.start_date == event.end_date
+
+    def test_dateline_bbox(self):
+        """Test bbox crossing the antimeridian (Pacific)."""
+        event = FloodEvent(
+            event_id="Dateline",
+            bbox=(170, -10, -170, 10),
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 2),
+        )
+        assert event.bbox == (170, -10, -170, 10)
+
+    def test_global_bbox(self):
+        """Test bbox covering the full globe."""
+        event = FloodEvent(
+            event_id="Global",
+            bbox=(-180, -90, 180, 90),
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 2),
+        )
+        assert event.bbox == (-180, -90, 180, 90)
+
+    def test_source_field_default_factory_isolation(self):
+        """Test the default_factory creates a new list for each instance."""
+        e1 = FloodEvent(event_id="A", bbox=(0, 0, 1, 1), start_date=date(2024, 1, 1), end_date=date(2024, 1, 2))
+        e2 = FloodEvent(event_id="B", bbox=(0, 0, 1, 1), start_date=date(2024, 1, 1), end_date=date(2024, 1, 2))
+        e1.sources.append("viirs")
+        assert e1.sources == ["viirs"]
+        assert e2.sources == []
+
+    def test_repr(self):
+        """Test that FloodEvent has a meaningful repr."""
+        event = FloodEvent(
+            event_id="TestRepr",
+            bbox=(0, 0, 1, 1),
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 2),
+            sources=["gfm"],
+        )
+        r = repr(event)
+        assert "TestRepr" in r
+        assert "sources=[" in r
+        assert "gfm" in r
