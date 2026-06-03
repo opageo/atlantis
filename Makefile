@@ -7,7 +7,7 @@ setup:  ## Bootstrap data assets and install dependencies
 	uv sync --extra geo
 	uv run python scripts/setup.py
 
-demo:  ## Run the Valencia 2024 flood demo
+demo:  ## Run the Valencia 2024 flood demo (see Valencia_2024_CLI_Examples.md for options)
 	uv run atlantis demo
 
 test:  ## Run tests (parallel)
