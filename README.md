@@ -25,6 +25,23 @@ ML-ready archive of satellite-derived flood inundation observations
 [gitleaks-badge]: https://github.com/opageo/atlantis/actions/workflows/gitleaks.yml/badge.svg
 [gitleaks-url]: https://github.com/opageo/atlantis/actions/workflows/gitleaks.yml
 
+## Quick Start
+
+Three commands to go from clone to VIIRS flood data:
+
+```bash
+make setup   # install deps + restore data assets
+make demo    # run the Valencia 2024 flood example
+```
+
+Or equivalently:
+
+```bash
+uv sync --extra geo
+uv run atlantis setup
+uv run atlantis demo
+```
+
 ## Installation
 
 ```bash
@@ -33,10 +50,12 @@ uv sync
 
 ## CLI
 
+- `atlantis setup` — bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue)
+- `atlantis demo` — run the Valencia 2024 flood example end-to-end
 - `atlantis fetch` — fetch VIIRS inundation data for an explicit bbox/date window
 - `atlantis build-kurosiwo-metadata` — derive KuroSiwo metadata CSV from the GeoPackage catalogue
 - `atlantis fetch-kurosiwo-viirs` — fetch VIIRS for KuroSiwo cases directly from the catalogue or a metadata CSV
-- `atlantis harmonise` — resample fetched outputs to a uniform grid (1 arcmin) with normalisation
+- `atlantis harmonise` — resample fetched outputs to a uniform grid (1 arcmin) with normalisation
 - `atlantis archive` — write Zarr archives (placeholder)
 - `atlantis validate` — validate the archive (placeholder)
 

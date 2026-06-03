@@ -764,6 +764,118 @@ def list_sources_cmd() -> None:
     console.print(table)
 
 
+@cli.command()
+def setup(
+    check_only: bool = typer.Option(
+        False,
+        "--check-only",
+        help="Only verify assets are present without modifying anything.",
+    ),
+) -> None:
+    """Bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue).
+
+    Missing tracked files are automatically restored from git.  Run this
+    once after cloning, or whenever a new data source is added.
+    """
+    from atlantis.utils.setup import run_setup
+
+    success = run_setup(auto_fix=not check_only, output=console)
+    if not success:
+        raise typer.Exit(code=1)
+
+
+@cli.command()
+def demo(
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output directory (default: data/Valencia_2024).",
+    ),
+    harmonise: bool = typer.Option(
+        True,
+        "--harmonise/--no-harmonise",
+        help="Harmonise the peak-flood date to 1 arcmin. Default: on.",
+    ),
+    stream: bool = typer.Option(
+        True,
+        "--stream/--no-stream",
+        help="Stream remote tiles. Default: on.",
+    ),
+) -> None:
+    """Run the Valencia 2024 flood example.
+
+    Fetches VIIRS data for the Valencia flood event (Oct–Nov 2024),
+    plots the peak-flood date, and optionally harmonises to 1 arcmin.
+    A quick way to verify that everything is working end-to-end.
+    """
+    from datetime import date
+
+    from atlantis.utils.setup import get_missing_assets
+
+    # Pre-flight: check assets are present
+    missing = get_missing_assets()
+    if missing:
+        console.print("[red]Cannot run demo — required assets are missing:[/red]")
+        for item in missing:
+            console.print(f"  - {item}")
+        console.print("\nRun [bold]uv run atlantis setup[/bold] first.")
+        raise typer.Exit(code=1)
+
+    out = output_dir or Path("data/Valencia_2024")
+    out.mkdir(parents=True, exist_ok=True)
+
+    console.print("[bold]Valencia 2024 demo[/bold]\n")
+
+    event = FloodEvent(
+        event_id="Valencia_2024",
+        bbox=(-1.5, 38.8, 0.5, 40.0),
+        start_date=date(2024, 10, 29),
+        end_date=date(2024, 11, 4),
+    )
+
+    fetcher_cls = get_fetcher("viirs")
+    fetcher = fetcher_cls(
+        classify=True,
+        stream=stream,
+        strategy="peak",
+        keep_processed=True,
+    )
+
+    viirs_dir = out / "viirs"
+
+    console.print(f"[bold]Event:[/bold] {event.event_id}")
+    console.print(f"[bold]BBox:[/bold]  {event.bbox}")
+    console.print(f"[bold]Dates:[/bold] {event.start_date} → {event.end_date}")
+    console.print(f"[bold]Output:[/bold] {out}\n")
+
+    console.print("[cyan]Fetching VIIRS tiles...[/cyan]")
+    fetch_results = fetcher.fetch(event, viirs_dir)
+    if not fetch_results:
+        console.print("[yellow]No VIIRS data found for this region/date range.[/yellow]")
+        raise typer.Exit(code=1)
+
+    _report_viirs_fetch_writes(fetch_results, keep_processed=True)
+
+    # Select best date
+    best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+    best_ds = fetcher.to_dataset(best_result)
+
+    # Plot
+    plot_dir = viirs_dir / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    png_path = plot_dir / f"Valencia_2024_{best_date_label}_viirs.png"
+    _plot_viirs(best_ds, "Valencia_2024", best_date_label, output_png_path=png_path)
+
+    # Harmonise
+    if harmonise:
+        harm_dir = viirs_dir / "harmonised"
+        _harmonise_viirs(best_ds, "Valencia_2024", best_date_label, harm_dir=harm_dir)
+
+    console.print("\n[bold][green]Demo complete![/green][/bold]")
+    console.print(f"  Output: {out}")
+
+
 @cli.command("list-events")
 def list_events_cmd(
     archive_root: Path | None = typer.Option(None, "--archive", "-a", help="Archive root directory"),

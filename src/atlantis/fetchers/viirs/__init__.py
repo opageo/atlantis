@@ -147,7 +147,12 @@ class VIIRSFetcher(AbstractFloodFetcher):
     def _load_aois(self) -> gpd.GeoDataFrame:
         """Load the packaged VIIRS AOI grid."""
         if not self.aoi_path.exists():
-            raise FileNotFoundError(f"VIIRS AOI grid not found at {self.aoi_path}")
+            raise FileNotFoundError(
+                f"VIIRS AOI grid not found at {self.aoi_path}\n"
+                "Run the bootstrap setup to restore it:\n"
+                "  uv run atlantis setup\n"
+                "  or: uv run python scripts/setup.py"
+            )
         return gpd.read_file(self.aoi_path).to_crs("EPSG:4326")
 
     def _event_dates(self, event: FloodEvent) -> list[datetime]:

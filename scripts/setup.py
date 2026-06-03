@@ -6,12 +6,16 @@ is added to ensure its prerequisites are present).
 
 Currently handles:
 * VIIRS — global AOI tile grid (``src/atlantis/fetchers/viirs/data/viirs_aois.geojson``)
+* KuroSiwo — catalogue (``assets/ks_catalogue.gpkg``)
+
+Each step is idempotent — re-running skips assets that already exist.
 
 Usage::
 
     uv run python scripts/setup.py
 
-Each step is idempotent — re-running skips assets that already exist.
+For auto-restore (default), missing tracked files are restored from git.
+Use ``--check-only`` to only verify without modifying anything.
 """
 
 from __future__ import annotations
@@ -22,42 +26,16 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+from rich.console import Console  # noqa: E402
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Registry of setup steps — add new data sources here
-# ═════════════════════════════════════════════════════════════════════════════
-
-STEPS: list[tuple[str, Path]] = [
-    (
-        # VIIRS AOI grid — shared across all backends (noaa_s3, gmu_legacy).
-        # Both backends use the same 15° × 15° land-intersecting tile grid with
-        # matching AOI_ID → GLB tile numbering. If a future backend uses a
-        # different grid or numbering scheme, it will need its own GeoJSON file
-        # (or a backend-specific AOI_ID translation layer).
-        "VIIRS AOI grid",
-        _REPO_ROOT / "src" / "atlantis" / "fetchers" / "viirs" / "data" / "viirs_aois.geojson",
-    ),
-]
+from atlantis.utils.setup import run_setup  # noqa: E402
 
 
 def main() -> None:
-    """Verify all required data assets are present (no-op when they are)."""
-    print("Atlantis setup — verification\n")
-
-    any_missing = False
-    for label, path in STEPS:
-        if path.exists():
-            print(f"[ok]  {label} — {path.relative_to(_REPO_ROOT)}")
-        else:
-            any_missing = True
-            print(f"[MISSING] {label} — {path.relative_to(_REPO_ROOT)}")
-            print(f"         Restore with: git checkout -- {path.relative_to(_REPO_ROOT)}")
-
-    if any_missing:
-        print("\nSome assets are missing.  See instructions above.")
-        sys.exit(1)
-    else:
-        print("\nAll data assets are present.")
+    """Bootstrap required data assets."""
+    auto_fix = "--check-only" not in sys.argv
+    success = run_setup(auto_fix=auto_fix, output=Console())
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
