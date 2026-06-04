@@ -259,6 +259,119 @@ using 4× less disk space than float32.
 
 Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 
+## Canonical 1-arcmin global grid
+
+Harmonised outputs are aligned to a **fixed global reference grid** so that
+every AOI we produce is a bit-for-bit subset of the same worldwide raster.
+The reference is the grid used by ECMWF's `Globe_flood_area_*.grb`
+(`s3://atlantis/`), shared with several other 1-arcmin global datasets
+(MERIT/CaMa-Flood, etc.).
+
+### What "1 arcmin on the global grid" means, intuitively
+
+- **Pixel size.** 1 arcminute = `1/60°`. So one pixel spans `0.01666…°` in
+  both latitude and longitude — about **1.85 km × 1.85 km** at the equator.
+- **Grid extent.** The whole globe is tiled by `Nj × Ni = 10 800 × 21 600 =
+~233 million` pixels.
+- **Pixel-is-area, not pixel-is-point.** Each pixel covers a 1×1 arcmin
+  square on the ground. By convention we describe a pixel by its **centre**:
+  the cell at column `i`, row `j` has centre
+
+  $$
+  \text{lon}_i = -180\degree + (i + \tfrac{1}{2}) / 60, \qquad
+  \text{lat}_j = +90\degree - (j + \tfrac{1}{2}) / 60.
+  $$
+
+  So the first column's centre is `-179.99166…°`, the last is
+  `+179.99166…°`; latitudes go top-down from `+89.99166…°` to
+  `-89.99166…°`. This matches the spec your colleague shared.
+
+- **Why "snapping" matters.** A user-supplied AOI bbox almost never lines
+  up with this grid. If we just resample to the AOI bounds, our output
+  pixel centres land at fractional offsets like `-0.85166…°` instead of
+  the canonical `-0.85833…°` — close, but **not stackable** with the
+  global product. Snapping fixes this by extending the AOI outward to the
+  nearest cell edges of the global grid before resampling.
+- **Result.** After snapping, our AOI window is a contiguous slice of the
+  global grid: `globe.isel(lat=slice(j0, j1), lon=slice(i0, i1))` and our
+  harmonised raster cover the **same pixels**, byte-for-byte. Cross-product
+  overlay (VIIRS vs `Globe_flood_area`, MERIT topography, etc.) becomes a
+  trivial array subset, no resampling required.
+
+### How it is implemented
+
+This is enabled by default on every `--harmonise` run; you do not need to
+pass any flag. See [`HarmoniseConfig`](../src/atlantis/config.py) for the
+three knobs and [`Reprojector._snap_bounds_to_global_grid`](../src/atlantis/harmoniser/reprojector.py)
+for the snap maths.
+
+| Config field             | Default      | Meaning                                                                          |
+| ------------------------ | ------------ | -------------------------------------------------------------------------------- |
+| `target_resolution`      | `1/60` (deg) | Pixel size; `0.0166666…°` = exactly 1 arcmin.                                    |
+| `snap_to_global_grid`    | `True`       | Snap AOI bounds to the canonical grid before resampling. Set `False` to disable. |
+| `global_grid_origin_lon` | `-180.0`     | Western edge anchor.                                                             |
+| `global_grid_origin_lat` | `+90.0`      | Northern edge anchor.                                                            |
+
+Override via env vars (`ATLANTIS_SNAP_TO_GLOBAL_GRID=false`,
+`ATLANTIS_TARGET_RESOLUTION=…`) or programmatically through `HarmoniseConfig`.
+
+### Snap algorithm in one paragraph
+
+For an AOI `(west, south, east, north)` and resolution `r = 1/60°`, we
+extend the bounds **outward** to the nearest multiple of `r` from the
+origins:
+
+```
+west_snap  = -180 + floor(( west + 180) / r) * r
+east_snap  = -180 +  ceil(( east + 180) / r) * r
+north_snap = +90  - floor(( 90  - north) / r) * r
+south_snap = +90  -  ceil(( 90  - south) / r) * r
+```
+
+(then clipped to `[-180, 180] × [-90, 90]`). The number of pixels is
+`(east_snap − west_snap) / r` × `(north_snap − south_snap) / r`, all
+integers; pixel centres are exactly `±(k + 0.5) / 60`.
+
+### Verifying alignment
+
+The notebook [`notebooks/drafts/verify_global_grid.ipynb`](../notebooks/drafts/verify_global_grid.ipynb)
+walks through the verification end-to-end:
+
+1. Streams ~200 MiB (one full message) of `Globe_flood_area_202208.grb`
+   from `s3://atlantis/` using `aws s3api get-object --range`, then reads
+   its grid definition with the `eccodes` Python API. Confirms `Ni=21600`,
+   `Nj=10800`, `di=dj=1/60°`. (Note: GRIB stores longitudes in `[0, 360)`,
+   so its first lon reads as `180.008°`, which is the same pixel as
+   `-179.992°` in the `±180°` convention we use.)
+2. Numerically proves that `Reprojector._snap_bounds_to_global_grid`
+   maps an off-grid AOI (`-0.86, 8.26, 1.99, 11.73`) to a contiguous
+   window of the global grid: `lon[10748:10920], lat[4696:4905]`.
+3. Runs the full `Harmoniser` on a synthetic dataset and verifies that
+   every output pixel centre satisfies `(lon + 180) × 60 − 0.5 ∈ ℤ` and
+   `(90 − lat) × 60 − 0.5 ∈ ℤ` (deviation `< 1e-12`).
+
+### Quick check on any harmonised file
+
+```python
+import rasterio
+
+RES = 1 / 60
+LON0, LAT0 = -180.0, 90.0
+
+with rasterio.open("…_viirs_harmonised.tif") as src:
+    t = src.transform
+    cx0 = t.a * 0.5 + t.c          # first pixel centre, lon
+    cy0 = t.e * 0.5 + t.f          # first pixel centre, lat
+    kx = (cx0 - LON0) / RES - 0.5  # must be an integer
+    ky = (LAT0 - cy0) / RES - 0.5
+    print(f"pixel size : {t.a:.12f} (= 1/60: {RES:.12f})")
+    print(f"on-grid    : kx={kx:.3e}, ky={ky:.3e}  (≈0 means aligned)")
+```
+
+For a West Africa AOI fetched with the default settings this prints
+`kx=10748.000000, ky=4696.000000` — the AOI is rows 4696–4904 and
+columns 10748–10919 of the global grid.
+
 ## Tips
 
 - **Multiple dates** — The date range is inclusive: `--start-date 2024-10-27 --end-date 2024-10-31` fetches five daily composites.

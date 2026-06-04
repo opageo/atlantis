@@ -34,7 +34,7 @@ flowchart TD
     HARM -->|Yes| HARMONISE["Harmonise to 1-arcmin grid"]
 
     %% ─── Harmonisation detail ────────────────────────
-    HARMONISE --> HARM_STEPS["Reproject to EPSG:4326<br/>Resample flood_fraction (average)<br/>Resample masks (mode)"]
+    HARMONISE --> HARM_STEPS["Snap AOI to global 1-arcmin grid<br/>Reproject to EPSG:4326<br/>Resample flood_fraction (average)<br/>Resample masks (mode)"]
     HARM_STEPS --> HARM_WRITE["Write harmonised/ GeoTIFF<br/>uint8 pct [0–100], nodata=255"]
     HARM_WRITE --> PLOT{--plot?}
     PLOT -->|Yes| PNG["Write harmonised/ PNG"]
@@ -161,3 +161,10 @@ Harmonised (raw)             uint8   raw codes 0–200     ~1 arcmin, nodata=255
 - **Raw + harmonise** uses nearest-neighbour resampling (preserves integer codes) but emits a warning that the result is not a continuous flood fraction.
 - The normaliser's `skip_normalise_vars` set includes `"raw"` — raw codes are never min-max normalised even if passed through the full harmonisation pipeline.
 - **Resampling methods** are configured in `variable_resampling`: `flood_fraction → average`, `quality_mask → mode`, `permanent_water → mode`, `raw → nearest`.
+- **Global grid alignment** — by default, harmonised AOIs are snapped to
+  the canonical 1-arcmin grid (`origin = (-180, +90)`, `res = 1/60°`) so
+  every output is a bit-for-bit subset of the same global raster
+  (compatible with ECMWF `Globe_flood_area_*.grb` and other 1-arcmin
+  global products). See
+  [Canonical 1-arcmin global grid](viirs.md#canonical-1-arcmin-global-grid)
+  for details and the verification notebook.
