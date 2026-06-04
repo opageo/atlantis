@@ -92,6 +92,28 @@ class ViirsBackend(ABC):
         """
         ...
 
+    def available_years(self, base_url: str, data_format: str, timeout: int) -> set[int] | None:
+        """Return the set of calendar years for which this backend publishes data.
+
+        The default implementation returns ``None``, meaning the backend does
+        not declare its coverage and callers must attempt the listing for
+        every requested date. Subclasses may override to enable cheap
+        early-exit checks (e.g. a single ``ListBucket`` call for an S3 prefix)
+        and produce clearer diagnostics when a request falls into a known
+        coverage gap.
+
+        Args:
+            base_url: The base URL for the backend.
+            data_format: The data format (e.g. ``"tif"``).
+            timeout: Request timeout in seconds.
+
+        Returns:
+            A set of years (e.g. ``{2012, 2013, ..., 2026}``) when the backend
+            can enumerate its coverage cheaply, or ``None`` when coverage is
+            unknown and listings should be attempted unconditionally.
+        """
+        return None
+
     @abstractmethod
     def build_result_url(self, base_url: str, listing_location: str, filename: str) -> str:
         """Build the downloadable URL for a listing entry.
@@ -109,6 +131,10 @@ class ViirsBackend(ABC):
 
 class NoaaS3Backend(ViirsBackend):
     """Backend for NOAA S3 VIIRS data source."""
+
+    def __init__(self) -> None:
+        """Initialise the backend with an empty per-prefix year cache."""
+        self._available_years_cache: dict[str, set[int]] = {}
 
     def get_directory_links(self, base_url: str, location: str, timeout: int) -> list[str]:
         """Return object keys from a public S3 prefix listing."""
@@ -133,6 +159,43 @@ class NoaaS3Backend(ViirsBackend):
         date_token = event_date.strftime("%Y%m%d")
         prefix = f"{NOAA_VIIRS_PREFIX}/{data_format.upper()}/{event_date.strftime('%Y/%m/%d')}/"
         return ListingLocation(locator=prefix, date_token=date_token)
+
+    def available_years(self, base_url: str, data_format: str, timeout: int) -> set[int] | None:
+        """Enumerate published years on the NOAA S3 bucket via a single listing.
+
+        Issues one ``ListObjectsV2``-style request with ``delimiter=/`` against
+        ``JPSS_Blended_Products/VFM_1day_GLB/<FORMAT>/`` and parses the
+        ``CommonPrefixes`` response into a set of integer years. The result is
+        memoised per ``(base_url, data_format)`` for the lifetime of the
+        backend instance to avoid repeated round-trips.
+        """
+        cache_key = f"{base_url}|{data_format.upper()}"
+        cached = self._available_years_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        prefix = f"{NOAA_VIIRS_PREFIX}/{data_format.upper()}/"
+        try:
+            response = requests.get(
+                base_url,
+                params={"prefix": prefix, "delimiter": "/"},
+                timeout=timeout,
+            )
+            response.raise_for_status()
+        except requests.RequestException:
+            # Coverage unknown — fall back to per-date probing.
+            return None
+
+        root = ET.fromstring(response.text)
+        years: set[int] = set()
+        for node in root.findall("s3:CommonPrefixes/s3:Prefix", S3_NAMESPACE):
+            text = node.text or ""
+            tail = text.removeprefix(prefix).rstrip("/")
+            if tail.isdigit() and len(tail) == 4:
+                years.add(int(tail))
+
+        self._available_years_cache[cache_key] = years
+        return years
 
     def build_result_url(self, base_url: str, listing_location: str, filename: str) -> str:
         """Build the S3 URL for a listing entry."""

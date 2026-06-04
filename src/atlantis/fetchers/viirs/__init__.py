@@ -3,7 +3,9 @@
 VIIRS provides flood detection from Suomi-NPP and NOAA-20 satellites.
 """
 
+import logging
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,10 +29,52 @@ if TYPE_CHECKING:
     import xarray as xr
 
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_NOAA_VIIRS_BASE_URL = "https://noaa-jpss.s3.amazonaws.com"
 DEFAULT_GMU_VIIRS_BASE_URL = "https://jpssflood.gmu.edu/downloads/pub"
 VIIRS_SUPPORTED_FORMATS = {"tif", "netcdf", "shapezip", "png"}
 VIIRS_IMPLEMENTED_FORMATS = {"tif"}
+
+
+@dataclass
+class SearchDiagnostics:
+    """Structured explanation of why a search returned a given result set.
+
+    Populated by :meth:`VIIRSFetcher.search` and exposed via
+    :attr:`VIIRSFetcher.last_diagnostics` so the CLI (or any other caller) can
+    surface actionable guidance when a fetch yields zero results.
+    """
+
+    backend: str
+    aoi_count: int = 0
+    requested_years: set[int] = field(default_factory=set)
+    available_years: set[int] | None = None
+    skipped_years: set[int] = field(default_factory=set)
+    dates_probed: int = 0
+    dates_with_listings: int = 0
+    dates_with_matches: int = 0
+    result_count: int = 0
+
+    @property
+    def missing_aoi_coverage(self) -> bool:
+        """True when the event bbox does not intersect any packaged AOI."""
+        return self.aoi_count == 0
+
+    @property
+    def year_coverage_gap(self) -> bool:
+        """True when every requested year is known to be unpublished."""
+        return bool(self.skipped_years) and self.skipped_years == self.requested_years
+
+    @property
+    def listings_all_empty(self) -> bool:
+        """True when listings were attempted but none returned entries."""
+        return self.dates_probed > 0 and self.dates_with_listings == 0
+
+    @property
+    def no_aoi_match_in_listings(self) -> bool:
+        """True when listings returned entries but no AOI filename matched."""
+        return self.dates_with_listings > 0 and self.dates_with_matches == 0
 
 
 def _date_range(start: datetime, end: datetime) -> list[datetime]:
@@ -123,6 +167,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         self.stream = stream
         self.strategy = strategy
         self.keep_processed = keep_processed
+        self.last_diagnostics: SearchDiagnostics | None = None
 
         if self.strategy not in {"peak", "aggregate", "all"}:
             raise ValueError(f"Invalid strategy '{self.strategy}'. Expected 'peak', 'aggregate', or 'all'.")
@@ -200,27 +245,64 @@ class VIIRSFetcher(AbstractFloodFetcher):
     def search(self, event: FloodEvent) -> list[SearchResult]:
         """Search for VIIRS data for the given flood event.
 
+        Populates :attr:`last_diagnostics` describing AOI coverage,
+        backend year coverage, and listing/match counts so callers can
+        explain why an empty result set was returned.
+
         Args:
             event: The flood event to search for.
 
         Returns:
             List of search results.
         """
+        event_dates = self._event_dates(event)
+        requested_years = {dt.year for dt in event_dates}
+        diagnostics = SearchDiagnostics(
+            backend=self.backend_name,
+            requested_years=requested_years,
+        )
+        self.last_diagnostics = diagnostics
+
         aois = self._intersecting_aois(event)
+        diagnostics.aoi_count = int(len(aois))
         if aois.empty:
+            logger.warning(
+                "VIIRS search: event bbox %s does not intersect any packaged AOI; nothing to fetch.",
+                event.bbox,
+            )
             return []
 
+        available_years = self.backend.available_years(self.base_url, self.data_format, self.timeout)
+        diagnostics.available_years = available_years
+        if available_years is not None:
+            diagnostics.skipped_years = requested_years - available_years
+            if diagnostics.skipped_years:
+                logger.warning(
+                    "VIIRS backend %r does not publish data for year(s) %s (published years: %s).",
+                    self.backend_name,
+                    sorted(diagnostics.skipped_years),
+                    sorted(available_years),
+                )
+
         results: list[SearchResult] = []
-        for event_date in self._event_dates(event):
+        for event_date in event_dates:
+            if available_years is not None and event_date.year not in available_years:
+                # Skip dates whose year is known to be unpublished by this backend.
+                continue
+
+            diagnostics.dates_probed += 1
             location = self.backend.get_listing_location(self.base_url, event_date, self.data_format)
             entries = self.backend.get_directory_links(self.base_url, location.locator, self.timeout)
             if not entries:
                 continue
+            diagnostics.dates_with_listings += 1
 
+            date_match_count = 0
             for row in aois.itertuples():
                 filename = self.backend.find_remote_filename(int(row.AOI_ID), entries)
                 if filename is None:
                     continue
+                date_match_count += 1
                 bounds = row.geometry.bounds
                 results.append(
                     SearchResult(
@@ -238,7 +320,10 @@ class VIIRSFetcher(AbstractFloodFetcher):
                         },
                     )
                 )
+            if date_match_count > 0:
+                diagnostics.dates_with_matches += 1
 
+        diagnostics.result_count = len(results)
         return results
 
     def fetch(self, event: FloodEvent, output_dir: Path) -> list[FetchResult]:

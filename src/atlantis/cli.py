@@ -60,6 +60,68 @@ def _report_viirs_fetch_writes(fetch_results: list[FetchResult], *, keep_process
         console.print(f"[bold]  Peak-flood date {label}: processed in memory (no processed/ GeoTIFFs)[/bold]")
 
 
+def _report_empty_fetch(source_id: str, fetcher) -> None:
+    """Explain why a fetcher returned no results, using diagnostics when available.
+
+    Generic fetchers fall back to the previous one-line message; VIIRS exposes
+    structured diagnostics via :attr:`VIIRSFetcher.last_diagnostics` and we
+    translate them into actionable guidance here.
+    """
+    diagnostics = getattr(fetcher, "last_diagnostics", None)
+    if diagnostics is None:
+        console.print("[yellow]  No files were fetched[/yellow]")
+        return
+
+    console.print("[yellow]  No files were fetched.[/yellow]")
+    if diagnostics.missing_aoi_coverage:
+        console.print("[yellow]  Reason: event bbox does not intersect any packaged VIIRS AOI.[/yellow]")
+        console.print(
+            "  Hint: VIIRS AOIs cover ±60° latitude on a fixed global grid. Widen the bbox or verify the coordinates."
+        )
+        return
+
+    if diagnostics.year_coverage_gap:
+        published = (
+            ", ".join(str(y) for y in sorted(diagnostics.available_years)) if diagnostics.available_years else "unknown"
+        )
+        requested = ", ".join(str(y) for y in sorted(diagnostics.requested_years))
+        console.print(
+            f"[yellow]  Reason: backend '{diagnostics.backend}' does not publish data for "
+            f"the requested year(s) ({requested}).[/yellow]"
+        )
+        console.print(f"  Published years on this backend: {published}")
+        if diagnostics.backend == "noaa_s3":
+            console.print(
+                "  Hint: try --viirs-backend gmu_legacy for legacy years (2021–2022), or pick "
+                "an event in a published year."
+            )
+        return
+
+    if diagnostics.listings_all_empty:
+        console.print(
+            f"[yellow]  Reason: backend '{diagnostics.backend}' returned no listings for any of "
+            f"the {diagnostics.dates_probed} requested date(s).[/yellow]"
+        )
+        console.print(
+            "  Hint: the bucket is up but the daily prefixes are empty for this window. Try "
+            "broadening --start-date/--end-date or switching --viirs-backend."
+        )
+        return
+
+    if diagnostics.no_aoi_match_in_listings:
+        console.print(
+            f"[yellow]  Reason: {diagnostics.dates_with_listings} date(s) had listings, but none "
+            f"contained tiles for the {diagnostics.aoi_count} intersecting AOI(s).[/yellow]"
+        )
+        console.print("  Hint: the AOIs intersecting this bbox were not produced for the requested dates.")
+        return
+
+    console.print(
+        f"[yellow]  Reason: backend '{diagnostics.backend}' produced no processable tiles "
+        f"({diagnostics.result_count} search results across {diagnostics.dates_probed} date(s)).[/yellow]"
+    )
+
+
 def _select_best_result(
     fetcher,
     fetch_results,
@@ -295,7 +357,7 @@ def fetch(
 
             fetch_results = fetcher.fetch(flood_event, output_dir / src)
             if not fetch_results:
-                console.print("[yellow]  No files were fetched[/yellow]")
+                _report_empty_fetch(src, fetcher)
                 continue
 
             if src == "viirs":

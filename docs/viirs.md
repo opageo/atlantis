@@ -146,12 +146,81 @@ VIIRS tiles (~20 MB each) are streamed directly from NOAA S3 via GDAL's `/vsicur
 
 ## Backends
 
-| Backend      | Description                                                 | Default |
-| ------------ | ----------------------------------------------------------- | ------- |
-| `noaa_s3`    | NOAA JPSS public S3 bucket (`noaa-jpss`) — 1-day composites | ✅      |
-| `gmu_legacy` | GMU legacy HTTP archive — 5-day composites                  |         |
+Both backends serve the same underlying science product — the **VIIRS Flood
+Mapping (VFM)** algorithm developed at George Mason University (Li & Sun) under
+the JPSS Proving Ground programme ([ATBD v1.0, 2021](https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf)).
+They differ in _who hosts the bytes_, _which compositing window_ is exposed, and
+_how the directory layout is structured_.
+
+| Backend      | Host & protocol                                                                             | Composite window | Default |
+| ------------ | ------------------------------------------------------------------------------------------- | ---------------- | ------- |
+| `noaa_s3`    | NOAA NODD public S3 bucket `s3://noaa-jpss/` (HTTPS, anonymous)                             | **1-day** global | ✅      |
+| `gmu_legacy` | GMU JPSS Flood archive `https://jpssflood.gmu.edu/downloads/pub/` (HTTP directory listings) | **5-day** global |         |
 
 Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
+
+### `noaa_s3` — NOAA JPSS on AWS (recommended)
+
+- **Source of truth** — NOAA Open Data Dissemination (NODD) programme, AWS registry entry [`noaa-jpss`](https://registry.opendata.aws/noaa-jpss/).
+- **Bucket / region** — `arn:aws:s3:::noaa-jpss` in `us-east-1`. Browse at [noaa-jpss.s3.amazonaws.com](https://noaa-jpss.s3.amazonaws.com/index.html).
+- **Atlantis path** — `JPSS_Blended_Products/VFM_1day_GLB/TIF/<YYYY>/<MM>/<DD>/`.
+- **Tile naming** — `VIIRS-Flood-1day-GLB<AOI>_v2r0_blend_s<start>_e<end>_c<created>.tif` (e.g. `GLB001`…`GLB145`). The `blend` token indicates blended Suomi-NPP + NOAA-20 observations.
+- **AOI grid** — 136 land-covering 10°×10° tiles defined by the VFM algorithm (see `src/atlantis/fetchers/viirs/data/viirs_aois.geojson`). On a typical day ~145 tile files are present (some AOIs split at the antimeridian).
+- **Spatial / temporal** — 375 m, EPSG:4326, uint8 pixel codes 0–200, daily global.
+- **Other VFM variants on the same bucket** — `VFM_5day_GLB/` (5-day composite), `VIIRS-ABI-Flood-Day/`, `VIIRS-ABI-Flood-Day-TIF/`, `VIIRS-ABI-Flood-Day-Shapefiles/` (VIIRS+GOES-ABI joint daytime product). Atlantis currently consumes only `VFM_1day_GLB/TIF/`.
+- **License** — open NOAA data (NODD terms of use; attribution requested).
+- **Streaming** — works end-to-end via GDAL `/vsicurl/` because S3 supports HTTP range reads.
+- **Docs** — [NOAA-Big-Data-Program/nodd-data-docs (JPSS)](https://github.com/NOAA-Big-Data-Program/nodd-data-docs/tree/main/JPSS).
+
+### `gmu_legacy` — George Mason University archive
+
+- **Source of truth** — Hosted by the same group that authored the VFM algorithm (Sanmei Li, Donglian Sun et al., George Mason University). This was the original public distribution point before the NOAA NODD migration.
+- **Atlantis path** — `https://jpssflood.gmu.edu/downloads/pub/<YYYYMMDD>/tif/`.
+- **Tile naming** — files matching `_005day_<AOI>.tif` or `_005day_<AOI>.tif.zip` (the `005day` token is the **5-day max-water-fraction composite**, used to suppress cloud and shadow contamination across the compositing window).
+- **AOI grid** — same 136 10°×10° AOI scheme as `noaa_s3`.
+- **Streaming** — _not supported_. `.zip`-packaged tiles and a plain HTML directory listing require the `--no-stream` (download-and-extract) path.
+- **Coverage** — the GMU site does not advertise its index; Atlantis does not declare published years and falls back to per-date probing. Reachability is best-effort: the host may be intermittently offline (it was unreachable at the time of writing).
+- **When to use it** — historical 5-day composites, or as a fallback for the years currently missing from NOAA S3 (see below). For modern operational use, prefer `noaa_s3`.
+
+### Data availability
+
+VIIRS coverage differs per backend. Atlantis queries the backend's published
+years before fetching and aborts early with an explanation if the requested
+window falls outside that range.
+
+| Backend      | Published calendar years (as of 2026-06) | Notes                                                                                                                                               |
+| ------------ | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noaa_s3`    | 2012–2020, 2023–2026                     | **2021 and 2022 are not published** on the public NOAA JPSS bucket. Verified via S3 listing of `JPSS_Blended_Products/VFM_1day_GLB/TIF/`.           |
+| `gmu_legacy` | Best-effort (not declared)               | The GMU archive does not enumerate cheaply; Atlantis attempts each requested date directly. May cover the 2021–2022 gap when the host is reachable. |
+
+The `noaa_s3` coverage set is read at runtime from `JPSS_Blended_Products/VFM_1day_GLB/<FORMAT>/`,
+so it will pick up new years automatically as NOAA publishes them. When a request
+targets a year that NOAA does not publish (e.g. the 2022 Pakistan floods), the
+CLI emits a clear diagnostic and suggests falling back to `--viirs-backend gmu_legacy`.
+
+#### Where are 2021 and 2022 on AWS?
+
+Nowhere. The 2021–2022 gap is **bucket-wide on the public NOAA mirror**, not specific to
+`VFM_1day_GLB/TIF`. We verified every plausible alternative S3 location and all
+exhibit the same gap:
+
+| Bucket / prefix                                                            | Years present        |
+| -------------------------------------------------------------------------- | -------------------- |
+| `s3://noaa-jpss/JPSS_Blended_Products/VFM_1day_GLB/{TIF,NETCDF,SHAPEZIP}/` | 2012–2020, 2023–2026 |
+| `s3://noaa-jpss/JPSS_Blended_Products/VFM_5day_GLB/{TIF,NETCDF,PNG}/`      | 2012–2020, 2023–2026 |
+| `s3://noaa-jpss/JPSS_Blended_Products/SNPP_DECOM/NetCDF/`                  | 2018–2020 only       |
+| `s3://noaa-jpss/JPSS_Blended_Products/VIIRS-ABI-Flood-Day*/` (3 variants)  | 2025–2026 only       |
+| `s3://noaa-nesdis-{n20,snpp}-pds/VIIRS_VFM_MWS_MOSAIC/`                    | 2024–2026 only       |
+
+For events in 2021–2022 the only routes are:
+
+- **GMU JPSS Flood archive** (`gmu_legacy` backend) — the historical
+  distribution at `jpssflood.gmu.edu`. The host is intermittently reachable;
+  retry from a non-cloud network if requests time out.
+- **NESDIS Product Distribution & Access** — authenticated portal at
+  <https://www.star.nesdis.noaa.gov/jpss/VIIRSflood.php>. Not yet wired into
+  Atlantis (account + credentials required).
+- **NOAA NCEI archive** — long-term mirror, requires manual ordering.
 
 ## Output structure
 
