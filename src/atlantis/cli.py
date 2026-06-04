@@ -4,13 +4,14 @@ from datetime import date
 from pathlib import Path
 
 import typer
+from rasterio.enums import Resampling
 from rich.console import Console
 from rich.table import Table
 
 from atlantis.config import HarmoniseConfig, get_config
 
 # Import fetchers to register them
-from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, rfm, viirs  # noqa: F401
+from atlantis.fetchers import fetcher_registry, get_fetcher, list_fetchers, rfm, viirs  # noqa: F401
 from atlantis.fetchers.base import FetchResult
 from atlantis.harmoniser import write_harmonised_raster
 from atlantis.models.event import FloodEvent
@@ -29,7 +30,7 @@ from atlantis.utils.plot import (
     plot_raw,
 )
 
-cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.")
+cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.", pretty_exceptions_enable=False)
 console = Console()
 
 
@@ -152,6 +153,65 @@ def _harmonise_viirs(
     return ds_harm
 
 
+def _report_gfm_fetch(fetch_results: list[FetchResult]) -> None:
+    """Print summary of GFM fetch results."""
+    n_results = len(fetch_results)
+    dates = [r.date_token or "unknown" for r in fetch_results]
+    console.print(f"[bold]  Processed {n_results} GFM result(s): dates={', '.join(dates)}[/bold]")
+    for result in fetch_results:
+        if result.files:
+            for path in result.files:
+                console.print(f"  - {path}")
+        elif result.dataset is not None:
+            console.print(f"  - In-memory dataset (date={result.date_token})")
+
+
+def _plot_gfm(
+    ds,
+    event_id,
+    date_label,
+    *,
+    output_png_path,
+):
+    """Save a PNG visualisation of GFM flood extent."""
+    output_png_path = Path(output_png_path)
+    output_png_path.parent.mkdir(parents=True, exist_ok=True)
+    if "flood_fraction" in ds:
+        plot_classified(
+            ds["flood_fraction"],
+            title=f"{event_id}: GFM flood extent {date_label}",
+            output_path=output_png_path,
+        )
+    console.print(f"  Plot → {output_png_path.name}")
+
+
+def _harmonise_gfm(
+    ds,
+    event_id,
+    date_label,
+    *,
+    harm_dir,
+):
+    """Harmonise GFM data and save GeoTIFF + PNG."""
+    from atlantis.harmoniser import Harmoniser
+
+    harm_dir.mkdir(parents=True, exist_ok=True)
+    h = Harmoniser()
+    ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
+
+    tif_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.tif"
+    write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
+    console.print(f"  Harmonised → {tif_path.name}")
+
+    png_harm_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.png"
+    plot_classified(
+        ds_harm["flood_fraction"],
+        title=f"{event_id}: GFM harmonised flood extent {date_label} (1 arcmin)",
+        output_path=png_harm_path,
+    )
+    return ds_harm
+
+
 def _parse_bbox(value: str) -> tuple[float, float, float, float]:
     """Parse a bbox from a four-number string."""
     parts = value.replace(",", " ").split()
@@ -226,6 +286,16 @@ def fetch(
         "--keep-processed/--no-keep-processed",
         help="Write intermediate processed/ GeoTIFFs. Use --no-keep-processed to save disk space.",
     ),
+    gfm_coarsen_factor: int = typer.Option(
+        4,
+        "--gfm-coarsen-factor",
+        help="GFM spatial coarsening factor before reprojection (default 4).",
+    ),
+    _gfm_resampling: str = typer.Option(
+        "average",
+        "--gfm-resampling",
+        help="GFM resampling method for reprojection to EPSG:4326.",
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -250,6 +320,11 @@ def fetch(
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    try:
+        gfm_resampling = Resampling[_gfm_resampling]
+    except KeyError:
+        valid = [r.name for r in Resampling]
+        raise typer.BadParameter(f"--gfm-resampling '{_gfm_resampling}' is not valid. Choose from: {', '.join(valid)}")
     if source is None or source == "all":
         sources = list_fetchers()
     else:
@@ -285,6 +360,13 @@ def fetch(
                     "strategy": strategy,
                     "keep_processed": keep_processed,
                 }
+            elif src == "gfm":
+                fetcher_kwargs = {
+                    "coarsen_factor": gfm_coarsen_factor,
+                    "resampling": gfm_resampling,
+                    "strategy": strategy,
+                    "keep_processed": keep_processed,
+                }
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
                 console.print(
@@ -300,11 +382,25 @@ def fetch(
 
             if src == "viirs":
                 _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
+            elif src == "gfm":
+                _report_gfm_fetch(fetch_results)
             else:
                 console.print(f"[bold]  Wrote {sum(len(result.files) for result in fetch_results)} files[/bold]")
                 for result in fetch_results:
                     for path in result.files:
                         console.print(f"  - {path}")
+
+            # ── Optional plot + harmonise (GFM) ─────────────────────────
+            if src == "gfm" and (plot or harmonise):
+                for result in fetch_results:
+                    ds = fetcher.to_dataset(result)
+                    date_label = result.date_token or "gfm"
+                    if plot:
+                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{date_label}_gfm.png"
+                        _plot_gfm(ds, event, date_label, output_png_path=png_out)
+                    if harmonise:
+                        harm_dir = output_dir / src / "harmonised"
+                        _harmonise_gfm(ds, event, date_label, harm_dir=harm_dir)
 
             # ── Optional plot + harmonise (VIIRS only) ────────────────────
             if src == "viirs" and (plot or harmonise):

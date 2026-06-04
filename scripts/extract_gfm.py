@@ -5,6 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import odc.stac
+import pyproj
 import rasterio
 import rioxarray  # noqa
 import xarray as xr
@@ -63,7 +64,7 @@ def search_subdomain(area, date, days):
     return items
 
 
-def extract_subdomain(aa, items, obs, msk, resolution_deg=1 / 60):
+def extract_subdomain_odc_resampling(aa, items, obs, msk, resolution_deg=1 / 60):
     """Extract the maximum flood extent for the given area and list of STAC items.
     Writes the output to the specified observation and mask files."""
     from odc.geo.geobox import GeoBox
@@ -205,6 +206,76 @@ def extract_subdomain(aa, items, obs, msk, resolution_deg=1 / 60):
 
     print("\n=== DONE ===\n")
     return gbox
+
+
+def extract_subdomain(aa, items, obs, msk):
+
+    crs_src = pyproj.CRS.from_wkt(items[0].properties["proj:wkt2"])
+    resolution = items[0].properties["gsd"]
+    aoi = box(aa[1], aa[0], aa[3], aa[2])
+
+    factor = 4
+    sum_flood = None
+    sum_missing = None
+
+    print("\n=== Running flood extraction ===")
+
+    for idx, titem in enumerate(items):
+        xx = odc.stac.load(
+            [titem],
+            bbox=aoi.bounds,
+            crs=crs_src,
+            bands=["ensemble_flood_extent", "reference_water_mask"],
+            resolution=resolution,
+            dtype="uint8",
+            groupby="solar_day",
+            chunks={},
+        )
+
+        flood_ds = xx["ensemble_flood_extent"].coarsen(y=factor, x=factor, boundary="trim").max()  # ty:ignore[unresolved-attribute]
+
+        perm_ds = xx["reference_water_mask"].coarsen(y=factor, x=factor, boundary="trim").max()  # ty:ignore[unresolved-attribute]
+
+        ds = xr.Dataset({"flood": flood_ds, "perm": perm_ds}).rio.write_crs(crs_src)
+
+        ds_ll = ds.rio.reproject("EPSG:4326", nodata=255, resampling="average")
+        del xx, flood_ds, perm_ds, ds
+
+        flood_arr = ds_ll["flood"].fillna(255).astype("uint16").values
+        perm_arr = ds_ll["perm"].fillna(255).astype("uint16").values
+
+        if sum_flood is None:
+            shape = flood_arr.shape
+            sum_flood = np.zeros(shape, dtype="float32")
+            sum_missing = np.zeros(shape, dtype="uint16")
+            coords = ds_ll["flood"].coords
+            dims = ds_ll["flood"].dims
+
+        flood = np.where((flood_arr != 255) & (flood_arr != 0), flood_arr, 0).astype("float32")
+
+        missing = np.where(
+            ((flood_arr != 255) | (perm_arr != 255)) & ((flood_arr != 0) | (perm_arr != 0)), 1, 0
+        ).astype("uint16")
+
+        sum_flood += flood
+        sum_missing += missing
+
+        del ds_ll, flood_arr, perm_arr, flood, missing
+        print(f"Item {idx + 1}/{len(items)} OK")
+
+    obs_da = xr.DataArray(sum_flood, coords=coords, dims=dims).rio.write_crs("EPSG:4326")
+
+    obs_da = obs_da.fillna(0)
+    obs_da.values[np.isnan(obs_da.values)] = 0
+    obs_da.rio.to_raster(obs, compress="LZW")
+
+    msk_da = xr.DataArray((sum_missing >= 1).astype("uint8"), coords=coords, dims=dims).rio.write_crs("EPSG:4326")
+
+    msk_da.values[np.isnan(msk_da.values)] = 0
+    msk_da.rio.to_raster(msk, compress="LZW")
+
+    print("\n=== DONE ===\n")
+    return crs_src
 
 
 # Define the area of interest (AOI), the date and days of the search

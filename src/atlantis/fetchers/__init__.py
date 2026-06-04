@@ -1,6 +1,9 @@
 """Fetchers for various flood data sources."""
 
 from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResult
+from atlantis.fetchers.gfm import GFMFetcher
+from atlantis.fetchers.gfm.backend import GfmStacBackend
+from atlantis.fetchers.gfm.processor import GfmRasterProcessor
 from atlantis.fetchers.registry import fetcher_registry, get_fetcher, list_fetchers, register_fetcher
 from atlantis.fetchers.viirs import VIIRSFetcher
 from atlantis.fetchers.viirs.backend import (
@@ -23,6 +26,10 @@ __all__ = [
     "register_fetcher",
     "fetcher_registry",
     "list_fetchers",
+    # GFM components
+    "GFMFetcher",
+    "GfmStacBackend",
+    "GfmRasterProcessor",
     # VIIRS components
     "VIIRSFetcher",
     "ViirsBackend",
