@@ -87,13 +87,14 @@ uv run atlantis harmonise \
 
 ### Output control
 
-| Flag                  | Default | Effect                                                              |
-| --------------------- | ------- | ------------------------------------------------------------------- |
-| `--classify`          | on      | Produce flood/quality/water binary masks instead of raw pixel codes |
-| `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                      |
-| `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF            |
-| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate 375 m files)      |
-| `--plot`              | off     | Save a PNG of the peak-flood date                                   |
+| Flag                  | Default | Effect                                                                                                                                                                                         |
+| --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--classify`          | on      | Produce flood/quality/water binary masks instead of raw pixel codes                                                                                                                            |
+| `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                                                                                                                                                 |
+| `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF                                                                                                                                       |
+| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate 375 m files)                                                                                                                                 |
+| `--plot`              | off     | Save a PNG of the peak-flood date                                                                                                                                                              |
+| `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). See [Strategies in detail](viirs_pipeline.md#strategies-in-detail-pixel-level). |
 
 ### Data access
 

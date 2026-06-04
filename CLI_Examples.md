@@ -66,10 +66,13 @@ or individually:
 ## Common flags
 
 These appear throughout the examples below — abridged from
-[`docs/viirs.md`](docs/viirs.md):
+[`docs/viirs.md`](docs/viirs.md). For pixel-level details on what each
+`--strategy` actually does to the multi-date stack (mean vs. mode vs.
+per-date pass-through), see
+[`docs/viirs_pipeline.md`](docs/viirs_pipeline.md#strategies-in-detail-pixel-level).
 
 - **`--strategy peak`** (default) — keep the date with the most flood pixels.
-- **`--strategy aggregate`** — temporal mean/mode composite over the window.
+- **`--strategy aggregate`** — temporal mean (continuous) / mode (categorical) composite over the window.
 - **`--strategy all`** — write one harmonised output per date (time-series).
 - **`--no-keep-processed`** — skip intermediate 375 m files; write only the harmonised output.
 - **`--harmonise`** — resample to 1 arcmin (~1.85 km) on a global grid.
