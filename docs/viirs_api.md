@@ -117,6 +117,10 @@ plt.show()
 | `flood_min_code` | `int`  | `160`       | Minimum code to count as flood (range: 101–200)     |
 | `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)        |
 
+> See [viirs.md § Backends](viirs.md#backends) for a detailed comparison of the two
+> sources (host, compositing window, tile naming, AOI grid, coverage years and
+> license).
+
 ## Adding a custom backend
 
 ```python

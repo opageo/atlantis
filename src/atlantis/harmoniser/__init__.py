@@ -88,6 +88,9 @@ class Harmoniser:
             target_resolution=self.config.target_resolution,
             resampling_method=self.config.resampling,
             variable_resampling=dict(self.config.variable_resampling),
+            snap_to_global_grid=self.config.snap_to_global_grid,
+            global_grid_origin_lon=self.config.global_grid_origin_lon,
+            global_grid_origin_lat=self.config.global_grid_origin_lat,
         )
         self.normaliser = normaliser or Normaliser(
             config=NormaliserConfig(

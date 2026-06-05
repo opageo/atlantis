@@ -64,9 +64,22 @@ def _as_georeferenced_da(
     import xarray as xr
 
     data = np.asarray(array, dtype=dtype)
-    da = xr.DataArray(data, dims=("y", "x"), name=name)
+    height, width = data.shape
+    transform = processed.transform
+    # Attach pixel-centre coordinates so consumers (plotting, slicing, harmoniser
+    # fallbacks) see a fully georeferenced array. Without this, ``DataArray.plot``
+    # falls back to integer indices and renders the raster upside down because
+    # row 0 (north) is drawn at the bottom of the matplotlib y-axis.
+    x_coords = transform.c + (np.arange(width) + 0.5) * transform.a
+    y_coords = transform.f + (np.arange(height) + 0.5) * transform.e
+    da = xr.DataArray(
+        data,
+        dims=("y", "x"),
+        coords={"y": y_coords, "x": x_coords},
+        name=name,
+    )
     da.rio.write_crs(processed.crs, inplace=True)
-    da.rio.write_transform(processed.transform, inplace=True)
+    da.rio.write_transform(transform, inplace=True)
     return da
 
 

@@ -100,7 +100,8 @@ def test_fetch_command():
     """Test fetch command with required event argument."""
     result = runner.invoke(cli, ["fetch", "--event", "Valencia_2024"])
     assert result.exit_code == 0
-    assert "Fetching data for event: Valencia_2024" in result.stdout
+    assert "Valencia_2024" in result.stdout
+    assert "sources=" in result.stdout
 
 
 def test_fetch_command_with_bbox(monkeypatch, tmp_path):

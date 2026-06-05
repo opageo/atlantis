@@ -38,11 +38,12 @@ uv run atlantis fetch \
   --no-keep-processed --harmonise
 ```
 
-This streams VIIRS tiles from NOAA S3, classifies flood pixels, and writes only the final harmonised 1-arcmin GeoTIFF + PNG:
+This streams VIIRS tiles from NOAA S3, classifies flood pixels, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/`):
 
 ```
 harmonised/
   valencia_2024_2024-10-31_viirs_harmonised.tif   # uint8, 1 arcmin, flood % [0–100], nodata=255
+plots/
   valencia_2024_2024-10-31_viirs_harmonised.png
 ```
 
@@ -87,13 +88,14 @@ uv run atlantis harmonise \
 
 ### Output control
 
-| Flag                  | Default | Effect                                                              |
-| --------------------- | ------- | ------------------------------------------------------------------- |
-| `--classify`          | on      | Produce flood/quality/water binary masks instead of raw pixel codes |
-| `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                      |
-| `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF            |
-| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate 375 m files)      |
-| `--plot`              | off     | Save a PNG of the peak-flood date                                   |
+| Flag                  | Default | Effect                                                                                                                                                                                         |
+| --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--classify`          | on      | Produce flood/quality/water binary masks instead of raw pixel codes                                                                                                                            |
+| `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                                                                                                                                                 |
+| `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF                                                                                                                                       |
+| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate 375 m files)                                                                                                                                 |
+| `--plot`              | off     | Save a PNG of the peak-flood date                                                                                                                                                              |
+| `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). See [Strategies in detail](viirs_pipeline.md#strategies-in-detail-pixel-level). |
 
 ### Data access
 
@@ -146,12 +148,97 @@ VIIRS tiles (~20 MB each) are streamed directly from NOAA S3 via GDAL's `/vsicur
 
 ## Backends
 
-| Backend      | Description                                                 | Default |
-| ------------ | ----------------------------------------------------------- | ------- |
-| `noaa_s3`    | NOAA JPSS public S3 bucket (`noaa-jpss`) — 1-day composites | ✅      |
-| `gmu_legacy` | GMU legacy HTTP archive — 5-day composites                  |         |
+Both backends serve the same underlying science product — the **VIIRS Flood
+Mapping (VFM)** algorithm developed at George Mason University (Li & Sun) under
+the JPSS Proving Ground programme ([ATBD v1.0, 2021](https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf)).
+They differ in _who hosts the bytes_, _which compositing window_ is exposed, and
+_how the directory layout is structured_.
+
+| Backend      | Host & protocol                                                                             | Composite window | Default |
+| ------------ | ------------------------------------------------------------------------------------------- | ---------------- | ------- |
+| `noaa_s3`    | NOAA NODD public S3 bucket `s3://noaa-jpss/` (HTTPS, anonymous)                             | **1-day** global | ✅      |
+| `gmu_legacy` | GMU JPSS Flood archive `https://jpssflood.gmu.edu/downloads/pub/` (HTTP directory listings) | **5-day** global |         |
 
 Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
+
+### `noaa_s3` — NOAA JPSS on AWS (recommended)
+
+- **Source of truth** — NOAA Open Data Dissemination (NODD) programme, AWS registry entry [`noaa-jpss`](https://registry.opendata.aws/noaa-jpss/).
+- **Bucket / region** — `arn:aws:s3:::noaa-jpss` in `us-east-1`. Browse at [noaa-jpss.s3.amazonaws.com](https://noaa-jpss.s3.amazonaws.com/index.html).
+- **Atlantis path** — `JPSS_Blended_Products/VFM_1day_GLB/TIF/<YYYY>/<MM>/<DD>/`.
+- **Tile naming** — `VIIRS-Flood-1day-GLB<AOI>_v2r0_blend_s<start>_e<end>_c<created>.tif` (e.g. `GLB001`…`GLB145`). The `blend` token indicates blended Suomi-NPP + NOAA-20 observations.
+- **AOI grid** — 136 land-covering 10°×10° tiles defined by the VFM algorithm (see `src/atlantis/fetchers/viirs/data/viirs_aois.geojson`). On a typical day ~145 tile files are present (some AOIs split at the antimeridian).
+- **Spatial / temporal** — 375 m, EPSG:4326, uint8 pixel codes 0–200, daily global.
+- **Other VFM variants on the same bucket** — `VFM_5day_GLB/` (5-day composite), `VIIRS-ABI-Flood-Day/`, `VIIRS-ABI-Flood-Day-TIF/`, `VIIRS-ABI-Flood-Day-Shapefiles/` (VIIRS+GOES-ABI joint daytime product). Atlantis currently consumes only `VFM_1day_GLB/TIF/`.
+- **License** — open NOAA data (NODD terms of use; attribution requested).
+- **Streaming** — works end-to-end via GDAL `/vsicurl/` because S3 supports HTTP range reads.
+- **Docs** — [NOAA-Big-Data-Program/nodd-data-docs (JPSS)](https://github.com/NOAA-Big-Data-Program/nodd-data-docs/tree/main/JPSS).
+
+### `gmu_legacy` — George Mason University archive
+
+- **Source of truth** — Hosted by the same group that authored the VFM algorithm (Sanmei Li, Donglian Sun et al., George Mason University). This was the original public distribution point before the NOAA NODD migration.
+- **Atlantis path** — `https://jpssflood.gmu.edu/downloads/pub/<YYYYMMDD>/tif/`.
+- **Tile naming** — files matching `_005day_<AOI>.tif` or `_005day_<AOI>.tif.zip` (the `005day` token is the **5-day max-water-fraction composite**, used to suppress cloud and shadow contamination across the compositing window).
+- **AOI grid** — same 136 10°×10° AOI scheme as `noaa_s3`.
+- **Streaming** — _not supported_. `.zip`-packaged tiles and a plain HTML directory listing require the `--no-stream` (download-and-extract) path.
+- **Coverage** — the GMU site does not advertise its index; Atlantis does not declare published years and falls back to per-date probing. Reachability is best-effort: the host may be intermittently offline (it was unreachable at the time of writing).
+- **When to use it** — historical 5-day composites, or as a fallback for the years currently missing from NOAA S3 (see below). For modern operational use, prefer `noaa_s3`.
+
+### Data availability
+
+VIIRS coverage differs per backend. Atlantis queries the backend's published
+years before fetching and aborts early with an explanation if the requested
+window falls outside that range.
+
+| Backend      | Published calendar years (as of 2026-06) | Notes                                                                                                                                               |
+| ------------ | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noaa_s3`    | 2012–2020, 2023–2026                     | **2021 and 2022 are not published** on the public NOAA JPSS bucket. Verified via S3 listing of `JPSS_Blended_Products/VFM_1day_GLB/TIF/`.           |
+| `gmu_legacy` | Best-effort (not declared)               | The GMU archive does not enumerate cheaply; Atlantis attempts each requested date directly. May cover the 2021–2022 gap when the host is reachable. |
+
+The `noaa_s3` coverage set is read at runtime from `JPSS_Blended_Products/VFM_1day_GLB/<FORMAT>/`,
+so it will pick up new years automatically as NOAA publishes them. When a request
+targets a year that NOAA does not publish (e.g. the 2022 Pakistan floods), the
+CLI emits a clear diagnostic and suggests falling back to `--viirs-backend gmu_legacy`.
+
+#### Where are 2021 and 2022 on AWS?
+
+Nowhere. The 2021–2022 gap is **bucket-wide on the public NOAA mirror**, not specific to
+`VFM_1day_GLB/TIF`. We verified every plausible alternative S3 location and all
+exhibit the same gap:
+
+| Bucket / prefix                                                            | Years present        |
+| -------------------------------------------------------------------------- | -------------------- |
+| `s3://noaa-jpss/JPSS_Blended_Products/VFM_1day_GLB/{TIF,NETCDF,SHAPEZIP}/` | 2012–2020, 2023–2026 |
+| `s3://noaa-jpss/JPSS_Blended_Products/VFM_5day_GLB/{TIF,NETCDF,PNG}/`      | 2012–2020, 2023–2026 |
+| `s3://noaa-jpss/JPSS_Blended_Products/SNPP_DECOM/NetCDF/`                  | 2018–2020 only       |
+| `s3://noaa-jpss/JPSS_Blended_Products/VIIRS-ABI-Flood-Day*/` (3 variants)  | 2025–2026 only       |
+| `s3://noaa-nesdis-{n20,snpp}-pds/VIIRS_VFM_MWS_MOSAIC/`                    | 2024–2026 only       |
+
+For events in 2021–2022 the only routes are:
+
+- **GMU JPSS Flood archive** (`gmu_legacy` backend) — the historical
+  distribution at `jpssflood.gmu.edu`. The host is intermittently reachable;
+  retry from a non-cloud network if requests time out.
+- **NESDIS Product Distribution & Access** — authenticated portal at
+  <https://www.star.nesdis.noaa.gov/jpss/VIIRSflood.php>. Not yet wired into
+  Atlantis (account + credentials required).
+- **NOAA NCEI archive** — long-term mirror, requires manual ordering.
+
+**Pakistan 2022 — GMU Legacy backend example:**
+
+```bash
+uv run atlantis fetch \
+  --event Pakistan_2022 \
+  --source viirs \
+  --bbox "67.5 26 70 29.5" \
+  --start-date 2022-08-28 --end-date 2022-09-03 \
+  --viirs-backend gmu_legacy --no-stream \
+  --plot --harmonise --no-keep-processed \
+  --output ./data/Pakistan_2022
+```
+
+See [`CLI_Examples.md`](../CLI_Examples.md#viirs-availability-notes) for more
+details on backend selection.
 
 ## Output structure
 
@@ -167,11 +254,11 @@ Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
         <event_id>_<YYYYMMDD>_viirs_permanent_water.tif
         # --no-classify:
         <event_id>_<YYYYMMDD>_viirs_raw.tif
-      plots/        # with --plot
+      plots/        # with --plot, or with --harmonise (harmonised PNG goes here too)
         <event_id>_<YYYY-MM-DD>_viirs.png
+        <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
       harmonised/   # with --harmonise or --no-keep-processed
         <event_id>_<YYYY-MM-DD>_viirs_harmonised.tif
-        <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
 ```
 
 ## Output format
@@ -188,6 +275,119 @@ where 0 = no flood and 100 = fully flooded. This gives 1% precision while
 using 4× less disk space than float32.
 
 Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
+
+## Canonical 1-arcmin global grid
+
+Harmonised outputs are aligned to a **fixed global reference grid** so that
+every AOI we produce is a bit-for-bit subset of the same worldwide raster.
+The reference is the grid used by ECMWF's `Globe_flood_area_*.grb`
+(`s3://atlantis/`), shared with several other 1-arcmin global datasets
+(MERIT/CaMa-Flood, etc.).
+
+### What "1 arcmin on the global grid" means, intuitively
+
+- **Pixel size.** 1 arcminute = `1/60°`. So one pixel spans `0.01666…°` in
+  both latitude and longitude — about **1.85 km × 1.85 km** at the equator.
+- **Grid extent.** The whole globe is tiled by `Nj × Ni = 10 800 × 21 600 =
+~233 million` pixels.
+- **Pixel-is-area, not pixel-is-point.** Each pixel covers a 1×1 arcmin
+  square on the ground. By convention we describe a pixel by its **centre**:
+  the cell at column `i`, row `j` has centre
+
+  $$
+  \text{lon}_i = -180\degree + (i + \tfrac{1}{2}) / 60, \qquad
+  \text{lat}_j = +90\degree - (j + \tfrac{1}{2}) / 60.
+  $$
+
+  So the first column's centre is `-179.99166…°`, the last is
+  `+179.99166…°`; latitudes go top-down from `+89.99166…°` to
+  `-89.99166…°`. This matches the spec your colleague shared.
+
+- **Why "snapping" matters.** A user-supplied AOI bbox almost never lines
+  up with this grid. If we just resample to the AOI bounds, our output
+  pixel centres land at fractional offsets like `-0.85166…°` instead of
+  the canonical `-0.85833…°` — close, but **not stackable** with the
+  global product. Snapping fixes this by extending the AOI outward to the
+  nearest cell edges of the global grid before resampling.
+- **Result.** After snapping, our AOI window is a contiguous slice of the
+  global grid: `globe.isel(lat=slice(j0, j1), lon=slice(i0, i1))` and our
+  harmonised raster cover the **same pixels**, byte-for-byte. Cross-product
+  overlay (VIIRS vs `Globe_flood_area`, MERIT topography, etc.) becomes a
+  trivial array subset, no resampling required.
+
+### How it is implemented
+
+This is enabled by default on every `--harmonise` run; you do not need to
+pass any flag. See [`HarmoniseConfig`](../src/atlantis/config.py) for the
+three knobs and [`Reprojector._snap_bounds_to_global_grid`](../src/atlantis/harmoniser/reprojector.py)
+for the snap maths.
+
+| Config field             | Default      | Meaning                                                                          |
+| ------------------------ | ------------ | -------------------------------------------------------------------------------- |
+| `target_resolution`      | `1/60` (deg) | Pixel size; `0.0166666…°` = exactly 1 arcmin.                                    |
+| `snap_to_global_grid`    | `True`       | Snap AOI bounds to the canonical grid before resampling. Set `False` to disable. |
+| `global_grid_origin_lon` | `-180.0`     | Western edge anchor.                                                             |
+| `global_grid_origin_lat` | `+90.0`      | Northern edge anchor.                                                            |
+
+Override via env vars (`ATLANTIS_SNAP_TO_GLOBAL_GRID=false`,
+`ATLANTIS_TARGET_RESOLUTION=…`) or programmatically through `HarmoniseConfig`.
+
+### Snap algorithm in one paragraph
+
+For an AOI `(west, south, east, north)` and resolution `r = 1/60°`, we
+extend the bounds **outward** to the nearest multiple of `r` from the
+origins:
+
+```
+west_snap  = -180 + floor(( west + 180) / r) * r
+east_snap  = -180 +  ceil(( east + 180) / r) * r
+north_snap = +90  - floor(( 90  - north) / r) * r
+south_snap = +90  -  ceil(( 90  - south) / r) * r
+```
+
+(then clipped to `[-180, 180] × [-90, 90]`). The number of pixels is
+`(east_snap − west_snap) / r` × `(north_snap − south_snap) / r`, all
+integers; pixel centres are exactly `±(k + 0.5) / 60`.
+
+### Verifying alignment
+
+The notebook [`notebooks/drafts/verify_global_grid.ipynb`](../notebooks/drafts/verify_global_grid.ipynb)
+walks through the verification end-to-end:
+
+1. Streams ~200 MiB (one full message) of `Globe_flood_area_202208.grb`
+   from `s3://atlantis/` using `aws s3api get-object --range`, then reads
+   its grid definition with the `eccodes` Python API. Confirms `Ni=21600`,
+   `Nj=10800`, `di=dj=1/60°`. (Note: GRIB stores longitudes in `[0, 360)`,
+   so its first lon reads as `180.008°`, which is the same pixel as
+   `-179.992°` in the `±180°` convention we use.)
+2. Numerically proves that `Reprojector._snap_bounds_to_global_grid`
+   maps an off-grid AOI (`-0.86, 8.26, 1.99, 11.73`) to a contiguous
+   window of the global grid: `lon[10748:10920], lat[4696:4905]`.
+3. Runs the full `Harmoniser` on a synthetic dataset and verifies that
+   every output pixel centre satisfies `(lon + 180) × 60 − 0.5 ∈ ℤ` and
+   `(90 − lat) × 60 − 0.5 ∈ ℤ` (deviation `< 1e-12`).
+
+### Quick check on any harmonised file
+
+```python
+import rasterio
+
+RES = 1 / 60
+LON0, LAT0 = -180.0, 90.0
+
+with rasterio.open("…_viirs_harmonised.tif") as src:
+    t = src.transform
+    cx0 = t.a * 0.5 + t.c          # first pixel centre, lon
+    cy0 = t.e * 0.5 + t.f          # first pixel centre, lat
+    kx = (cx0 - LON0) / RES - 0.5  # must be an integer
+    ky = (LAT0 - cy0) / RES - 0.5
+    print(f"pixel size : {t.a:.12f} (= 1/60: {RES:.12f})")
+    print(f"on-grid    : kx={kx:.3e}, ky={ky:.3e}  (≈0 means aligned)")
+```
+
+For a West Africa AOI fetched with the default settings this prints
+`kx=10748.000000, ky=4696.000000` — the AOI is rows 4696–4904 and
+columns 10748–10919 of the global grid.
 
 ## Tips
 

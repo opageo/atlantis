@@ -233,6 +233,7 @@ data/
 *.pdf
 docs/*.txt
 docs/viirs_atbd.md
+.DS_Store
 
 .ignore
 assets/kurosiwo/**

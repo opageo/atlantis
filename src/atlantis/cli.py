@@ -6,7 +6,6 @@ from pathlib import Path
 import typer
 from rasterio.enums import Resampling
 from rich.console import Console
-from rich.table import Table
 
 from atlantis.config import HarmoniseConfig, get_config
 
@@ -29,6 +28,19 @@ from atlantis.utils.plot import (
     plot_classified,
     plot_raw,
 )
+from atlantis.utils.ui import (
+    command_header,
+    console,
+    fail,
+    file_tree,
+    info,
+    make_progress,
+    ok,
+    section_rule,
+    step_status,
+    summary_table,
+    warn,
+)
 
 cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.", pretty_exceptions_enable=False)
 console = Console()
@@ -41,24 +53,87 @@ def _viirs_date_label(result: FetchResult) -> str:
     """Human-readable date label for a VIIRS fetch result."""
     if result.date_token:
         token = result.date_token
-        return f"{token[:4]}-{token[4:6]}-{token[6:8]}"
+        # Only format as YYYY-MM-DD if the token is an 8-digit date string.
+        # Special tokens like "aggregated" are returned as-is.
+        if len(token) == 8 and token.isdigit():
+            return f"{token[:4]}-{token[4:6]}-{token[6:8]}"
+        return token
     if result.files:
         return date_from_filename(result.files[0].name)
     return "unknown"
 
 
 def _report_viirs_fetch_writes(fetch_results: list[FetchResult], *, keep_processed: bool) -> None:
-    """Print what the VIIRS fetcher persisted (disk vs in-memory peak date)."""
+    """Print what the VIIRS fetcher persisted (disk vs in-memory composite/peak date)."""
     disk_files = sum(len(result.files) for result in fetch_results)
     if disk_files:
-        console.print(f"[bold]  Wrote {disk_files} files[/bold]")
-        for result in fetch_results:
-            for path in result.files:
-                console.print(f"  - {path}")
+        ok(f"Wrote {disk_files} files")
+        all_paths = [path for result in fetch_results for path in result.files]
+        console.print(file_tree("viirs", all_paths))
         return
     if fetch_results and not keep_processed:
         label = _viirs_date_label(fetch_results[0])
-        console.print(f"[bold]  Peak-flood date {label}: processed in memory (no processed/ GeoTIFFs)[/bold]")
+        if label == "aggregated":
+            info("Aggregated composite: processed in memory (no processed/ GeoTIFFs)")
+        else:
+            info(f"Peak-flood date {label}: processed in memory (no processed/ GeoTIFFs)")
+
+
+def _report_empty_fetch(source_id: str, fetcher) -> None:
+    """Explain why a fetcher returned no results, using diagnostics when available.
+
+    Generic fetchers fall back to the previous one-line message; VIIRS exposes
+    structured diagnostics via :attr:`VIIRSFetcher.last_diagnostics` and we
+    translate them into actionable guidance here.
+    """
+    diagnostics = getattr(fetcher, "last_diagnostics", None)
+    if diagnostics is None:
+        warn("No files were fetched")
+        return
+
+    warn("No files were fetched.")
+    if diagnostics.missing_aoi_coverage:
+        warn("Reason: event bbox does not intersect any packaged VIIRS AOI.")
+        info("Hint: VIIRS AOIs cover ±60° latitude on a fixed global grid. Widen the bbox or verify the coordinates.")
+        return
+
+    if diagnostics.year_coverage_gap:
+        published = (
+            ", ".join(str(y) for y in sorted(diagnostics.available_years)) if diagnostics.available_years else "unknown"
+        )
+        requested = ", ".join(str(y) for y in sorted(diagnostics.requested_years))
+        warn(f"Reason: backend '{diagnostics.backend}' does not publish data for the requested year(s) ({requested}).")
+        info(f"Published years on this backend: {published}")
+        if diagnostics.backend == "noaa_s3":
+            info(
+                "Hint: try --viirs-backend gmu_legacy for legacy years (2021–2022), or pick "
+                "an event in a published year."
+            )
+        return
+
+    if diagnostics.listings_all_empty:
+        warn(
+            f"Reason: backend '{diagnostics.backend}' returned no listings for any of "
+            f"the {diagnostics.dates_probed} requested date(s)."
+        )
+        info(
+            "Hint: the bucket is up but the daily prefixes are empty for this window. Try "
+            "broadening --start-date/--end-date or switching --viirs-backend."
+        )
+        return
+
+    if diagnostics.no_aoi_match_in_listings:
+        warn(
+            f"Reason: {diagnostics.dates_with_listings} date(s) had listings, but none "
+            f"contained tiles for the {diagnostics.aoi_count} intersecting AOI(s)."
+        )
+        info("Hint: the AOIs intersecting this bbox were not produced for the requested dates.")
+        return
+
+    warn(
+        f"Reason: backend '{diagnostics.backend}' produced no processable tiles "
+        f"({diagnostics.result_count} search results across {diagnostics.dates_probed} date(s))."
+    )
 
 
 def _select_best_result(
@@ -120,14 +195,16 @@ def _harmonise_viirs(
     date_label,
     *,
     harm_dir,
+    plot_dir,
 ):
-    """Reproject + normalise and save harmonised GeoTIFF + PNG.
+    """Reproject + normalise and save harmonised GeoTIFF (in ``harm_dir``) + PNG (in ``plot_dir``).
 
     Returns the xarray Dataset produced by the harmoniser for downstream use.
     """
     from atlantis.harmoniser import Harmoniser
 
     harm_dir.mkdir(parents=True, exist_ok=True)
+    plot_dir.mkdir(parents=True, exist_ok=True)
     h = Harmoniser()
     ds_harm = h.harmonise(best_ds, source_id="viirs")
     flood_var = "flood_fraction" if "flood_fraction" in ds_harm else list(ds_harm.data_vars)[0]
@@ -136,7 +213,7 @@ def _harmonise_viirs(
     write_harmonised_raster(ds_harm[flood_var], tif_path)
     console.print(f"  Harmonised → {tif_path.name}")
 
-    png_harm_path = harm_dir / f"{event_id}_{date_label}_viirs_harmonised.png"
+    png_harm_path = plot_dir / f"{event_id}_{date_label}_viirs_harmonised.png"
     if flood_var == "flood_fraction":
         plot_classified(
             ds_harm[flood_var],
@@ -330,8 +407,7 @@ def fetch(
     else:
         sources = [source]
 
-    console.print(f"[bold]Fetching data for event:[/bold] {event}")
-    console.print(f"[bold]Sources:[/bold] {', '.join(sources)}")
+    command_header("fetch", subtitle=f"{event} · sources={', '.join(sources)}")
     console.print(f"[bold]Output:[/bold] {output_dir}")
 
     flood_event: FloodEvent | None = None
@@ -349,7 +425,7 @@ def fetch(
     for src in sources:
         try:
             fetcher_cls = get_fetcher(src)
-            console.print(f"\n[cyan]Fetching from {src}...[/cyan]")
+            section_rule(src)
             fetcher_kwargs = {}
             if src == "viirs":
                 fetcher_kwargs = {
@@ -369,26 +445,22 @@ def fetch(
                 }
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
-                console.print(
-                    "[yellow]  Event catalogue lookup not yet implemented; "
-                    "provide --bbox/--start-date/--end-date[/yellow]"
-                )
+                warn("Event catalogue lookup not yet implemented; provide --bbox/--start-date/--end-date")
                 continue
 
-            fetch_results = fetcher.fetch(flood_event, output_dir / src)
+            with step_status(f"Fetching {src} tiles…"):
+                fetch_results = fetcher.fetch(flood_event, output_dir / src)
             if not fetch_results:
-                console.print("[yellow]  No files were fetched[/yellow]")
+                _report_empty_fetch(src, fetcher)
                 continue
 
             if src == "viirs":
                 _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
-            elif src == "gfm":
-                _report_gfm_fetch(fetch_results)
             else:
-                console.print(f"[bold]  Wrote {sum(len(result.files) for result in fetch_results)} files[/bold]")
-                for result in fetch_results:
-                    for path in result.files:
-                        console.print(f"  - {path}")
+                n = sum(len(result.files) for result in fetch_results)
+                ok(f"Wrote {n} files")
+                all_paths = [path for result in fetch_results for path in result.files]
+                console.print(file_tree(src, all_paths))
 
             # ── Optional plot + harmonise (GFM) ─────────────────────────
             if src == "gfm" and (plot or harmonise):
@@ -408,35 +480,44 @@ def fetch(
                 if strategy == "peak":
                     best_result, best_date_label = _select_best_result(fetcher, fetch_results)
                     best_ds = fetcher.to_dataset(best_result)
+                    png_dir = plot_dir or (output_dir / src / "plots")
                     if plot:
-                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{best_date_label}_viirs.png"
-                        _plot_viirs(best_ds, event, best_date_label, output_png_path=png_out)
+                        png_out = png_dir / f"{event}_{best_date_label}_viirs.png"
+                        with step_status("Plotting…"):
+                            _plot_viirs(best_ds, event, best_date_label, output_png_path=png_out)
                     if harmonise:
                         harm_dir = output_dir / src / "harmonised"
-                        _harmonise_viirs(best_ds, event, best_date_label, harm_dir=harm_dir)
+                        with step_status("Harmonising…"):
+                            _harmonise_viirs(best_ds, event, best_date_label, harm_dir=harm_dir, plot_dir=png_dir)
 
                 elif strategy == "aggregate":
                     ds = fetcher.to_dataset(fetch_results[0])
                     label = "aggregated"
+                    png_dir = plot_dir or (output_dir / src / "plots")
                     if plot:
-                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{label}_viirs.png"
-                        _plot_viirs(ds, event, label, output_png_path=png_out)
+                        png_out = png_dir / f"{event}_{label}_viirs.png"
+                        with step_status("Plotting…"):
+                            _plot_viirs(ds, event, label, output_png_path=png_out)
                     if harmonise:
                         harm_dir = output_dir / src / "harmonised"
-                        _harmonise_viirs(ds, event, label, harm_dir=harm_dir)
+                        with step_status("Harmonising…"):
+                            _harmonise_viirs(ds, event, label, harm_dir=harm_dir, plot_dir=png_dir)
 
                 elif strategy == "all":
                     for result in fetch_results:
                         date_label = _viirs_date_label(result)
                         ds = fetcher.to_dataset(result)
+                        png_dir = plot_dir or (output_dir / src / "plots")
                         if plot:
-                            png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{date_label}_viirs.png"
-                            _plot_viirs(ds, event, date_label, output_png_path=png_out)
+                            png_out = png_dir / f"{event}_{date_label}_viirs.png"
+                            with step_status(f"Plotting {date_label}…"):
+                                _plot_viirs(ds, event, date_label, output_png_path=png_out)
                         if harmonise:
                             harm_dir = output_dir / src / "harmonised"
-                            _harmonise_viirs(ds, event, date_label, harm_dir=harm_dir)
+                            with step_status(f"Harmonising {date_label}…"):
+                                _harmonise_viirs(ds, event, date_label, harm_dir=harm_dir, plot_dir=png_dir)
         except KeyError:
-            console.print(f"[red]Error: Unknown source '{src}'[/red]")
+            fail(f"Unknown source '{src}'")
 
 
 @cli.command("fetch-kurosiwo-viirs")
@@ -567,53 +648,94 @@ def fetch_kurosiwo_viirs(
         keep_processed=keep_processed,
     )
 
+    command_header(
+        "fetch-kurosiwo-viirs",
+        subtitle=f"{len(events)} case(s) · backend={viirs_backend}",
+    )
     console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_source_label}")
     console.print(f"[bold]Cases selected:[/bold] {len(events)}")
     console.print(f"[bold]Output root:[/bold] {output_root}")
 
     total_files = 0
     failures: list[tuple[str, str]] = []
+    # summary rows: [case, status, files, peak_date, harmonised]
+    summary_rows: list[list[str]] = []
 
     actual_harmonise = harmonise
 
-    for event in events:
-        console.print(
-            f"\n[cyan]Fetching {event.event_id}[/cyan] ({event.start_date.isoformat()} -> {event.end_date.isoformat()})"
-        )
-        event_viirs_dir = output_root / event.event_id / "viirs"
-        try:
-            fetch_results = fetcher.fetch(event, event_viirs_dir)
-        except Exception as exc:  # pragma: no cover - exercised in real fetch runs
-            failures.append((event.event_id, str(exc)))
-            console.print(f"[red]  Failed: {exc}[/red]")
-            continue
+    with make_progress() as progress:
+        task = progress.add_task("[cyan]Cases[/cyan]", total=len(events))
 
-        _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
-        written = sum(len(result.files) for result in fetch_results)
-        total_files += written
-        has_in_memory = any(result.dataset is not None for result in fetch_results)
-        if written == 0 and not has_in_memory:
-            console.print("[yellow]  No VIIRS files found for this case[/yellow]")
-            continue
+        for event in events:
+            progress.console.print(
+                f"\n[cyan]Fetching {event.event_id}[/cyan] "
+                f"({event.start_date.isoformat()} → {event.end_date.isoformat()})"
+            )
+            event_viirs_dir = output_root / event.event_id / "viirs"
+            try:
+                with step_status(f"  Fetching tiles for {event.event_id}…"):
+                    fetch_results = fetcher.fetch(event, event_viirs_dir)
+            except Exception as exc:  # pragma: no cover - exercised in real fetch runs
+                failures.append((event.event_id, str(exc)))
+                progress.console.print(f"[bold red]✗[/bold red]  Failed: {exc}")
+                summary_rows.append([event.event_id, "[red]✗ failed[/red]", "0", "—", "—"])
+                progress.advance(task)
+                continue
 
-        # ── Per-date stats + best-date selection ──────────────────────────
-        if plot or actual_harmonise:
-            best_result, best_date_label = _select_best_result(fetcher, fetch_results)
-            best_ds = fetcher.to_dataset(best_result)
+            _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
+            written = sum(len(result.files) for result in fetch_results)
+            total_files += written
+            has_in_memory = any(result.dataset is not None for result in fetch_results)
+            if written == 0 and not has_in_memory:
+                warn("No VIIRS files found for this case")
+                summary_rows.append([event.event_id, "[yellow]⚠ empty[/yellow]", "0", "—", "—"])
+                progress.advance(task)
+                continue
 
-            if plot:
+            peak_label = "—"
+            harmonised_label = "—"
+
+            # ── Per-date stats + best-date selection ──────────────────────────
+            if plot or actual_harmonise:
+                best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+                best_ds = fetcher.to_dataset(best_result)
+                peak_label = best_date_label
                 png_dir = plot_dir or (event_viirs_dir / "plots")
-                png_path = png_dir / f"{event.event_id}_{best_date_label}_viirs.png"
-                _plot_viirs(best_ds, event.event_id, best_date_label, output_png_path=png_path)
 
-            if actual_harmonise:
-                harm_dir = event_viirs_dir / "harmonised"
-                _harmonise_viirs(best_ds, event.event_id, best_date_label, harm_dir=harm_dir)
+                if plot:
+                    png_path = png_dir / f"{event.event_id}_{best_date_label}_viirs.png"
+                    with step_status(f"  Plotting {best_date_label}…"):
+                        _plot_viirs(best_ds, event.event_id, best_date_label, output_png_path=png_path)
+
+                if actual_harmonise:
+                    harm_dir = event_viirs_dir / "harmonised"
+                    with step_status(f"  Harmonising {best_date_label}…"):
+                        _harmonise_viirs(best_ds, event.event_id, best_date_label, harm_dir=harm_dir, plot_dir=png_dir)
+                    harmonised_label = "✓"
+
+            summary_rows.append(
+                [
+                    event.event_id,
+                    "[green]✓ ok[/green]",
+                    str(written) if written else ("mem" if has_in_memory else "0"),
+                    peak_label,
+                    harmonised_label,
+                ]
+            )
+            progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
+    if summary_rows:
+        console.print(
+            summary_table(
+                "KuroSiwo VIIRS — run summary",
+                ["Case", "Status", "Files", "Peak date", "Harmonised"],
+                summary_rows,
+            )
+        )
     if failures:
         for failed_case, message in failures:
-            console.print(f"[red]- {failed_case}: {message}[/red]")
+            fail(f"{failed_case}: {message}")
         raise typer.Exit(code=1)
 
 
@@ -637,8 +759,9 @@ def build_kurosiwo_metadata(
         output_path: Destination path for the derived metadata CSV.
     """
     written_path = write_kurosiwo_metadata_csv(catalogue_path, output_path)
+    command_header("build-kurosiwo-metadata")
     console.print(f"[bold]KuroSiwo catalogue:[/bold] {catalogue_path}")
-    console.print(f"[bold]Metadata CSV written:[/bold] {written_path}")
+    ok(f"Metadata CSV written: {written_path}")
 
 
 @cli.command()
@@ -672,7 +795,7 @@ def harmonise(
     output_root = output_dir or config.fetcher.cache_dir / "harmonised" / event
 
     if not input_root.exists():
-        console.print(f"[yellow]Default input not found: {input_root}[/yellow]")
+        warn(f"Default input not found: {input_root}")
 
     # ── Build harmoniser with optional overrides ──────────────────────
     if target_resolution is not None or resampling is not None:
@@ -727,7 +850,7 @@ def harmonise(
             break
 
     if not tif_files:
-        console.print(f"[red]No processed VIIRS files found matching '{event}'[/red]")
+        fail(f"No processed VIIRS files found matching '{event}'")
         console.print("  Tried: cache dir, scripts/data/, and repository root.")
         console.print("  Run 'atlantis fetch' first, or use --input to point to existing data.")
         raise typer.Exit(code=1)
@@ -736,6 +859,7 @@ def harmonise(
     output_path.mkdir(parents=True, exist_ok=True)
 
     resolution_str = f"{harmoniser.config.target_resolution_arcmin} arcmin"
+    command_header("harmonise", subtitle=f"{event} · {source} · {resolution_str}")
     console.print(f"[bold]Harmonising {len(tif_files)} file(s)[/bold]")
     console.print(f"[bold]Input:[/bold] {processed_dir}")
     console.print(f"[bold]Output:[/bold] {output_path}")
@@ -743,29 +867,33 @@ def harmonise(
     console.print(f"[bold]Resampling:[/bold] {harmoniser.config.resampling}")
 
     if dry_run:
+        dry_rows = []
         for tf in tif_files:
             stem = tf.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
             out = output_path / f"{stem}.tif"
-            console.print(f"  Would process: {tf.name} → {out.name}")
+            dry_rows.append([tf.name, out.name])
+        console.print(summary_table("Dry run — would process", ["Input file", "Output file"], dry_rows))
         return
 
     harmonised_count = 0
-    for tif_path in tif_files:
-        # Determine if this is flood_fraction, raw, or quality_mask
-        input_var = "flood_fraction" if "flood_fraction" in tif_path.name else "raw"
-        stem = tif_path.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
-        out_path = output_path / f"{stem}.tif"
+    with make_progress() as progress:
+        task = progress.add_task("[cyan]Harmonising[/cyan]", total=len(tif_files))
+        for tif_path in tif_files:
+            # Determine if this is flood_fraction, raw, or quality_mask
+            input_var = "flood_fraction" if "flood_fraction" in tif_path.name else "raw"
+            stem = tif_path.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
+            out_path = output_path / f"{stem}.tif"
 
-        console.print(f"  Processing: {tif_path.name} ...", end="")
-        ds = rxr.open_rasterio(tif_path).squeeze(drop=True).to_dataset(name=input_var)
-        ds_harmonised = harmoniser.harmonise(ds, source_id=source, flood_variable=input_var)
+            progress.update(task, description=f"[cyan]Harmonising[/cyan] {tif_path.name}")
+            ds = rxr.open_rasterio(tif_path).squeeze(drop=True).to_dataset(name=input_var)
+            ds_harmonised = harmoniser.harmonise(ds, source_id=source, flood_variable=input_var)
 
-        flood_var = input_var if input_var in ds_harmonised.data_vars else "flood_fraction"
-        write_harmonised_raster(ds_harmonised[flood_var], out_path)
-        harmonised_count += 1
-        console.print(f" done → {out_path.name}")
+            flood_var = input_var if input_var in ds_harmonised.data_vars else "flood_fraction"
+            write_harmonised_raster(ds_harmonised[flood_var], out_path)
+            harmonised_count += 1
+            progress.advance(task)
 
-    console.print(f"\n[bold]Wrote {harmonised_count} harmonised file(s) to {output_path}[/bold]")
+    ok(f"Wrote {harmonised_count} harmonised file(s) to {output_path}")
 
 
 @cli.command()
@@ -786,6 +914,7 @@ def archive(
     config = get_config()
     archive_root = archive_root or config.archive.archive_root
 
+    command_header("archive", subtitle=f"{event} · {source or 'all'}")
     console.print(f"[bold]Archiving event:[/bold] {event}")
     console.print(f"[bold]Archive root:[/bold] {archive_root}")
 
@@ -795,11 +924,11 @@ def archive(
         console.print("[bold]Source:[/bold] all available")
 
     if raw_only:
-        console.print("[yellow]Writing raw archive only[/yellow]")
+        info("Writing raw archive only")
     else:
-        console.print("[yellow]Writing raw + ML-ready archives...[/yellow]")
+        info("Writing raw + ML-ready archives")
 
-    console.print("[yellow]Archive writing not yet implemented[/yellow]")
+    warn("Archive writing not yet implemented")
 
 
 @cli.command()
@@ -820,6 +949,7 @@ def validate(
     config = get_config()
     archive_root = archive_root or config.archive.archive_root
 
+    command_header("validate")
     console.print(f"[bold]Validating archive:[/bold] {archive_root}")
 
     if event:
@@ -833,31 +963,24 @@ def validate(
         console.print("[bold]Source:[/bold] all")
 
     if check_ml:
-        console.print("[cyan]ML validation: enabled[/cyan]")
+        info("ML validation: enabled")
 
-    console.print("[yellow]Validation not yet implemented[/yellow]")
+    warn("Validation not yet implemented")
 
 
 @cli.command("list-sources")
 def list_sources_cmd() -> None:
     """List all available data sources."""
     sources = list_fetchers()
-
-    table = Table(title="Available Data Sources")
-    table.add_column("Name", style="cyan")
-    table.add_column("Description", style="white")
+    command_header("list-sources")
 
     source_descriptions = {
         "gfm": "Global Flood Monitor (STAC/EODC)",
         "viirs": "VIIRS Flood Detection (NOAA)",
         "rfm": "Regional Flood Model (Phase C)",
     }
-
-    for src in sources:
-        description = source_descriptions.get(src, "No description")
-        table.add_row(src, description)
-
-    console.print(table)
+    rows = [[src, source_descriptions.get(src, "No description")] for src in sources]
+    console.print(summary_table("Available Data Sources", ["Name", "Description"], rows))
 
 
 @cli.command()
@@ -880,6 +1003,7 @@ def setup(
     """
     from atlantis.utils.setup import run_setup
 
+    command_header("setup")
     success = run_setup(auto_fix=not check_only, output=console, update_hashes=update_hashes)
     if not success:
         raise typer.Exit(code=1)
@@ -917,7 +1041,7 @@ def demo(
     # Pre-flight: check assets are present
     missing = get_missing_assets()
     if missing:
-        console.print("[red]Cannot run demo — required assets are missing:[/red]")
+        fail("Cannot run demo — required assets are missing:")
         for item in missing:
             console.print(f"  - {item}")
         console.print("\nRun [bold]uv run atlantis setup[/bold] first.")
@@ -926,7 +1050,7 @@ def demo(
     out = output_dir or Path("data/Valencia_2024")
     out.mkdir(parents=True, exist_ok=True)
 
-    console.print("[bold]Valencia 2024 demo[/bold]\n")
+    command_header("demo", subtitle="Valencia 2024 flood")
 
     event = FloodEvent(
         event_id="Valencia_2024",
@@ -950,10 +1074,10 @@ def demo(
     console.print(f"[bold]Dates:[/bold] {event.start_date} → {event.end_date}")
     console.print(f"[bold]Output:[/bold] {out}\n")
 
-    console.print("[cyan]Fetching VIIRS tiles...[/cyan]")
-    fetch_results = fetcher.fetch(event, viirs_dir)
+    with step_status("Fetching VIIRS tiles…"):
+        fetch_results = fetcher.fetch(event, viirs_dir)
     if not fetch_results:
-        console.print("[yellow]No VIIRS data found for this region/date range.[/yellow]")
+        warn("No VIIRS data found for this region/date range.")
         raise typer.Exit(code=1)
 
     _report_viirs_fetch_writes(fetch_results, keep_processed=True)
@@ -963,18 +1087,37 @@ def demo(
     best_ds = fetcher.to_dataset(best_result)
 
     # Plot
-    plot_dir = viirs_dir / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    png_path = plot_dir / f"Valencia_2024_{best_date_label}_viirs.png"
-    _plot_viirs(best_ds, "Valencia_2024", best_date_label, output_png_path=png_path)
+    plot_dir_path = viirs_dir / "plots"
+    plot_dir_path.mkdir(parents=True, exist_ok=True)
+    png_path = plot_dir_path / f"Valencia_2024_{best_date_label}_viirs.png"
+    with step_status("Plotting peak-flood date…"):
+        _plot_viirs(best_ds, "Valencia_2024", best_date_label, output_png_path=png_path)
 
     # Harmonise
     if harmonise:
         harm_dir = viirs_dir / "harmonised"
-        _harmonise_viirs(best_ds, "Valencia_2024", best_date_label, harm_dir=harm_dir)
+        with step_status("Harmonising to 1 arcmin…"):
+            _harmonise_viirs(
+                best_ds,
+                "Valencia_2024",
+                best_date_label,
+                harm_dir=harm_dir,
+                plot_dir=plot_dir_path,
+            )
 
-    console.print("\n[bold][green]Demo complete![/green][/bold]")
-    console.print(f"  Output: {out}")
+    console.print("")
+    ok("Demo complete!")
+    from atlantis.utils.ui import file_tree as _ft
+
+    if harmonise:
+        output_files = [
+            png_path,
+            harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
+            plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
+        ]
+    else:
+        output_files = [png_path]
+    console.print(_ft(str(out), output_files))
 
 
 @cli.command("list-events")
@@ -989,10 +1132,9 @@ def list_events_cmd(
     config = get_config()
     archive_root = archive_root or config.archive.archive_root
 
+    command_header("list-events")
     console.print(f"[bold]Archive:[/bold] {archive_root}")
-
-    # TODO: Implement event listing
-    console.print("[yellow]No events found (archive not yet implemented)[/yellow]")
+    warn("No events found (archive not yet implemented)")
 
 
 if __name__ == "__main__":

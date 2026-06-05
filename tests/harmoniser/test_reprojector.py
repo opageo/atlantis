@@ -140,3 +140,93 @@ class TestResolveResampling:
     def test_invalid_method(self):
         with pytest.raises(ValueError, match="Unsupported resampling method"):
             _resolve_resampling("invalid_method")
+
+
+class TestSnapToGlobalGrid:
+    """Verify snapping of AOI bounds onto the canonical 1-arcmin global grid.
+
+    The reference grid (e.g. ECMWF ``Globe_flood_area_*.grb``) has dims
+    ``lat=10800, lon=21600`` with pixel centres at ``\u00b1(k + 0.5)/60``
+    degrees, i.e. anchored at western edge ``-180`` and northern edge ``+90``.
+    """
+
+    RES = 1.0 / 60.0
+    LON0 = -180.0
+    LAT0 = 90.0
+
+    def test_snap_offgrid_window_extends_outward(self):
+        """A bbox not on the grid is extended outward to the nearest cell edges."""
+        r = Reprojector(target_resolution=self.RES)
+        # West Africa-like bbox, intentionally off-grid by sub-arcmin.
+        west, south, east, north = r._snap_bounds_to_global_grid(-0.86, 8.26, 1.99, 11.73)
+
+        # Snapped values must lie exactly on multiples of RES from origins.
+        for v, origin in [
+            (west - self.LON0, "west"),
+            (east - self.LON0, "east"),
+        ]:
+            assert v / self.RES == pytest.approx(round(v / self.RES), abs=1e-9), origin
+        for v, origin in [
+            (self.LAT0 - north, "north"),
+            (self.LAT0 - south, "south"),
+        ]:
+            assert v / self.RES == pytest.approx(round(v / self.RES), abs=1e-9), origin
+
+        # Outward expansion only.
+        assert west <= -0.86
+        assert south <= 8.26
+        assert east >= 1.99
+        assert north >= 11.73
+
+    def test_snapped_pixel_centres_match_canonical(self):
+        """After snapping, pixel centres equal -180+(k+0.5)/60 and 90-(j+0.5)/60."""
+        ds = _make_test_dataset(width=10, height=10, res=0.004, west=-0.86, north=11.73)
+        r = Reprojector(target_resolution=self.RES, snap_to_global_grid=True)
+        ds_out = r.reproject(ds)
+
+        x = ds_out["x"].values
+        y = ds_out["y"].values
+
+        # Each x must be -180 + (k+0.5)/60 for some integer k.
+        kx = (x - self.LON0) / self.RES - 0.5
+        ky = (self.LAT0 - y) / self.RES - 0.5
+        np.testing.assert_allclose(kx, np.round(kx), atol=1e-9)
+        np.testing.assert_allclose(ky, np.round(ky), atol=1e-9)
+
+        # Pixel size in the output transform equals exactly 1/60.
+        assert ds_out.attrs["target_resolution"] == pytest.approx(self.RES, abs=1e-12)
+
+    def test_snap_disabled_preserves_aoi_bounds(self):
+        """With snapping off, output bounds match the input AOI."""
+        ds = _make_test_dataset(width=10, height=10, res=0.004, west=-0.86, north=11.73)
+        r = Reprojector(target_resolution=self.RES, snap_to_global_grid=False)
+        ds_out = r.reproject(ds)
+
+        # First pixel centre = west + 0.5 * pixel_size; should NOT be on the canonical grid.
+        first_x = float(ds_out["x"].values[0])
+        kx = (first_x - self.LON0) / self.RES - 0.5
+        assert abs(kx - round(kx)) > 1e-3  # genuinely off the grid
+
+    def test_snap_skipped_for_non_geographic_crs(self):
+        """Snapping is a lat/lon construct; it must not engage for projected CRS."""
+        r = Reprojector(
+            target_crs="EPSG:3857",
+            target_resolution=250.0,
+            snap_to_global_grid=True,
+        )
+        # The helper itself is only invoked for EPSG:4326; calling reproject
+        # with a 4326 dataset against a 3857 target should not touch the
+        # global-grid path, so this just checks the gate in reproject() does
+        # not raise. (We exercise the public path.)
+        ds = _make_test_dataset(width=10, height=10, res=0.004)
+        ds_out = r.reproject(ds)
+        assert ds_out["flood_extent"].size > 0
+
+    def test_snap_clips_to_global_extent(self):
+        """Snapped bounds never exceed the global lat/lon extent."""
+        r = Reprojector(target_resolution=self.RES)
+        west, south, east, north = r._snap_bounds_to_global_grid(-179.99, -89.99, 179.99, 89.99)
+        assert west >= -180.0
+        assert east <= 180.0
+        assert south >= -90.0
+        assert north <= 90.0

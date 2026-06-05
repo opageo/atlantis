@@ -83,6 +83,12 @@ class Reprojector:
         target_resolution: Target spatial resolution in CRS units.
         resampling_method: Default resampling method for raster data.
         variable_resampling: Per-variable resampling method overrides.
+        snap_to_global_grid: If True, snap output bounds to the canonical
+            global lat/lon grid so pixel centres land on the reference
+            ``±(k+0.5)*target_resolution`` positions (only meaningful when
+            ``target_crs`` is ``EPSG:4326``).
+        global_grid_origin_lon: Western edge of the global grid.
+        global_grid_origin_lat: Northern edge of the global grid.
     """
 
     def __init__(
@@ -91,6 +97,9 @@ class Reprojector:
         target_resolution: float = 0.016666666666666666,
         resampling_method: str = "average",
         variable_resampling: dict[str, str] | None = None,
+        snap_to_global_grid: bool = True,
+        global_grid_origin_lon: float = -180.0,
+        global_grid_origin_lat: float = 90.0,
     ) -> None:
         """Initialize the reprojector.
 
@@ -100,11 +109,17 @@ class Reprojector:
             resampling_method: Default resampling method.
             variable_resampling: Per-variable overrides, e.g.
                 ``{"flood_fraction": "average", "quality_mask": "mode"}``.
+            snap_to_global_grid: Snap AOI bounds to the canonical global grid.
+            global_grid_origin_lon: Western edge of the global grid (default -180).
+            global_grid_origin_lat: Northern edge of the global grid (default +90).
         """
         self.target_crs = target_crs
         self.target_resolution = target_resolution
         self.resampling_method = resampling_method
         self.variable_resampling = variable_resampling or {}
+        self.snap_to_global_grid = snap_to_global_grid
+        self.global_grid_origin_lon = global_grid_origin_lon
+        self.global_grid_origin_lat = global_grid_origin_lat
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -135,6 +150,8 @@ class Reprojector:
 
         # ── 2. Compute target grid ────────────────────────────────────────
         west, south, east, north = _get_dataset_bounds(dataset)
+        if self.snap_to_global_grid and dst_crs.upper() == "EPSG:4326":
+            west, south, east, north = self._snap_bounds_to_global_grid(west, south, east, north)
 
         dst_width = max(1, int(round((east - west) / self.target_resolution)))
         dst_height = max(1, int(round((north - south) / self.target_resolution)))
@@ -182,6 +199,50 @@ class Reprojector:
         except Exception:
             return False
         return src == self.target_crs
+
+    def _snap_bounds_to_global_grid(
+        self,
+        west: float,
+        south: float,
+        east: float,
+        north: float,
+    ) -> tuple[float, float, float, float]:
+        """Snap an AOI window outward to the canonical global lat/lon grid.
+
+        The returned bounds are pixel **edges** that align with the global grid
+        anchored at ``(global_grid_origin_lon, global_grid_origin_lat)`` with
+        spacing ``target_resolution``. After snapping, pixel centres of the
+        output window land exactly on the canonical positions
+        ``origin + (k + 0.5) * res``.
+
+        Args:
+            west: Western edge of the input AOI bounds (degrees).
+            south: Southern edge of the input AOI bounds (degrees).
+            east: Eastern edge of the input AOI bounds (degrees).
+            north: Northern edge of the input AOI bounds (degrees).
+
+        Returns:
+            Snapped ``(west, south, east, north)`` tuple, clipped to the
+            global lat/lon extent.
+        """
+        res = self.target_resolution
+        lon0 = self.global_grid_origin_lon
+        lat0 = self.global_grid_origin_lat  # northern edge
+
+        # Snap horizontally: i_min = floor((west - lon0) / res)
+        west_snap = lon0 + np.floor((west - lon0) / res) * res
+        east_snap = lon0 + np.ceil((east - lon0) / res) * res
+        # Snap vertically: latitude grows downward from lat0
+        north_snap = lat0 - np.floor((lat0 - north) / res) * res
+        south_snap = lat0 - np.ceil((lat0 - south) / res) * res
+
+        # Clip to the global extent (do not wrap around the antimeridian).
+        west_snap = max(west_snap, lon0)
+        east_snap = min(east_snap, lon0 + 360.0)
+        south_snap = max(south_snap, lat0 - 180.0)
+        north_snap = min(north_snap, lat0)
+
+        return float(west_snap), float(south_snap), float(east_snap), float(north_snap)
 
     # ── Internal helpers ──────────────────────────────────────────────────
 

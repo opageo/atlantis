@@ -156,13 +156,13 @@ def run_setup(
     """
     _print = output.print if output is not None else print
 
-    _print("[bold]Atlantis setup[/bold]\n")
+    _print("[bold]Asset check[/bold]\n")
 
     # ── Step 1: geo dependencies ────────────────────────────────────────────
     if _check_geo_dependency():
-        _print("[green][ok][/green]  geo dependencies (geopandas, shapely)")
+        _print("[bold green]✓[/bold green]  geo dependencies (geopandas, shapely)")
     else:
-        _print("[yellow][warn][/yellow]  geo dependencies not installed")
+        _print("[bold yellow]⚠[/bold yellow]  geo dependencies not installed")
         _print("       Run: uv sync --extra geo\n")
 
     # ── Step 2: required assets ─────────────────────────────────────────────
@@ -176,7 +176,7 @@ def run_setup(
         if abs_path.exists() and abs_path.stat().st_size > 0:
             # Check for LFS pointer files
             if _is_lfs_pointer(abs_path):
-                _print(f"[yellow][LFS-POINTER][/yellow] {label} — {rel_path}")
+                _print(f"[bold yellow]⚠[/bold yellow]  [LFS-POINTER] {label} — {rel_path}")
                 _print("       Run: git lfs pull -- {rel_path}")
                 any_missing = True
                 continue
@@ -187,13 +187,13 @@ def run_setup(
                 if update_hashes:
                     actual_hash = _compute_sha256(abs_path)
                     hashes[rel_str] = f"sha256:{actual_hash}"
-                    _print(f"[green][ok][/green]  {label} — {rel_path}")
+                    _print(f"[bold green]✓[/bold green]  {label} — {rel_path}")
                     _print(f"       sha256:{actual_hash}")
                 elif expected is not None:
                     actual_hash = _compute_sha256(abs_path)
                     expected_hash = expected.removeprefix("sha256:")
                     if actual_hash != expected_hash:
-                        _print(f"[yellow][CHANGED][/yellow] {label} — {rel_path}")
+                        _print(f"[bold yellow]⚠[/bold yellow]  [CHANGED] {label} — {rel_path}")
                         _print(f"       expected: {expected}")
                         _print(f"       actual:   sha256:{actual_hash}")
                         if auto_fix:
@@ -212,15 +212,15 @@ def run_setup(
                                 _print(f"       git checkout HEAD -- {rel_path}")
                         any_missing = True
                     else:
-                        _print(f"[green][ok][/green]  {label} — {rel_path}")
+                        _print(f"[bold green]✓[/bold green]  {label} — {rel_path}")
                 else:
-                    _print(f"[green][ok][/green]  {label} — {rel_path}")
+                    _print(f"[bold green]✓[/bold green]  {label} — {rel_path}")
             else:
-                _print(f"[green][ok][/green]  {label} — {rel_path}")
+                _print(f"[bold green]✓[/bold green]  {label} — {rel_path}")
             continue
 
         # File missing or empty
-        _print(f"[red][MISSING][/red] {label} — {rel_path}")
+        _print(f"[bold red]✗[/bold red]  [MISSING] {label} — {rel_path}")
 
         if not tracked:
             _print(f"       File must be provided manually: {rel_path}")
@@ -247,10 +247,10 @@ def run_setup(
     # ── Summary ──────────────────────────────────────────────────────────────
     _print("")
     if any_missing:
-        _print("[yellow]Some assets are missing or out of date.  See messages above.[/yellow]")
+        _print("[bold yellow]⚠[/bold yellow]  Some assets are missing or out of date.  See messages above.")
         return False
 
-    _print("[green][bold]All data assets are present and up-to-date.[/bold][/green]")
+    _print("[bold green]✓[/bold green]  All data assets are present and up-to-date.")
     return True
 
 

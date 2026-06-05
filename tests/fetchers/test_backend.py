@@ -118,8 +118,69 @@ class TestNoaaS3Backend:
             )
             assert results == []
 
+    def test_available_years_parses_common_prefixes(self):
+        """available_years() extracts year folders from a CommonPrefixes listing."""
+        import unittest.mock as mock
+
+        body = """<?xml version="1.0" encoding="UTF-8"?>
+        <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+          <Name>noaa-jpss</Name>
+          <Prefix>JPSS_Blended_Products/VFM_1day_GLB/TIF/</Prefix>
+          <Delimiter>/</Delimiter>
+          <CommonPrefixes><Prefix>JPSS_Blended_Products/VFM_1day_GLB/TIF/2012/</Prefix></CommonPrefixes>
+          <CommonPrefixes><Prefix>JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/</Prefix></CommonPrefixes>
+          <CommonPrefixes><Prefix>JPSS_Blended_Products/VFM_1day_GLB/TIF/2023/</Prefix></CommonPrefixes>
+        </ListBucketResult>"""
+
+        backend = NoaaS3Backend()
+        mock_response = mock.Mock(status_code=200, text=body)
+        mock_response.raise_for_status = mock.Mock()
+
+        with mock.patch("requests.get", return_value=mock_response) as patched:
+            years = backend.available_years(
+                base_url="https://noaa-jpss.s3.amazonaws.com",
+                data_format="tif",
+                timeout=30,
+            )
+            assert years == {2012, 2020, 2023}
+            # Second call must be cached (no extra HTTP request).
+            years2 = backend.available_years(
+                base_url="https://noaa-jpss.s3.amazonaws.com",
+                data_format="tif",
+                timeout=30,
+            )
+            assert years2 == {2012, 2020, 2023}
+            assert patched.call_count == 1
+
+    def test_available_years_returns_none_on_network_error(self):
+        """A failed listing is treated as 'coverage unknown', not 'no coverage'."""
+        import unittest.mock as mock
+
+        import requests
+
+        backend = NoaaS3Backend()
+        with mock.patch("requests.get", side_effect=requests.ConnectionError("boom")):
+            years = backend.available_years(
+                base_url="https://noaa-jpss.s3.amazonaws.com",
+                data_format="tif",
+                timeout=30,
+            )
+            assert years is None
+
 
 class TestGmuLegacyBackend:
+    def test_available_years_unknown_by_default(self):
+        """GMU backend does not declare coverage; callers must probe per date."""
+        backend = GmuLegacyBackend()
+        assert (
+            backend.available_years(
+                base_url="https://jpssflood.gmu.edu/downloads/pub",
+                data_format="tif",
+                timeout=30,
+            )
+            is None
+        )
+
     def test_listing_location(self):
         backend = GmuLegacyBackend()
         dt = datetime(2020, 7, 22, tzinfo=timezone.utc)

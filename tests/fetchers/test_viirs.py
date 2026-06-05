@@ -187,6 +187,7 @@ class TestVIIRSFetcherSearch:
             "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB077_v1r0_blend_s202007220000000_e202007222359590_c202205240401305.tif",
             "JPSS_Blended_Products/VFM_1day_GLB/TIF/2020/07/22/VIIRS-Flood-1day-GLB078_v1r0_blend_s202007220000000_e202007222359590_c202205240401363.tif",
         ]
+        monkeypatch.setattr(fetcher.backend, "available_years", lambda _b, _f, _t: None)
         monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _base_url, _location, _timeout: hrefs)
 
         results = fetcher.search(event)
@@ -211,6 +212,7 @@ class TestVIIRSFetcherSearch:
         """AOI found but backend returns empty directory listing."""
         fetcher = VIIRSFetcher()
         event = self._default_event()
+        monkeypatch.setattr(fetcher.backend, "available_years", lambda _b, _f, _t: None)
         monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _b, _l, _t: [])
 
         results = fetcher.search(event)
@@ -232,6 +234,7 @@ class TestVIIRSFetcherSearch:
                 "VIIRS-Flood-1day-GLB077_v1r0.tif",
             ]
 
+        monkeypatch.setattr(fetcher.backend, "available_years", lambda _b, _f, _t: None)
         monkeypatch.setattr(fetcher.backend, "get_directory_links", mock_links)
 
         results = fetcher.search(event)
@@ -247,11 +250,117 @@ class TestVIIRSFetcherSearch:
         hrefs = [
             "WATER_COM_VIIRS_Prj_SVI_d20200718_d20200722_4448_4448_35_005day_077.tif.zip",
         ]
+        monkeypatch.setattr(fetcher.backend, "available_years", lambda _b, _f, _t: None)
         monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _b, _l, _t: hrefs)
 
         results = fetcher.search(event)
         assert len(results) == 1
         assert all(r.properties["backend"] == "gmu_legacy" for r in results)
+
+
+# ── Diagnostics tests ────────────────────────────────────────────────────────
+
+
+class TestVIIRSFetcherDiagnostics:
+    """Verify last_diagnostics explains why search() returned what it did."""
+
+    def _pakistan_event(self, year: int = 2022):
+        return FloodEvent(
+            event_id=f"Pakistan_{year}",
+            bbox=(67.5, 26.0, 70.0, 29.5),
+            start_date=date(year, 8, 28),
+            end_date=date(year, 8, 30),
+            sources=["viirs"],
+        )
+
+    def test_diagnostics_no_aoi_intersection(self):
+        fetcher = VIIRSFetcher()
+        event = FloodEvent(
+            event_id="Pacific_2020",
+            bbox=(170.0, -10.0, 180.0, -5.0),
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 1, 1),
+            sources=["viirs"],
+        )
+        results = fetcher.search(event)
+        assert results == []
+        diag = fetcher.last_diagnostics
+        assert diag is not None
+        assert diag.backend == "noaa_s3"
+        assert diag.missing_aoi_coverage is True
+        assert diag.aoi_count == 0
+
+    def test_diagnostics_year_coverage_gap_skips_listings(self, monkeypatch):
+        """When backend declares coverage and year is missing, no listings are attempted."""
+        fetcher = VIIRSFetcher()
+        event = self._pakistan_event(2022)
+
+        monkeypatch.setattr(
+            fetcher.backend,
+            "available_years",
+            lambda _base, _fmt, _to: {2012, 2013, 2020, 2023, 2024},
+        )
+
+        listing_calls: list[str] = []
+
+        def _fail_if_called(_base, location, _timeout):
+            listing_calls.append(location)
+            return []
+
+        monkeypatch.setattr(fetcher.backend, "get_directory_links", _fail_if_called)
+
+        results = fetcher.search(event)
+        assert results == []
+        assert listing_calls == [], "Backend should not be probed for years outside its coverage"
+
+        diag = fetcher.last_diagnostics
+        assert diag is not None
+        assert diag.requested_years == {2022}
+        assert diag.skipped_years == {2022}
+        assert diag.year_coverage_gap is True
+        assert diag.dates_probed == 0
+
+    def test_diagnostics_all_listings_empty(self, monkeypatch):
+        """When backend has coverage but every listing is empty, that fact is captured."""
+        fetcher = VIIRSFetcher()
+        event = self._pakistan_event(2023)
+
+        monkeypatch.setattr(
+            fetcher.backend,
+            "available_years",
+            lambda _base, _fmt, _to: {2023},
+        )
+        monkeypatch.setattr(fetcher.backend, "get_directory_links", lambda _b, _l, _t: [])
+
+        results = fetcher.search(event)
+        assert results == []
+        diag = fetcher.last_diagnostics
+        assert diag is not None
+        assert diag.dates_probed == 3
+        assert diag.dates_with_listings == 0
+        assert diag.listings_all_empty is True
+
+    def test_diagnostics_unknown_coverage_falls_back_to_probing(self, monkeypatch):
+        """Backends returning None coverage must still probe every date."""
+        fetcher = VIIRSFetcher(backend="gmu_legacy")
+        event = self._pakistan_event(2022)
+
+        # available_years returns None by default for GmuLegacyBackend, no patching needed.
+        probe_count = {"n": 0}
+
+        def _empty(_b, _l, _t):
+            probe_count["n"] += 1
+            return []
+
+        monkeypatch.setattr(fetcher.backend, "get_directory_links", _empty)
+        results = fetcher.search(event)
+        assert results == []
+        assert probe_count["n"] == 3
+        diag = fetcher.last_diagnostics
+        assert diag is not None
+        assert diag.available_years is None
+        assert diag.skipped_years == set()
+        assert diag.dates_probed == 3
 
 
 # ── Fetch tests ──────────────────────────────────────────────────────────────
