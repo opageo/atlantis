@@ -223,6 +223,22 @@ For events in 2021–2022 the only routes are:
   Atlantis (account + credentials required).
 - **NOAA NCEI archive** — long-term mirror, requires manual ordering.
 
+**Pakistan 2022 — GMU Legacy backend example:**
+
+```bash
+uv run atlantis fetch \
+  --event Pakistan_2022 \
+  --source viirs \
+  --bbox "67.5 26 70 29.5" \
+  --start-date 2022-08-28 --end-date 2022-09-03 \
+  --viirs-backend gmu_legacy --no-stream \
+  --plot --harmonise --no-keep-processed \
+  --output ./data/Pakistan_2022
+```
+
+See [`CLI_Examples.md`](../CLI_Examples.md#viirs-availability-notes) for more
+details on backend selection.
+
 ## Output structure
 
 ```

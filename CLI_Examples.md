@@ -282,11 +282,22 @@ fall in this gap, e.g.:
 - `KuroSiwo_1111009` — Pakistan, August–September 2022 (~9,300 km², the largest event in the catalogue)
 - `KuroSiwo_554`/`555`/`559`/`561`/`562`/`567` — various 2021–2022 events
 
-For those, either:
+For those, use the GMU Legacy backend with `--viirs-backend gmu_legacy --no-stream`.
+The GMU host is intermittently offline — retry from a non-cloud network if
+connections time out.
 
-- use the explicit bbox `fetch` with `--viirs-backend gmu_legacy --no-stream`
-  (best-effort; the GMU host is intermittently offline), or
-- fall back to a different EO source.
+**Pakistan 2022 — GMU Legacy backend example:**
+
+```bash
+uv run atlantis fetch \
+  --event Pakistan_2022 \
+  --source viirs \
+  --bbox "67.5 26 70 29.5" \
+  --start-date 2022-08-28 --end-date 2022-09-03 \
+  --viirs-backend gmu_legacy --no-stream \
+  --plot --harmonise --no-keep-processed \
+  --output ./data/Pakistan_2022
+```
 
 See [`docs/viirs.md#data-availability`](docs/viirs.md#data-availability) for
 the full backend comparison.
