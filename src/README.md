@@ -227,8 +227,9 @@ This writes only:
 ```text
 ~/.cache/atlantis/raw/Yangtze_2020/
 └── viirs/
-    └── harmonised/
-        ├── Yangtze_2020_2020-07-22_viirs_harmonised.tif
+    ├── harmonised/
+    │   └── Yangtze_2020_2020-07-22_viirs_harmonised.tif
+    └── plots/
         └── Yangtze_2020_2020-07-22_viirs_harmonised.png
 ```
 

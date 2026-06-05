@@ -192,14 +192,16 @@ def _harmonise_viirs(
     date_label,
     *,
     harm_dir,
+    plot_dir,
 ):
-    """Reproject + normalise and save harmonised GeoTIFF + PNG.
+    """Reproject + normalise and save harmonised GeoTIFF (in ``harm_dir``) + PNG (in ``plot_dir``).
 
     Returns the xarray Dataset produced by the harmoniser for downstream use.
     """
     from atlantis.harmoniser import Harmoniser
 
     harm_dir.mkdir(parents=True, exist_ok=True)
+    plot_dir.mkdir(parents=True, exist_ok=True)
     h = Harmoniser()
     ds_harm = h.harmonise(best_ds, source_id="viirs")
     flood_var = "flood_fraction" if "flood_fraction" in ds_harm else list(ds_harm.data_vars)[0]
@@ -208,7 +210,7 @@ def _harmonise_viirs(
     write_harmonised_raster(ds_harm[flood_var], tif_path)
     console.print(f"  Harmonised → {tif_path.name}")
 
-    png_harm_path = harm_dir / f"{event_id}_{date_label}_viirs_harmonised.png"
+    png_harm_path = plot_dir / f"{event_id}_{date_label}_viirs_harmonised.png"
     if flood_var == "flood_fraction":
         plot_classified(
             ds_harm[flood_var],
@@ -382,39 +384,42 @@ def fetch(
                 if strategy == "peak":
                     best_result, best_date_label = _select_best_result(fetcher, fetch_results)
                     best_ds = fetcher.to_dataset(best_result)
+                    png_dir = plot_dir or (output_dir / src / "plots")
                     if plot:
-                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{best_date_label}_viirs.png"
+                        png_out = png_dir / f"{event}_{best_date_label}_viirs.png"
                         with step_status("Plotting…"):
                             _plot_viirs(best_ds, event, best_date_label, output_png_path=png_out)
                     if harmonise:
                         harm_dir = output_dir / src / "harmonised"
                         with step_status("Harmonising…"):
-                            _harmonise_viirs(best_ds, event, best_date_label, harm_dir=harm_dir)
+                            _harmonise_viirs(best_ds, event, best_date_label, harm_dir=harm_dir, plot_dir=png_dir)
 
                 elif strategy == "aggregate":
                     ds = fetcher.to_dataset(fetch_results[0])
                     label = "aggregated"
+                    png_dir = plot_dir or (output_dir / src / "plots")
                     if plot:
-                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{label}_viirs.png"
+                        png_out = png_dir / f"{event}_{label}_viirs.png"
                         with step_status("Plotting…"):
                             _plot_viirs(ds, event, label, output_png_path=png_out)
                     if harmonise:
                         harm_dir = output_dir / src / "harmonised"
                         with step_status("Harmonising…"):
-                            _harmonise_viirs(ds, event, label, harm_dir=harm_dir)
+                            _harmonise_viirs(ds, event, label, harm_dir=harm_dir, plot_dir=png_dir)
 
                 elif strategy == "all":
                     for result in fetch_results:
                         date_label = _viirs_date_label(result)
                         ds = fetcher.to_dataset(result)
+                        png_dir = plot_dir or (output_dir / src / "plots")
                         if plot:
-                            png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{date_label}_viirs.png"
+                            png_out = png_dir / f"{event}_{date_label}_viirs.png"
                             with step_status(f"Plotting {date_label}…"):
                                 _plot_viirs(ds, event, date_label, output_png_path=png_out)
                         if harmonise:
                             harm_dir = output_dir / src / "harmonised"
                             with step_status(f"Harmonising {date_label}…"):
-                                _harmonise_viirs(ds, event, date_label, harm_dir=harm_dir)
+                                _harmonise_viirs(ds, event, date_label, harm_dir=harm_dir, plot_dir=png_dir)
         except KeyError:
             fail(f"Unknown source '{src}'")
 
@@ -599,9 +604,9 @@ def fetch_kurosiwo_viirs(
                 best_result, best_date_label = _select_best_result(fetcher, fetch_results)
                 best_ds = fetcher.to_dataset(best_result)
                 peak_label = best_date_label
+                png_dir = plot_dir or (event_viirs_dir / "plots")
 
                 if plot:
-                    png_dir = plot_dir or (event_viirs_dir / "plots")
                     png_path = png_dir / f"{event.event_id}_{best_date_label}_viirs.png"
                     with step_status(f"  Plotting {best_date_label}…"):
                         _plot_viirs(best_ds, event.event_id, best_date_label, output_png_path=png_path)
@@ -609,7 +614,7 @@ def fetch_kurosiwo_viirs(
                 if actual_harmonise:
                     harm_dir = event_viirs_dir / "harmonised"
                     with step_status(f"  Harmonising {best_date_label}…"):
-                        _harmonise_viirs(best_ds, event.event_id, best_date_label, harm_dir=harm_dir)
+                        _harmonise_viirs(best_ds, event.event_id, best_date_label, harm_dir=harm_dir, plot_dir=png_dir)
                     harmonised_label = "✓"
 
             summary_rows.append(
@@ -996,14 +1001,24 @@ def demo(
     if harmonise:
         harm_dir = viirs_dir / "harmonised"
         with step_status("Harmonising to 1 arcmin…"):
-            _harmonise_viirs(best_ds, "Valencia_2024", best_date_label, harm_dir=harm_dir)
+            _harmonise_viirs(
+                best_ds,
+                "Valencia_2024",
+                best_date_label,
+                harm_dir=harm_dir,
+                plot_dir=plot_dir_path,
+            )
 
     console.print("")
     ok("Demo complete!")
     from atlantis.utils.ui import file_tree as _ft
 
     if harmonise:
-        output_files = [png_path, harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif"]
+        output_files = [
+            png_path,
+            harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
+            plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
+        ]
     else:
         output_files = [png_path]
     console.print(_ft(str(out), output_files))

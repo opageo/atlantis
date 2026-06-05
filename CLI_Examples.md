@@ -115,8 +115,9 @@ Fetching from viirs...
 Generates:
 
 - `viirs/processed/` — 375 m classified GeoTIFFs for all dates
-- `viirs/plots/Valencia_2024_2024-10-29_viirs.png` — peak-date visualisation
-- `viirs/harmonised/Valencia_2024_2024-10-29_viirs_harmonised.{tif,png}` — 1 arcmin output
+- `viirs/plots/Valencia_2024_2024-10-29_viirs.png` — peak-date visualisation (375 m)
+- `viirs/plots/Valencia_2024_2024-10-29_viirs_harmonised.png` — harmonised visualisation (1 arcmin)
+- `viirs/harmonised/Valencia_2024_2024-10-29_viirs_harmonised.tif` — 1 arcmin GeoTIFF
 
 ## Case 2 — Hurricane Harvey, Texas, USA (August 2017)
 
@@ -217,8 +218,9 @@ uv run atlantis fetch \
   --output ./data/Vamco_2020_timeseries
 ```
 
-This writes one harmonised GeoTIFF + PNG per date in
-`viirs/harmonised/`, e.g. `Vamco_2020_timeseries_2020-11-13_viirs_harmonised.tif`.
+This writes one harmonised GeoTIFF per date in `viirs/harmonised/` and a
+matching PNG per date in `viirs/plots/`, e.g.
+`Vamco_2020_timeseries_2020-11-13_viirs_harmonised.tif`.
 
 ## Case 5 — West Africa floods, Ghana / Togo / Benin (October 2020)
 
