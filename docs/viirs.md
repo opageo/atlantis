@@ -86,16 +86,16 @@ uv run atlantis harmonise \
 
 ## Flags
 
-### `atlantis fetch --source viirs`
+### `atlantis fetch --source viirs` flags
 
 #### Output control
 
 | Flag                  | Default | Effect                                                                                                                                                                                         |
 | --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--classify`          | on      | Produce classified `flood_fraction`, `quality_mask`, and `permanent_water` layers instead of raw pixel codes                                                                                  |
+| `--classify`          | on      | Produce classified `flood_fraction`, `quality_mask`, and `permanent_water` layers instead of raw pixel codes                                                                                   |
 | `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                                                                                                                                                 |
 | `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF                                                                                                                                       |
-| `--no-keep-processed` | off     | Skip writing intermediate 375 m GeoTIFFs; keep processed rasters in memory unless combined with `--harmonise` and/or `--plot`                                                               |
+| `--no-keep-processed` | off     | Skip writing intermediate 375 m GeoTIFFs; keep processed rasters in memory unless combined with `--harmonise` and/or `--plot`                                                                  |
 | `--plot`              | off     | Save a PNG of the peak-flood date                                                                                                                                                              |
 | `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). See [Strategies in detail](viirs_pipeline.md#strategies-in-detail-pixel-level). |
 
@@ -109,7 +109,7 @@ uv run atlantis harmonise \
 
 With `--classify`, codes `101–200` become `flood_fraction` values in `[0.01, 1.00]` in memory and are written as uint8 percentages `[1, 100]` on disk. Codes `1`, `17`, `20`, `30`, and `99` contribute `0` flood fraction; `quality_mask` and `permanent_water` are written as companion masks.
 
-### `atlantis fetch-kurosiwo-viirs`
+### `atlantis fetch-kurosiwo-viirs` flags
 
 #### KuroSiwo-specific
 
@@ -122,7 +122,7 @@ With `--classify`, codes `101–200` become `flood_fraction` values in `[0.01, 1
 | `--days-before` | 0       | Days before flood peak to include               |
 | `--days-after`  | 0       | Days after flood peak to include                |
 
-### `atlantis harmonise --source viirs`
+### `atlantis harmonise --source viirs` flags
 
 #### Harmonisation
 
@@ -299,7 +299,9 @@ The reference is the grid used by ECMWF's `Globe_flood_area_*.grb`
 
   So the first column's centre is `-179.99166…°`, the last is
   `+179.99166…°`; latitudes go top-down from `+89.99166…°` to
-  `-89.99166…°`. This matches the spec your colleague shared.
+  `-89.99166…°`. This matches the grid definition encoded in
+  `Globe_flood_area_*.grb` (verified via `eccodes`; see
+  [Verifying alignment](#verifying-alignment)).
 
 - **Why "snapping" matters.** A user-supplied AOI bbox almost never lines
   up with this grid. If we just resample to the AOI bounds, our output

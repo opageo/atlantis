@@ -40,6 +40,8 @@ flowchart TD
     PLOT -->|Yes| PNG["Write harmonised/ PNG"]
     PLOT -->|No| DONE_HARM["Done"]
     PNG --> DONE_HARM
+
+    click HARM_STEPS "viirs.md#canonical-1-arcmin-global-grid" "Canonical 1-arcmin global grid"
 ```
 
 ## Mode summary
