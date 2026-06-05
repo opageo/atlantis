@@ -96,6 +96,64 @@ def test_version():
     assert __version__ == "0.1.0"
 
 
+def test_verbose_flag_configures_loguru(monkeypatch):
+    """Test --verbose enables loguru with the CLI format."""
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr("atlantis.cli.logger.remove", lambda: calls.__setitem__("removed", True))
+    monkeypatch.setattr(
+        "atlantis.cli.logger.disable",
+        lambda name: calls.setdefault("disabled", []).append(name),
+    )
+    monkeypatch.setattr(
+        "atlantis.cli.logger.enable",
+        lambda name: calls.setdefault("enabled", []).append(name),
+    )
+
+    def fake_add(sink, **kwargs):
+        calls["sink"] = sink
+        calls["add_kwargs"] = kwargs
+        return 1
+
+    monkeypatch.setattr("atlantis.cli.logger.add", fake_add)
+
+    result = runner.invoke(cli, ["--verbose", "fetch", "--event", "Test_2024"])
+
+    assert result.exit_code == 0
+    assert calls["removed"] is True
+    assert calls["disabled"] == ["atlantis"]
+    assert calls["enabled"] == ["atlantis"]
+    assert calls["add_kwargs"]["level"] == "DEBUG"
+    assert "DEBUG" not in calls["add_kwargs"]["format"]
+
+
+def test_no_verbose_keeps_loguru_disabled(monkeypatch):
+    """Test that without --verbose, no loguru sink is added."""
+    calls: dict[str, object] = {"added": False}
+
+    monkeypatch.setattr("atlantis.cli.logger.remove", lambda: calls.__setitem__("removed", True))
+    monkeypatch.setattr(
+        "atlantis.cli.logger.disable",
+        lambda name: calls.setdefault("disabled", []).append(name),
+    )
+    monkeypatch.setattr(
+        "atlantis.cli.logger.enable",
+        lambda name: calls.setdefault("enabled", []).append(name),
+    )
+    monkeypatch.setattr(
+        "atlantis.cli.logger.add",
+        lambda *args, **kwargs: calls.__setitem__("added", True),
+    )
+
+    result = runner.invoke(cli, ["fetch", "--event", "Test_2024"])
+
+    assert result.exit_code == 0
+    assert calls["removed"] is True
+    assert calls["disabled"] == ["atlantis"]
+    assert "enabled" not in calls
+    assert calls["added"] is False
+
+
 def test_fetch_command():
     """Test fetch command with required event argument."""
     result = runner.invoke(cli, ["fetch", "--event", "Valencia_2024"])

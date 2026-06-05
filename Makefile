@@ -11,31 +11,31 @@ setup:  ## Bootstrap data assets and install dependencies
 	uv run python scripts/setup.py
 
 demo:  ## Run the Valencia 2024 flood demo (see CLI_Examples.md for more case studies)
-	uv run atlantis demo
+	uv run atlantis --verbose demo
 
 example-harvey:  ## Example: Hurricane Harvey, Texas USA — Aug 2017 (KuroSiwo_1111004)
-	uv run atlantis fetch-kurosiwo-viirs \
+	uv run atlantis --verbose fetch-kurosiwo-viirs \
 		--case KuroSiwo_1111004 \
 		--days-before 1 --days-after 1 \
 		--plot --harmonise --no-keep-processed \
 		--output ./data/KuroSiwo_1111004
 
 example-bihar:  ## Example: South Asian monsoon, Bihar/Nepal — Sept 2019 (KuroSiwo_1111007)
-	uv run atlantis fetch-kurosiwo-viirs \
+	uv run atlantis --verbose fetch-kurosiwo-viirs \
 		--case KuroSiwo_1111007 \
 		--days-before 2 --days-after 2 \
 		--plot --harmonise --no-keep-processed \
 		--output ./data/KuroSiwo_1111007
 
 example-vamco:  ## Example: Typhoon Vamco, Luzon Philippines — Nov 2020 (KuroSiwo_1111011)
-	uv run atlantis fetch-kurosiwo-viirs \
+	uv run atlantis --verbose fetch-kurosiwo-viirs \
 		--case KuroSiwo_1111011 \
 		--days-before 1 --days-after 1 \
 		--plot --harmonise --no-keep-processed \
 		--output ./data/KuroSiwo_1111011
 
 example-westafrica:  ## Example: West Africa floods, Ghana/Togo/Benin — Oct 2020 (KuroSiwo_470)
-	uv run atlantis fetch-kurosiwo-viirs \
+	uv run atlantis --verbose fetch-kurosiwo-viirs \
 		--case KuroSiwo_470 \
 		--plot --harmonise --no-keep-processed \
 		--output ./data/KuroSiwo_470
@@ -47,7 +47,7 @@ examples: demo example-harvey example-bihar example-vamco example-westafrica  ##
 # the targets above, but the user only supplies a bounding box and date range.
 
 example-harvey-bbox:  ## Generic CLI: Hurricane Harvey, Texas USA — Aug 2017 (bbox + dates)
-	uv run atlantis fetch \
+	uv run atlantis --verbose fetch \
 		--event Harvey_2017 \
 		--source viirs \
 		--bbox "-97.27 28.24 -95.54 29.80" \
@@ -56,7 +56,7 @@ example-harvey-bbox:  ## Generic CLI: Hurricane Harvey, Texas USA — Aug 2017 (
 		--output ./data/Harvey_2017
 
 example-bihar-bbox:  ## Generic CLI: South Asian monsoon, Bihar/Nepal — Sept 2019 (bbox + dates)
-	uv run atlantis fetch \
+	uv run atlantis --verbose fetch \
 		--event Bihar_2019 \
 		--source viirs \
 		--bbox "84.84 24.92 86.49 26.16" \
@@ -66,7 +66,7 @@ example-bihar-bbox:  ## Generic CLI: South Asian monsoon, Bihar/Nepal — Sept 2
 		--output ./data/Bihar_2019
 
 example-vamco-bbox:  ## Generic CLI: Typhoon Vamco, Luzon Philippines — Nov 2020 (bbox + dates)
-	uv run atlantis fetch \
+	uv run atlantis --verbose fetch \
 		--event Vamco_2020 \
 		--source viirs \
 		--bbox "121.14 16.72 122.25 18.45" \
@@ -75,7 +75,7 @@ example-vamco-bbox:  ## Generic CLI: Typhoon Vamco, Luzon Philippines — Nov 20
 		--output ./data/Vamco_2020
 
 example-westafrica-bbox:  ## Generic CLI: West Africa floods, Ghana/Togo/Benin — Oct 2020 (bbox + dates)
-	uv run atlantis fetch \
+	uv run atlantis --verbose fetch \
 		--event WestAfrica_2020 \
 		--source viirs \
 		--bbox "-0.86 8.26 1.99 11.73" \

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from loguru import logger
 
 from atlantis.config import HarmoniseConfig
 from atlantis.harmoniser.normaliser import Normaliser, NormaliserConfig
@@ -126,7 +126,7 @@ class Harmoniser:
 
         # ── Warn if harmonising raw integer codes ─────────────────────
         if flood_variable == "raw":
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "Harmonising raw VIIRS codes: nearest-neighbour resampling preserves codes "
                 "but the result is not a continuous flood fraction. "
                 "Use --classify for semantically meaningful harmonised output."

@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 if TYPE_CHECKING:
     pass
 
@@ -73,8 +75,10 @@ def download_file(
     ensure_dir(destination.parent)
 
     if destination.exists():
+        logger.debug("Already cached: {}", destination)
         return destination
 
+    logger.debug("Downloading {} -> {}", url, destination)
     response = requests.get(url, stream=True, timeout=60)
     response.raise_for_status()
 

@@ -27,6 +27,7 @@ Developer-facing documentation for the VIIRS fetcher architecture and processing
 ## Processing pipeline
 
 When you run `atlantis fetch --source viirs`, the system executes a five-stage pipeline.
+Stage 2 either streams remote GeoTIFFs via `/vsicurl/` or downloads them into `raw/`.
 Stages 3 (Mosaic) and 4 (Clip) are the core raster operations, implemented in
 `ViirsRasterProcessor._mosaic_and_clip()` inside `src/atlantis/fetchers/viirs/processor.py`.
 
@@ -42,9 +43,9 @@ flowchart TD
         B1 --> B2 --> B3
     end
     B --> C
-    subgraph C["2. Download — VIIRSFetcher.fetch()"]
+    subgraph C["2. Materialise inputs — VIIRSFetcher.fetch()"]
         C1["Group search results by date token"]
-        C2["Download each tile into raw/ directory"]
+        C2["Either stream remote URLs via /vsicurl/ or download tiles into raw/"]
         C1 --> C2
     end
     C --> D
@@ -64,7 +65,7 @@ flowchart TD
     E --> F
     subgraph F["5. Write — ViirsRasterProcessor._write_outputs()"]
         F1["Save as compressed GeoTIFF (LZW, uint8)"]
-        F2["Optionally classify pixels into flood/quality/water masks"]
+        F2["Optionally decode flood_fraction, quality_mask, and permanent_water"]
         F1 --> F2
     end
 ```
@@ -73,16 +74,12 @@ flowchart TD
 
 Call chain for a single date:
 
-```
-VIIRSFetcher.fetch()                          # __init__.py:~240
-  ├── VIIRSFetcher.search()                   # __init__.py:~170 — find tiles
-  ├── download_file() × N                     # utils/io.py — fetch TIFFs
-  └── ViirsRasterProcessor.process_tiles()    # processor.py:~107
-        └── _mosaic_and_clip()                # processor.py:~133
-              ├── rasterio.merge.merge()      # step 3
-              ├── rasterio.mask.mask()        # step 4
-              └── _classify_pixels()          # step 5 (if --classify)
-```
+- `VIIRSFetcher.fetch()` in `__init__.py` orchestrates the per-date flow.
+- `VIIRSFetcher.search()` in `__init__.py` finds intersecting AOIs and matching remote filenames.
+- `VIIRSFetcher.fetch()` then either streams remote URLs directly to the processor or downloads tiles with `download_file()`.
+- `ViirsRasterProcessor.process_tiles()` in `processor.py` constructs output paths and dispatches raster work.
+- `ViirsRasterProcessor._mosaic_and_clip()` in `processor.py` runs `rasterio.merge.merge()` followed by `rasterio.mask.mask()`.
+- `ViirsRasterProcessor._classify_pixels()` in `processor.py` derives `flood_fraction`, `quality_mask`, and `permanent_water` when classification is enabled.
 
 ## Stage 3 — Mosaic
 
@@ -180,16 +177,20 @@ touching disk.
 ## Stage 5 — Classify
 
 Unless `--no-classify` is passed, `_classify_pixels()` decodes raw VIIRS integer codes
-into three binary masks:
+into one continuous flood layer plus two binary masks:
 
-| Mask              | Rule                       | Meaning                                                   |
-| ----------------- | -------------------------- | --------------------------------------------------------- |
-| `flood_extent`    | `pixel >= flood_threshold` | 1 = flood water (configurable; default = 160)             |
-| `quality_mask`    | `pixel ∉ {0,1,30}`         | 1 = valid clear-sky observation (0 = fill or cloud cover) |
-| `permanent_water` | `pixel == 17`              | 1 = known permanent water body                            |
+| Layer             | Rule                                           | Meaning                                                                 |
+| ----------------- | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| `flood_fraction`  | `101 <= pixel <= 200 ? (pixel - 100) / 100 : 0` | Flooded-water fraction in `[0.0, 1.0]`; written as uint8 percent `[0,100]` |
+| `quality_mask`    | `pixel ∉ {0,1,30}`                             | 1 = valid clear-sky observation (0 = fill or cloud cover)               |
+| `permanent_water` | `pixel == 17`                                  | 1 = known permanent water body                                          |
 
 Water types (17=permanent, 20=seasonal, 99=open) are **valid observations** — they
-receive `quality=1` and are excluded from flood masks through their own classification.
+receive `quality=1`, contribute `0` to `flood_fraction`, and permanent water is tracked
+through its own classification.
+
+There is no thresholding step inside `_classify_pixels()` in the current pipeline. If you
+need a binary flood mask, apply a downstream threshold to `flood_fraction`.
 
 Classification runs **after** mosaic and clip, so it only processes pixels inside the
 bbox — saving computation on discarded regions.

@@ -18,14 +18,16 @@ event = FloodEvent(
     end_date=date(2024, 11, 1),
 )
 
-fetcher = VIIRSFetcher()                     # stream=True, classify=True by default
+fetcher = VIIRSFetcher(classify=True, stream=True)  # matches CLI defaults
 fetch_results = fetcher.fetch(event, Path("data/viirs/valencia_2024"))
 
 # Load into xarray for analysis / plotting
 ds = fetcher.to_dataset(fetch_results[0])
-flood = ds["flood_extent"]                   # xarray DataArray, CRS=EPSG:4326
-print(flood.sum().item(), "flooded pixels")
+flood = ds["flood_fraction"]                # xarray DataArray, CRS=EPSG:4326
+print(int((flood > 0).sum().item()), "pixels with non-zero flood fraction")
 ```
+
+`VIIRSFetcher()` itself defaults to `classify=False` and `stream=False`; the CLI enables both by default.
 
 ## Raw mode (no classification)
 
@@ -40,7 +42,7 @@ print(ds_raw["raw"].shape, ds_raw["raw"].dtype)
 ## Download mode (cache tiles locally)
 
 ```python
-fetcher_download = VIIRSFetcher(stream=False)
+fetcher_download = VIIRSFetcher(classify=True, stream=False)
 download_results = fetcher_download.fetch(event, Path("data/viirs/valencia_2024"))
 download_ds = fetcher_download.to_dataset(download_results[0])
 ```
@@ -58,7 +60,7 @@ events = build_kurosiwo_flood_events(
 )
 ks_results = fetcher.fetch(events[0], Path("data/viirs/KuroSiwo_470"))
 ks_ds = fetcher.to_dataset(ks_results[0])
-print(ks_ds["flood_extent"].sum().item(), "flooded pixels")
+print(int((ks_ds["flood_fraction"] > 0).sum().item()), "pixels with non-zero flood fraction")
 ```
 
 ## Harmonisation
@@ -68,11 +70,11 @@ from atlantis.harmoniser import Harmoniser, write_harmonised_raster
 
 harmoniser = Harmoniser()  # defaults to 1 arcmin target
 ds_harm = harmoniser.harmonise(ds, source_id="viirs")
-print(ds_harm["flood_extent"].dtype, ds_harm["flood_extent"].shape)
+print(ds_harm["flood_fraction"].dtype, ds_harm["flood_fraction"].shape)
 # float32 in-memory, ~6% of original pixels
 
 # Write to disk as uint8 percentage [0–100], nodata=255
-write_harmonised_raster(ds_harm["flood_extent"], Path("harmonised/output.tif"))
+write_harmonised_raster(ds_harm["flood_fraction"], Path("harmonised/output.tif"))
 ```
 
 ## Displaying raw pixel codes
@@ -110,12 +112,14 @@ plt.show()
 
 ## VIIRSFetcher parameters
 
-| Parameter        | Type   | Default     | Description                                         |
-| ---------------- | ------ | ----------- | --------------------------------------------------- |
-| `stream`         | `bool` | `True`      | Stream tiles via `/vsicurl/` instead of downloading |
-| `classify`       | `bool` | `True`      | Decode raw codes into flood/quality/water masks     |
-| `flood_min_code` | `int`  | `160`       | Minimum code to count as flood (range: 101–200)     |
-| `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)        |
+| Parameter        | Type   | Default      | Description                                                                 |
+| ---------------- | ------ | ------------ | --------------------------------------------------------------------------- |
+| `stream`         | `bool` | `False`      | Stream tiles via `/vsicurl/` instead of downloading; the CLI turns this on by default |
+| `classify`       | `bool` | `False`      | Decode raw codes into `flood_fraction`, `quality_mask`, and `permanent_water`; the CLI turns this on by default |
+| `strategy`       | `str`  | `"peak"`     | Multi-date reduction: `"peak"`, `"aggregate"`, or `"all"`                 |
+| `keep_processed` | `bool` | `True`       | Write intermediate `processed/` GeoTIFFs when classified or raw outputs are materialised |
+| `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)                              |
+| `data_format`    | `str`  | `"tif"`     | Remote format to query; only `"tif"` is currently implemented              |
 
 > See [viirs.md § Backends](viirs.md#backends) for a detailed comparison of the two
 > sources (host, compositing window, tile naming, AOI grid, coverage years and

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Union
 
 import numpy as np
 import rasterio
+from loguru import logger
 from rasterio.io import MemoryFile
 from rasterio.mask import mask
 from rasterio.merge import merge
@@ -202,6 +203,8 @@ class ViirsRasterProcessor:
             for src in srcs:
                 src.close()
 
+        logger.debug("Mosaicked {} tile(s) -> shape {}", len(tile_paths), mosaic.shape)
+
         meta.update(
             {
                 "height": mosaic.shape[1],
@@ -214,6 +217,8 @@ class ViirsRasterProcessor:
             with memory_file.open(**meta) as dataset:
                 dataset.write(mosaic)
                 clipped, clipped_transform = mask(dataset, [self.area_geometry], crop=True)
+
+        logger.debug("Clipped to AOI -> shape {}", clipped.shape)
 
         # Convert CRS to string if it's a rasterio CRS object
         crs_value = meta.get("crs", self.crs)
@@ -268,6 +273,17 @@ class ViirsRasterProcessor:
         # Cloud fraction over non-fill pixels only (fill pixels are not real observations).
         valid = ~fill
         cloud_fraction = float(cloud[valid].sum() / valid.sum()) if valid.sum() else 0.0
+
+        n_flood = int(flood_mask.sum())
+        n_cloud = int(cloud.sum())
+        n_perm_water = int(permanent_water.sum())
+        logger.debug(
+            "Classification: {} flood, {} cloud, {} permanent-water pixels (cloud fraction {:.1f}%)",
+            n_flood,
+            n_cloud,
+            n_perm_water,
+            cloud_fraction * 100,
+        )
 
         return ProcessedTile(
             flood_fraction=flood_fraction,

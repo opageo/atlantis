@@ -1,9 +1,11 @@
 """CLI entrypoints for Atlantis."""
 
+import sys
 from datetime import date
 from pathlib import Path
 
 import typer
+from loguru import logger
 
 from atlantis.config import HarmoniseConfig, get_config
 
@@ -41,6 +43,23 @@ from atlantis.utils.ui import (
 )
 
 cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.")
+
+
+@cli.callback()
+def _main(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose debug logging."),
+) -> None:
+    """Atlantis CLI — configure global options."""
+    logger.remove()
+    logger.disable("atlantis")
+    if verbose:
+        logger.enable("atlantis")
+        logger.add(
+            sys.stderr,
+            level="DEBUG",
+            format="<dim>{time:HH:mm:ss}</dim> | <level>{message}</level>",
+            colorize=True,
+        )
 
 
 # ── Shared plot + harmonise helper ──────────────────────────────────────────

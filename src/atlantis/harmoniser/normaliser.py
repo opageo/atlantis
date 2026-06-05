@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
+from loguru import logger
 
 if TYPE_CHECKING:
     import xarray as xr
@@ -70,6 +71,7 @@ class Normaliser:
 
         # ── Skip normalisation for already-binary masks ────────────────
         if variable in self.config.skip_normalise_vars:
+            logger.debug("Skipping normalisation for '{}' (in skip list)", variable)
             ds.attrs["normalisation_skipped"] = variable
             return ds
 
@@ -82,6 +84,14 @@ class Normaliser:
         # ── Scale data to the normalise_range ──────────────────────────
         lo, hi = self.config.normalise_range
         dmin, dmax = float(np.nanmin(data)), float(np.nanmax(data))
+        logger.debug(
+            "Normalising '{}': data range [{:.4f}, {:.4f}] -> target [{:.1f}, {:.1f}]",
+            variable,
+            dmin,
+            dmax,
+            lo,
+            hi,
+        )
 
         if np.isnan(dmin) or np.isnan(dmax) or np.isclose(dmax - dmin, 0.0):
             # All NaN or constant — no scaling needed

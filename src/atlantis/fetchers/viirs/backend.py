@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import requests
+from loguru import logger
 
 S3_NAMESPACE = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 NOAA_VIIRS_PREFIX = "JPSS_Blended_Products/VFM_1day_GLB"
@@ -138,12 +139,15 @@ class NoaaS3Backend(ViirsBackend):
 
     def get_directory_links(self, base_url: str, location: str, timeout: int) -> list[str]:
         """Return object keys from a public S3 prefix listing."""
+        logger.debug("Listing S3 prefix: {}?prefix={}", base_url, location)
         response = requests.get(base_url, params={"prefix": location}, timeout=timeout)
         if response.status_code == 404:
             return []
         response.raise_for_status()
         root = ET.fromstring(response.text)
-        return [node.text for node in root.findall("s3:Contents/s3:Key", S3_NAMESPACE) if node.text]
+        entries = [node.text for node in root.findall("s3:Contents/s3:Key", S3_NAMESPACE) if node.text]
+        logger.debug("Found {} entries in listing", len(entries))
+        return entries
 
     def find_remote_filename(self, aoi_id: int, entries: list[str]) -> str | None:
         """Locate the matching VIIRS entry for a date/AOI pair."""

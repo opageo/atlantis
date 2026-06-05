@@ -3,7 +3,6 @@
 VIIRS provides flood detection from Suomi-NPP and NOAA-20 satellites.
 """
 
-import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, time, timezone
@@ -12,6 +11,7 @@ from typing import TYPE_CHECKING
 from zipfile import ZipFile
 
 import geopandas as gpd
+from loguru import logger
 from shapely.geometry import box
 
 from atlantis.config import get_config
@@ -27,9 +27,6 @@ from atlantis.utils.io import download_file, ensure_dir
 
 if TYPE_CHECKING:
     import xarray as xr
-
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_NOAA_VIIRS_BASE_URL = "https://noaa-jpss.s3.amazonaws.com"
 DEFAULT_GMU_VIIRS_BASE_URL = "https://jpssflood.gmu.edu/downloads/pub"
@@ -265,9 +262,10 @@ class VIIRSFetcher(AbstractFloodFetcher):
 
         aois = self._intersecting_aois(event)
         diagnostics.aoi_count = int(len(aois))
+        logger.debug("Loaded AOI grid; {} AOI(s) intersect event bbox {}", len(aois), event.bbox)
         if aois.empty:
             logger.warning(
-                "VIIRS search: event bbox %s does not intersect any packaged AOI; nothing to fetch.",
+                "VIIRS search: event bbox {} does not intersect any packaged AOI; nothing to fetch.",
                 event.bbox,
             )
             return []
@@ -275,10 +273,11 @@ class VIIRSFetcher(AbstractFloodFetcher):
         available_years = self.backend.available_years(self.base_url, self.data_format, self.timeout)
         diagnostics.available_years = available_years
         if available_years is not None:
+            logger.debug("Backend '{}' published years: {}", self.backend_name, sorted(available_years))
             diagnostics.skipped_years = requested_years - available_years
             if diagnostics.skipped_years:
                 logger.warning(
-                    "VIIRS backend %r does not publish data for year(s) %s (published years: %s).",
+                    "VIIRS backend '{}' does not publish data for year(s) {} (published years: {}).",
                     self.backend_name,
                     sorted(diagnostics.skipped_years),
                     sorted(available_years),
@@ -294,6 +293,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
             location = self.backend.get_listing_location(self.base_url, event_date, self.data_format)
             entries = self.backend.get_directory_links(self.base_url, location.locator, self.timeout)
             if not entries:
+                logger.debug("Date {}: no entries in listing", location.date_token)
                 continue
             diagnostics.dates_with_listings += 1
 
@@ -322,8 +322,10 @@ class VIIRSFetcher(AbstractFloodFetcher):
                 )
             if date_match_count > 0:
                 diagnostics.dates_with_matches += 1
+            logger.debug("Date {}: {} entries, {} AOI matches", location.date_token, len(entries), date_match_count)
 
         diagnostics.result_count = len(results)
+        logger.debug("Search complete: {} result(s) across {} date(s)", len(results), diagnostics.dates_probed)
         return results
 
     def fetch(self, event: FloodEvent, output_dir: Path) -> list[FetchResult]:
@@ -357,6 +359,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
         all_processed: list[tuple[str, ProcessTilesResult]] = []
 
         for date_token, dated_results in sorted(grouped_results.items()):
+            mode_label = "stream" if self.stream else "download"
+            logger.debug("Processing date {}: {} tile(s) ({} mode)", date_token, len(dated_results), mode_label)
             if self.stream:
                 # ── Streaming mode: pass remote URLs directly to processor ──
                 tile_sources: list[Path | str] = [
@@ -397,6 +401,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
             return []
 
         # ── Strategy dispatch ──────────────────────────────────────────
+        logger.debug("Strategy '{}': {} date(s) processed successfully", self.strategy, len(all_processed))
         if self.strategy == "all":
             if self.keep_processed:
                 return [self._fetch_result_from_process(event.event_id, dt, pr) for dt, pr in all_processed]
@@ -418,6 +423,11 @@ class VIIRSFetcher(AbstractFloodFetcher):
 
         else:  # peak
             best_date_token, best_result = max(all_processed, key=lambda item: flood_pixel_count(item[1].processed))
+            logger.debug(
+                "Peak date selected: {} ({} flood pixels)",
+                best_date_token,
+                flood_pixel_count(best_result.processed),
+            )
             if self.keep_processed:
                 return [self._fetch_result_from_process(event.event_id, best_date_token, best_result)]
             else:

@@ -24,7 +24,7 @@ The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the
 
 > **Note:** The ATBD netCDF format uses different codes (e.g. 16=bare land, 17=vegetation). The GeoTIFF distribution simplifies these — land pixels are omitted, and codes 17/20/99 carry water-related meanings instead.
 
-By default Atlantis classifies pixels into three binary layers: flood extent, quality mask, and permanent water mask. Pass `--no-classify` to write raw integer pixel codes instead.
+By default Atlantis decodes raw VIIRS codes into a continuous `flood_fraction` layer plus `quality_mask` and `permanent_water` masks. Pass `--no-classify` to write raw integer pixel codes instead.
 
 ## Quick start
 
@@ -38,7 +38,7 @@ uv run atlantis fetch \
   --no-keep-processed --harmonise
 ```
 
-This streams VIIRS tiles from NOAA S3, classifies flood pixels, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/`):
+This streams VIIRS tiles from NOAA S3, derives per-pixel flood fraction plus quality and permanent-water masks, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/`):
 
 ```
 harmonised/
@@ -86,18 +86,20 @@ uv run atlantis harmonise \
 
 ## Flags
 
-### Output control
+### `atlantis fetch --source viirs`
+
+#### Output control
 
 | Flag                  | Default | Effect                                                                                                                                                                                         |
 | --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--classify`          | on      | Produce flood/quality/water binary masks instead of raw pixel codes                                                                                                                            |
+| `--classify`          | on      | Produce classified `flood_fraction`, `quality_mask`, and `permanent_water` layers instead of raw pixel codes                                                                                  |
 | `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                                                                                                                                                 |
 | `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF                                                                                                                                       |
-| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate 375 m files)                                                                                                                                 |
+| `--no-keep-processed` | off     | Skip writing intermediate 375 m GeoTIFFs; keep processed rasters in memory unless combined with `--harmonise` and/or `--plot`                                                               |
 | `--plot`              | off     | Save a PNG of the peak-flood date                                                                                                                                                              |
 | `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). See [Strategies in detail](viirs_pipeline.md#strategies-in-detail-pixel-level). |
 
-### Data access
+#### Data access
 
 | Flag              | Default   | Effect                                                   |
 | ----------------- | --------- | -------------------------------------------------------- |
@@ -105,17 +107,11 @@ uv run atlantis harmonise \
 | `--no-stream`     |           | Download tiles to `raw/` for reuse across runs           |
 | `--viirs-backend` | `noaa_s3` | Data source (`noaa_s3` or `gmu_legacy`)                  |
 
-### Flood threshold
+With `--classify`, codes `101–200` become `flood_fraction` values in `[0.01, 1.00]` in memory and are written as uint8 percentages `[1, 100]` on disk. Codes `1`, `17`, `20`, `30`, and `99` contribute `0` flood fraction; `quality_mask` and `permanent_water` are written as companion masks.
 
-| Flag                    | Effect                               |
-| ----------------------- | ------------------------------------ |
-| `--flood-threshold 101` | Most inclusive — all flood pixels    |
-| `--flood-threshold 160` | **Default** — ≥60% water fraction    |
-| `--flood-threshold 180` | Most stringent — ≥80% water fraction |
+### `atlantis fetch-kurosiwo-viirs`
 
-The flood range is 101–200, encoding water fraction (101 = 1%, 200 = 100%). Pixels with codes 1, 17, 20, 30, 99 are never counted as flood.
-
-### KuroSiwo-specific
+#### KuroSiwo-specific
 
 | Flag            | Default | Effect                                          |
 | --------------- | ------- | ----------------------------------------------- |
@@ -123,17 +119,19 @@ The flood range is 101–200, encoding water fraction (101 = 1%, 200 = 100%). Pi
 | `--metadata`    |         | Path to pre-built metadata CSV (faster lookups) |
 | `--case`        |         | Single case ID (omit to fetch all events)       |
 | `--limit`       |         | Process only the first N events                 |
-| `--days-before` | 1       | Days before flood peak to include               |
-| `--days-after`  | 1       | Days after flood peak to include                |
+| `--days-before` | 0       | Days before flood peak to include               |
+| `--days-after`  | 0       | Days after flood peak to include                |
 
-### Harmonisation
+### `atlantis harmonise --source viirs`
+
+#### Harmonisation
 
 | Flag                  | Default | Effect                                      |
 | --------------------- | ------- | ------------------------------------------- |
 | `--target-resolution` | 0.0167° | Target grid spacing (1 arcmin default)      |
 | `--dry-run`           |         | Show what would be processed without acting |
 
-> **Tip:** The harmoniser uses `average` resampling for flood extent (produces a flood-fraction) and `mode` for binary masks. Override via `ATLANTIS_VARIABLE_RESAMPLING` in `.env`.
+> **Tip:** The harmoniser uses `average` resampling for `flood_fraction` and `mode` for the mask layers. Override via `ATLANTIS_VARIABLE_RESAMPLING` in `.env`.
 
 ## Streaming vs downloading
 
@@ -249,7 +247,7 @@ details on backend selection.
       raw/          # only with --no-stream
       processed/    # absent with --no-keep-processed
         # --classify (default):
-        <event_id>_<YYYYMMDD>_viirs_flood_extent.tif
+        <event_id>_<YYYYMMDD>_viirs_flood_fraction.tif
         <event_id>_<YYYYMMDD>_viirs_quality_mask.tif
         <event_id>_<YYYYMMDD>_viirs_permanent_water.tif
         # --no-classify:
@@ -257,7 +255,7 @@ details on backend selection.
       plots/        # with --plot, or with --harmonise (harmonised PNG goes here too)
         <event_id>_<YYYY-MM-DD>_viirs.png
         <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
-      harmonised/   # with --harmonise or --no-keep-processed
+      harmonised/   # with --harmonise
         <event_id>_<YYYY-MM-DD>_viirs_harmonised.tif
 ```
 
@@ -268,9 +266,9 @@ All GeoTIFFs share these properties:
 - **CRS**: EPSG:4326 (WGS84)
 - **Dtype**: uint8
 - **Compression**: LZW
-- **Nodata**: 0 (processed) / 255 (harmonised)
+- **Nodata**: `255` for `processed/*_flood_fraction.tif` and `harmonised/*.tif`; `0` for `processed/*_raw.tif`, `*_quality_mask.tif`, and `*_permanent_water.tif`
 
-Harmonised flood extent values are stored as **integer percentages** (0–100),
+Processed and harmonised flood-fraction values are stored as **integer percentages** (0–100),
 where 0 = no flood and 100 = fully flooded. This gives 1% precision while
 using 4× less disk space than float32.
 

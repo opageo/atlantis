@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import rasterio
+from loguru import logger
 from rasterio.enums import Resampling
 from rasterio.transform import from_bounds
 from rasterio.warp import reproject as rio_reproject
@@ -156,6 +157,20 @@ class Reprojector:
         dst_width = max(1, int(round((east - west) / self.target_resolution)))
         dst_height = max(1, int(round((north - south) / self.target_resolution)))
         dst_transform = from_bounds(west, south, east, north, dst_width, dst_height)
+
+        logger.debug(
+            "Reprojecting: {} -> {} at {:.6f}° resolution, "
+            "output grid {}x{} px, bounds ({:.4f}, {:.4f}, {:.4f}, {:.4f})",
+            src_crs,
+            dst_crs,
+            self.target_resolution,
+            dst_width,
+            dst_height,
+            west,
+            south,
+            east,
+            north,
+        )
 
         # ── 3. Reproject each data variable ───────────────────────────────
         reprojected: dict[str, xr.DataArray] = {}
