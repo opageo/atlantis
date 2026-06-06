@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from zipfile import ZipFile
 
 import geopandas as gpd
+import requests
 from loguru import logger
 from shapely.geometry import box
 
@@ -52,6 +53,8 @@ class SearchDiagnostics:
     dates_with_listings: int = 0
     dates_with_matches: int = 0
     result_count: int = 0
+    network_failures: int = 0
+    last_network_error: str | None = None
 
     @property
     def missing_aoi_coverage(self) -> bool:
@@ -72,6 +75,11 @@ class SearchDiagnostics:
     def no_aoi_match_in_listings(self) -> bool:
         """True when listings returned entries but no AOI filename matched."""
         return self.dates_with_listings > 0 and self.dates_with_matches == 0
+
+    @property
+    def network_unreachable(self) -> bool:
+        """True when every probed date failed due to a network/HTTP error."""
+        return self.dates_probed > 0 and self.network_failures == self.dates_probed
 
 
 def _date_range(start: datetime, end: datetime) -> list[datetime]:
@@ -291,7 +299,18 @@ class VIIRSFetcher(AbstractFloodFetcher):
 
             diagnostics.dates_probed += 1
             location = self.backend.get_listing_location(self.base_url, event_date, self.data_format)
-            entries = self.backend.get_directory_links(self.base_url, location.locator, self.timeout)
+            try:
+                entries = self.backend.get_directory_links(self.base_url, location.locator, self.timeout)
+            except requests.RequestException as exc:
+                diagnostics.network_failures += 1
+                diagnostics.last_network_error = str(exc)
+                logger.warning(
+                    "VIIRS backend '{}' network error while listing {}: {}",
+                    self.backend_name,
+                    location.locator,
+                    exc,
+                )
+                continue
             if not entries:
                 logger.debug("Date {}: no entries in listing", location.date_token)
                 continue

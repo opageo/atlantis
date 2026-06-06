@@ -217,6 +217,7 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert "Wrote 2 files" in result.stdout
+    assert "VIIRS backend: noaa_s3" in result.stdout
 
 
 def test_archive_command():
@@ -408,6 +409,48 @@ def test_fetch_command_supports_legacy_viirs_backend(monkeypatch, tmp_path):
     )
 
     assert result.exit_code == 0
+    assert "VIIRS backend: gmu_legacy" in result.stdout
+    assert "Legacy backend note" in result.stdout
+
+
+def test_fetch_command_handles_legacy_backend_offline(monkeypatch, tmp_path):
+    """Network errors from the legacy backend must surface as a clean warning, not a traceback."""
+    import requests
+
+    class OfflineFetcher:
+        def __init__(self, **kwargs):
+            self.last_diagnostics = None
+
+        def fetch(self, event, output_dir):
+            raise requests.ConnectTimeout("Connection to jpssflood.gmu.edu timed out.")
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: OfflineFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Pakistan_2022",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "67.5 26 70 29.5",
+            "--start-date",
+            "2022-08-28",
+            "--end-date",
+            "2022-08-28",
+            "--viirs-backend",
+            "gmu_legacy",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Network error" in result.stdout
+    assert "jpssflood.gmu.edu" in result.stdout
+    assert "Traceback" not in result.stdout
 
 
 def test_build_kurosiwo_metadata_command(monkeypatch, tmp_path):

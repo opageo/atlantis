@@ -4,6 +4,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import requests
 import typer
 from loguru import logger
 
@@ -127,15 +128,38 @@ def _report_empty_fetch(source_id: str, fetcher) -> None:
             )
         return
 
+    if diagnostics.network_unreachable:
+        warn(
+            f"Reason: backend '{diagnostics.backend}' is unreachable "
+            f"({diagnostics.network_failures}/{diagnostics.dates_probed} listing request(s) failed)."
+        )
+        if diagnostics.last_network_error:
+            info(f"Last network error: {diagnostics.last_network_error}")
+        if diagnostics.backend == "gmu_legacy":
+            info(
+                "Hint: jpssflood.gmu.edu is intermittently offline. Retry later "
+                "(ideally from a non-cloud network), or use --viirs-backend noaa_s3 "
+                "for years 2012–2020 / 2023–2026."
+            )
+        else:
+            info("Hint: check your network connection or retry shortly.")
+        return
+
     if diagnostics.listings_all_empty:
         warn(
             f"Reason: backend '{diagnostics.backend}' returned no listings for any of "
             f"the {diagnostics.dates_probed} requested date(s)."
         )
-        info(
-            "Hint: the bucket is up but the daily prefixes are empty for this window. Try "
-            "broadening --start-date/--end-date or switching --viirs-backend."
-        )
+        if diagnostics.backend == "gmu_legacy":
+            info(
+                "Hint: the GMU legacy host can be intermittently offline. Retry with "
+                "--no-stream and/or from a non-cloud network."
+            )
+        else:
+            info(
+                "Hint: the bucket is up but the daily prefixes are empty for this window. Try "
+                "broadening --start-date/--end-date or switching --viirs-backend."
+            )
         return
 
     if diagnostics.no_aoi_match_in_listings:
@@ -144,6 +168,8 @@ def _report_empty_fetch(source_id: str, fetcher) -> None:
             f"contained tiles for the {diagnostics.aoi_count} intersecting AOI(s)."
         )
         info("Hint: the AOIs intersecting this bbox were not produced for the requested dates.")
+        if diagnostics.backend == "gmu_legacy":
+            info("Hint: try widening the date window by 1–2 days for legacy coverage gaps.")
         return
 
     warn(
@@ -351,6 +377,11 @@ def fetch(
 
     command_header("fetch", subtitle=f"{event} · sources={', '.join(sources)}")
     console.print(f"[bold]Output:[/bold] {output_dir}")
+    if "viirs" in sources:
+        mode_label = "stream" if stream else "download"
+        console.print(f"[bold]VIIRS backend:[/bold] {viirs_backend} ({mode_label}, format={viirs_format})")
+        if viirs_backend == "gmu_legacy":
+            info("Legacy backend note: year coverage is inferred by probing each requested date.")
 
     flood_event: FloodEvent | None = None
     if bbox or start_date or end_date:
@@ -383,8 +414,17 @@ def fetch(
                 warn("Event catalogue lookup not yet implemented; provide --bbox/--start-date/--end-date")
                 continue
 
-            with step_status(f"Fetching {src} tiles…"):
-                fetch_results = fetcher.fetch(flood_event, output_dir / src)
+            try:
+                with step_status(f"Fetching {src} tiles…"):
+                    fetch_results = fetcher.fetch(flood_event, output_dir / src)
+            except requests.RequestException as exc:
+                fail(f"Network error while fetching {src}: {exc}")
+                if src == "viirs" and viirs_backend == "gmu_legacy":
+                    info(
+                        "Hint: jpssflood.gmu.edu is intermittently offline. Retry later, or "
+                        "use --viirs-backend noaa_s3 for years 2012–2020 / 2023–2026."
+                    )
+                continue
             if not fetch_results:
                 _report_empty_fetch(src, fetcher)
                 continue

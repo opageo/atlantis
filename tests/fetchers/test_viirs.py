@@ -8,6 +8,7 @@ from zipfile import ZipFile
 import numpy as np
 import pytest
 import rasterio
+import requests
 from rasterio.transform import from_origin
 
 from atlantis.fetchers.base import SearchResult
@@ -361,6 +362,26 @@ class TestVIIRSFetcherDiagnostics:
         assert diag.available_years is None
         assert diag.skipped_years == set()
         assert diag.dates_probed == 3
+
+    def test_diagnostics_network_failure_is_graceful(self, monkeypatch):
+        """Network errors during listing must not crash and must be surfaced via diagnostics."""
+        fetcher = VIIRSFetcher(backend="gmu_legacy")
+        event = self._pakistan_event(2022)
+
+        def _raise(_b, _l, _t):
+            raise requests.ConnectTimeout("Connection to jpssflood.gmu.edu timed out.")
+
+        monkeypatch.setattr(fetcher.backend, "get_directory_links", _raise)
+
+        results = fetcher.search(event)
+        assert results == []
+        diag = fetcher.last_diagnostics
+        assert diag is not None
+        assert diag.dates_probed == 3
+        assert diag.network_failures == 3
+        assert diag.network_unreachable is True
+        assert diag.last_network_error is not None
+        assert "jpssflood.gmu.edu" in diag.last_network_error
 
 
 # ── Fetch tests ──────────────────────────────────────────────────────────────

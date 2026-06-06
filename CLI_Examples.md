@@ -79,13 +79,14 @@ per-date pass-through), see
 - **`--plot`** — save a PNG of the peak-flood date.
 - **`--stream` / `--no-stream`** — stream tiles from NOAA S3 (default) or download to `raw/`.
 - **`--no-classify`** — write raw integer pixel codes (single GeoTIFF) instead of flood/quality/permanent-water masks.
+- **`--verbose`** — enable debug-level logging for fetch/harmonise internals.
 
 ## Case 1 — Valencia, Spain (October 2024)
 
 Mediterranean DANA flash flood. Used as the default smoke test (`atlantis demo`).
 
 ```bash
-uv run atlantis fetch \
+uv run atlantis --verbose fetch \
   --event Valencia_2024 \
   --source viirs \
   --bbox "-1.5 38.8 0.5 40.0" \
@@ -128,7 +129,7 @@ multi-tile mosaicing.
 **Generic CLI** — bbox + date range, no catalogue needed (`make example-harvey-bbox`):
 
 ```bash
-uv run atlantis fetch \
+uv run atlantis --verbose fetch \
   --event Harvey_2017 \
   --source viirs \
   --bbox "-97.27 28.24 -95.54 29.80" \
@@ -141,7 +142,7 @@ uv run atlantis fetch \
 catalogue (`make example-harvey`):
 
 ```bash
-uv run atlantis fetch-kurosiwo-viirs \
+uv run atlantis --verbose fetch-kurosiwo-viirs \
   --case KuroSiwo_1111004 \
   --days-before 1 --days-after 1 \
   --plot --harmonise --no-keep-processed \
@@ -159,7 +160,7 @@ cloud-contaminated and a temporal composite is more informative.
 (`make example-bihar-bbox`):
 
 ```bash
-uv run atlantis fetch \
+uv run atlantis --verbose fetch \
   --event Bihar_2019 \
   --source viirs \
   --bbox "84.84 24.92 86.49 26.16" \
@@ -172,7 +173,7 @@ uv run atlantis fetch \
 **KuroSiwo helper** (`make example-bihar`):
 
 ```bash
-uv run atlantis fetch-kurosiwo-viirs \
+uv run atlantis --verbose fetch-kurosiwo-viirs \
   --case KuroSiwo_1111007 \
   --days-before 2 --days-after 2 \
   --plot --harmonise --no-keep-processed \
@@ -186,7 +187,7 @@ Tropical-cyclone driven flooding north of Manila: ~951 km² extent.
 **Generic CLI** — bbox + date range (`make example-vamco-bbox`):
 
 ```bash
-uv run atlantis fetch \
+uv run atlantis --verbose fetch \
   --event Vamco_2020 \
   --source viirs \
   --bbox "121.14 16.72 122.25 18.45" \
@@ -198,7 +199,7 @@ uv run atlantis fetch \
 **KuroSiwo helper** (`make example-vamco`):
 
 ```bash
-uv run atlantis fetch-kurosiwo-viirs \
+uv run atlantis --verbose fetch-kurosiwo-viirs \
   --case KuroSiwo_1111011 \
   --days-before 1 --days-after 1 \
   --plot --harmonise --no-keep-processed \
@@ -208,7 +209,7 @@ uv run atlantis fetch-kurosiwo-viirs \
 **Variant** — build a daily time-series with `--strategy all` over a wider window:
 
 ```bash
-uv run atlantis fetch \
+uv run atlantis --verbose fetch \
   --event Vamco_2020_timeseries \
   --source viirs \
   --bbox "121.14 16.72 122.25 18.45" \
@@ -230,7 +231,7 @@ Tropical/sub-Saharan flooding: ~420 km² extent. Used in
 **Generic CLI** — bbox + date range (`make example-westafrica-bbox`):
 
 ```bash
-uv run atlantis fetch \
+uv run atlantis --verbose fetch \
   --event WestAfrica_2020 \
   --source viirs \
   --bbox "-0.86 8.26 1.99 11.73" \
@@ -242,7 +243,7 @@ uv run atlantis fetch \
 **KuroSiwo helper** (`make example-westafrica`):
 
 ```bash
-uv run atlantis fetch-kurosiwo-viirs \
+uv run atlantis --verbose fetch-kurosiwo-viirs \
   --case KuroSiwo_470 \
   --plot --harmonise --no-keep-processed \
   --output ./data/KuroSiwo_470
@@ -254,7 +255,7 @@ Process the first N catalogue cases in one go (skipping intermediates to
 keep disk usage low):
 
 ```bash
-uv run atlantis fetch-kurosiwo-viirs \
+uv run atlantis --verbose fetch-kurosiwo-viirs \
   --catalogue assets/ks_catalogue.gpkg \
   --limit 5 \
   --no-keep-processed --harmonise \
@@ -264,11 +265,11 @@ uv run atlantis fetch-kurosiwo-viirs \
 For faster repeated runs, pre-build the metadata CSV once and reuse it:
 
 ```bash
-uv run atlantis build-kurosiwo-metadata \
+uv run atlantis --verbose build-kurosiwo-metadata \
   --catalogue assets/ks_catalogue.gpkg \
   --output data/metadata/kurosiwo_metadata_v1.csv
 
-uv run atlantis fetch-kurosiwo-viirs \
+uv run atlantis --verbose fetch-kurosiwo-viirs \
   --metadata data/metadata/kurosiwo_metadata_v1.csv \
   --case KuroSiwo_1111011 \
   --harmonise --no-keep-processed
@@ -291,7 +292,7 @@ connections time out.
 **Pakistan 2022 — GMU Legacy backend example:**
 
 ```bash
-uv run atlantis fetch \
+uv run atlantis --verbose fetch \
   --event Pakistan_2022 \
   --source viirs \
   --bbox "67.5 26 70 29.5" \
