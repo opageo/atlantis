@@ -59,6 +59,7 @@ dev = [
   "ipython>=8.0.0",
   "ipykernel>=6.30.0",
   "nbstripout>=0.9.1",
+  "ripgrep>=15.1.0",
 ]
 
 [build-system]
