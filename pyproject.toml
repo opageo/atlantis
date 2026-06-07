@@ -1,6 +1,6 @@
 [project]
 name = "atlantis"
-version = "0.1.0"
+version = "0.1.1"
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 readme = "README.md"
 requires-python = ">=3.11, <3.15"
@@ -9,6 +9,9 @@ dependencies = [
   "typer>=0.26.7",
   "loguru>=0.7.0",
   "rich>=13.0.0",
+  "boto3",
+  "universal-pathlib",
+  "s3fs>=2024.10.0",
   "python-dotenv>=1.0.0",
   "pydantic>=2.0",
   "pydantic-settings>=2.0",
@@ -27,6 +30,7 @@ geo = [
   "xarray>=2024.1",
   "zarr>=3.0",
   "rioxarray>=0.15",
+  "pystac>=1.9",
   "pystac-client>=0.7",
   "pyproj>=3.6",
   "shapely>=2.0",
@@ -50,6 +54,7 @@ notebooks = [
 
 [dependency-groups]
 dev = [
+  "pytest-env",
   "poethepoet>=0.46.0",
   "pytest>=8.0.0",
   "pytest-cov>=6.0.0",
@@ -62,9 +67,13 @@ dev = [
   "ripgrep>=15.1.0",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.hatch.build]
 include = ["src/atlantis/fetchers/viirs/data/*.geojson"]
@@ -80,7 +89,7 @@ default-groups = ["dev"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
@@ -99,6 +108,8 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+env = ["R:AWS_PROFILE=default"]
+markers = ["e2e: end-to-end tests requiring network access (STAC API + S3)"]
 
 [tool.coverage.run]
 source = ["atlantis"]
@@ -114,3 +125,7 @@ lint = "ruff check ."
 lint-fix = "ruff check . --fix"
 format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
