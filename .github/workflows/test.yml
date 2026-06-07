@@ -22,6 +22,11 @@ jobs:
           version: "0.11.x"
           python-version: "3.11"
 
+      - name: Set up AWS config
+        run: |
+          mkdir -p ~/.aws
+          echo "${{ secrets.AWS_CONFIG_FILE }}" > ~/.aws/config
+
       - name: Install dependencies
         run: uv sync --all-extras
 
