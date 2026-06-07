@@ -26,6 +26,7 @@ jobs:
         run: |
           mkdir -p ~/.aws
           echo "${{ secrets.AWS_CONFIG_FILE }}" > ~/.aws/config
+          echo "${{ secrets.AWS_CREDENTIALS_FILE }}" > ~/.aws/credentials
 
       - name: Install dependencies
         run: uv sync --all-extras
