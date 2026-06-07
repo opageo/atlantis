@@ -1,0 +1,232 @@
+"""Tests for the Reprojector class."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+from rasterio.transform import from_bounds
+
+from atlantis.harmoniser.reprojector import Reprojector, _resolve_resampling
+
+
+def _make_test_dataset(
+    width: int = 100,
+    height: int = 100,
+    res: float = 0.004,
+    west: float = 20.0,
+    north: float = 35.4,
+    dtype: str = "uint8",
+):
+    """Create a synthetic VIIRS-like xarray Dataset."""
+    import rioxarray  # noqa: F401
+    import xarray as xr
+
+    east = west + width * res
+    south = north - height * res
+
+    data = np.random.default_rng(42).integers(0, 2, size=(height, width)).astype(dtype)
+    transform = from_bounds(west, south, east, north, width, height)
+
+    ds = xr.Dataset(
+        {"flood_extent": xr.DataArray(data, dims=["y", "x"])},
+        coords={
+            "x": west + (np.arange(width) + 0.5) * res,
+            "y": north - (np.arange(height) + 0.5) * res,
+        },
+    )
+    ds.rio.write_crs("EPSG:4326", inplace=True)
+    ds.rio.write_transform(transform, inplace=True)
+    return ds
+
+
+class TestReprojector:
+    def test_init_defaults(self):
+        """Reprojector should use 1 arcmin resolution by default."""
+        r = Reprojector()
+        assert r.target_crs == "EPSG:4326"
+        assert r.target_resolution == pytest.approx(0.016666666666666666)
+        assert r.resampling_method == "average"
+
+    def test_init_custom(self):
+        r = Reprojector(
+            target_crs="EPSG:3857",
+            target_resolution=250.0,
+            resampling_method="bilinear",
+            variable_resampling={"flood_extent": "average", "quality_mask": "mode"},
+        )
+        assert r.target_crs == "EPSG:3857"
+        assert r.target_resolution == 250.0
+        assert r.resampling_method == "bilinear"
+        assert r.variable_resampling["flood_extent"] == "average"
+
+    def test_reproject_same_crs(self):
+        """Same-CRS reproject should resample to target resolution."""
+        ds = _make_test_dataset(width=100, height=100, res=0.004)
+        r = Reprojector(target_resolution=0.016666666666666666)
+
+        ds_out = r.reproject(ds)
+
+        assert "flood_extent" in ds_out.data_vars
+        # 0.4° scene / 0.01667° ≈ 24 pixels
+        assert ds_out["flood_extent"].shape[0] < ds["flood_extent"].shape[0]
+        assert ds_out["flood_extent"].shape[1] < ds["flood_extent"].shape[1]
+        assert ds_out["flood_extent"].dtype == np.float32  # average resampling
+        assert ds_out.attrs["processing"] == "harmonised"
+
+    def test_reproject_flood_extent_average(self):
+        """Flood extent with average resampling should yield 0-1 fractions."""
+        ds = _make_test_dataset(width=50, height=50, res=0.004)
+        np.random.seed(42)
+        ds["flood_extent"].values[:] = np.random.choice([0, 1], size=(50, 50), p=[0.5, 0.5])
+
+        r = Reprojector(target_resolution=0.016666666666666666, variable_resampling={"flood_extent": "average"})
+        ds_out = r.reproject(ds)
+
+        vals = ds_out["flood_extent"].values
+        assert vals.min() >= 0.0
+        assert vals.max() <= 1.0
+
+    def test_reproject_quality_mask_mode(self):
+        """Quality mask with mode resampling should stay binary."""
+        ds = _make_test_dataset(width=50, height=50, res=0.004, dtype="uint8")
+        ds["quality_mask"] = ds["flood_extent"].copy()
+        ds["quality_mask"].values[:] = np.random.choice([0, 1], size=(50, 50), p=[0.2, 0.8])
+
+        r = Reprojector(target_resolution=0.016666666666666666, variable_resampling={"quality_mask": "mode"})
+        ds_out = r.reproject(ds)
+
+        if "quality_mask" in ds_out.data_vars:
+            vals = ds_out["quality_mask"].values
+            assert set(np.unique(vals)).issubset({0, 1})
+
+    def test_reproject_empty_dataset(self):
+        """Empty dataset should return a copy."""
+        import xarray as xr
+
+        ds = xr.Dataset()
+        r = Reprojector()
+        ds_out = r.reproject(ds)
+        assert len(ds_out.data_vars) == 0
+
+    def test_reproject_different_target_resolution(self):
+        """Verify target resolution scaling affects output shape."""
+        ds = _make_test_dataset(width=100, height=100, res=0.004)
+
+        # Coarser resolution → smaller output
+        r_coarse = Reprojector(target_resolution=0.05)
+        ds_coarse = r_coarse.reproject(ds)
+
+        r_fine = Reprojector(target_resolution=0.01)
+        ds_fine = r_fine.reproject(ds)
+
+        assert ds_coarse["flood_extent"].size < ds_fine["flood_extent"].size
+
+
+class TestResolveResampling:
+    def test_valid_methods(self):
+        from rasterio.enums import Resampling
+
+        assert _resolve_resampling("average") == Resampling.average
+        assert _resolve_resampling("bilinear") == Resampling.bilinear
+        assert _resolve_resampling("nearest") == Resampling.nearest
+        assert _resolve_resampling("mode") == Resampling.mode
+
+    def test_case_insensitive(self):
+        from rasterio.enums import Resampling
+
+        assert _resolve_resampling("NEAREST") == Resampling.nearest
+        assert _resolve_resampling("  Average  ") == Resampling.average
+
+    def test_invalid_method(self):
+        with pytest.raises(ValueError, match="Unsupported resampling method"):
+            _resolve_resampling("invalid_method")
+
+
+class TestSnapToGlobalGrid:
+    """Verify snapping of AOI bounds onto the canonical 1-arcmin global grid.
+
+    The reference grid (e.g. ECMWF ``Globe_flood_area_*.grb``) has dims
+    ``lat=10800, lon=21600`` with pixel centres at ``\u00b1(k + 0.5)/60``
+    degrees, i.e. anchored at western edge ``-180`` and northern edge ``+90``.
+    """
+
+    RES = 1.0 / 60.0
+    LON0 = -180.0
+    LAT0 = 90.0
+
+    def test_snap_offgrid_window_extends_outward(self):
+        """A bbox not on the grid is extended outward to the nearest cell edges."""
+        r = Reprojector(target_resolution=self.RES)
+        # West Africa-like bbox, intentionally off-grid by sub-arcmin.
+        west, south, east, north = r._snap_bounds_to_global_grid(-0.86, 8.26, 1.99, 11.73)
+
+        # Snapped values must lie exactly on multiples of RES from origins.
+        for v, origin in [
+            (west - self.LON0, "west"),
+            (east - self.LON0, "east"),
+        ]:
+            assert v / self.RES == pytest.approx(round(v / self.RES), abs=1e-9), origin
+        for v, origin in [
+            (self.LAT0 - north, "north"),
+            (self.LAT0 - south, "south"),
+        ]:
+            assert v / self.RES == pytest.approx(round(v / self.RES), abs=1e-9), origin
+
+        # Outward expansion only.
+        assert west <= -0.86
+        assert south <= 8.26
+        assert east >= 1.99
+        assert north >= 11.73
+
+    def test_snapped_pixel_centres_match_canonical(self):
+        """After snapping, pixel centres equal -180+(k+0.5)/60 and 90-(j+0.5)/60."""
+        ds = _make_test_dataset(width=10, height=10, res=0.004, west=-0.86, north=11.73)
+        r = Reprojector(target_resolution=self.RES, snap_to_global_grid=True)
+        ds_out = r.reproject(ds)
+
+        x = ds_out["x"].values
+        y = ds_out["y"].values
+
+        # Each x must be -180 + (k+0.5)/60 for some integer k.
+        kx = (x - self.LON0) / self.RES - 0.5
+        ky = (self.LAT0 - y) / self.RES - 0.5
+        np.testing.assert_allclose(kx, np.round(kx), atol=1e-9)
+        np.testing.assert_allclose(ky, np.round(ky), atol=1e-9)
+
+        # Pixel size in the output transform equals exactly 1/60.
+        assert ds_out.attrs["target_resolution"] == pytest.approx(self.RES, abs=1e-12)
+
+    def test_snap_disabled_preserves_aoi_bounds(self):
+        """With snapping off, output bounds match the input AOI."""
+        ds = _make_test_dataset(width=10, height=10, res=0.004, west=-0.86, north=11.73)
+        r = Reprojector(target_resolution=self.RES, snap_to_global_grid=False)
+        ds_out = r.reproject(ds)
+
+        # First pixel centre = west + 0.5 * pixel_size; should NOT be on the canonical grid.
+        first_x = float(ds_out["x"].values[0])
+        kx = (first_x - self.LON0) / self.RES - 0.5
+        assert abs(kx - round(kx)) > 1e-3  # genuinely off the grid
+
+    def test_snap_skipped_for_non_geographic_crs(self):
+        """Snapping is a lat/lon construct; it must not engage for projected CRS."""
+        r = Reprojector(
+            target_crs="EPSG:3857",
+            target_resolution=250.0,
+            snap_to_global_grid=True,
+        )
+        # The helper itself is only invoked for EPSG:4326; calling reproject
+        # with a 4326 dataset against a 3857 target should not touch the
+        # global-grid path, so this just checks the gate in reproject() does
+        # not raise. (We exercise the public path.)
+        ds = _make_test_dataset(width=10, height=10, res=0.004)
+        ds_out = r.reproject(ds)
+        assert ds_out["flood_extent"].size > 0
+
+    def test_snap_clips_to_global_extent(self):
+        """Snapped bounds never exceed the global lat/lon extent."""
+        r = Reprojector(target_resolution=self.RES)
+        west, south, east, north = r._snap_bounds_to_global_grid(-179.99, -89.99, 179.99, 89.99)
+        assert west >= -180.0
+        assert east <= 180.0
+        assert south >= -90.0
+        assert north <= 90.0
