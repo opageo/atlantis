@@ -12,7 +12,7 @@ from atlantis.config import HarmoniseConfig, get_config
 # Import fetchers to register them
 from atlantis.fetchers import fetcher_registry, get_fetcher, list_fetchers, rfm, viirs  # noqa: F401
 from atlantis.fetchers.base import FetchResult
-from atlantis.harmoniser import write_harmonised_raster
+from atlantis.harmoniser import Harmoniser, write_harmonised_raster
 from atlantis.models.event import FloodEvent
 from atlantis.utils.kurosiwo import (
     KUROSIWO_DEFAULT_CATALOGUE,
@@ -270,7 +270,6 @@ def _harmonise_gfm(
     harm_dir,
 ):
     """Harmonise GFM data and save GeoTIFF + PNG."""
-    from atlantis.harmoniser import Harmoniser
 
     harm_dir.mkdir(parents=True, exist_ok=True)
     h = Harmoniser()

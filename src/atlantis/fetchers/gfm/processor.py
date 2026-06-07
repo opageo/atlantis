@@ -20,8 +20,10 @@ from pathlib import Path
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling
-from rasterio.transform import Affine
+from rasterio.transform import Affine, from_bounds
 
+from atlantis.config import HarmoniseConfig
+from atlantis.harmoniser.reprojector import Reprojector
 from atlantis.models.metadata import TileMetadata
 
 logger = logging.getLogger(__name__)
@@ -100,7 +102,7 @@ class GfmRasterProcessor:
     Follows the ``extract_subdomain`` approach:
     1. Load each item in native CRS at native resolution.
     2. Coarsen by a factor (max-pool to preserve flood codes).
-    3. Reproject to EPSG:4326 with average resampling (nodata=255).
+    3. Reproject to EPSG:4326 aligned to the canonical 1-arcmin global grid.
     4. Accumulate per-pixel flood/valid/permanent-water counts.
     5. Derive flood_fraction, quality_mask, permanent_water.
     """
@@ -110,6 +112,7 @@ class GfmRasterProcessor:
         bbox: tuple[float, float, float, float],
         coarsen_factor: int = DEFAULT_COARSEN_FACTOR,
         resampling: Resampling = Resampling.average,
+        reprojector: Reprojector | None = None,
     ) -> None:
         """Initialize the GFM raster processor.
 
@@ -117,10 +120,28 @@ class GfmRasterProcessor:
             bbox: Bounding box as (west, south, east, north).
             coarsen_factor: Spatial coarsening factor before reprojection.
             resampling: Resampling method for reprojection to EPSG:4326.
+            reprojector: Pre-configured Reprojector instance. If None, one is
+                created from default HarmoniseConfig (1-arcmin, snapped to
+                the canonical global grid).
         """
         self.bbox = bbox
         self.coarsen_factor = coarsen_factor
         self.resampling = resampling
+        self.reprojector = reprojector or Reprojector(
+            target_crs="EPSG:4326",
+            target_resolution=HarmoniseConfig().target_resolution,
+            resampling_method=resampling.name,
+            snap_to_global_grid=True,
+        )
+
+        # Pre-compute the snapped target grid for the bbox
+        west, south, east, north = self.bbox
+        self._snapped_bounds = self.reprojector._snap_bounds_to_global_grid(west, south, east, north)
+        sw, ss, se, sn = self._snapped_bounds
+        res = self.reprojector.target_resolution
+        self._dst_width = max(1, int(round((se - sw) / res)))
+        self._dst_height = max(1, int(round((sn - ss) / res)))
+        self._dst_transform = from_bounds(sw, ss, se, sn, self._dst_width, self._dst_height)
 
     def process_items(
         self,
@@ -216,7 +237,12 @@ class GfmRasterProcessor:
                     "valid": valid_mask_native,
                 }
             ).rio.write_crs(crs_src)
-            masks_ll = masks.rio.reproject("EPSG:4326", nodata=np.nan, resampling=self.resampling)
+
+            # Reproject each mask directly onto the canonical 1-arcmin global
+            # grid (pre-computed snapped bounds/transform). This ensures all
+            # items accumulate on the same aligned grid — no double
+            # reprojection needed at harmonisation time.
+            masks_ll = self._reproject_to_canonical_grid(masks)
             del xx, flood_native, perm_native, flood_mask_native, perm_mask_native, valid_mask_native, masks
 
             flood_frac = np.squeeze(masks_ll["flood"].fillna(0.0).values.astype("float32"))
@@ -252,8 +278,8 @@ class GfmRasterProcessor:
             source_id="gfm",
             fetch_timestamp=datetime.now(timezone.utc),
             crs="EPSG:4326",
-            resolution=0.0,  # variable depending on native resolution + coarsen
-            bbox=self.bbox,
+            resolution=self.reprojector.target_resolution,
+            bbox=self._snapped_bounds,
             cloud_fraction=processed.cloud_fraction,
             permanent_water_mask_available=True,
         )
@@ -264,6 +290,31 @@ class GfmRasterProcessor:
             paths = self._write_outputs(processed, event_id, date_token, output_dir)
 
         return GfmProcessResult(processed=processed, paths=paths, metadata=metadata)
+
+    def _reproject_to_canonical_grid(self, masks: "xr.Dataset") -> "xr.Dataset":
+        """Reproject a native-CRS mask dataset onto the pre-computed canonical grid.
+
+        Uses rioxarray's ``rio.reproject`` (which correctly handles source
+        transforms from odc.stac-loaded data) but forces the destination grid
+        to the canonical 1-arcmin snapped bounds/transform.
+
+        Args:
+            masks: xarray Dataset with float32 binary-mask variables and a
+                CRS written via rioxarray (``masks.rio.crs``).
+
+        Returns:
+            xarray Dataset on the canonical grid with the same variable names.
+        """
+        # Squeeze out any singleton time dimension before reprojection
+        masks = masks.squeeze(drop=True)
+
+        return masks.rio.reproject(
+            "EPSG:4326",
+            nodata=np.nan,
+            resampling=self.resampling,
+            shape=(self._dst_height, self._dst_width),
+            transform=self._dst_transform,
+        )
 
     def _classify(
         self,
@@ -278,8 +329,6 @@ class GfmRasterProcessor:
         The counts are float accumulators of per-pixel class coverage fractions
         (one contribution per item, in ``[0, 1]``).
         """
-        from rasterio.transform import from_bounds
-
         # Flood fraction: sum(flood_coverage) / sum(valid_coverage), NaN where no valid obs
         with np.errstate(divide="ignore", invalid="ignore"):
             flood_fraction = np.where(
@@ -305,32 +354,13 @@ class GfmRasterProcessor:
         valid_pixels = int(np.sum(quality_mask))
         cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0
 
-        # Extract transform from coords
+        # Use the pre-computed canonical grid transform
         shape = flood_fraction.shape
-        if "x" in coords and "y" in coords:
-            x = coords["x"].values
-            y = coords["y"].values
-        elif "longitude" in coords and "latitude" in coords:
-            x = coords["longitude"].values
-            y = coords["latitude"].values
-        else:
-            x = np.arange(shape[1], dtype=np.float64)
-            y = np.arange(shape[0], dtype=np.float64)
-
-        transform = from_bounds(
-            float(x.min()),
-            float(y.min()),
-            float(x.max()),
-            float(y.max()),
-            len(x),
-            len(y),
-        )
-
         return GfmProcessedTile(
             flood_fraction=flood_fraction,
             quality_mask=quality_mask,
             permanent_water=permanent_water,
-            transform=transform,
+            transform=self._dst_transform,
             crs="EPSG:4326",
             shape=shape,
             cloud_fraction=cloud_fraction,
