@@ -1,0 +1,10 @@
+[pytest]
+log_cli = true
+log_cli_level = "INFO"
+addopts = ["-s"]
+env = [
+    "R:AWS_PROFILE=default",
+]
+markers = [
+    "e2e: end-to-end tests requiring network access (STAC API + S3)",
+]
