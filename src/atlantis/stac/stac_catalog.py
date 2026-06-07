@@ -172,7 +172,7 @@ def _iter_tile_prefixes(
             # Key structure relative to actid_prefix:
             #   labeled:   {aoiid}/{hash}/{filename}        → depth 3 from actid_prefix
             #   unlabeled: 00/{2chars}/{hash}/{filename}    → depth 4 from actid_prefix
-            relative = key[len(actid_prefix):]  # strip leading prefix
+            relative = key[len(actid_prefix) :]  # strip leading prefix
             parts = relative.split("/")
 
             aoiid = parts[0]
