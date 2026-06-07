@@ -1,6 +1,6 @@
 [project]
 name = "atlantis"
-version = "0.1.0"
+version = "0.1.1"
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 readme = "README.md"
 requires-python = ">=3.11, <3.15"
@@ -54,8 +54,9 @@ notebooks = [
 
 [dependency-groups]
 dev = [
+  "pytest-env",
   "poethepoet>=0.46.0",
-  "pytest>=8.0.0",
+  "pytest>=9.0.0",
   "pytest-cov>=6.0.0",
   "pytest-xdist>=3.2.0",
   "ruff>=0.15.13",
@@ -103,12 +104,6 @@ convention = "google"
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-markers = [
-    "e2e: end-to-end tests requiring network access (STAC API + S3)",
-]
 
 [tool.coverage.run]
 source = ["atlantis"]
