@@ -107,7 +107,7 @@ indent-style = "space"
 
 [tool.coverage.run]
 source = ["atlantis"]
-omit = ["*/tests/*", "*/scripts/*"]
+omit = ["*/tests/*", "*/scripts/*", "*/cli.py", "*/utils/setup.py"]
 
 [tool.coverage.report]
 show_missing = true

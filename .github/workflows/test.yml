@@ -32,6 +32,8 @@ jobs:
         run: uv sync --all-extras
 
       - name: Run tests with coverage
+        env:
+          NO_COLOR: "1"
         run: uv run pytest tests/ --cov=atlantis --cov-report=json --cov-report=term-missing -v
 
       - name: Update Coverage Badge

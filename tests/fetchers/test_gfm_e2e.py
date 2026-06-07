@@ -14,14 +14,15 @@ Run with:
 
 from __future__ import annotations
 
-import subprocess
-
 import boto3
 import numpy as np
 import pytest
 import rasterio
 from rasterio.session import AWSSession
+from typer.testing import CliRunner
 from upath import UPath
+
+from atlantis.cli import cli
 
 S3_REFERENCE_BASE = "s3://atlantis/reference/Valencia_2024_gfm/gfm/harmonised"
 
@@ -39,35 +40,33 @@ REFERENCE_FILES = {
 
 
 def _run_gfm_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
-    """Run the GFM fetch pipeline via CLI and return harmonised TIF paths."""
-    cmd = [
-        "uv",
-        "run",
-        "atlantis",
-        "fetch",
-        "--event",
-        EVENT_ID,
-        "--source",
-        "gfm",
-        "--bbox",
-        BBOX,
-        "--start-date",
-        START_DATE,
-        "--end-date",
-        END_DATE,
-        "--strategy",
-        strategy,
-        "--harmonise",
-        "--output",
-        str(output_dir),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    if result.returncode != 0:
-        pytest.fail(
-            f"GFM pipeline failed (strategy={strategy}):\n"
-            f"stdout: {result.stdout[-2000:]}\n"
-            f"stderr: {result.stderr[-2000:]}"
-        )
+    """Run the GFM fetch pipeline via the CLI app and return harmonised TIF paths."""
+    runner = CliRunner(env={"GDAL_HTTP_UNSAFESSL": "YES"})
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            EVENT_ID,
+            "--source",
+            "gfm",
+            "--bbox",
+            BBOX,
+            "--start-date",
+            START_DATE,
+            "--end-date",
+            END_DATE,
+            "--strategy",
+            strategy,
+            "--harmonise",
+            "--output",
+            str(output_dir),
+        ],
+    )
+    if result.exit_code != 0:
+        output = result.stdout if result.stdout else ""
+        exc = f"\n{result.exception}" if result.exception else ""
+        pytest.fail(f"GFM pipeline failed (strategy={strategy}):\noutput: {output[-2000:]}{exc}")
 
     harm_dir = output_dir / "gfm" / "harmonised"
     tifs = sorted(harm_dir.glob("*_gfm_harmonised.tif"))
