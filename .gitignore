@@ -240,3 +240,6 @@ docs/viirs_atbd.md
 .ignore
 assets/kurosiwo/**
 *.debug/**
+docs/mcdwd_laads_desc.md
+docs/mcdwd_vcdwd_userguide_revF.md
+docs/mod44w_userguide_atbd_v61.md
