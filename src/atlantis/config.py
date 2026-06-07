@@ -71,6 +71,7 @@ class HarmoniseConfig(BaseSettings):
         "flood_fraction": "average",
         "quality_mask": "mode",
         "permanent_water": "mode",
+        "recurring_flood": "mode",
         "raw": "nearest",
     }
     normalise_range: tuple[float, float] = (0.0, 1.0)
@@ -132,6 +133,11 @@ class FetcherConfig(BaseSettings):
         viirs_base_url: Override URL for NOAA VIIRS data.
         viirs_legacy_base_url: Override URL for legacy GMU VIIRS data.
         viirs_format: Default VIIRS data format.
+        modis_backend: Default MODIS backend.
+        modis_composite: Default MODIS composite (F1 / F1C / F2 / F3).
+        modis_lance_primary_base_url: Override URL for the primary LANCE NRT mirror.
+        modis_lance_backup_base_url: Override URL for the backup LANCE NRT mirror.
+        modis_laads_base_url: Override URL for the LAADS DAAC archive.
     """
 
     model_config = SettingsConfigDict(
@@ -150,6 +156,11 @@ class FetcherConfig(BaseSettings):
     viirs_base_url: str | None = None
     viirs_legacy_base_url: str | None = None
     viirs_format: Literal["tif", "netcdf", "shapezip", "png"] = "tif"
+    modis_backend: Literal["lance_geotiff", "laads_hdf4"] = "lance_geotiff"
+    modis_composite: Literal["F1", "F1C", "F2", "F3"] = "F2"
+    modis_lance_primary_base_url: str | None = None
+    modis_lance_backup_base_url: str | None = None
+    modis_laads_base_url: str | None = None
 
 
 class AtlantisConfig(BaseSettings):
