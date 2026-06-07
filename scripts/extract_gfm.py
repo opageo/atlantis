@@ -134,7 +134,8 @@ def extract_subdomain_odc_resampling(aa, items, obs, msk, resolution_deg=1 / 60)
         perm_arr = xx["reference_water_mask"].values
         if np.all(flood_arr == 255):
             print(
-                f"Item {idx + 1}/{len(items)} WARNING: ensemble_flood_extent is all nodata (255) after loading. Check the item and STAC configuration."
+                f"Item {idx + 1}/{len(items)} WARNING: ensemble_flood_extent is all nodata (255) "
+                "after loading. Check the item and STAC configuration."
             )
         else:
             print(
@@ -143,7 +144,8 @@ def extract_subdomain_odc_resampling(aa, items, obs, msk, resolution_deg=1 / 60)
             )
         if np.all(perm_arr == 255):
             print(
-                f"Item {idx + 1}/{len(items)} WARNING: reference_water_mask is all nodata (255) after loading. Check the item and STAC configuration."
+                f"Item {idx + 1}/{len(items)} WARNING: reference_water_mask is all nodata (255) "
+                "after loading. Check the item and STAC configuration."
             )
         else:
             print(

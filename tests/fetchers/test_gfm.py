@@ -75,7 +75,7 @@ def _make_mock_stac_item(item_id="test_item_001", dt=None, bbox=None):
     item.bbox = bbox or [10.0, 20.0, 11.0, 21.0]
     item.self_href = f"https://stac.eodc.eu/api/v1/collections/GFM/items/{item_id}"
     item.properties = {
-        "proj:wkt2": 'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]',
+        "proj:wkt2": 'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]',  # noqa: E501
         "gsd": 10,
         "datetime": "2024-10-30T06:00:00Z",
     }
