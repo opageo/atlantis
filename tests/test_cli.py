@@ -174,6 +174,10 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
                 "stream": True,
                 "strategy": "peak",
                 "keep_processed": True,
+                "peak_days_before": 0,
+                "peak_days_after": 0,
+                "max_observations": 0,
+                "peak_priority": "post",
             }
 
         def fetch(self, event, output_dir):
@@ -368,6 +372,10 @@ def test_fetch_command_supports_legacy_viirs_backend(monkeypatch, tmp_path):
                 "stream": True,
                 "strategy": "peak",
                 "keep_processed": True,
+                "peak_days_before": 0,
+                "peak_days_after": 0,
+                "max_observations": 0,
+                "peak_priority": "post",
             }
 
         def fetch(self, event, output_dir):
@@ -919,3 +927,123 @@ def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path)
     assert not processed_dir.exists()
     # raw/ should still exist (not created here but not deleted)
     assert not (event_viirs_dir / "raw").exists()  # wasn't created by DummyFetcher
+
+
+# ── Peak-window CLI forwarding tests ──────────────────────────────────────────
+
+
+def test_fetch_peak_window_days_forwarded(monkeypatch, tmp_path):
+    """--peak-window-days sets both peak_days_before and peak_days_after."""
+    captured: list[dict] = []
+
+    class RecordFetcher:
+        def __init__(self, **kwargs):
+            captured.append(kwargs)
+
+        def fetch(self, event, output_dir):
+            return []
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: RecordFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Yangtze_2020",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "105 28 125 38",
+            "--start-date",
+            "2020-07-22",
+            "--end-date",
+            "2020-07-22",
+            "--strategy",
+            "all",
+            "--peak-window-days",
+            "7",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured
+    assert captured[0]["peak_days_before"] == 7
+    assert captured[0]["peak_days_after"] == 7
+
+
+def test_fetch_peak_days_asymmetric_forwarded(monkeypatch, tmp_path):
+    """--peak-days-before and --peak-days-after can be set independently."""
+    captured: list[dict] = []
+
+    class RecordFetcher:
+        def __init__(self, **kwargs):
+            captured.append(kwargs)
+
+        def fetch(self, event, output_dir):
+            return []
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: RecordFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Yangtze_2020",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "105 28 125 38",
+            "--start-date",
+            "2020-07-22",
+            "--end-date",
+            "2020-07-22",
+            "--peak-days-before",
+            "3",
+            "--peak-days-after",
+            "5",
+            "--max-observations",
+            "4",
+            "--peak-priority",
+            "balanced",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured
+    assert captured[0]["peak_days_before"] == 3
+    assert captured[0]["peak_days_after"] == 5
+    assert captured[0]["max_observations"] == 4
+    assert captured[0]["peak_priority"] == "balanced"
+
+
+def test_fetch_peak_window_days_mutex_with_specific_flags(monkeypatch, tmp_path):
+    """--peak-window-days and --peak-days-before are mutually exclusive."""
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: object)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Yangtze_2020",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "105 28 125 38",
+            "--start-date",
+            "2020-07-22",
+            "--end-date",
+            "2020-07-22",
+            "--peak-window-days",
+            "7",
+            "--peak-days-before",
+            "3",
+        ],
+    )
+    assert result.exit_code != 0 or "cannot be combined" in result.output

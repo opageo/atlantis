@@ -294,6 +294,19 @@ class ViirsRasterProcessor:
             cloud_fraction=cloud_fraction,
         )
 
+    def write_processed(self, result: "ProcessTilesResult") -> None:
+        """Persist a :class:`ProcessTilesResult` to disk.
+
+        Convenience wrapper around :meth:`_write_outputs` so callers that receive
+        a result from :meth:`process_tiles` (which may have been run with
+        ``write_outputs=False``) can flush it to disk later — e.g. after a
+        peak-window filter has been applied.
+
+        The output directory must already exist; paths are taken from
+        ``result.paths``.
+        """
+        self._write_outputs(result.processed, result.paths)
+
     def _write_outputs(self, processed: ProcessedTile, paths: OutputPaths) -> None:
         """Write the processed arrays to GeoTIFF files.
 

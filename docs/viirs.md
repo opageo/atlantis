@@ -99,6 +99,49 @@ uv run atlantis harmonise \
 | `--plot`              | off     | Save a PNG of the peak-flood date                                                                                                                                                              |
 | `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). See [Strategies in detail](viirs_pipeline.md#strategies-in-detail-pixel-level). |
 
+#### Peak-window filtering and subsampling
+
+These flags work as **composable modifiers** on top of any `--strategy`. They are
+no-ops for `--strategy peak` (which always returns a single date).
+
+| Flag                 | Default | Effect                                                                                                                                         |
+| -------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--peak-days-before` | `0`     | Include dates up to N days **before** the computed peak. 0 = no window filter.                                                                 |
+| `--peak-days-after`  | `0`     | Include dates up to N days **after** the computed peak. 0 = no window filter.                                                                  |
+| `--peak-window-days` | `0`     | Symmetric shorthand: sets both `--peak-days-before` and `--peak-days-after` to the same value. Cannot be combined with the two specific flags. |
+| `--max-observations` | `0`     | Cap the number of returned dates after windowing. 0 = no limit. Selection order is controlled by `--peak-priority`.                            |
+| `--peak-priority`    | `post`  | Subsampling bias: `post` (post-event first, then pre), `pre` (pre-event first, then post), `balanced` (alternating ±1, ±2, …).                 |
+
+The **peak** is the date with the highest flood-pixel count among all fetched dates
+(ties broken by earliest). Windowing always keeps the peak date.
+
+**Example — 7-day window, up to 5 observations (post-event bias):**
+
+```bash
+uv run atlantis fetch \
+  --event valencia_2024 \
+  --source viirs \
+  --bbox "-1.2 39.0 0.2 39.8" \
+  --start-date 2024-10-20 \
+  --end-date 2024-11-10 \
+  --strategy all \
+  --peak-window-days 7 \
+  --max-observations 5 \
+  --no-keep-processed --harmonise
+```
+
+This fetches all dates in the two-week window, identifies the peak, filters to ±7
+days around it, then keeps the peak plus the 4 nearest post-event dates (the
+`post` default). The 5 harmonised GeoTIFFs are written to `harmonised/`.
+
+**Interaction with strategies:**
+
+| Strategy    | Window filter                         | Subsampling                                |
+| :---------- | :------------------------------------ | :----------------------------------------- |
+| `peak`      | No-op (1 date returned regardless)    | No-op                                      |
+| `aggregate` | Narrows the composite to window dates | Narrows further before mean/mode reduction |
+| `all`       | Filters the returned FetchResult list | Subsamples the filtered list               |
+
 #### Data access
 
 | Flag              | Default   | Effect                                                   |

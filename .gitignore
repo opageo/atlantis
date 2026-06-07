@@ -234,3 +234,6 @@ data/
 docs/*.txt
 docs/viirs_atbd.md
 .DS_Store
+docs/mcdwd_laads_desc.md
+docs/mcdwd_vcdwd_userguide_revF.md
+docs/mod44w_userguide_atbd_v61.md

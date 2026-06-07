@@ -924,3 +924,162 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
     assert int(noaa_dataset["permanent_water"].isel(x=slice(0, 10)).sum()) == 0
     assert int(noaa_dataset["permanent_water"].isel(x=slice(10, 20), y=slice(0, 5)).sum()) == 50
     assert int(noaa_dataset["permanent_water"].isel(x=slice(10, 20), y=slice(5, 10)).sum()) == 0
+
+
+# ── Peak-window / subsampling integration tests ───────────────────────────────
+
+
+def _make_search_results_for_dates(
+    tmp_path: Path,
+    date_tokens: list[str],
+    flood_counts: list[int],
+    bbox: tuple[float, float, float, float] = (105.0, 28.0, 115.0, 38.0),
+) -> tuple[list[SearchResult], dict]:
+    """Build synthetic tiles + SearchResult list.  Returns (results, tif_map)."""
+    results = []
+    tif_map = {}
+    for token, count in zip(date_tokens, flood_counts):
+        data = np.zeros((10, 10), dtype=np.uint8)
+        data.ravel()[:count] = 170  # flood code
+        tif_path = tmp_path / f"tile_{token}.tif"
+        _write_tile(tif_path, bbox[0], bbox[1], bbox[2], bbox[3], data)
+        tif_map[token] = tif_path
+        dt_year, dt_month, dt_day = int(token[:4]), int(token[4:6]), int(token[6:8])
+        results.append(
+            SearchResult(
+                source_id="viirs",
+                item_id=f"viirs:{token}:077",
+                timestamp=datetime(dt_year, dt_month, dt_day, tzinfo=timezone.utc),
+                bbox=bbox,
+                url=tif_path.as_posix(),
+                properties={"aoi_id": 77, "date": token, "filename": tif_path.name},
+            )
+        )
+    return results, tif_map
+
+
+class TestPeakWindowIntegration:
+    """Integration tests: VIIRSFetcher with peak_days_before/after and max_observations."""
+
+    def _event(self):
+        return FloodEvent(
+            event_id="TestEvent",
+            bbox=(105.0, 28.0, 115.0, 38.0),
+            start_date=date(2020, 7, 1),
+            end_date=date(2020, 7, 7),
+            sources=["viirs"],
+        )
+
+    # 7 dates; peak on day 3 (index 2) with 80 flood pixels
+    _date_tokens = ["20200701", "20200702", "20200703", "20200704", "20200705", "20200706", "20200707"]
+    _flood_counts = [10, 30, 80, 50, 20, 5, 2]
+
+    def test_strategy_all_no_window_returns_all_dates(self, tmp_path, monkeypatch):
+        fetcher = VIIRSFetcher(classify=True, strategy="all", keep_processed=False, stream=True)
+        sr, _ = _make_search_results_for_dates(tmp_path, self._date_tokens, self._flood_counts)
+        monkeypatch.setattr(fetcher, "search", lambda _e: sr)
+        results = fetcher.fetch(self._event(), tmp_path / "out")
+        # strategy=all + no window → one result per date (in-memory)
+        assert len(results) == 7
+
+    def test_window_filters_to_correct_dates_strategy_all(self, tmp_path, monkeypatch):
+        """±2 days around peak (day 3) → days 1–5 (5 dates)."""
+        fetcher = VIIRSFetcher(
+            classify=True,
+            strategy="all",
+            keep_processed=True,
+            stream=True,
+            peak_days_before=2,
+            peak_days_after=2,
+        )
+        sr, _ = _make_search_results_for_dates(tmp_path, self._date_tokens, self._flood_counts)
+        monkeypatch.setattr(fetcher, "search", lambda _e: sr)
+        out_dir = tmp_path / "out"
+        results = fetcher.fetch(self._event(), out_dir)
+        assert len(results) == 5
+        returned_tokens = {r.date_token for r in results}
+        assert returned_tokens == {"20200701", "20200702", "20200703", "20200704", "20200705"}
+        # Only 5 dates written to processed/
+        processed_files = list((out_dir / "processed").glob("*_flood_fraction.tif"))
+        assert len(processed_files) == 5
+
+    def test_max_observations_post_priority(self, tmp_path, monkeypatch):
+        """Window ±3, max 3, post priority → peak + 2 post-peak dates."""
+        fetcher = VIIRSFetcher(
+            classify=True,
+            strategy="all",
+            keep_processed=False,
+            stream=True,
+            peak_days_before=3,
+            peak_days_after=3,
+            max_observations=3,
+            peak_priority="post",
+        )
+        sr, _ = _make_search_results_for_dates(tmp_path, self._date_tokens, self._flood_counts)
+        monkeypatch.setattr(fetcher, "search", lambda _e: sr)
+        results = fetcher.fetch(self._event(), tmp_path / "out")
+        # strategy=all, no keep_processed → one in-memory result per surviving date
+        assert len(results) == 3
+        returned_tokens = {r.date_token for r in results}
+        assert "20200703" in returned_tokens  # peak (day 3)
+        assert "20200704" in returned_tokens  # post +1
+        assert "20200705" in returned_tokens  # post +2
+
+    def test_max_observations_with_keep_processed_writes_only_survivors(self, tmp_path, monkeypatch):
+        """With keep_processed and max_observations, only surviving dates appear in processed/."""
+        fetcher = VIIRSFetcher(
+            classify=True,
+            strategy="all",
+            keep_processed=True,
+            stream=True,
+            peak_days_before=3,
+            peak_days_after=3,
+            max_observations=3,
+            peak_priority="post",
+        )
+        sr, _ = _make_search_results_for_dates(tmp_path, self._date_tokens, self._flood_counts)
+        monkeypatch.setattr(fetcher, "search", lambda _e: sr)
+        out_dir = tmp_path / "out"
+        results = fetcher.fetch(self._event(), out_dir)
+        assert len(results) == 3
+        # Peak is day 3; post priority → days 3,4,5
+        returned_tokens = {r.date_token for r in results}
+        assert "20200703" in returned_tokens  # peak
+        assert "20200704" in returned_tokens  # post +1
+        assert "20200705" in returned_tokens  # post +2
+        # processed/ should contain exactly 3 flood_fraction files
+        processed_files = sorted((out_dir / "processed").glob("*_flood_fraction.tif"))
+        assert len(processed_files) == 3
+
+    def test_no_window_flags_is_noop(self, tmp_path, monkeypatch):
+        """With zero window flags, all dates pass through unchanged."""
+        fetcher = VIIRSFetcher(
+            classify=True,
+            strategy="all",
+            keep_processed=True,
+            stream=True,
+            peak_days_before=0,
+            peak_days_after=0,
+            max_observations=0,
+        )
+        sr, _ = _make_search_results_for_dates(tmp_path, self._date_tokens, self._flood_counts)
+        monkeypatch.setattr(fetcher, "search", lambda _e: sr)
+        out_dir = tmp_path / "out"
+        results = fetcher.fetch(self._event(), out_dir)
+        assert len(results) == 7
+        processed_files = list((out_dir / "processed").glob("*_flood_fraction.tif"))
+        assert len(processed_files) == 7
+
+    def test_invalid_peak_priority_raises(self):
+        with pytest.raises(ValueError, match="peak_priority"):
+            VIIRSFetcher(peak_priority="unknown")
+
+    def test_negative_peak_days_raises(self):
+        with pytest.raises(ValueError, match="peak_days_before"):
+            VIIRSFetcher(peak_days_before=-1)
+        with pytest.raises(ValueError, match="peak_days_after"):
+            VIIRSFetcher(peak_days_after=-1)
+
+    def test_negative_max_observations_raises(self):
+        with pytest.raises(ValueError, match="max_observations"):
+            VIIRSFetcher(max_observations=-1)

@@ -346,6 +346,33 @@ def fetch(
         "--keep-processed/--no-keep-processed",
         help="Write intermediate processed/ GeoTIFFs. Use --no-keep-processed to save disk space.",
     ),
+    peak_days_before: int = typer.Option(
+        0,
+        "--peak-days-before",
+        help="(≥ 0) Filter dates to this many days BEFORE the computed peak. 0 = no filtering.",
+    ),
+    peak_days_after: int = typer.Option(
+        0,
+        "--peak-days-after",
+        help="(≥ 0) Filter dates to this many days AFTER the computed peak. 0 = no filtering.",
+    ),
+    peak_window_days: int = typer.Option(
+        0,
+        "--peak-window-days",
+        help="Symmetric shorthand: set both --peak-days-before and --peak-days-after to this value."
+        " Cannot be combined with --peak-days-before / --peak-days-after.",
+    ),
+    max_observations: int = typer.Option(
+        0,
+        "--max-observations",
+        help="Maximum number of dates to return after windowing. 0 = no limit (VIIRS only).",
+    ),
+    peak_priority: str = typer.Option(
+        "post",
+        "--peak-priority",
+        help="Subsampling bias when --max-observations is set: post (post-event first),"
+        " pre (pre-event first), or balanced (alternating ±1, ±2, …). VIIRS only.",
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -365,6 +392,11 @@ def fetch(
         harmonise: Harmonise the peak-flood date to 1 arcmin (VIIRS only).
         strategy: How to handle multiple dates: peak, aggregate, all.
         keep_processed: Write intermediate processed/ GeoTIFFs.
+        peak_days_before: Days before the peak to include (window filter, VIIRS only).
+        peak_days_after: Days after the peak to include (window filter, VIIRS only).
+        peak_window_days: Symmetric shorthand for peak_days_before == peak_days_after.
+        max_observations: Maximum number of dates to return after windowing (VIIRS only).
+        peak_priority: Subsampling bias when max_observations is set (VIIRS only).
     """
     config = get_config()
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
@@ -401,6 +433,12 @@ def fetch(
             section_rule(src)
             fetcher_kwargs = {}
             if src == "viirs":
+                if peak_window_days > 0 and (peak_days_before > 0 or peak_days_after > 0):
+                    raise typer.BadParameter(
+                        "--peak-window-days cannot be combined with --peak-days-before / --peak-days-after"
+                    )
+                effective_days_before = peak_window_days if peak_window_days > 0 else peak_days_before
+                effective_days_after = peak_window_days if peak_window_days > 0 else peak_days_after
                 fetcher_kwargs = {
                     "backend": viirs_backend,
                     "data_format": viirs_format,
@@ -408,6 +446,10 @@ def fetch(
                     "stream": stream,
                     "strategy": strategy,
                     "keep_processed": keep_processed,
+                    "peak_days_before": effective_days_before,
+                    "peak_days_after": effective_days_after,
+                    "max_observations": max_observations,
+                    "peak_priority": peak_priority,
                 }
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
@@ -431,6 +473,15 @@ def fetch(
 
             if src == "viirs":
                 _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
+                # Summarise peak-window / subsampling when active
+                if effective_days_before > 0 or effective_days_after > 0 or max_observations > 0:
+                    n_returned = len(fetch_results)
+                    parts = []
+                    if effective_days_before > 0 or effective_days_after > 0:
+                        parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
+                    if max_observations > 0:
+                        parts.append(f"max {max_observations} obs (priority={peak_priority})")
+                    info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
             else:
                 n = sum(len(result.files) for result in fetch_results)
                 ok(f"Wrote {n} files")

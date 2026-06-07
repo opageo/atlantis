@@ -21,7 +21,7 @@ from atlantis.fetchers.registry import register_fetcher
 from atlantis.fetchers.viirs.backend import get_backend, list_backends
 from atlantis.fetchers.viirs.dataset import processed_tile_to_dataset
 from atlantis.fetchers.viirs.processor import OutputPaths, ProcessTilesResult, ViirsRasterProcessor
-from atlantis.fetchers.viirs.selection import flood_pixel_count
+from atlantis.fetchers.viirs.selection import flood_pixel_count, select_peak_window, subsample_around_peak
 from atlantis.fetchers.viirs.selection import is_better_peak_candidate as is_better_peak_candidate
 from atlantis.models.event import FloodEvent
 from atlantis.utils.io import download_file, ensure_dir
@@ -145,6 +145,10 @@ class VIIRSFetcher(AbstractFloodFetcher):
         stream: bool = False,
         strategy: str = "peak",
         keep_processed: bool = True,
+        peak_days_before: int = 0,
+        peak_days_after: int = 0,
+        max_observations: int = 0,
+        peak_priority: str = "post",
     ) -> None:
         """Initialize the VIIRS fetcher.
 
@@ -160,6 +164,16 @@ class VIIRSFetcher(AbstractFloodFetcher):
             strategy: How to handle multiple dates: "peak" (best flood date),
                 "aggregate" (mean/mode), or "all" (every date).
             keep_processed: When True, write intermediate processed/ GeoTIFFs.
+            peak_days_before: Days before the computed peak to include when
+                filtering dates.  0 means no window filtering.  Requires
+                *peak_days_after* > 0 to have any effect (or vice-versa).
+            peak_days_after: Days after the computed peak to include.
+            max_observations: Maximum number of dates to return after windowing.
+                0 means no limit.  Selection order is controlled by
+                *peak_priority*.
+            peak_priority: How to fill *max_observations* around the peak:
+                ``"post"`` (post-event first, then pre), ``"pre"`` (pre-event
+                first, then post), or ``"balanced"`` (alternating ±1, ±2, …).
         """
         config = get_config()
 
@@ -176,6 +190,20 @@ class VIIRSFetcher(AbstractFloodFetcher):
 
         if self.strategy not in {"peak", "aggregate", "all"}:
             raise ValueError(f"Invalid strategy '{self.strategy}'. Expected 'peak', 'aggregate', or 'all'.")
+
+        if peak_days_before < 0:
+            raise ValueError(f"peak_days_before must be non-negative, got {peak_days_before}")
+        if peak_days_after < 0:
+            raise ValueError(f"peak_days_after must be non-negative, got {peak_days_after}")
+        if max_observations < 0:
+            raise ValueError(f"max_observations must be non-negative, got {max_observations}")
+        if peak_priority not in {"post", "pre", "balanced"}:
+            raise ValueError(f"Invalid peak_priority '{peak_priority}'. Expected 'post', 'pre', or 'balanced'.")
+
+        self.peak_days_before = peak_days_before
+        self.peak_days_after = peak_days_after
+        self.max_observations = max_observations
+        self.peak_priority = peak_priority
 
     def _resolve_base_url(self, override: str | None, config) -> str:
         """Determine the base URL based on backend and configuration."""
@@ -246,6 +274,65 @@ class VIIRSFetcher(AbstractFloodFetcher):
                 extracted.replace(target)
                 extracted.parent.rmdir()
             return target
+
+    def _apply_peak_window(
+        self,
+        all_processed: list[tuple[str, "ProcessTilesResult"]],
+    ) -> list[tuple[str, "ProcessTilesResult"]]:
+        """Apply peak-window filter and max-observations subsampling.
+
+        Returns a filtered (and possibly reordered) copy of *all_processed*.
+        If no window/subsample params are set this is a no-op.
+        """
+        uses_window = self.peak_days_before > 0 or self.peak_days_after > 0
+        uses_subsample = self.max_observations > 0
+
+        if not uses_window and not uses_subsample:
+            return all_processed
+
+        date_tokens = [dt for dt, _ in all_processed]
+        processed_map = {dt: pr.processed for dt, pr in all_processed}
+
+        if uses_window:
+            surviving = select_peak_window(
+                date_tokens,
+                processed_map,
+                days_before=self.peak_days_before,
+                days_after=self.peak_days_after,
+            )
+            # Identify which token the peak window used as the peak (max flood count)
+            if surviving:
+                peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t]))
+            else:
+                peak_token = None
+            logger.debug(
+                "Peak-window [{}, +{}]: {} → {} date(s) (peak={})",
+                -self.peak_days_before,
+                self.peak_days_after,
+                len(date_tokens),
+                len(surviving),
+                peak_token,
+            )
+        else:
+            surviving = list(date_tokens)
+            peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t])) if surviving else None
+
+        if uses_subsample and peak_token is not None and len(surviving) > self.max_observations:
+            surviving = subsample_around_peak(
+                surviving,
+                peak_token,
+                self.max_observations,
+                self.peak_priority,
+            )
+            logger.debug(
+                "Subsampled to {} observation(s) (priority='{}', peak={})",
+                len(surviving),
+                self.peak_priority,
+                peak_token,
+            )
+
+        surviving_set = set(surviving)
+        return [(dt, pr) for dt, pr in all_processed if dt in surviving_set]
 
     def search(self, event: FloodEvent) -> list[SearchResult]:
         """Search for VIIRS data for the given flood event.
@@ -363,9 +450,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
 
         output_dir = ensure_dir(output_dir)
         raw_dir = ensure_dir(output_dir / "raw") if not self.stream else output_dir / "raw"
-        processed_dir = output_dir / "processed"
-        if self.keep_processed:
-            processed_dir = ensure_dir(processed_dir)
+        # processed_dir is created later only for surviving dates (after peak-window filter)
+        _placeholder_processed_dir = output_dir / "processed"
 
         # Group results by date
         grouped_results: dict[str, list[SearchResult]] = defaultdict(list)
@@ -391,8 +477,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
                     tile_sources,
                     event.event_id,
                     date_token,
-                    processed_dir,
-                    write_outputs=self.keep_processed,
+                    _placeholder_processed_dir,
+                    write_outputs=False,
                 )
             else:
                 # ── Download mode (default): download tiles, then process ──
@@ -409,8 +495,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
                     tile_paths_local,
                     event.event_id,
                     date_token,
-                    processed_dir,
-                    write_outputs=self.keep_processed,
+                    _placeholder_processed_dir,
+                    write_outputs=False,
                 )
 
             if process_result is not None:
@@ -419,14 +505,42 @@ class VIIRSFetcher(AbstractFloodFetcher):
         if not all_processed:
             return []
 
+        # ── Peak-window filter + subsampling ─────────────────────────
+        all_processed = self._apply_peak_window(all_processed)
+
+        if not all_processed:
+            return []
+
+        # ── Write surviving dates to processed/ (if requested) ───────
+        if self.keep_processed:
+            processed_dir = ensure_dir(output_dir / "processed")
+            for date_token, proc_result in all_processed:
+                base_name = f"{event.event_id}_{date_token}_viirs"
+                if self.classify:
+                    paths = OutputPaths(
+                        flood_fraction=processed_dir / f"{base_name}_flood_fraction.tif",
+                        quality_mask=processed_dir / f"{base_name}_quality_mask.tif",
+                        permanent_water=processed_dir / f"{base_name}_permanent_water.tif",
+                    )
+                else:
+                    paths = OutputPaths(raw=processed_dir / f"{base_name}_raw.tif")
+                updated_result = ProcessTilesResult(
+                    paths=paths,
+                    metadata=proc_result.metadata,
+                    processed=proc_result.processed,
+                )
+                processor.write_processed(updated_result)
+                # Replace the entry so downstream code sees the correct paths
+                all_processed[all_processed.index((date_token, proc_result))] = (date_token, updated_result)
+
         # ── Strategy dispatch ──────────────────────────────────────────
-        logger.debug("Strategy '{}': {} date(s) processed successfully", self.strategy, len(all_processed))
+        logger.debug("Strategy '{}': {} date(s) after window filter", self.strategy, len(all_processed))
         if self.strategy == "all":
             if self.keep_processed:
                 return [self._fetch_result_from_process(event.event_id, dt, pr) for dt, pr in all_processed]
             else:
-                # Multi-date in-memory dataset
-                return [self._multi_date_fetch_result(event.event_id, all_processed)]
+                # Per-date in-memory datasets (no processed/ writes)
+                return [self._in_memory_fetch_result(event.event_id, dt, pr) for dt, pr in all_processed]
 
         elif self.strategy == "aggregate":
             all_tiles = [pr.processed for _, pr in all_processed]

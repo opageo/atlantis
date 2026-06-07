@@ -223,6 +223,27 @@ This writes one harmonised GeoTIFF per date in `viirs/harmonised/` and a
 matching PNG per date in `viirs/plots/`, e.g.
 `Vamco_2020_timeseries_2020-11-13_viirs_harmonised.tif`.
 
+**Variant** — wide search window with a peak-centred filter and subsampling:
+
+```bash
+uv run atlantis --verbose fetch \
+  --event Vamco_2020_window \
+  --source viirs \
+  --bbox "121.14 16.72 122.25 18.45" \
+  --start-date 2020-11-07 --end-date 2020-11-19 \
+  --strategy all \
+  --peak-window-days 4 \
+  --max-observations 5 \
+  --peak-priority post \
+  --harmonise --no-keep-processed \
+  --output ./data/Vamco_2020_window
+```
+
+This searches 13 days, detects the peak flood date, filters to ±4 days around it,
+then returns up to 5 dates (peak + 4 nearest post-event days). See
+[`docs/viirs.md#peak-window-filtering-and-subsampling`](docs/viirs.md#peak-window-filtering-and-subsampling)
+for the full flag reference.
+
 ## Case 5 — West Africa floods, Ghana / Togo / Benin (October 2020)
 
 Tropical/sub-Saharan flooding: ~420 km² extent. Used in

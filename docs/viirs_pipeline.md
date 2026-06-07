@@ -12,10 +12,17 @@ flowchart TD
     STREAM -->|Yes| VSICURL["/vsicurl/ streaming<br/>(no local tiles)"]
     STREAM -->|No| DOWNLOAD["Download tiles to raw/"]
 
-    VSICURL --> MOSAIC["Mosaic & clip to bbox"]
+    VSICURL --> MOSAIC["Mosaic & clip to bbox<br/>(all dates, in memory)"]
     DOWNLOAD --> MOSAIC
 
-    MOSAIC --> STRATEGY{--strategy?}
+    MOSAIC --> WINDOW{"--peak-window-days /<br/>--peak-days-before+after?"}
+
+    WINDOW -->|No window flags| STRATEGY{--strategy?}
+    WINDOW -->|Window set| FILTER["Filter to ±N days around peak<br/>(select_peak_window)"]
+    FILTER --> SUBSAMPLE{"--max-observations?"}
+    SUBSAMPLE -->|No limit| STRATEGY
+    SUBSAMPLE -->|Limit set| SAMPLE["Subsample to M dates<br/>(subsample_around_peak,<br/>priority = post / pre / balanced)"]
+    SAMPLE --> STRATEGY
 
     STRATEGY -->|peak| PEAK["Pick peak flood date"]
     STRATEGY -->|aggregate| AGG["Aggregate (mean/mode)"]
@@ -25,7 +32,7 @@ flowchart TD
     AGG --> KEEP_PROC
     ALL --> KEEP_PROC
 
-    KEEP_PROC -->|Yes| WRITE_PROC["Write processed/ GeoTIFFs<br/>(uint8, LZW, nodata=0 or 255)"]
+    KEEP_PROC -->|Yes| WRITE_PROC["Write surviving dates to processed/<br/>(uint8, LZW, nodata=0 or 255)"]
     KEEP_PROC -->|No| SKIP_PROC["Skip writing 375 m files"]
 
     WRITE_PROC --> HARM{--harmonise?}
@@ -170,3 +177,51 @@ Harmonised (raw)             uint8   raw codes 0–200     ~1 arcmin, nodata=255
   global products). See
   [Canonical 1-arcmin global grid](viirs.md#canonical-1-arcmin-global-grid)
   for details and the verification notebook.
+
+## Window filter algorithm
+
+Implemented in [`atlantis.fetchers.viirs.selection`](../src/atlantis/fetchers/viirs/selection.py)
+and dispatched inside `VIIRSFetcher._apply_peak_window()`.
+
+### Step 1 — Find the peak
+
+All dates are processed in memory (mosaic + clip + classify). The peak date $d^*$ is
+the one with the maximum flood-pixel count:
+
+$$
+d^* = \arg\max_d \sum_{(i,j)} \mathbb{1}\!\left[\text{flood\_fraction}_d(i,j) > 0\right]
+$$
+
+Ties are broken by the **earliest** date (first during iteration), consistent with the
+existing `peak` strategy.
+
+### Step 2 — Apply the window (`select_peak_window`)
+
+Given `--peak-days-before B` and `--peak-days-after A`, retain only dates $d$ satisfying:
+
+$$
+d^* - B \;\le\; d \;\le\; d^* + A
+$$
+
+Setting both `B = A = 0` (the default) returns all dates unchanged. Non-parseable
+tokens such as `"aggregated"` are always excluded from windowing.
+
+### Step 3 — Subsample (`subsample_around_peak`)
+
+If `--max-observations M` is set and the window contains more than $M$ dates, a subset
+of exactly $M$ is chosen. The peak $d^*$ is **always included**. The remaining $M - 1$
+slots are filled according to `--peak-priority`:
+
+| Priority   | Fill order                                           |
+| :--------- | :--------------------------------------------------- |
+| `post`     | Closest post-peak dates first, then closest pre-peak |
+| `pre`      | Closest pre-peak dates first, then closest post-peak |
+| `balanced` | Alternating: $d^*+1$, $d^*-1$, $d^*+2$, $d^*-2$, …   |
+
+The returned list is always in **chronological order**.
+
+### Step 4 — Write survivors only
+
+With `--keep-processed`, only the surviving dates are written to `processed/`.
+This ensures no orphan GeoTIFFs accumulate when a wide search window is combined
+with strict subsampling.
