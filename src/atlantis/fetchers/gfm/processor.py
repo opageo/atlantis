@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+import xarray as xr
 from rasterio.enums import Resampling
 from rasterio.transform import Affine, from_bounds
 

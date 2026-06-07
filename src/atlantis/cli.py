@@ -5,7 +5,6 @@ from pathlib import Path
 
 import typer
 from rasterio.enums import Resampling
-from rich.console import Console
 
 from atlantis.config import HarmoniseConfig, get_config
 
@@ -43,7 +42,6 @@ from atlantis.utils.ui import (
 )
 
 cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.", pretty_exceptions_enable=False)
-console = Console()
 
 
 # ── Shared plot + harmonise helper ──────────────────────────────────────────

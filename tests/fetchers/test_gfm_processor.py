@@ -1,16 +1,9 @@
 """Tests for the GFM raster processor."""
 
-from unittest.mock import MagicMock, patch
-
 import numpy as np
-import pytest
 from rasterio.transform import from_bounds
 
 from atlantis.fetchers.gfm.processor import (
-    GFM_DRY,
-    GFM_FLOOD,
-    GFM_NODATA,
-    GFM_PERMANENT_WATER,
     GfmProcessedTile,
     GfmRasterProcessor,
 )
@@ -179,7 +172,7 @@ class TestGfmProcessorAggregation:
 
     def test_aggregate_quality_or(self):
         """Quality mask should be OR across tiles."""
-        t = from_bounds(0, 0, 1, 1, 5, 5)
+        _ = from_bounds(0, 0, 1, 1, 5, 5)
         qm1 = np.array([[1, 0], [0, 1]], dtype=np.uint8)
         qm2 = np.array([[0, 1], [1, 0]], dtype=np.uint8)
 

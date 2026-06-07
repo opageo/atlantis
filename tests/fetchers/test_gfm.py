@@ -1,7 +1,6 @@
 """Tests for the GFM fetcher."""
 
 from datetime import date, datetime, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -12,10 +11,6 @@ from atlantis.fetchers.gfm import GFMFetcher
 from atlantis.fetchers.gfm.backend import DEFAULT_GFM_STAC_URL, GFM_COLLECTION_ID, GfmStacBackend
 from atlantis.fetchers.gfm.processor import (
     DEFAULT_COARSEN_FACTOR,
-    GFM_DRY,
-    GFM_FLOOD,
-    GFM_NODATA,
-    GFM_PERMANENT_WATER,
     GfmProcessedTile,
     GfmRasterProcessor,
 )
