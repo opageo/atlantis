@@ -144,6 +144,8 @@ class FetcherConfig(BaseSettings):
     timeout: int = 300  # 5 minutes
     max_retries: int = 3
     gfm_api_url: str | None = None
+    gfm_coarsen_factor: int = 4
+    gfm_resampling: str = "average"
     viirs_backend: Literal["noaa_s3", "gmu_legacy"] = "noaa_s3"
     viirs_base_url: str | None = None
     viirs_legacy_base_url: str | None = None

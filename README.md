@@ -94,3 +94,24 @@ The catalog of Kuro Siwo is stored in the git LFS of this repository, under `./a
 ```bash
 git lfs pull
 ```
+
+## Testing Github actions/workflows locally
+1. install nektos github extension:
+```bash
+gh extension install https://github.com/nektos/gh-act
+```
+2. Ensure you have docker daemon running:
+Install and run docker daemon in a cent-os rocky-linux system:
+```bash
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y docker-ce docker-ce-cli containerd.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
+```
+3. run actos with:
+```bash
+gh act <event-name>
+```
+default event is `push`
+
+4. run specific workflow by job name
+```bash
+gh act -l #lists all job names
+gh act -j <job-name>

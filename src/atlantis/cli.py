@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 import typer
 from loguru import logger
+from rasterio.enums import Resampling
 
 from atlantis.config import HarmoniseConfig, get_config
 
@@ -272,6 +273,52 @@ def _harmonise_viirs(
     return ds_harm
 
 
+def _plot_gfm(
+    ds,
+    event_id,
+    date_label,
+    *,
+    output_png_path,
+):
+    """Save a PNG visualisation of GFM flood extent."""
+    output_png_path = Path(output_png_path)
+    output_png_path.parent.mkdir(parents=True, exist_ok=True)
+    if "flood_fraction" in ds:
+        plot_classified(
+            ds["flood_fraction"],
+            title=f"{event_id}: GFM flood extent {date_label}",
+            output_path=output_png_path,
+        )
+    console.print(f"  Plot → {output_png_path.name}")
+
+
+def _harmonise_gfm(
+    ds,
+    event_id,
+    date_label,
+    *,
+    harm_dir,
+):
+    """Harmonise GFM data and save GeoTIFF + PNG."""
+    from atlantis.harmoniser import Harmoniser
+
+    harm_dir.mkdir(parents=True, exist_ok=True)
+    h = Harmoniser()
+    ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
+
+    tif_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.tif"
+    write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
+    console.print(f"  Harmonised → {tif_path.name}")
+
+    png_harm_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.png"
+    plot_classified(
+        ds_harm["flood_fraction"],
+        title=f"{event_id}: GFM harmonised flood extent {date_label} (1 arcmin)",
+        output_path=png_harm_path,
+    )
+    return ds_harm
+
+
 def _parse_bbox(value: str) -> tuple[float, float, float, float]:
     """Parse a bbox from a four-number string."""
     parts = value.replace(",", " ").split()
@@ -373,6 +420,16 @@ def fetch(
         help="Subsampling bias when --max-observations is set: post (post-event first),"
         " pre (pre-event first), or balanced (alternating ±1, ±2, …). VIIRS only.",
     ),
+    gfm_coarsen_factor: int = typer.Option(
+        4,
+        "--gfm-coarsen-factor",
+        help="GFM spatial coarsening factor before reprojection (default 4).",
+    ),
+    gfm_resampling: str = typer.Option(
+        "average",
+        "--gfm-resampling",
+        help="GFM resampling method for reprojection to EPSG:4326.",
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -397,10 +454,20 @@ def fetch(
         peak_window_days: Symmetric shorthand for peak_days_before == peak_days_after.
         max_observations: Maximum number of dates to return after windowing (VIIRS only).
         peak_priority: Subsampling bias when max_observations is set (VIIRS only).
+        gfm_coarsen_factor: GFM spatial coarsening factor before reprojection.
+        gfm_resampling: GFM resampling method for reprojection to EPSG:4326.
     """
     config = get_config()
     output_dir = output_dir or config.fetcher.cache_dir / "raw" / event
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        gfm_resampling_enum = Resampling[gfm_resampling]
+    except KeyError as exc:
+        valid = [r.name for r in Resampling]
+        raise typer.BadParameter(
+            f"--gfm-resampling '{gfm_resampling}' is not valid. Choose from: {', '.join(valid)}"
+        ) from exc
 
     if source is None or source == "all":
         sources = list_fetchers()
@@ -451,6 +518,13 @@ def fetch(
                     "max_observations": max_observations,
                     "peak_priority": peak_priority,
                 }
+            elif src == "gfm":
+                fetcher_kwargs = {
+                    "coarsen_factor": gfm_coarsen_factor,
+                    "resampling": gfm_resampling_enum,
+                    "strategy": strategy,
+                    "keep_processed": keep_processed,
+                }
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
                 warn("Event catalogue lookup not yet implemented; provide --bbox/--start-date/--end-date")
@@ -487,6 +561,20 @@ def fetch(
                 ok(f"Wrote {n} files")
                 all_paths = [path for result in fetch_results for path in result.files]
                 console.print(file_tree(src, all_paths))
+
+            # ── Optional plot + harmonise (GFM) ───────────────────────────
+            if src == "gfm" and (plot or harmonise):
+                for result in fetch_results:
+                    ds = fetcher.to_dataset(result)
+                    date_label = result.date_token or "gfm"
+                    if plot:
+                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{date_label}_gfm.png"
+                        with step_status("Plotting…"):
+                            _plot_gfm(ds, event, date_label, output_png_path=png_out)
+                    if harmonise:
+                        harm_dir = output_dir / src / "harmonised"
+                        with step_status("Harmonising…"):
+                            _harmonise_gfm(ds, event, date_label, harm_dir=harm_dir)
 
             # ── Optional plot + harmonise (VIIRS only) ────────────────────
             if src == "viirs" and (plot or harmonise):
