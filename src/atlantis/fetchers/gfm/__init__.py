@@ -22,6 +22,7 @@ from atlantis.fetchers.gfm.processor import (
     GfmProcessedTile,
     GfmRasterProcessor,
 )
+from atlantis.fetchers.gfm.selection import flood_pixel_count, is_better_peak_candidate
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.models.event import FloodEvent
 
@@ -196,8 +197,8 @@ class GFMFetcher(AbstractFloodFetcher):
         best_count = -1
 
         for date_token, tile in date_results:
-            count = GfmRasterProcessor.flood_pixel_count(tile)
-            if count > best_count:
+            count = flood_pixel_count(tile)
+            if is_better_peak_candidate(count, best_count):
                 best_count = count
                 best_date = date_token
                 best_tile = tile

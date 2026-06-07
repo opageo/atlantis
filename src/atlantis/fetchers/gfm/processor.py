@@ -417,12 +417,6 @@ class GfmRasterProcessor:
         )
 
     @staticmethod
-    def flood_pixel_count(processed: GfmProcessedTile) -> int:
-        """Count pixels with flood_fraction > 0 (for peak strategy selection)."""
-        ff = processed.flood_fraction
-        return int(np.nansum(ff > 0))
-
-    @staticmethod
     def aggregate_tiles(tiles: list[GfmProcessedTile]) -> GfmProcessedTile | None:
         """Aggregate multiple date-group tiles into one (for aggregate strategy).
 

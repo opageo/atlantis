@@ -19,6 +19,7 @@ from atlantis.fetchers.gfm.processor import (
     GfmProcessedTile,
     GfmRasterProcessor,
 )
+from atlantis.fetchers.gfm.selection import flood_pixel_count
 from atlantis.fetchers.registry import fetcher_registry
 from atlantis.models.event import FloodEvent
 
@@ -216,7 +217,7 @@ class TestGfmRasterProcessor:
 
     def test_flood_pixel_count(self):
         tile = _make_processed_tile(shape=(10, 10), flood_frac=0.5)
-        count = GfmRasterProcessor.flood_pixel_count(tile)
+        count = flood_pixel_count(tile)
         assert count > 0
         assert count <= 100
 
@@ -231,7 +232,7 @@ class TestGfmRasterProcessor:
             crs="EPSG:4326",
             shape=(10, 10),
         )
-        assert GfmRasterProcessor.flood_pixel_count(tile) == 0
+        assert flood_pixel_count(tile) == 0
 
     def test_aggregate_tiles_single(self):
         tile = _make_processed_tile()
