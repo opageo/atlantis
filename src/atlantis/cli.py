@@ -582,13 +582,13 @@ def fetch(
     max_observations: int = typer.Option(
         0,
         "--max-observations",
-        help="Maximum number of dates to return after windowing. 0 = no limit (VIIRS only).",
+        help="Maximum number of dates to return after windowing. 0 = no limit (VIIRS / MODIS / GFM).",
     ),
     peak_priority: str = typer.Option(
         "post",
         "--peak-priority",
         help="Subsampling bias when --max-observations is set: post (post-event first),"
-        " pre (pre-event first), or balanced (alternating ±1, ±2, …). VIIRS only.",
+        " pre (pre-event first), or balanced (alternating ±1, ±2, …). VIIRS / MODIS / GFM.",
     ),
     gfm_coarsen_factor: int = typer.Option(
         4,
@@ -623,11 +623,11 @@ def fetch(
         harmonise: Harmonise the peak-flood date to 1 arcmin (VIIRS / MODIS / GFM).
         strategy: How to handle multiple dates: peak, aggregate, all.
         keep_processed: Write intermediate processed/ GeoTIFFs.
-        peak_days_before: Days before the peak to include (window filter, VIIRS only).
-        peak_days_after: Days after the peak to include (window filter, VIIRS only).
+        peak_days_before: Days before the peak to include (window filter, VIIRS / MODIS / GFM).
+        peak_days_after: Days after the peak to include (window filter, VIIRS / MODIS / GFM).
         peak_window_days: Symmetric shorthand for peak_days_before == peak_days_after.
-        max_observations: Maximum number of dates to return after windowing (VIIRS only).
-        peak_priority: Subsampling bias when max_observations is set (VIIRS only).
+        max_observations: Maximum number of dates to return after windowing (VIIRS / MODIS / GFM).
+        peak_priority: Subsampling bias when max_observations is set (VIIRS / MODIS / GFM).
         gfm_coarsen_factor: GFM spatial coarsening factor before reprojection.
         gfm_resampling: GFM resampling method for reprojection to EPSG:4326.
     """
@@ -678,17 +678,19 @@ def fetch(
             fetcher_cls = get_fetcher(src)
             section_rule(src)
             fetcher_kwargs = {}
-            # VIIRS-only peak-window flags get initialised here so the report code
-            # downstream can reference them unconditionally.
+            # Peak-window flags (shared by VIIRS, MODIS, GFM) get resolved here
+            # so the report code downstream can reference them unconditionally.
             effective_days_before = 0
             effective_days_after = 0
-            if src == "viirs":
+            if src in ("viirs", "modis", "gfm"):
                 if peak_window_days > 0 and (peak_days_before > 0 or peak_days_after > 0):
                     raise typer.BadParameter(
                         "--peak-window-days cannot be combined with --peak-days-before / --peak-days-after"
                     )
                 effective_days_before = peak_window_days if peak_window_days > 0 else peak_days_before
                 effective_days_after = peak_window_days if peak_window_days > 0 else peak_days_after
+
+            if src == "viirs":
                 fetcher_kwargs = {
                     "backend": viirs_backend,
                     "data_format": viirs_format,
@@ -710,6 +712,10 @@ def fetch(
                     "stream": effective_stream,
                     "strategy": strategy,
                     "keep_processed": keep_processed,
+                    "peak_days_before": effective_days_before,
+                    "peak_days_after": effective_days_after,
+                    "max_observations": max_observations,
+                    "peak_priority": peak_priority,
                 }
             elif src == "gfm":
                 fetcher_kwargs = {
@@ -717,6 +723,10 @@ def fetch(
                     "resampling": gfm_resampling_enum,
                     "strategy": strategy,
                     "keep_processed": keep_processed,
+                    "peak_days_before": effective_days_before,
+                    "peak_days_after": effective_days_after,
+                    "max_observations": max_observations,
+                    "peak_priority": peak_priority,
                 }
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
@@ -740,20 +750,23 @@ def fetch(
 
             if src in ("viirs", "modis"):
                 _report_fetch_writes(src, fetch_results, keep_processed=keep_processed)
-                # Summarise peak-window / subsampling when active (VIIRS only)
-                if src == "viirs" and (effective_days_before > 0 or effective_days_after > 0 or max_observations > 0):
-                    n_returned = len(fetch_results)
-                    parts = []
-                    if effective_days_before > 0 or effective_days_after > 0:
-                        parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
-                    if max_observations > 0:
-                        parts.append(f"max {max_observations} obs (priority={peak_priority})")
-                    info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
             else:
                 n = sum(len(result.files) for result in fetch_results)
                 ok(f"Wrote {n} files")
                 all_paths = [path for result in fetch_results for path in result.files]
                 console.print(file_tree(src, all_paths))
+
+            # Summarise peak-window / subsampling when active (VIIRS / MODIS / GFM)
+            if src in ("viirs", "modis", "gfm") and (
+                effective_days_before > 0 or effective_days_after > 0 or max_observations > 0
+            ):
+                n_returned = len(fetch_results)
+                parts = []
+                if effective_days_before > 0 or effective_days_after > 0:
+                    parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
+                if max_observations > 0:
+                    parts.append(f"max {max_observations} obs (priority={peak_priority})")
+                info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
 
             # ── Optional plot + harmonise (GFM) ───────────────────────────
             if src == "gfm" and (plot or harmonise):
