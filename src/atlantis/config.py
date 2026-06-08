@@ -60,6 +60,7 @@ class HarmoniseConfig(BaseSettings):
         env_prefix="ATLANTIS_",
         env_file=".env",
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     target_crs: str = "EPSG:4326"
@@ -112,6 +113,7 @@ class ArchiveConfig(BaseSettings):
         env_prefix="ATLANTIS_",
         env_file=".env",
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     archive_root: Path = Field(default_factory=lambda: Path.home() / "atlantis-data")
@@ -144,6 +146,7 @@ class FetcherConfig(BaseSettings):
         env_prefix="ATLANTIS_",
         env_file=".env",
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     cache_dir: Path = Field(default_factory=lambda: Path.home() / ".cache" / "atlantis")
@@ -173,6 +176,7 @@ class AtlantisConfig(BaseSettings):
         env_prefix="ATLANTIS_",
         env_file=".env",
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     harmonise: HarmoniseConfig = Field(default_factory=HarmoniseConfig)
