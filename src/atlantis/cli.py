@@ -6,31 +6,37 @@ from pathlib import Path
 
 import requests
 import typer
+from dotenv import load_dotenv
 from loguru import logger
 from rasterio.enums import Resampling
 
-from atlantis.config import HarmoniseConfig, get_config
+# Load credentials from .env at the repo root so fetchers that consult
+# os.environ directly (e.g. MODIS EARTHDATA_TOKEN) see them. Existing
+# environment variables take precedence (override=False).
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=False)
+
+from atlantis.config import HarmoniseConfig, get_config  # noqa: E402
 
 # Import fetchers to register them
-from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, modis, rfm, viirs  # noqa: F401
-from atlantis.fetchers.base import FetchResult
-from atlantis.harmoniser import write_harmonised_raster
-from atlantis.models.event import FloodEvent
-from atlantis.utils.kurosiwo import (
+from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, modis, rfm, viirs  # noqa: E402, F401
+from atlantis.fetchers.base import FetchResult  # noqa: E402
+from atlantis.harmoniser import write_harmonised_raster  # noqa: E402
+from atlantis.models.event import FloodEvent  # noqa: E402
+from atlantis.utils.kurosiwo import (  # noqa: E402
     KUROSIWO_DEFAULT_CATALOGUE,
     KUROSIWO_DEFAULT_METADATA,
     build_kurosiwo_flood_events,
     build_kurosiwo_flood_events_from_catalogue,
     write_kurosiwo_metadata_csv,
 )
-from atlantis.utils.plot import (
+from atlantis.utils.plot import (  # noqa: E402
     date_from_filename,
     pixel_stats_classified,
     pixel_stats_raw,
     plot_classified,
     plot_raw,
 )
-from atlantis.utils.ui import (
+from atlantis.utils.ui import (  # noqa: E402
     command_header,
     console,
     fail,
@@ -1539,23 +1545,47 @@ def setup(
     check_only: bool = typer.Option(
         False,
         "--check-only",
-        help="Only verify assets are present without modifying anything.",
+        help="Only verify assets/credentials are present without modifying anything.",
     ),
     update_hashes: bool = typer.Option(
         False,
         "--update-hashes",
         help="Recompute SHA-256 hashes and write them to config/asset_hashes.json.",
     ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Never prompt for missing credentials (default: prompt when stdin is a TTY).",
+    ),
+    verify_aws: bool = typer.Option(
+        False,
+        "--verify-aws",
+        help="After the standard checks, run a live round-trip S3 list against each AWS profile.",
+    ),
 ) -> None:
-    """Bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue).
+    """Bootstrap required data assets and credentials.
 
-    Missing tracked files are automatically restored from git.  Run this
-    once after cloning, or whenever a new data source is added.
+    Restores missing tracked files from git, verifies SHA-256 hashes, and
+    prompts (interactively) for any missing credentials such as
+    ``EARTHDATA_TOKEN`` (used by the MODIS fetcher). Run this once after
+    cloning, or whenever a new data source is added.
+
+    Use ``--verify-aws`` to additionally make a single S3 ``ListObjectsV2``
+    call against each registered AWS profile to confirm credentials and
+    endpoints actually work.
     """
-    from atlantis.utils.setup import run_setup
+    from atlantis.utils.setup import run_setup, verify_aws_profiles
 
     command_header("setup")
-    success = run_setup(auto_fix=not check_only, output=console, update_hashes=update_hashes)
+    interactive: bool | None = False if non_interactive else None
+    success = run_setup(
+        auto_fix=not check_only,
+        output=console,
+        update_hashes=update_hashes,
+        interactive=interactive,
+    )
+    if verify_aws:
+        success = verify_aws_profiles(output_print=console.print) and success
     if not success:
         raise typer.Exit(code=1)
 
