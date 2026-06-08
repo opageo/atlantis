@@ -43,7 +43,7 @@ from atlantis.fetchers.modis.processor import (
     modis_tiles_for_bbox,
     tile_bounds_from_hv,
 )
-from atlantis.fetchers.modis.selection import flood_pixel_count
+from atlantis.fetchers.modis.selection import flood_pixel_count, select_peak_window, subsample_around_peak
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.models.event import FloodEvent
 from atlantis.utils.io import download_file, ensure_dir
@@ -147,6 +147,10 @@ class MODISFetcher(AbstractFloodFetcher):
         stream: bool = False,
         strategy: str = "peak",
         keep_processed: bool = True,
+        peak_days_before: int = 0,
+        peak_days_after: int = 0,
+        max_observations: int = 0,
+        peak_priority: str = "post",
     ) -> None:
         """Initialise the MODIS fetcher.
 
@@ -165,6 +169,16 @@ class MODISFetcher(AbstractFloodFetcher):
                 for ``lance_geotiff``; raises ``ValueError`` otherwise.
             strategy: Multi-date reduction (``peak`` / ``aggregate`` / ``all``).
             keep_processed: When True, write intermediate processed/ GeoTIFFs.
+            peak_days_before: Days before the computed peak to include when
+                filtering dates. 0 means no window filtering. Requires
+                *peak_days_after* > 0 to have any effect (or vice-versa).
+            peak_days_after: Days after the computed peak to include.
+            max_observations: Maximum number of dates to return after windowing.
+                0 means no limit. Selection order is controlled by
+                *peak_priority*.
+            peak_priority: How to fill *max_observations* around the peak:
+                ``"post"`` (post-event first, then pre), ``"pre"`` (pre-event
+                first, then post), or ``"balanced"`` (alternating ±1, ±2, …).
         """
         config = get_config()
         fc = config.fetcher
@@ -196,6 +210,20 @@ class MODISFetcher(AbstractFloodFetcher):
                 f"Backend '{self.backend_name}' does not support --stream. "
                 "Use --no-stream or switch to --modis-backend lance_geotiff."
             )
+
+        if peak_days_before < 0:
+            raise ValueError(f"peak_days_before must be non-negative, got {peak_days_before}")
+        if peak_days_after < 0:
+            raise ValueError(f"peak_days_after must be non-negative, got {peak_days_after}")
+        if max_observations < 0:
+            raise ValueError(f"max_observations must be non-negative, got {max_observations}")
+        if peak_priority not in {"post", "pre", "balanced"}:
+            raise ValueError(f"Invalid peak_priority '{peak_priority}'. Expected 'post', 'pre', or 'balanced'.")
+
+        self.peak_days_before = peak_days_before
+        self.peak_days_after = peak_days_after
+        self.max_observations = max_observations
+        self.peak_priority = peak_priority
 
     # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -424,7 +452,71 @@ class MODISFetcher(AbstractFloodFetcher):
         if not all_processed:
             return []
 
+        all_processed = self._apply_peak_window(all_processed)
+        if not all_processed:
+            return []
+
         return self._dispatch_strategy(event.event_id, all_processed)
+
+    # ── Peak-window filter / subsampling ────────────────────────────────
+
+    def _apply_peak_window(
+        self,
+        all_processed: list[tuple[str, ProcessTilesResult]],
+    ) -> list[tuple[str, ProcessTilesResult]]:
+        """Apply peak-window filter and max-observations subsampling.
+
+        No-op when neither *peak_days_before/after* nor *max_observations*
+        is set. Mirrors :meth:`atlantis.fetchers.viirs.VIIRSFetcher._apply_peak_window`.
+        """
+        uses_window = self.peak_days_before > 0 or self.peak_days_after > 0
+        uses_subsample = self.max_observations > 0
+
+        if not uses_window and not uses_subsample:
+            return all_processed
+
+        date_tokens = [dt for dt, _ in all_processed]
+        processed_map = {dt: pr.processed for dt, pr in all_processed}
+
+        if uses_window:
+            surviving = select_peak_window(
+                date_tokens,
+                processed_map,
+                days_before=self.peak_days_before,
+                days_after=self.peak_days_after,
+            )
+            if surviving:
+                peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t]))
+            else:
+                peak_token = None
+            logger.debug(
+                "MODIS peak-window [-{}, +{}]: {} → {} date(s) (peak={})",
+                self.peak_days_before,
+                self.peak_days_after,
+                len(date_tokens),
+                len(surviving),
+                peak_token,
+            )
+        else:
+            surviving = list(date_tokens)
+            peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t])) if surviving else None
+
+        if uses_subsample and peak_token is not None and len(surviving) > self.max_observations:
+            surviving = subsample_around_peak(
+                surviving,
+                peak_token,
+                self.max_observations,
+                self.peak_priority,
+            )
+            logger.debug(
+                "MODIS subsampled to {} observation(s) (priority='{}', peak={})",
+                len(surviving),
+                self.peak_priority,
+                peak_token,
+            )
+
+        surviving_set = set(surviving)
+        return [(dt, pr) for dt, pr in all_processed if dt in surviving_set]
 
     # ── Strategy dispatch ───────────────────────────────────────────────
 

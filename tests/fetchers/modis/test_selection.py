@@ -95,3 +95,105 @@ class TestCloudAwareScore:
         quality = np.array([[1, 1], [1, 0]], dtype=np.uint8)
         score = cloud_aware_score(_processed(flood=flood, quality=quality))
         assert score == pytest.approx(1 / 3 * 0.75, rel=1e-6)
+
+
+# ── select_peak_window / subsample_around_peak (parity with VIIRS) ──────────
+
+
+def _make_flood_tile(n_flood_pixels: int) -> ProcessedTile:
+    """Synthetic ProcessedTile with *n_flood_pixels* positive flood_fraction cells."""
+    data = np.zeros((4, 4), dtype=np.float32)
+    data.ravel()[:n_flood_pixels] = 0.7
+    return _processed(flood=data)
+
+
+class TestSelectPeakWindow:
+    def _five_date_map(self):
+        """5 dates spanning 2020-07-01..05, peak on day 3 (most flood pixels)."""
+        from atlantis.fetchers.modis.selection import select_peak_window  # noqa: F401
+
+        tokens = ["20200701", "20200702", "20200703", "20200704", "20200705"]
+        counts = [2, 5, 16, 8, 3]
+        return tokens, {t: _make_flood_tile(c) for t, c in zip(tokens, counts)}
+
+    def test_zero_window_returns_all(self):
+        from atlantis.fetchers.modis.selection import select_peak_window
+
+        tokens, pmap = self._five_date_map()
+        assert select_peak_window(tokens, pmap, days_before=0, days_after=0) == tokens
+
+    def test_symmetric_window_filters_correctly(self):
+        from atlantis.fetchers.modis.selection import select_peak_window
+
+        tokens, pmap = self._five_date_map()
+        result = select_peak_window(tokens, pmap, days_before=1, days_after=1)
+        assert result == ["20200702", "20200703", "20200704"]
+
+    def test_negative_days_before_raises(self):
+        from atlantis.fetchers.modis.selection import select_peak_window
+
+        tokens, pmap = self._five_date_map()
+        with pytest.raises(ValueError):
+            select_peak_window(tokens, pmap, days_before=-1, days_after=0)
+
+    def test_non_date_tokens_excluded(self):
+        from atlantis.fetchers.modis.selection import select_peak_window
+
+        tokens, pmap = self._five_date_map()
+        tokens = ["aggregated"] + tokens
+        pmap["aggregated"] = _make_flood_tile(100)  # would be peak but should be excluded
+        result = select_peak_window(tokens, pmap, days_before=1, days_after=1)
+        assert "aggregated" not in result
+        assert result == ["20200702", "20200703", "20200704"]
+
+
+class TestSubsampleAroundPeak:
+    def _tokens(self):
+        return ["20200701", "20200702", "20200703", "20200704", "20200705"]
+
+    def test_no_limit_returns_all(self):
+        from atlantis.fetchers.modis.selection import subsample_around_peak
+
+        tokens = self._tokens()
+        assert subsample_around_peak(tokens, "20200703", max_observations=0) == tokens
+
+    def test_max_one_returns_only_peak(self):
+        from atlantis.fetchers.modis.selection import subsample_around_peak
+
+        tokens = self._tokens()
+        assert subsample_around_peak(tokens, "20200703", max_observations=1) == ["20200703"]
+
+    def test_post_priority(self):
+        from atlantis.fetchers.modis.selection import subsample_around_peak
+
+        tokens = self._tokens()
+        # peak + 2 post = days 3, 4, 5
+        assert subsample_around_peak(tokens, "20200703", 3, "post") == ["20200703", "20200704", "20200705"]
+
+    def test_pre_priority(self):
+        from atlantis.fetchers.modis.selection import subsample_around_peak
+
+        tokens = self._tokens()
+        # peak + 2 pre = days 1, 2, 3
+        assert subsample_around_peak(tokens, "20200703", 3, "pre") == ["20200701", "20200702", "20200703"]
+
+    def test_balanced_priority(self):
+        from atlantis.fetchers.modis.selection import subsample_around_peak
+
+        tokens = self._tokens()
+        # peak + 1 post + 1 pre = days 2, 3, 4
+        assert subsample_around_peak(tokens, "20200703", 3, "balanced") == ["20200702", "20200703", "20200704"]
+
+    def test_invalid_priority_raises(self):
+        from atlantis.fetchers.modis.selection import subsample_around_peak
+
+        tokens = self._tokens()
+        with pytest.raises(ValueError):
+            subsample_around_peak(tokens, "20200703", 3, "weird")
+
+    def test_peak_token_not_in_list_raises(self):
+        from atlantis.fetchers.modis.selection import subsample_around_peak
+
+        tokens = self._tokens()
+        with pytest.raises(ValueError):
+            subsample_around_peak(tokens, "19990101", 2, "post")
