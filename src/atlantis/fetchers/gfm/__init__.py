@@ -22,7 +22,12 @@ from atlantis.fetchers.gfm.processor import (
     GfmProcessedTile,
     GfmRasterProcessor,
 )
-from atlantis.fetchers.gfm.selection import flood_pixel_count, is_better_peak_candidate
+from atlantis.fetchers.gfm.selection import (
+    flood_pixel_count,
+    is_better_peak_candidate,
+    select_peak_window,
+    subsample_around_peak,
+)
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.models.event import FloodEvent
 
@@ -58,6 +63,10 @@ class GFMFetcher(AbstractFloodFetcher):
         resampling: Resampling = Resampling.average,
         strategy: str = "aggregate",
         keep_processed: bool = True,
+        peak_days_before: int = 0,
+        peak_days_after: int = 0,
+        max_observations: int = 0,
+        peak_priority: str = "post",
     ) -> None:
         """Initialize the GFM fetcher.
 
@@ -67,6 +76,15 @@ class GFMFetcher(AbstractFloodFetcher):
             resampling: Resampling method for reprojection.
             strategy: Date selection strategy: "peak", "aggregate", or "all".
             keep_processed: Whether to write intermediate processed files.
+            peak_days_before: Days before the computed peak to include when
+                filtering dates. 0 means no window filtering.
+            peak_days_after: Days after the computed peak to include.
+            max_observations: Maximum number of dates to return after windowing.
+                0 means no limit. Selection order is controlled by
+                *peak_priority*.
+            peak_priority: How to fill *max_observations* around the peak:
+                ``"post"`` (post-event first), ``"pre"`` (pre-event first),
+                or ``"balanced"`` (alternating ±1, ±2, …).
         """
         self.api_url = api_url or DEFAULT_GFM_STAC_URL
         self.coarsen_factor = coarsen_factor
@@ -74,6 +92,20 @@ class GFMFetcher(AbstractFloodFetcher):
         self.strategy = strategy
         self.keep_processed = keep_processed
         self._backend = GfmStacBackend(api_url=self.api_url)
+
+        if peak_days_before < 0:
+            raise ValueError(f"peak_days_before must be non-negative, got {peak_days_before}")
+        if peak_days_after < 0:
+            raise ValueError(f"peak_days_after must be non-negative, got {peak_days_after}")
+        if max_observations < 0:
+            raise ValueError(f"max_observations must be non-negative, got {max_observations}")
+        if peak_priority not in {"post", "pre", "balanced"}:
+            raise ValueError(f"Invalid peak_priority '{peak_priority}'. Expected 'post', 'pre', or 'balanced'.")
+
+        self.peak_days_before = peak_days_before
+        self.peak_days_after = peak_days_after
+        self.max_observations = max_observations
+        self.peak_priority = peak_priority
 
     def search(self, event: FloodEvent) -> list[SearchResult]:
         """Search for GFM data for the given flood event.
@@ -163,8 +195,71 @@ class GFMFetcher(AbstractFloodFetcher):
             logger.warning("No valid data after processing for event {}", event.event_id)
             return []
 
+        date_results = self._apply_peak_window(date_results)
+        if not date_results:
+            return []
+
         # Apply strategy
         return self._apply_strategy(date_results, event, output_dir)
+
+    def _apply_peak_window(
+        self,
+        date_results: list[tuple[str, GfmProcessedTile]],
+    ) -> list[tuple[str, GfmProcessedTile]]:
+        """Apply peak-window filter and max-observations subsampling.
+
+        No-op when neither *peak_days_before/after* nor *max_observations*
+        is set. Mirrors
+        :meth:`atlantis.fetchers.viirs.VIIRSFetcher._apply_peak_window`.
+        """
+        uses_window = self.peak_days_before > 0 or self.peak_days_after > 0
+        uses_subsample = self.max_observations > 0
+
+        if not uses_window and not uses_subsample:
+            return date_results
+
+        date_tokens = [dt for dt, _ in date_results]
+        processed_map = {dt: tile for dt, tile in date_results}
+
+        if uses_window:
+            surviving = select_peak_window(
+                date_tokens,
+                processed_map,
+                days_before=self.peak_days_before,
+                days_after=self.peak_days_after,
+            )
+            if surviving:
+                peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t]))
+            else:
+                peak_token = None
+            logger.debug(
+                "GFM peak-window [-{}, +{}]: {} → {} date(s) (peak={})",
+                self.peak_days_before,
+                self.peak_days_after,
+                len(date_tokens),
+                len(surviving),
+                peak_token,
+            )
+        else:
+            surviving = list(date_tokens)
+            peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t])) if surviving else None
+
+        if uses_subsample and peak_token is not None and len(surviving) > self.max_observations:
+            surviving = subsample_around_peak(
+                surviving,
+                peak_token,
+                self.max_observations,
+                self.peak_priority,
+            )
+            logger.debug(
+                "GFM subsampled to {} observation(s) (priority='{}', peak={})",
+                len(surviving),
+                self.peak_priority,
+                peak_token,
+            )
+
+        surviving_set = set(surviving)
+        return [(dt, tile) for dt, tile in date_results if dt in surviving_set]
 
     def _apply_strategy(
         self,
