@@ -89,11 +89,16 @@ See [`notebooks/README.md`](notebooks/README.md) for details.
 
 ## Download Kuro Siwo Dataset
 
+### Get it from Git-LFS
 The catalog of Kuro Siwo is stored in the git LFS of this repository, under `./assets/ks_catalogue.gpkg`, before you use it, make sure you have `git lfs` installed (if not install if with `git lfs install`) and the dataset is pulled, the first time you may need to execute:
 
 ```bash
 git lfs pull
 ```
+
+### Get it from S3 bucket
+If you have access to our atlantis bucket (provided on premise to mentors and partners of the project) you can download kurosiwo related data from our s3://atlantis bucket, e.g for the catalog: `s3://atlantis/assets/ks/ks_catalogue.gpkg`
+
 
 ## Testing Github actions/workflows locally
 1. install nektos github extension:
