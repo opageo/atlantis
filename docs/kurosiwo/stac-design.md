@@ -1,7 +1,7 @@
 # KuroSiwo — STAC Catalog Design
 
 > Reference document for the KuroSiwo STAC catalog architecture.
-> Implemented in [`src/atlantis/stac_catalog.py`](../src/atlantis/stac_catalog.py).
+> Implemented in [`src/atlantis/stac_catalog.py`](../../src/atlantis/stac_catalog.py).
 
 ---
 
