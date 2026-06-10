@@ -8,6 +8,10 @@ The function walks a registry of required assets and for each one:
   * attempts an automatic ``git restore`` when the file is tracked but missing
   * falls back to a manual instruction when auto-restore fails
   * verifies SHA-256 integrity against ``config/asset_hashes.json``
+
+Only assets required by the core workflow are registered here.  Optional
+LFS-tracked assets (e.g. the KuroSiwo catalogue) are validated on demand
+by the commands that use them, not as a global prerequisite.
 """
 
 from __future__ import annotations
@@ -25,18 +29,14 @@ _ASSET_HASHES_PATH = _REPO_ROOT / "config" / "asset_hashes.json"
 # ── Asset registry ─────────────────────────────────────────────────────────
 # Each entry: (label, relative path from repo root, tracked_in_git?)
 #
-# LFS-tracked assets (e.g. KuroSiwo catalogue) are excluded from hash
-# verification — LFS guarantees their content integrity via OID matching.
+# Only assets required by the core workflow (e.g. ``atlantis demo``) are
+# listed here.  Optional LFS assets (e.g. KuroSiwo catalogue) are not
+# included — they are validated on demand by the commands that need them.
 
 ASSETS: list[tuple[str, Path, bool]] = [
     (
         "VIIRS AOI tile grid",
         Path("src/atlantis/fetchers/viirs/data/viirs_aois.geojson"),
-        True,
-    ),
-    (
-        "KuroSiwo catalogue",
-        Path("assets/ks_catalogue.gpkg"),
         True,
     ),
 ]
