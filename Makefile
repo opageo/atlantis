@@ -16,7 +16,7 @@
 # backend is GeoTIFF-native but only covers the rolling LANCE NRT window.
 # ============================================================================
 
-.PHONY: help setup demo demo-modis demo-gfm test lint lint-fix format-fix precommit build clean \
+.PHONY: help setup demo demo-viirs demo-modis demo-gfm test lint lint-fix format-fix precommit build clean \
 	dev-install version \
 	example-harvey-viirs example-bihar-viirs example-vamco-viirs \
 	example-westafrica-viirs examples-viirs \
@@ -76,14 +76,31 @@ setup:  ## Bootstrap data assets and install dependencies
 	uv sync --extra geo
 	uv run python scripts/setup.py
 
-demo:  ## Run the Valencia 2024 flood demo (see CLI_Examples.md for more case studies)
-	uv run atlantis --verbose demo
+demo-viirs:  ## Quick demo: Valencia 2024 flood — VIIRS, verbose + peak-window
+	uv run atlantis --verbose fetch \
+		--event Valencia_2024 --source viirs \
+		--bbox "$(VALENCIA_BBOX)" \
+		--start-date $(VALENCIA_START) --end-date $(VALENCIA_END) \
+		$(PEAK_FLAGS) $(COMMON_FLAGS) \
+		--output ./data/Valencia_2024
 
-demo-modis:  ## Run the Valencia 2024 flood demo with MODIS data
-	uv run atlantis --verbose demo-modis
+demo: demo-viirs  ## Alias for demo-viirs
 
-demo-gfm:  ## Run the Valencia 2024 flood demo with GFM (Sentinel-1 SAR) data
-	uv run atlantis --verbose demo-gfm
+demo-modis:  ## Quick demo: Valencia 2024 flood — MODIS, verbose + peak-window (requires EARTHDATA_TOKEN)
+	uv run atlantis --verbose fetch \
+		--event Valencia_2024 --source modis \
+		--bbox "$(VALENCIA_BBOX)" \
+		--start-date $(VALENCIA_START) --end-date $(VALENCIA_END) \
+		$(MODIS_HIST) $(PEAK_FLAGS) $(COMMON_FLAGS) \
+		--output ./data/Valencia_2024
+
+demo-gfm:  ## Quick demo: Valencia 2024 flood — GFM, verbose + peak-window
+	uv run atlantis --verbose fetch \
+		--event Valencia_2024 --source gfm \
+		--bbox "$(VALENCIA_BBOX)" \
+		--start-date $(VALENCIA_START) --end-date $(VALENCIA_END) \
+		$(PEAK_FLAGS) $(COMMON_FLAGS) \
+		--output ./data/Valencia_2024
 
 # ============================================================================
 # VIIRS examples — historical bbox + date range, no credentials required

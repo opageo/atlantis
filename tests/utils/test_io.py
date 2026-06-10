@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
+import pytest
+
 from atlantis.utils.io import (
+    HtmlResponseError,
+    download_file,
     ensure_dir,
     get_cache_path,
     get_etag,
@@ -141,3 +145,83 @@ class TestDownloadFile:
         result = ensure_dir(target)
         assert result == target
         assert target.is_dir()
+
+
+class _FakeResponse:
+    """Minimal stand-in for ``requests.Response`` covering the streaming path."""
+
+    def __init__(
+        self,
+        *,
+        content_type: str = "application/octet-stream",
+        chunks: tuple[bytes, ...] = (b"binary-payload",),
+        etag: str | None = None,
+    ) -> None:
+        self.headers = {"Content-Type": content_type}
+        if etag is not None:
+            self.headers["ETag"] = etag
+        self._chunks = chunks
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def iter_content(self, chunk_size: int = 8192) -> tuple[bytes, ...]:
+        del chunk_size
+        return self._chunks
+
+
+class TestDownloadFileHtmlGuard:
+    """Tests for HTML auth-redirect detection in ``download_file``."""
+
+    def test_rejects_html_content_type(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An HTML Content-Type aborts the download and leaves nothing on disk."""
+        destination = tmp_path / "tile.hdf"
+        fake = _FakeResponse(content_type="text/html; charset=utf-8", chunks=(b"<html>...</html>",))
+
+        import requests as real_requests
+
+        monkeypatch.setattr(real_requests, "get", lambda *_a, **_k: fake)
+
+        with pytest.raises(HtmlResponseError) as excinfo:
+            download_file("https://example.test/tile.hdf", output_path=destination)
+
+        assert "EULA" in str(excinfo.value) or "auth" in str(excinfo.value).lower()
+        assert not destination.exists()
+
+    def test_rejects_html_body_when_content_type_misleads(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An HTML body with non-HTML Content-Type is still rejected and unlinked."""
+        destination = tmp_path / "tile.hdf"
+        fake = _FakeResponse(
+            content_type="application/octet-stream",
+            chunks=(b"<!DOCTYPE html><html><head><title>Earthdata Login</title>",),
+        )
+
+        import requests as real_requests
+
+        monkeypatch.setattr(real_requests, "get", lambda *_a, **_k: fake)
+
+        with pytest.raises(HtmlResponseError):
+            download_file("https://example.test/tile.hdf", output_path=destination)
+
+        assert not destination.exists()
+
+    def test_writes_binary_payload(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A normal binary response is written through to disk."""
+        destination = tmp_path / "tile.hdf"
+        fake = _FakeResponse(
+            content_type="application/x-hdf",
+            chunks=(b"\x89HDF", b"binary tail"),
+            etag='"abc"',
+        )
+
+        import requests as real_requests
+
+        monkeypatch.setattr(real_requests, "get", lambda *_a, **_k: fake)
+
+        result = download_file("https://example.test/tile.hdf", output_path=destination)
+
+        assert result == destination
+        assert destination.read_bytes() == b"\x89HDFbinary tail"
+        assert get_etag(destination) == '"abc"'
