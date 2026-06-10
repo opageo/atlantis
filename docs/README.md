@@ -20,6 +20,8 @@ design notes.
 
 ## Getting Started
 
+- [setup.md](./setup.md) - Credentials and one-time account setup (Earthdata
+  token, LAADS Web pre-authorization, AWS profiles, KuroSiwo catalogue).
 - [src/README.md](../src/README.md) - Architecture guide, module layout, CLI
   examples, and extension points.
 - [cli.md](./cli.md) - Full CLI reference: every command, every flag,
