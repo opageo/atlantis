@@ -16,7 +16,7 @@
 # backend is GeoTIFF-native but only covers the rolling LANCE NRT window.
 # ============================================================================
 
-.PHONY: help setup demo test lint lint-fix format-fix precommit build clean \
+.PHONY: help setup demo demo-modis demo-gfm test lint lint-fix format-fix precommit build clean \
 	dev-install version \
 	example-harvey-viirs example-bihar-viirs example-vamco-viirs \
 	example-westafrica-viirs examples-viirs \
@@ -76,6 +76,12 @@ setup:  ## Bootstrap data assets and install dependencies
 
 demo:  ## Run the Valencia 2024 flood demo (see CLI_Examples.md for more case studies)
 	uv run atlantis --verbose demo
+
+demo-modis:  ## Run the Valencia 2024 flood demo with MODIS data
+	uv run atlantis --verbose demo-modis
+
+demo-gfm:  ## Run the Valencia 2024 flood demo with GFM (Sentinel-1 SAR) data
+	uv run atlantis --verbose demo-gfm
 
 # ============================================================================
 # VIIRS examples — historical bbox + date range, no credentials required
