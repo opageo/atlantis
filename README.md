@@ -48,6 +48,19 @@ uv run atlantis demo
 uv sync
 ```
 
+## Credentials & data access
+
+Most backends require a NASA Earthdata account and, for the MODIS LAADS HDF4
+backend, a one-time browser authorization step. Run the setup script to be
+guided through all of it:
+
+```bash
+uv run python scripts/setup.py
+```
+
+See [docs/setup.md](docs/setup.md) for a full description of each credential
+(Earthdata token, LAADS Web pre-authorization, AWS profiles for GFM).
+
 ## CLI
 
 The commands you'll use most often:
