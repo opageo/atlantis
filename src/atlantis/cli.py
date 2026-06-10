@@ -1807,7 +1807,10 @@ def demo_modis(
     if not fetch_results:
         warn("No MODIS data found for this region/date range.")
         if modis_backend == "lance_geotiff":
-            info("Hint: lance_geotiff only covers a ~1-week NRT window. Use --modis-backend laads_hdf4 for historical events.")
+            info(
+                "Hint: lance_geotiff only covers a ~1-week NRT window. "
+                "Use --modis-backend laads_hdf4 for historical events."
+            )
         raise typer.Exit(code=1)
 
     _report_fetch_writes("modis", fetch_results, keep_processed=True)
