@@ -14,9 +14,9 @@ design notes.
 
 ## Architecture and Design
 
-- [KuroSiwo STAC design](./kurosiwo-stac-design.md)
-- [STAC architecture diagrams](./mermaid_stac_ks_labeled.md)
-- [Compact STAC mermaid diagram](./mermaid_stac_ks.md)
+- [KuroSiwo STAC design](./kurosiwo/stac-design.md)
+- [STAC architecture diagrams](./kurosiwo/stac_ks_labeled.md)
+- [Compact STAC mermaid diagram](./kurosiwo/stac_ks.md)
 
 ## Getting Started
 
