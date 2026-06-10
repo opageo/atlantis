@@ -74,6 +74,32 @@ flowchart TD
 | `aggregate` | Smooth out cloud + observation gaps               | One `FetchResult` (`date_token="aggregated"`) |
 | `all`       | Time-series analysis / day-by-day comparison      | N `FetchResults`                              |
 
+## Streaming vs downloading
+
+| Mode | Backend support | Disk usage | When to choose it |
+| ---- | --------------- | ---------- | ----------------- |
+| `--stream` | `lance_geotiff` only | Minimal | Recent NRT events where you want speed and no local cache |
+| `--no-stream` | `lance_geotiff` and effectively required for `laads_hdf4` | Higher | Re-runs, HDF4 extraction, or environments where persistent local files are useful |
+
+`laads_hdf4` is a download-first path because HDF4 is not practical for direct
+range-read streaming. `lance_geotiff` can do either.
+
+## Backends
+
+### `lance_geotiff`
+
+- Best for recent events inside the rolling NRT window.
+- Supports `/vsicurl/` streaming with `GDAL_HTTP_HEADERS` bearer auth.
+- Reads one GeoTIFF per composite tile, so it feels closest to the VIIRS user
+    experience.
+
+### `laads_hdf4`
+
+- Best for historical mapping, benchmarking, and ML labels.
+- Downloads HDF4 containers, then opens the requested flood subdataset.
+- Covers the long archive (`MCDWD_L3`) and the mirrored NRT archive beyond the
+    short LANCE retention window.
+
 ## Output encoding
 
 ```
@@ -150,7 +176,7 @@ No reduction. Each date's `ProcessedTile` becomes its own
 
 MCDWD's HAND mask reassigns pixels to `255` ("insufficient data") even
 when water was detected — a deliberate algorithmic choice
-([modis.md § HAND mask](modis.md#hand-mask-post-compositing-since-beta-2--jan-2023)).
+([overview.md § HAND mask](overview.md#hand-mask-post-compositing-since-beta-2--jan-2023)).
 This propagates through the pipeline as:
 
 - `quality_mask = 0` for HAND-masked pixels (correct — these are not

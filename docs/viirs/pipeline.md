@@ -48,7 +48,7 @@ flowchart TD
     PLOT -->|No| DONE_HARM["Done"]
     PNG --> DONE_HARM
 
-    click HARM_STEPS "viirs.md#canonical-1-arcmin-global-grid" "Canonical 1-arcmin global grid"
+    click HARM_STEPS "overview.md#canonical-1-arcmin-global-grid" "Canonical 1-arcmin global grid"
 ```
 
 ## Mode summary
@@ -80,7 +80,7 @@ written under `processed/` (and later `harmonised/`):
 
 ### `peak` — pick the single most-flooded date
 
-Implemented in [`atlantis.fetchers.viirs.selection.flood_pixel_count`](../src/atlantis/fetchers/viirs/selection.py)
+Implemented in [`atlantis.fetchers.viirs.selection.flood_pixel_count`](../../src/atlantis/fetchers/viirs/selection.py)
 and dispatched in `VIIRSFetcher.fetch`.
 
 For each date `d`, count the flooded pixels:
@@ -105,7 +105,7 @@ mosaic.
 
 ### `aggregate` — temporal composite (mean / mode)
 
-Implemented in [`ViirsRasterProcessor.aggregate_tiles`](../src/atlantis/fetchers/viirs/processor.py).
+Implemented in [`ViirsRasterProcessor.aggregate_tiles`](../../src/atlantis/fetchers/viirs/processor.py).
 
 All `N` dates are stacked into a `(N, H, W)` array per layer and reduced
 **element-wise**:
@@ -175,12 +175,12 @@ Harmonised (raw)             uint8   raw codes 0–200     ~1 arcmin, nodata=255
   every output is a bit-for-bit subset of the same global raster
   (compatible with ECMWF `Globe_flood_area_*.grb` and other 1-arcmin
   global products). See
-  [Canonical 1-arcmin global grid](viirs.md#canonical-1-arcmin-global-grid)
+  [Canonical 1-arcmin global grid](overview.md#canonical-1-arcmin-global-grid)
   for details and the verification notebook.
 
 ## Window filter algorithm
 
-Implemented in [`atlantis.fetchers.viirs.selection`](../src/atlantis/fetchers/viirs/selection.py)
+Implemented in [`atlantis.fetchers.viirs.selection`](../../src/atlantis/fetchers/viirs/selection.py)
 and dispatched inside `VIIRSFetcher._apply_peak_window()`.
 
 ### Step 1 — Find the peak

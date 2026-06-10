@@ -97,7 +97,7 @@ uv run atlantis harmonise \
 | `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF                                                                                                                                       |
 | `--no-keep-processed` | off     | Skip writing intermediate 375 m GeoTIFFs; keep processed rasters in memory unless combined with `--harmonise` and/or `--plot`                                                                  |
 | `--plot`              | off     | Save a PNG of the peak-flood date                                                                                                                                                              |
-| `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). See [Strategies in detail](viirs_pipeline.md#strategies-in-detail-pixel-level). |
+| `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). See [Strategies in detail](pipeline.md#strategies-in-detail-pixel-level). |
 
 #### Peak-window filtering and subsampling
 
@@ -278,7 +278,7 @@ uv run atlantis fetch \
   --output ./data/Pakistan_2022
 ```
 
-See [`CLI_Examples.md`](../CLI_Examples.md#viirs-availability-notes) for more
+See [`CLI_Examples.md`](../../CLI_Examples.md#viirs-availability-notes) for more
 details on backend selection.
 
 ## Output structure
@@ -361,8 +361,8 @@ The reference is the grid used by ECMWF's `Globe_flood_area_*.grb`
 ### How it is implemented
 
 This is enabled by default on every `--harmonise` run; you do not need to
-pass any flag. See [`HarmoniseConfig`](../src/atlantis/config.py) for the
-three knobs and [`Reprojector._snap_bounds_to_global_grid`](../src/atlantis/harmoniser/reprojector.py)
+pass any flag. See [`HarmoniseConfig`](../../src/atlantis/config.py) for the
+three knobs and [`Reprojector._snap_bounds_to_global_grid`](../../src/atlantis/harmoniser/reprojector.py)
 for the snap maths.
 
 | Config field             | Default      | Meaning                                                                          |
@@ -394,7 +394,7 @@ integers; pixel centres are exactly `±(k + 0.5) / 60`.
 
 ### Verifying alignment
 
-The notebook [`notebooks/drafts/verify_global_grid.ipynb`](../notebooks/drafts/verify_global_grid.ipynb)
+The notebook [`notebooks/drafts/verify_global_grid.ipynb`](../../notebooks/drafts/verify_global_grid.ipynb)
 walks through the verification end-to-end:
 
 1. Streams ~200 MiB (one full message) of `Globe_flood_area_202208.grb`
@@ -443,9 +443,9 @@ columns 10748–10919 of the global grid.
 
 ## Further reading
 
-- [Pipeline modes & flowchart](viirs_pipeline.md)
-- [Python API reference](viirs_api.md)
-- [Architecture & internals](viirs_internals.md)
-- [Pipeline vision](../src/README.md)
+- [Pipeline modes & flowchart](pipeline.md)
+- [Python API reference](api.md)
+- [Architecture & internals](internals.md)
+- [Pipeline vision](../../src/README.md)
 - `scripts/viirs_demo.py` — runnable end-to-end example
 - `notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb` — interactive walkthrough

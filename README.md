@@ -42,6 +42,9 @@ uv run atlantis setup
 uv run atlantis demo
 ```
 
+> **Architecture and sensor guides?** See [docs/README.md](docs/README.md)
+> for the data-source documentation index and shared design notes.
+
 ## Installation
 
 ```bash
@@ -64,7 +67,7 @@ uv sync
   > Add `--no-keep-processed` to skip writing intermediate 375 m files, or
   > `--strategy aggregate` to return a temporal mean/mode composite.
   > Use `--no-stream` to download tiles to disk, or `--no-classify` for raw pixel codes.
-  > See [docs/viirs.md](docs/viirs.md) for details.
+  > See [docs/viirs/overview.md](docs/viirs/overview.md) for details.
   >
   > The exact working VIIRS and KuroSiwo extraction workflow is documented
   > in [src/README.md](src/README.md).

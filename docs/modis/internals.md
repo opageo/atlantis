@@ -1,8 +1,8 @@
 # MODIS Internals
 
 Developer-facing documentation for the MODIS MCDWD fetcher architecture
-and processing pipeline. For usage, see [modis.md](modis.md) and
-[modis_api.md](modis_api.md).
+and processing pipeline. For usage, see [overview.md](overview.md) and
+[api.md](api.md).
 
 ## Architecture
 
@@ -38,6 +38,11 @@ The package layout mirrors `atlantis.fetchers.viirs/`:
 | `processor.py` | Tile-grid maths, HDF4 extraction, mosaic+clip   |
 | `selection.py` | Peak-date selectors (count + cloud-aware score) |
 | `dataset.py`   | `ProcessedTile → xarray.Dataset` conversion     |
+
+When you run `atlantis fetch --source modis`, Atlantis executes a backend-aware
+pipeline: discover candidate tiles, materialise them through either LANCE or
+LAADS, mosaic and clip them to the AOI, classify the categorical flood codes,
+then optionally aggregate or harmonise the result.
 
 ## End-to-end flow
 
@@ -90,6 +95,19 @@ flowchart TD
     G --> H["Optional: harmonise to 1 arcmin"]
 ```
 
+## Code trace
+
+Call chain for a typical fetch:
+
+- `MODISFetcher.search()` in `__init__.py` derives the required `hXXvYY` tiles
+    and asks the selected backend for listings and filename matches.
+- `MODISFetcher.fetch()` in `__init__.py` materialises either streamed GeoTIFFs
+    or downloaded HDF4-derived GeoTIFFs.
+- `ModisRasterProcessor.process_tiles()` in `processor.py` handles mosaic,
+    clip, classification, and writing the intermediate products.
+- `MODISFetcher` then dispatches to the date-selection strategy (`peak`,
+    `aggregate`, or `all`) before packaging the final `FetchResult` objects.
+
 ## Auth and streaming
 
 MCDWD on both backends requires an **Earthdata Login bearer token**.
@@ -99,7 +117,7 @@ The fetcher injects the token in two complementary places:
 
 1. **`requests.get(headers=...)`** for HTML / JSON listings and HDF4
    downloads. The optional `headers=` keyword on
-   [`atlantis.utils.io.download_file`](../src/atlantis/utils/io.py)
+    [`atlantis.utils.io.download_file`](../../src/atlantis/utils/io.py)
    forwards it to `requests`.
 2. **`rasterio.Env(GDAL_HTTP_HEADERS="Authorization: Bearer …")`**
    for `/vsicurl/` streaming. Scoped to the per-date processing block in
@@ -147,7 +165,7 @@ the same `rasterio.merge.merge()` call as the LANCE GeoTIFF inputs.
 
 ## Pixel classification
 
-The decoder mirrors the layer mapping in [modis.md](modis.md#suggested-layer-mapping):
+The decoder mirrors the layer mapping in [overview.md](overview.md#suggested-layer-mapping):
 
 | Variable          | Rule                   | Meaning                                                                                                |
 | ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------ |

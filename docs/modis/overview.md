@@ -6,9 +6,65 @@
 
 This document collects everything we know about the NASA MODIS flood product
 family — the data sources, formats, tiling scheme, pixel encoding, and the
-access paths that matter for the integrated [MODIS fetcher](modis_api.md).
-For the architectural breakdown, see [modis_internals.md](modis_internals.md);
-for the CLI decision tree, see [modis_pipeline.md](modis_pipeline.md).
+access paths that matter for the integrated [MODIS fetcher](api.md).
+For the architectural breakdown, see [internals.md](internals.md);
+for the CLI decision tree, see [pipeline.md](pipeline.md).
+
+Read this page for the product overview and quick-start guidance. Then use the
+companion pages for the exact surface you need:
+
+- [pipeline.md](pipeline.md) for backend choices, flag combinations, and strategy flow
+- [api.md](api.md) for Python usage and constructor parameters
+- [internals.md](internals.md) for architecture, search flow, and implementation details
+- [../README.md](../README.md) for the full docs index
+
+## Quick start
+
+```bash
+export EARTHDATA_TOKEN="YOUR_TOKEN_HERE"
+
+uv run atlantis fetch \
+  --event Pakistan_2022 \
+  --source modis \
+  --bbox "66.0 22.0 72.0 31.0" \
+  --start-date 2022-08-30 \
+  --end-date 2022-09-01 \
+  --modis-backend laads_hdf4 \
+  --modis-composite F2 \
+  --harmonise \
+  --no-keep-processed
+```
+
+This downloads the historical LAADS HDF4 products for the 2022 Pakistan floods,
+extracts the 2-day flood composite, and writes the harmonised 1-arcmin output.
+
+Typical folder layout:
+
+```
+<output>/
+  <event_id>/
+    modis/
+      raw/          # downloaded .tif or .hdf inputs
+      processed/    # absent with --no-keep-processed
+      plots/        # with --plot or harmonised previews
+      harmonised/   # with --harmonise
+```
+
+## Pixel encoding at a glance
+
+The MODIS flood products are categorical. The full semantics and release
+history are documented later in this page; the quick reference is:
+
+| Code  | Meaning |
+| ----- | ------- |
+| `0`   | No water |
+| `1`   | Surface / reference water |
+| `2`   | Recurring flood |
+| `3`   | Unusual flood |
+| `255` | Insufficient data |
+
+Atlantis typically maps those codes into `flood_fraction`, `quality_mask`,
+`permanent_water`, and `recurring_flood` for downstream analysis.
 
 ## What is MODIS?
 
@@ -24,7 +80,7 @@ are consumed from the [MOD09 Surface Reflectance product](https://lpdaac.usgs.go
 Both satellites are nearing end-of-life: fuel exhaustion has caused their
 orbits to drift, with Terra equatorial overpasses moving from ~10:30 a.m. to
 ~9:30 a.m. and Aqua from ~1:30 p.m. to ~3:00 p.m. as of late 2025. The
-[VIIRS flood product](viirs.md) (NOAA-20 + NOAA-21) was designed as their
+[VIIRS flood product](../viirs/overview.md) (NOAA-20 + NOAA-21) was designed as their
 successor.
 
 ## Flood product family
@@ -174,7 +230,7 @@ layer has changed across releases:
 | Release       | Date      | Reference water layer                                                                                        |
 | ------------- | --------- | ------------------------------------------------------------------------------------------------------------ |
 | Beta / Beta 2 | 2021–2023 | **MOD44W Collection 5** (Carroll et al. 2009; static, derived from 2000–2002 MODIS Terra + SRTM)             |
-| Release 1     | Apr 2024  | **Yearly MOD44W Collection 6.1** ([Carroll et al. 2024](mod44w_userguide_atbd_v61.md)), 5-year majority rule |
+| Release 1     | Apr 2024  | **Yearly MOD44W Collection 6.1** (Carroll et al. 2024), 5-year majority rule |
 | Release 1.1   | Dec 2025  | Same as Release 1 + monthly **Recurring flood** mask (next section)                                          |
 
 #### How the yearly mask is built (Release 1 onward)
@@ -429,7 +485,7 @@ operationally important uses:
 2. **Filter by AOI.** Walk the JSON, keep only entries whose `<TILE>`
    matches the `hXXvYY` set returned by `modis_ll_tiles_for_aoi(...)`,
    and stream those URLs through `/vsicurl/`. This is the MODIS analogue
-   of the [VIIRS NoaaS3Backend listing flow](viirs_internals.md#stage-2--materialise-inputs--viirsfetcherfetch).
+  of the [VIIRS NoaaS3Backend listing flow](../viirs/internals.md#stage-2--materialise-inputs--viirsfetcherfetch).
 
 The LAADS DAAC archive does **not** advertise an equivalent JSON API; for
 LAADS the HTML listing under `archive/allData/61/MCDWD_L3/<YYYY>/<DDD>/`
@@ -440,7 +496,7 @@ remains the only programmatic listing route.
 For completeness: NASA's MCDWD-equivalent VIIRS products live alongside
 MCDWD on the same servers but under MODIS Collection `5200` rather than
 `61`. **Atlantis currently uses the NOAA VFM VIIRS product instead** (see
-[viirs.md](viirs.md)); the NASA VIIRS line is listed here only so the family is
+[the VIIRS overview](../viirs/overview.md)); the NASA VIIRS line is listed here only so the family is
 documented:
 
 | Product             | Format       | Cadence               | Path                                                                                                                                                                                                                 |
@@ -622,7 +678,7 @@ Mapping the VIIRS pipeline onto MODIS, the obvious recipe is:
 1. **Use LANCE GeoTIFFs (`MCDWD_L3_F2_NRT` etc.) wherever possible.** They
    stream cleanly via `/vsicurl/`, one band per file, just like the NOAA
    VIIRS S3 tiles. Atlantis already has the `merge → mask` plumbing in
-   [`ViirsRasterProcessor`](../src/atlantis/fetchers/viirs/processor.py)
+  [`ViirsRasterProcessor`](../../src/atlantis/fetchers/viirs/processor.py)
    that can be reused almost verbatim.
 2. **Use LAADS HDF4 (`MCDWD_L3`, `MCDWD_L3_NRT`) for any non-NRT date.**
    These can't be streamed efficiently, so the pipeline must download the
@@ -631,7 +687,7 @@ Mapping the VIIRS pipeline onto MODIS, the obvious recipe is:
    the `prepare_input_geotiffs()` helper in
    [ifs-floodbench/Scripts/extract_modis_flood.py](https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/extract_modis_flood.py).
 3. **Re-use the existing AOI snapping / 1-arcmin harmonisation grid**
-   ([viirs.md § Canonical 1-arcmin global grid](viirs.md#canonical-1-arcmin-global-grid)).
+  ([VIIRS canonical 1-arcmin global grid](../viirs/overview.md#canonical-1-arcmin-global-grid)).
    MODIS is at ~250 m, finer than VIIRS' 375 m and finer than the 1-arcmin
    target, so `average` resampling is appropriate for `flood_fraction`-
    style downstreams. Note that the MODIS product is **categorical**
@@ -656,7 +712,7 @@ analogous to VIIRS `permanent_water`.
 ### Suggested layer mapping
 
 To keep the downstream harmoniser and ECMWF benchmarking notebooks
-([notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb](../notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb))
+([notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb](../../notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb))
 sensor-agnostic, MODIS should expose the same dataset variables VIIRS does:
 
 | MODIS variable    | Derivation                        | Equivalent VIIRS variable |
@@ -719,7 +775,7 @@ sensible benchmarking against MCDWD has to account for them.
 ## Comparison to VIIRS
 
 The NASA VIIRS NRT product (`VCDWD_L3_NRT`, see
-[viirs.md](viirs.md)) is intentionally a drop-in replacement for MODIS,
+[the VIIRS overview](../viirs/overview.md)) is intentionally a drop-in replacement for MODIS,
 but Atlantis currently uses the **NOAA VFM** VIIRS product instead. The two
 are different:
 
@@ -759,29 +815,29 @@ exists in the sibling repository
   — usage docs for all of the above.
 
 These scripts were the starting point for porting the workflow into the
-Atlantis [`fetchers/modis/`](../src/atlantis/fetchers/modis/) package.
+Atlantis [`fetchers/modis/`](../../src/atlantis/fetchers/modis/) package.
 
 ## Further reading
 
-- [Python API reference](modis_api.md) — `MODISFetcher` usage with both
+- [Python API reference](api.md) — `MODISFetcher` usage with both
   backends.
-- [Architecture & internals](modis_internals.md) — module layout, HDF4
+- [Architecture & internals](internals.md) — module layout, HDF4
   extraction, classification rules, search diagnostics.
-- [Pipeline modes & flowchart](modis_pipeline.md) — CLI decision tree
+- [Pipeline modes & flowchart](pipeline.md) — CLI decision tree
   and strategy details.
-- [VIIRS reference](viirs.md) — companion sensor with similar
+- [VIIRS reference](../viirs/overview.md) — companion sensor with similar
   architecture.
 
 ## References
 
 - [NRT Global Flood Products homepage](https://www.earthdata.nasa.gov/global-flood-product)
-- [MODIS/VIIRS NRT Global Flood Products User Guide, Rev F (Dec 2025)](https://www.earthdata.nasa.gov/s3fs-public/2025-12/MCDWD_VCDWD_UserGuide_RevF.pdf) ([local copy](mcdwd_vcdwd_userguide_revF.md)) — the authoritative source for the algorithm, HAND mask, recurring-flood Clopper–Pearson math, 15-layer HDF inventory, JSON API, and release history.
+- [MODIS/VIIRS NRT Global Flood Products User Guide, Rev F (Dec 2025)](https://www.earthdata.nasa.gov/s3fs-public/2025-12/MCDWD_VCDWD_UserGuide_RevF.pdf) — the authoritative source for the algorithm, HAND mask, recurring-flood Clopper–Pearson math, 15-layer HDF inventory, JSON API, and release history.
 - [MCDWD User Guide, Rev A (Mar 2021)](https://web.archive.org/web/2021*/MCDWD_UserGuide.pdf) — the original beta-release user guide is the historical source for the pre-Release-1 layer naming (with spaces); the corresponding text is no longer locally archived (Rev F supersedes it for all current details).
-- [MODIS Historical Reprocessed Archive description (April 2026)](https://www.earthdata.nasa.gov/s3fs-public/2026-04/MCDWD_LAADS_Desc.pdf) ([local copy](mcdwd_laads_desc.md)) — official LAADS description of `MCDWD_L3` and `MCDWD_L3_NRT`.
+- [MODIS Historical Reprocessed Archive description (April 2026)](https://www.earthdata.nasa.gov/s3fs-public/2026-04/MCDWD_LAADS_Desc.pdf) — official LAADS description of `MCDWD_L3` and `MCDWD_L3_NRT`.
 - [NASA Earthdata blog — 23-year archive release (April 10, 2026)](https://www.earthdata.nasa.gov/news/blog/nasa-enhances-global-flood-products-smarter-detection-flooding-release-23-year-archive)
 - [LANCE NRT versus Standard Products](https://www.earthdata.nasa.gov/learn/earth-observation-data-basics/near-real-time-versus-standard-products) — background on the NRT/standard split that motivates the reprocessed archive.
 - [MOD09 Surface Reflectance User Guide](https://lpdaac.usgs.gov/documents/925/MOD09_User_Guide_V61.pdf) — source product for the water-detection algorithm.
-- [MOD44W C6.1 User Guide & ATBD](mod44w_userguide_atbd_v61.md) (local copy) — documents the yearly MOD44W collection used as the rolling 5-year reference water mask since Release 1.
+- MOD44W C6.1 User Guide & ATBD — documents the yearly MOD44W collection used as the rolling 5-year reference water mask since Release 1.
 - [MOD44W Land–Water Mask C5 (Carroll et al. 2009)](https://doi.org/10.1080/17538940902951401) — the static mask used by Beta releases.
 - [HAND model paper (Nobre et al. 2011)](https://doi.org/10.1016/j.jhydrol.2011.03.051) — the topographic feature underpinning the HAND mask.
 - [Copernicus GLO-90 DEM via OpenTopography](https://portal.opentopography.org/raster?opentopoID=OTSDEM.032021.4326.3) — source DEM for HAND.
@@ -793,4 +849,4 @@ Atlantis [`fetchers/modis/`](../src/atlantis/fetchers/modis/) package.
 - [LANCE JSON listing API](https://nrt3.modaps.eosdis.nasa.gov/api/v2/content/details) — the recommended programmatic-discovery endpoint.
 - [Earthdata Login (token registration)](https://urs.earthdata.nasa.gov/)
 - [FLOOD Viewer web tool (compare MODIS / VIIRS / OPERA)](https://lance.modaps.eosdis.nasa.gov/flood)
-- [Atlantis VIIRS reference docs](viirs.md)
+- [Atlantis VIIRS reference docs](../viirs/overview.md)

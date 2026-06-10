@@ -3,7 +3,7 @@
 Sensor-specific implementation of the
 [`AbstractFloodFetcher`](../base.py) protocol for the NASA MODIS MCDWD
 (MODIS Composite Daily Water Detection) product family. See
-[`docs/modis.md`](../../../../docs/modis.md) for the user-facing
+[`docs/modis/overview.md`](../../../../docs/modis/overview.md) for the user-facing
 reference.
 
 ## Module map

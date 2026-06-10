@@ -1,6 +1,6 @@
 # VIIRS Python API
 
-Python interface for the VIIRS flood fetcher. For CLI usage, see [viirs.md](viirs.md).
+Python interface for the VIIRS flood fetcher. For CLI usage, see [overview.md](overview.md).
 
 ## Basic usage
 
@@ -121,7 +121,7 @@ plt.show()
 | `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)                              |
 | `data_format`    | `str`  | `"tif"`     | Remote format to query; only `"tif"` is currently implemented              |
 
-> See [viirs.md § Backends](viirs.md#backends) for a detailed comparison of the two
+> See [overview.md § Backends](overview.md#backends) for a detailed comparison of the two
 > sources (host, compositing window, tile naming, AOI grid, coverage years and
 > license).
 

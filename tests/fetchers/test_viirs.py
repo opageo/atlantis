@@ -892,7 +892,7 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
         assert gmu_arr.shape == expected_shape, f"{var} shape mismatch (gmu)"
         assert noaa_arr.shape == gmu_arr.shape, f"{var} shape differs between backends"
 
-    # Same dtypes per variable (as documented in docs/viirs.md)
+    # Same dtypes per variable (as documented in docs/viirs/overview.md)
     assert noaa_dataset["flood_fraction"].dtype == np.float32
     assert gmu_dataset["flood_fraction"].dtype == np.float32
     assert noaa_dataset["quality_mask"].dtype == np.uint8

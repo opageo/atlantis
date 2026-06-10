@@ -1,53 +1,52 @@
-# GFM Flood Detection
+# GFM Pipeline Reference
 
-**SAR-based flood mapping from Sentinel-1**
+Technical reference for Atlantis' GFM CLI, processing steps, output formats,
+and configuration. For the user-facing introduction, quick start, and data
+source overview, see [overview.md](overview.md).
 
-Atlantis integrates the **Global Flood Monitor (GFM)** — a near-real-time flood
-extent product derived from Sentinel-1 SAR imagery, operated by the EODC
-(Earth Observation Data Centre). Unlike optical products (e.g. VIIRS), SAR
-penetrates cloud cover, making GFM reliable during the heavy rainfall that
-typically accompanies flood events.
+## Decision flowchart
 
-## What is GFM?
+```mermaid
+flowchart TD
+  START["atlantis fetch --source gfm"] --> SEARCH["Search EODC STAC"]
+  SEARCH --> GROUP["Group items by date"]
+  GROUP --> STRATEGY{"--strategy?"}
 
-GFM produces daily flood extent maps by detecting changes in SAR backscatter
-from Sentinel-1A and Sentinel-1B. Two key bands are provided per acquisition:
+  STRATEGY -->|peak| PEAK["Pick date with max flood_pixel_count"]
+  STRATEGY -->|aggregate| AGG["Mean flood_fraction and combine masks"]
+  STRATEGY -->|all| ALL["Keep one result per date"]
 
-| Asset                   | Meaning                                               |
-| ----------------------- | ----------------------------------------------------- |
-| `ensemble_flood_extent` | Flood classification: 0 = dry, 1 = flood, 255 = nodata |
-| `reference_water_mask`  | Water type: 0 = land, 1 = water (seasonal/observed), 2 = permanent water, 255 = nodata |
+  PEAK --> KEEP{"--keep-processed?"}
+  AGG --> KEEP
+  ALL --> KEEP
 
-Native product resolution is **~20 m** in the STAC COGs. Atlantis coarsens to
-~80 m (default `--gfm-coarsen-factor 4`) before reprojection to reduce SAR
-speckle and artefacts.
+  KEEP -->|on| WRITE["Write processed/ GeoTIFFs"]
+  KEEP -->|off| MEMORY["Keep processed tiles in memory"]
 
-Data is accessed via the **EODC STAC API** (`https://stac.eodc.eu/api/v1`,
-collection `GFM`) using Cloud-Optimised GeoTIFFs — no separate download step
-is required.
-
-## Quick start
-
-```bash
-uv run atlantis fetch \
-  --event Valencia_2024 \
-  --source gfm \
-  --bbox "-1.5 38.8 0.5 40.0" \
-  --start-date 2024-10-29 \
-  --end-date 2024-11-04 \
-  --no-keep-processed --harmonise
+  WRITE --> HARM{"--harmonise?"}
+  MEMORY --> HARM
+  HARM -->|No| DONE["Done"]
+  HARM -->|Yes| HARMONISE["Snap AOI to canonical 1-arcmin grid"]
+  HARMONISE --> PLOT{"--plot?"}
+  PLOT -->|Yes| PNG["Write harmonised TIFF + PNG"]
+  PLOT -->|No| TIFF["Write harmonised TIFF"]
+  PNG --> DONE
+  TIFF --> DONE
 ```
 
-This queries the EODC STAC API, processes Sentinel-1 tiles, and writes the
-final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside a PNG
-visualisation:
+## Mode summary
 
-```
-harmonised/
-  Valencia_2024_20241031_gfm_harmonised.tif    # uint8, 1 arcmin, flood % [0–100], nodata=255
-plots/
-  Valencia_2024_20241031_gfm_harmonised.png
-```
+| Strategy    | Best for | Result shape |
+| ----------- | -------- | ------------ |
+| `peak`      | Single representative flood date | One `FetchResult` |
+| `aggregate` | Multi-item or multi-date coverage smoothing | One aggregated `FetchResult` |
+| `all`       | Time-series analysis | One `FetchResult` per surviving date |
+
+| Flag combination | Effect |
+| ---------------- | ------ |
+| `--no-keep-processed` | Skip intermediate ~80 m outputs |
+| `--harmonise` | Write canonical 1-arcmin flood percentage raster |
+| `--plot` | Save PNG previews alongside raster outputs |
 
 ## CLI reference
 
@@ -106,7 +105,7 @@ footprint. Multiple items can cover the same date and bbox.
 
 ### Step-by-step
 
-```
+```text
 STAC search → group by date → per-item loop → classify → accumulate → harmonise
                                     │
                     load (native CRS, ~20 m, odc.stac)
@@ -152,14 +151,14 @@ harmonised outputs. This means:
 - GFM and VIIRS harmonised outputs over the same AOI are **stackable** without
   any further resampling.
 
-See [Canonical 1-arcmin global grid](viirs.md#canonical-1-arcmin-global-grid)
+See [Canonical 1-arcmin global grid](../viirs/overview.md#canonical-1-arcmin-global-grid)
 for the full alignment specification.
 
 ## Strategies in detail
 
 ### `peak` — single most-flooded date
 
-Implemented in [`atlantis.fetchers.gfm.selection.flood_pixel_count`](../src/atlantis/fetchers/gfm/selection.py).
+Implemented in [`atlantis.fetchers.gfm.selection.flood_pixel_count`](../../src/atlantis/fetchers/gfm/selection.py).
 
 For each date `d`, count the flooded pixels:
 
@@ -252,18 +251,6 @@ outputs). This gives 1% precision while using 4× less disk space than float32.
 
 Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 
-## Data source
-
-| Property          | Value                                                                  |
-| ----------------- | ---------------------------------------------------------------------- |
-| Provider          | EODC (Earth Observation Data Centre)                                   |
-| STAC API          | `https://stac.eodc.eu/api/v1`                                          |
-| Collection        | `GFM`                                                                  |
-| Sensor            | Sentinel-1A / Sentinel-1B (C-band SAR)                                 |
-| Native resolution | ~20 m                                                                  |
-| Temporal cadence  | ~6-day revisit per sensor; joint coverage improves effective revisit   |
-| Bands used        | `ensemble_flood_extent`, `reference_water_mask`                        |
-
 Override the API endpoint via `ATLANTIS_GFM_API_URL` or programmatically
 through `FetcherConfig`.
 
@@ -279,27 +266,12 @@ through `FetcherConfig`.
 
 All config fields can also be set in a `.env` file at the repository root.
 
-## Tips
-
-- **Cloud-penetrating SAR** — GFM is available during cloud-covered events
-  where VIIRS would be fully masked. Combine both products for maximum
-  confidence.
-- **Coarsen factor trade-off** — Larger `--gfm-coarsen-factor` (e.g. 8)
-  speeds up processing and smooths speckle further; smaller values (e.g. 1)
-  preserve native detail but increase runtime and sensitivity to noise.
-- **Sentinel-1 revisit** — Sentinel-1A and 1B have ~6-day individual revisits.
-  Widen `--start-date`/`--end-date` by a few days around the event peak to
-  maximise the chance of capturing at least one acquisition.
-- **No-keep-processed** — Use `--no-keep-processed` to skip writing the
-  intermediate ~80 m GeoTIFFs and save disk space. The harmonised output is
-  still produced from in-memory data.
-- **Multi-source overlay** — Because both GFM and VIIRS harmonised outputs
-  snap to the same 1-arcmin global grid, array-based cross-product analysis
-  requires no resampling.
-
 ## Further reading
 
-- [Canonical 1-arcmin global grid](viirs.md#canonical-1-arcmin-global-grid) — alignment details shared with VIIRS
-- [Pipeline vision](../src/README.md)
+- [GFM overview](overview.md)
+- [Python API](api.md)
+- [Architecture and internals](internals.md)
+- [Canonical 1-arcmin global grid](../viirs/overview.md#canonical-1-arcmin-global-grid) — alignment details shared with VIIRS
+- [Pipeline vision](../../src/README.md)
 - [EODC STAC API](https://stac.eodc.eu/api/v1)
-- End-to-end tests: `tests/fetchers/test_gfm_e2e.py`
+- [End-to-end tests](../../tests/fetchers/test_gfm_e2e.py)

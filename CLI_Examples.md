@@ -66,10 +66,10 @@ or individually:
 ## Common flags
 
 These appear throughout the examples below — abridged from
-[`docs/viirs.md`](docs/viirs.md). For pixel-level details on what each
+[`docs/viirs/overview.md`](docs/viirs/overview.md). For pixel-level details on what each
 `--strategy` actually does to the multi-date stack (mean vs. mode vs.
 per-date pass-through), see
-[`docs/viirs_pipeline.md`](docs/viirs_pipeline.md#strategies-in-detail-pixel-level).
+[`docs/viirs/pipeline.md`](docs/viirs/pipeline.md#strategies-in-detail-pixel-level).
 
 - **`--strategy peak`** (default) — keep the date with the most flood pixels.
 - **`--strategy aggregate`** — temporal mean (continuous) / mode (categorical) composite over the window.
@@ -241,13 +241,13 @@ uv run atlantis --verbose fetch \
 
 This searches 13 days, detects the peak flood date, filters to ±4 days around it,
 then returns up to 5 dates (peak + 4 nearest post-event days). See
-[`docs/viirs.md#peak-window-filtering-and-subsampling`](docs/viirs.md#peak-window-filtering-and-subsampling)
+[`docs/viirs/overview.md#peak-window-filtering-and-subsampling`](docs/viirs/overview.md#peak-window-filtering-and-subsampling)
 for the full flag reference.
 
 ## Case 5 — West Africa floods, Ghana / Togo / Benin (October 2020)
 
 Tropical/sub-Saharan flooding: ~420 km² extent. Used in
-[`docs/viirs.md`](docs/viirs.md) as the canonical KuroSiwo example.
+[`docs/viirs/overview.md`](docs/viirs/overview.md) as the canonical KuroSiwo example.
 
 **Generic CLI** — bbox + date range (`make example-westafrica-bbox`):
 
@@ -323,5 +323,5 @@ uv run atlantis --verbose fetch \
   --output ./data/Pakistan_2022
 ```
 
-See [`docs/viirs.md#data-availability`](docs/viirs.md#data-availability) for
+See [`docs/viirs/overview.md#data-availability`](docs/viirs/overview.md#data-availability) for
 the full backend comparison.

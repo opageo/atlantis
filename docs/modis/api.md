@@ -1,8 +1,8 @@
 # MODIS Python API
 
 Python interface for the MODIS MCDWD flood fetcher. For CLI usage, see
-[modis.md](modis.md). For the architectural breakdown, see
-[modis_internals.md](modis_internals.md).
+[overview.md](overview.md). For the architectural breakdown, see
+[internals.md](internals.md).
 
 ## Authentication
 
@@ -48,6 +48,23 @@ print("MODIS-only layers present:", "recurring_flood" in ds)
 LANCE only retains files for ~1 week. For older dates, use the LAADS
 backend below.
 
+## Download mode (cache tiles locally)
+
+```python
+fetcher_download = MODISFetcher(
+    backend="lance_geotiff",
+    composite="F2",
+    classify=True,
+    stream=False,
+)
+
+download_results = fetcher_download.fetch(event, Path("data/lance_smoke_download"))
+download_ds = fetcher_download.to_dataset(download_results[0])
+```
+
+Use this when you want local copies of the recent LANCE GeoTIFFs instead of
+streaming them through `/vsicurl/`.
+
 ## Pakistan 2022 — LAADS HDF4 (historical)
 
 The 2022 Pakistan floods fall in the VIIRS NOAA-S3 2021–2022 publication
@@ -81,6 +98,24 @@ ds = fetcher.to_dataset(peak)
 print("flood pixels:", int((ds["flood_fraction"] > 0).sum().item()))
 ```
 
+## Raw mode (no classification)
+
+```python
+fetcher_raw = MODISFetcher(
+    backend="lance_geotiff",
+    composite="F2",
+    classify=False,
+    stream=True,
+)
+
+raw_results = fetcher_raw.fetch(event, Path("data/lance_smoke_raw"))
+raw_ds = fetcher_raw.to_dataset(raw_results[0])
+print(raw_ds["raw"].dtype, raw_ds["raw"].shape)
+```
+
+This preserves the original categorical codes (`0/1/2/3/255`) instead of
+deriving the VIIRS-parity layers.
+
 ## KuroSiwo events
 
 ```python
@@ -96,6 +131,9 @@ events = build_kurosiwo_flood_events(
 fetcher = MODISFetcher(backend="laads_hdf4", composite="F2", classify=True)
 results = fetcher.fetch(events[0], Path("data/KuroSiwo_470"))
 ```
+
+This pattern uses the generic KuroSiwo event builder. MODIS does not have a
+sensor-specific helper command like `fetch-kurosiwo-viirs`.
 
 ## Harmonisation
 
@@ -119,6 +157,18 @@ write_harmonised_raster(
     ds_harm["flood_fraction"], Path("harmonised/Pakistan_2022_modis.tif")
 )
 ```
+
+## Search diagnostics
+
+```python
+fetcher = MODISFetcher(backend="lance_geotiff", composite="F2")
+matches = fetcher.search(event)
+print(len(matches), "matches")
+print(fetcher.last_diagnostics)
+```
+
+`last_diagnostics` records whether a search missed because of token/auth
+issues, the LANCE retention window, empty listings, or tile mismatches.
 
 ## MODISFetcher parameters
 
@@ -156,7 +206,7 @@ resampling converts that into a true % flooded at 1 arcmin.
 
 ## HAND-masked terrain pitfall
 
-MCDWD applies a [HAND mask](modis.md#hand-mask-post-compositing-since-beta-2--jan-2023)
+MCDWD applies a [HAND mask](overview.md#hand-mask-post-compositing-since-beta-2--jan-2023)
 **after** compositing: pixels in HAND-restricted terrain are reassigned
 to `255` ("insufficient data") **even if water was detected**. This is
 correct semantics for the product, but it has two consequences for
