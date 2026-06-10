@@ -83,6 +83,7 @@ SOURCE_PRETTY_NAMES: dict[str, str] = {
 SOURCE_RESOLUTION_LABELS: dict[str, str] = {
     "viirs": "375 m",
     "modis": "250 m",
+    "gfm": "1 arcmin",
 }
 
 
@@ -431,54 +432,6 @@ def _harmonise_viirs(
     )
 
 
-def _plot_gfm(
-    ds,
-    event_id,
-    date_label,
-    *,
-    output_png_path,
-):
-    """Save a PNG visualisation of GFM flood extent."""
-    output_png_path = Path(output_png_path)
-    output_png_path.parent.mkdir(parents=True, exist_ok=True)
-    if "flood_fraction" in ds:
-        plot_classified(
-            ds["flood_fraction"],
-            title=f"{event_id}: GFM flood extent {date_label}",
-            output_path=output_png_path,
-        )
-    console.print(f"  Plot → {output_png_path.name}")
-
-
-def _harmonise_gfm(
-    ds,
-    event_id,
-    date_label,
-    *,
-    harm_dir,
-    plot_dir,
-):
-    """Harmonise GFM data and save GeoTIFF + PNG."""
-    from atlantis.harmoniser import Harmoniser
-
-    harm_dir.mkdir(parents=True, exist_ok=True)
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    h = Harmoniser()
-    ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
-
-    tif_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.tif"
-    write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
-    console.print(f"  Harmonised → {tif_path.name}")
-
-    png_harm_path = plot_dir / f"{event_id}_{date_label}_gfm_harmonised.png"
-    plot_classified(
-        ds_harm["flood_fraction"],
-        title=f"{event_id}: GFM harmonised flood extent {date_label} (1 arcmin)",
-        output_path=png_harm_path,
-    )
-    return ds_harm
-
-
 def _parse_bbox(value: str) -> tuple[float, float, float, float]:
     """Parse a bbox from a four-number string."""
     parts = value.replace(",", " ").split()
@@ -770,23 +723,9 @@ def fetch(
                     parts.append(f"max {max_observations} obs (priority={peak_priority})")
                 info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
 
-            # ── Optional plot + harmonise (GFM) ───────────────────────────
-            if src == "gfm" and (plot or harmonise):
-                for result in fetch_results:
-                    ds = fetcher.to_dataset(result)
-                    date_label = result.date_token or "gfm"
-                    png_dir = plot_dir or (output_dir / src / "plots")
-                    if plot:
-                        png_out = png_dir / f"{event}_{date_label}_gfm.png"
-                        with step_status("Plotting…"):
-                            _plot_gfm(ds, event, date_label, output_png_path=png_out)
-                    if harmonise:
-                        harm_dir = output_dir / src / "harmonised"
-                        with step_status("Harmonising…"):
-                            _harmonise_gfm(ds, event, date_label, harm_dir=harm_dir, plot_dir=png_dir)
-
-            # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────────
-            if src in ("viirs", "modis") and (plot or harmonise):
+            # ── Optional plot + harmonise (GFM / VIIRS / MODIS) ──────────
+            # All three sources share the same helpers and strategy dispatch.
+            if src in ("viirs", "modis", "gfm") and (plot or harmonise):
                 # Dispatch based on strategy
                 if strategy == "peak":
                     best_result, best_date_label = _select_best_result(fetcher, fetch_results)
