@@ -265,6 +265,7 @@ dependencies = [
 [package.optional-dependencies]
 geo = [
     { name = "beautifulsoup4" },
+    { name = "odc-stac" },
     { name = "pyproj" },
     { name = "pystac" },
     { name = "pystac-client" },
@@ -342,7 +343,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'ml'", specifier = ">=3.8" },
     { name = "metview", marker = "extra == 'notebooks'", specifier = ">=1.16" },
     { name = "numpy", marker = "extra == 'ml'", specifier = ">=2.4.6" },
-    { name = "odc-stac", marker = "extra == 'notebooks'", specifier = ">=0.4" },
+    { name = "odc-stac", marker = "extra == 'geo'", specifier = ">=0.4" },
     { name = "pandas", extras = ["pyarrow"], specifier = "<3" },
     { name = "plotly", specifier = ">=6.7.0" },
     { name = "pydantic", specifier = ">=2.0" },
