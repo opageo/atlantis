@@ -6,31 +6,37 @@ from pathlib import Path
 
 import requests
 import typer
+from dotenv import load_dotenv
 from loguru import logger
 from rasterio.enums import Resampling
 
-from atlantis.config import HarmoniseConfig, get_config
+# Load credentials from .env at the repo root so fetchers that consult
+# os.environ directly (e.g. MODIS EARTHDATA_TOKEN) see them. Existing
+# environment variables take precedence (override=False).
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=False)
+
+from atlantis.config import HarmoniseConfig, get_config  # noqa: E402
 
 # Import fetchers to register them
-from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, rfm, viirs  # noqa: F401
-from atlantis.fetchers.base import FetchResult
-from atlantis.harmoniser import write_harmonised_raster
-from atlantis.models.event import FloodEvent
-from atlantis.utils.kurosiwo import (
+from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, modis, rfm, viirs  # noqa: E402, F401
+from atlantis.fetchers.base import FetchResult  # noqa: E402
+from atlantis.harmoniser import write_harmonised_raster  # noqa: E402
+from atlantis.models.event import FloodEvent  # noqa: E402
+from atlantis.utils.kurosiwo import (  # noqa: E402
     KUROSIWO_DEFAULT_CATALOGUE,
     KUROSIWO_DEFAULT_METADATA,
     build_kurosiwo_flood_events,
     build_kurosiwo_flood_events_from_catalogue,
     write_kurosiwo_metadata_csv,
 )
-from atlantis.utils.plot import (
+from atlantis.utils.plot import (  # noqa: E402
     date_from_filename,
     pixel_stats_classified,
     pixel_stats_raw,
     plot_classified,
     plot_raw,
 )
-from atlantis.utils.ui import (
+from atlantis.utils.ui import (  # noqa: E402
     command_header,
     console,
     fail,
@@ -67,8 +73,29 @@ def _main(
 # ── Shared plot + harmonise helper ──────────────────────────────────────────
 
 
-def _viirs_date_label(result: FetchResult) -> str:
-    """Human-readable date label for a VIIRS fetch result."""
+SOURCE_PRETTY_NAMES: dict[str, str] = {
+    "viirs": "VIIRS",
+    "modis": "MODIS",
+    "gfm": "GFM",
+    "rfm": "RFM",
+}
+
+SOURCE_RESOLUTION_LABELS: dict[str, str] = {
+    "viirs": "375 m",
+    "modis": "250 m",
+}
+
+
+def _pretty_source(source_id: str) -> str:
+    return SOURCE_PRETTY_NAMES.get(source_id, source_id.upper())
+
+
+def _resolution_label(source_id: str) -> str:
+    return SOURCE_RESOLUTION_LABELS.get(source_id, "native")
+
+
+def _date_label(result: FetchResult) -> str:
+    """Human-readable date label for a fetch result."""
     if result.date_token:
         token = result.date_token
         # Only format as YYYY-MM-DD if the token is an 8-digit date string.
@@ -81,32 +108,45 @@ def _viirs_date_label(result: FetchResult) -> str:
     return "unknown"
 
 
-def _report_viirs_fetch_writes(fetch_results: list[FetchResult], *, keep_processed: bool) -> None:
-    """Print what the VIIRS fetcher persisted (disk vs in-memory composite/peak date)."""
+# Backwards-compatibility alias used by tests / external tooling.
+_viirs_date_label = _date_label
+
+
+def _report_fetch_writes(source_id: str, fetch_results: list[FetchResult], *, keep_processed: bool) -> None:
+    """Print what a fetcher persisted (disk vs in-memory composite/peak date)."""
     disk_files = sum(len(result.files) for result in fetch_results)
     if disk_files:
         ok(f"Wrote {disk_files} files")
         all_paths = [path for result in fetch_results for path in result.files]
-        console.print(file_tree("viirs", all_paths))
+        console.print(file_tree(source_id, all_paths))
         return
     if fetch_results and not keep_processed:
-        label = _viirs_date_label(fetch_results[0])
+        label = _date_label(fetch_results[0])
         if label == "aggregated":
             info("Aggregated composite: processed in memory (no processed/ GeoTIFFs)")
         else:
             info(f"Peak-flood date {label}: processed in memory (no processed/ GeoTIFFs)")
 
 
+# Backwards-compatibility wrapper retained for VIIRS callers / tests.
+def _report_viirs_fetch_writes(fetch_results: list[FetchResult], *, keep_processed: bool) -> None:
+    _report_fetch_writes("viirs", fetch_results, keep_processed=keep_processed)
+
+
 def _report_empty_fetch(source_id: str, fetcher) -> None:
     """Explain why a fetcher returned no results, using diagnostics when available.
 
-    Generic fetchers fall back to the previous one-line message; VIIRS exposes
-    structured diagnostics via :attr:`VIIRSFetcher.last_diagnostics` and we
+    Generic fetchers fall back to the previous one-line message; VIIRS and MODIS
+    expose structured diagnostics via ``fetcher.last_diagnostics`` and we
     translate them into actionable guidance here.
     """
     diagnostics = getattr(fetcher, "last_diagnostics", None)
     if diagnostics is None:
         warn("No files were fetched")
+        return
+
+    if source_id == "modis":
+        _report_empty_modis_fetch(diagnostics)
         return
 
     warn("No files were fetched.")
@@ -179,13 +219,91 @@ def _report_empty_fetch(source_id: str, fetcher) -> None:
     )
 
 
+def _report_empty_modis_fetch(diagnostics) -> None:
+    """Translate ``ModisSearchDiagnostics`` into actionable CLI guidance."""
+    warn("No files were fetched.")
+
+    if getattr(diagnostics, "auth_token_missing", False):
+        warn("Reason: EARTHDATA_TOKEN is not set in the environment.")
+        info("Hint: register at https://urs.earthdata.nasa.gov/ and run\n      export EARTHDATA_TOKEN='YOUR_TOKEN'")
+        return
+
+    if not getattr(diagnostics, "tile_count", 1):
+        warn("Reason: event bbox maps to zero MODIS tiles (likely dateline-crossing).")
+        info("Hint: split the bbox at ±180° or widen / verify the coordinates.")
+        return
+
+    if getattr(diagnostics, "outside_lance_window", False):
+        warn("Reason: requested date(s) fall outside the LANCE NRT retention window (~last week).")
+        info(
+            "Hint: switch to --modis-backend laads_hdf4 for historical dates "
+            "(2003–2025 reprocessed, 2026+ archived NRT)."
+        )
+        return
+
+    if diagnostics.year_coverage_gap:
+        published = (
+            ", ".join(str(y) for y in sorted(diagnostics.available_years)) if diagnostics.available_years else "unknown"
+        )
+        requested = ", ".join(str(y) for y in sorted(diagnostics.requested_years))
+        warn(f"Reason: backend '{diagnostics.backend}' does not publish data for the requested year(s) ({requested}).")
+        info(f"Published years on this backend: {published}")
+        return
+
+    if diagnostics.network_unreachable:
+        warn(
+            f"Reason: backend '{diagnostics.backend}' is unreachable "
+            f"({diagnostics.network_failures}/{diagnostics.dates_probed} listing request(s) failed)."
+        )
+        if diagnostics.last_network_error:
+            info(f"Last network error: {diagnostics.last_network_error}")
+        if diagnostics.backend == "lance_geotiff":
+            info(
+                "Hint: nrt3 is the primary; the fetcher already tried nrt4. Verify your "
+                "network or fall back to --modis-backend laads_hdf4."
+            )
+        else:
+            info("Hint: check your network connection or retry shortly.")
+        return
+
+    if diagnostics.listings_all_empty:
+        warn(
+            f"Reason: backend '{diagnostics.backend}' returned no listings for any of "
+            f"the {diagnostics.dates_probed} requested date(s)."
+        )
+        if diagnostics.backend == "lance_geotiff":
+            info("Hint: this date may have rolled out of the LANCE retention window. Try --modis-backend laads_hdf4.")
+        else:
+            info(
+                "Hint: try widening --start-date/--end-date or verify EARTHDATA_TOKEN "
+                "is valid (token expiry surfaces here as empty listings)."
+            )
+        return
+
+    if diagnostics.no_tile_match_in_listings:
+        warn(
+            f"Reason: {diagnostics.dates_with_listings} date(s) had listings, but none "
+            f"contained tiles for the {diagnostics.tile_count} intersecting tile(s)."
+        )
+        info(
+            "Hint: the (h, v) tiles intersecting this bbox were not produced for the "
+            "requested dates. Widen the date window by 1–2 days or try a different composite."
+        )
+        return
+
+    warn(
+        f"Reason: backend '{diagnostics.backend}' produced no processable tiles "
+        f"({diagnostics.result_count} search results across {diagnostics.dates_probed} date(s))."
+    )
+
+
 def _select_best_result(
     fetcher,
     fetch_results,
 ):
     """Select the fetch result with the highest flood pixel count."""
     if len(fetch_results) == 1:
-        return fetch_results[0], _viirs_date_label(fetch_results[0])
+        return fetch_results[0], _date_label(fetch_results[0])
 
     best_result = None
     best_date_label = ""
@@ -193,7 +311,7 @@ def _select_best_result(
 
     for result in fetch_results:
         ds = fetcher.to_dataset(result)
-        date_label = _viirs_date_label(result)
+        date_label = _date_label(result)
         if "flood_fraction" in ds:
             flooded = pixel_stats_classified(ds["flood_fraction"].values, name=date_label)
             if flooded > best_flood_count:
@@ -205,11 +323,37 @@ def _select_best_result(
 
     if best_result is None:
         best_result = fetch_results[0]
-        best_date_label = _viirs_date_label(fetch_results[0])
+        best_date_label = _date_label(fetch_results[0])
 
     return best_result, best_date_label
 
 
+def _plot_source(
+    best_ds,
+    event_id,
+    date_label,
+    *,
+    source_id: str,
+    output_png_path,
+):
+    """Save a PNG visualisation of the peak-flood date for any source."""
+    pretty = _pretty_source(source_id)
+    res = _resolution_label(source_id)
+    if "flood_fraction" in best_ds:
+        plot_classified(
+            best_ds["flood_fraction"],
+            title=f"{event_id}: {pretty} flood extent {date_label} ({res})",
+            output_path=output_png_path,
+        )
+    else:
+        plot_raw(
+            best_ds["raw"],
+            title=f"{event_id}: {pretty} raw composite {date_label} ({res})",
+            output_path=output_png_path,
+        )
+
+
+# Backwards-compatibility wrapper used by external callers / tests.
 def _plot_viirs(
     best_ds,
     event_id,
@@ -218,20 +362,53 @@ def _plot_viirs(
     output_png_path,
 ):
     """Save a PNG visualisation of the VIIRS peak-flood date."""
-    if "flood_fraction" in best_ds:
+    _plot_source(best_ds, event_id, date_label, source_id="viirs", output_png_path=output_png_path)
+
+
+def _harmonise_source(
+    best_ds,
+    event_id,
+    date_label,
+    *,
+    source_id: str,
+    harm_dir,
+    plot_dir,
+):
+    """Reproject + normalise and save harmonised GeoTIFF + PNG (any source).
+
+    Returns the xarray Dataset produced by the harmoniser for downstream use.
+    """
+    from atlantis.harmoniser import Harmoniser
+
+    pretty = _pretty_source(source_id)
+    harm_dir.mkdir(parents=True, exist_ok=True)
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    h = Harmoniser()
+    ds_harm = h.harmonise(best_ds, source_id=source_id)
+    flood_var = "flood_fraction" if "flood_fraction" in ds_harm else list(ds_harm.data_vars)[0]
+
+    tif_path = harm_dir / f"{event_id}_{date_label}_{source_id}_harmonised.tif"
+    write_harmonised_raster(ds_harm[flood_var], tif_path)
+    console.print(f"  Harmonised → {tif_path.name}")
+
+    png_harm_path = plot_dir / f"{event_id}_{date_label}_{source_id}_harmonised.png"
+    if flood_var == "flood_fraction":
         plot_classified(
-            best_ds["flood_fraction"],
-            title=f"{event_id}: VIIRS flood extent {date_label} (375 m)",
-            output_path=output_png_path,
+            ds_harm[flood_var],
+            title=f"{event_id}: {pretty} harmonised flood extent {date_label} (1 arcmin)",
+            output_path=png_harm_path,
         )
     else:
         plot_raw(
-            best_ds["raw"],
-            title=f"{event_id}: VIIRS raw composite {date_label} (375 m)",
-            output_path=output_png_path,
+            ds_harm[flood_var],
+            title=f"{event_id}: {pretty} harmonised composite {date_label} (1 arcmin)",
+            output_path=png_harm_path,
         )
 
+    return ds_harm
 
+
+# Backwards-compatibility wrapper used by external callers / tests.
 def _harmonise_viirs(
     best_ds,
     event_id,
@@ -244,33 +421,14 @@ def _harmonise_viirs(
 
     Returns the xarray Dataset produced by the harmoniser for downstream use.
     """
-    from atlantis.harmoniser import Harmoniser
-
-    harm_dir.mkdir(parents=True, exist_ok=True)
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    h = Harmoniser()
-    ds_harm = h.harmonise(best_ds, source_id="viirs")
-    flood_var = "flood_fraction" if "flood_fraction" in ds_harm else list(ds_harm.data_vars)[0]
-
-    tif_path = harm_dir / f"{event_id}_{date_label}_viirs_harmonised.tif"
-    write_harmonised_raster(ds_harm[flood_var], tif_path)
-    console.print(f"  Harmonised → {tif_path.name}")
-
-    png_harm_path = plot_dir / f"{event_id}_{date_label}_viirs_harmonised.png"
-    if flood_var == "flood_fraction":
-        plot_classified(
-            ds_harm[flood_var],
-            title=f"{event_id}: VIIRS harmonised flood extent {date_label} (1 arcmin)",
-            output_path=png_harm_path,
-        )
-    else:
-        plot_raw(
-            ds_harm[flood_var],
-            title=f"{event_id}: VIIRS harmonised composite {date_label} (1 arcmin)",
-            output_path=png_harm_path,
-        )
-
-    return ds_harm
+    return _harmonise_source(
+        best_ds,
+        event_id,
+        date_label,
+        source_id="viirs",
+        harm_dir=harm_dir,
+        plot_dir=plot_dir,
+    )
 
 
 def _plot_gfm(
@@ -339,7 +497,7 @@ def _parse_date(value: str, option_name: str) -> date:
 @cli.command()
 def fetch(
     event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
-    source: str | None = typer.Option(None, "--source", "-s", help="Data source (gfm, viirs, rfm, all)"),
+    source: str | None = typer.Option(None, "--source", "-s", help="Data source (gfm, viirs, modis, rfm, all)"),
     output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory for raw data"),
     bbox: str | None = typer.Option(None, "--bbox", help="Bounding box as 'west south east north'"),
     start_date: str | None = typer.Option(None, "--start-date", help="Start date in YYYY-MM-DD format"),
@@ -354,24 +512,36 @@ def fetch(
         "--viirs-format",
         help="VIIRS format: tif, netcdf, shapezip, png. Only tif is implemented.",
     ),
+    modis_backend: str = typer.Option(
+        "lance_geotiff",
+        "--modis-backend",
+        help="MODIS backend: lance_geotiff (streamable, ~1-week NRT) or laads_hdf4 (download, 2003+).",
+    ),
+    modis_composite: str = typer.Option(
+        "F2",
+        "--modis-composite",
+        help="MODIS composite: F1, F1C, F2, F3. Default: F2 (2-day max-water composite).",
+    ),
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Classify VIIRS pixels into flood-extent, quality-mask, and permanent-water"
+        help="Classify pixels into flood-extent, quality-mask, and permanent-water"
         " layers instead of writing raw data. Default: on."
-        " Use --no-classify to write raw integer pixel codes instead.",
+        " Use --no-classify to write raw integer pixel codes instead."
+        " MODIS adds a recurring_flood layer when classified.",
     ),
     stream: bool = typer.Option(
         True,
         "--stream/--no-stream",
         help="Stream remote tiles via GDAL /vsicurl/ without downloading to disk"
         " (saves storage, requires network during processing). Default: on."
-        " Use --no-stream to download tiles to disk instead.",
+        " Use --no-stream to download tiles to disk instead."
+        " MODIS: only valid with --modis-backend lance_geotiff.",
     ),
     plot: bool = typer.Option(
         False,
         "--plot",
-        help="Save a PNG visualisation of the peak-flood date (VIIRS only).",
+        help="Save a PNG visualisation of the peak-flood date (VIIRS / MODIS / GFM).",
     ),
     plot_dir: Path | None = typer.Option(
         None,
@@ -381,7 +551,7 @@ def fetch(
     harmonise: bool = typer.Option(
         False,
         "--harmonise",
-        help="Harmonise the peak-flood date to 1 arcmin after fetching (VIIRS only).",
+        help="Harmonise the peak-flood date to 1 arcmin after fetching (VIIRS / MODIS / GFM).",
     ),
     strategy: str = typer.Option(
         "peak",
@@ -412,13 +582,13 @@ def fetch(
     max_observations: int = typer.Option(
         0,
         "--max-observations",
-        help="Maximum number of dates to return after windowing. 0 = no limit (VIIRS only).",
+        help="Maximum number of dates to return after windowing. 0 = no limit (VIIRS / MODIS / GFM).",
     ),
     peak_priority: str = typer.Option(
         "post",
         "--peak-priority",
         help="Subsampling bias when --max-observations is set: post (post-event first),"
-        " pre (pre-event first), or balanced (alternating ±1, ±2, …). VIIRS only.",
+        " pre (pre-event first), or balanced (alternating ±1, ±2, …). VIIRS / MODIS / GFM.",
     ),
     gfm_coarsen_factor: int = typer.Option(
         4,
@@ -435,25 +605,29 @@ def fetch(
 
     Args:
         event: Flood event ID to fetch data for.
-        source: Data source to fetch from. Options: gfm, viirs, rfm, all.
+        source: Data source to fetch from. Options: gfm, viirs, modis, rfm, all.
         output_dir: Directory to save downloaded files.
         bbox: Bounding box as west south east north for direct event construction.
         start_date: Start date for direct event construction in YYYY-MM-DD format.
         end_date: End date for direct event construction in YYYY-MM-DD format.
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
+        modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).
+        modis_composite: Which MCDWD composite to fetch (F1, F1C, F2, F3).
         classify: If True, write flood-fraction/quality-mask/permanent-water layers instead of raw data.
-        stream: If True, stream remote tiles without downloading to disk.
-        plot: Save PNG visualisation of the peak-flood date (VIIRS only).
+            MODIS adds a recurring_flood layer when classified.
+        stream: If True, stream remote tiles without downloading to disk. For MODIS, only
+            valid with --modis-backend lance_geotiff.
+        plot: Save PNG visualisation of the peak-flood date (VIIRS / MODIS / GFM).
         plot_dir: Directory for PNG output (default: <output>/plots/).
-        harmonise: Harmonise the peak-flood date to 1 arcmin (VIIRS only).
+        harmonise: Harmonise the peak-flood date to 1 arcmin (VIIRS / MODIS / GFM).
         strategy: How to handle multiple dates: peak, aggregate, all.
         keep_processed: Write intermediate processed/ GeoTIFFs.
-        peak_days_before: Days before the peak to include (window filter, VIIRS only).
-        peak_days_after: Days after the peak to include (window filter, VIIRS only).
+        peak_days_before: Days before the peak to include (window filter, VIIRS / MODIS / GFM).
+        peak_days_after: Days after the peak to include (window filter, VIIRS / MODIS / GFM).
         peak_window_days: Symmetric shorthand for peak_days_before == peak_days_after.
-        max_observations: Maximum number of dates to return after windowing (VIIRS only).
-        peak_priority: Subsampling bias when max_observations is set (VIIRS only).
+        max_observations: Maximum number of dates to return after windowing (VIIRS / MODIS / GFM).
+        peak_priority: Subsampling bias when max_observations is set (VIIRS / MODIS / GFM).
         gfm_coarsen_factor: GFM spatial coarsening factor before reprojection.
         gfm_resampling: GFM resampling method for reprojection to EPSG:4326.
     """
@@ -481,6 +655,11 @@ def fetch(
         console.print(f"[bold]VIIRS backend:[/bold] {viirs_backend} ({mode_label}, format={viirs_format})")
         if viirs_backend == "gmu_legacy":
             info("Legacy backend note: year coverage is inferred by probing each requested date.")
+    if "modis" in sources:
+        modis_mode = "stream" if stream and modis_backend == "lance_geotiff" else "download"
+        console.print(f"[bold]MODIS backend:[/bold] {modis_backend} ({modis_mode}, composite={modis_composite})")
+        if modis_backend == "laads_hdf4":
+            info("LAADS HDF4 backend: tiles are downloaded; --stream is ignored.")
 
     flood_event: FloodEvent | None = None
     if bbox or start_date or end_date:
@@ -499,18 +678,38 @@ def fetch(
             fetcher_cls = get_fetcher(src)
             section_rule(src)
             fetcher_kwargs = {}
-            if src == "viirs":
+            # Peak-window flags (shared by VIIRS, MODIS, GFM) get resolved here
+            # so the report code downstream can reference them unconditionally.
+            effective_days_before = 0
+            effective_days_after = 0
+            if src in ("viirs", "modis", "gfm"):
                 if peak_window_days > 0 and (peak_days_before > 0 or peak_days_after > 0):
                     raise typer.BadParameter(
                         "--peak-window-days cannot be combined with --peak-days-before / --peak-days-after"
                     )
                 effective_days_before = peak_window_days if peak_window_days > 0 else peak_days_before
                 effective_days_after = peak_window_days if peak_window_days > 0 else peak_days_after
+
+            if src == "viirs":
                 fetcher_kwargs = {
                     "backend": viirs_backend,
                     "data_format": viirs_format,
                     "classify": classify,
                     "stream": stream,
+                    "strategy": strategy,
+                    "keep_processed": keep_processed,
+                    "peak_days_before": effective_days_before,
+                    "peak_days_after": effective_days_after,
+                    "max_observations": max_observations,
+                    "peak_priority": peak_priority,
+                }
+            elif src == "modis":
+                effective_stream = stream and modis_backend == "lance_geotiff"
+                fetcher_kwargs = {
+                    "backend": modis_backend,
+                    "composite": modis_composite,
+                    "classify": classify,
+                    "stream": effective_stream,
                     "strategy": strategy,
                     "keep_processed": keep_processed,
                     "peak_days_before": effective_days_before,
@@ -524,6 +723,10 @@ def fetch(
                     "resampling": gfm_resampling_enum,
                     "strategy": strategy,
                     "keep_processed": keep_processed,
+                    "peak_days_before": effective_days_before,
+                    "peak_days_after": effective_days_after,
+                    "max_observations": max_observations,
+                    "peak_priority": peak_priority,
                 }
             fetcher = fetcher_cls(**fetcher_kwargs)
             if flood_event is None:
@@ -545,22 +748,25 @@ def fetch(
                 _report_empty_fetch(src, fetcher)
                 continue
 
-            if src == "viirs":
-                _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
-                # Summarise peak-window / subsampling when active
-                if effective_days_before > 0 or effective_days_after > 0 or max_observations > 0:
-                    n_returned = len(fetch_results)
-                    parts = []
-                    if effective_days_before > 0 or effective_days_after > 0:
-                        parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
-                    if max_observations > 0:
-                        parts.append(f"max {max_observations} obs (priority={peak_priority})")
-                    info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
+            if src in ("viirs", "modis"):
+                _report_fetch_writes(src, fetch_results, keep_processed=keep_processed)
             else:
                 n = sum(len(result.files) for result in fetch_results)
                 ok(f"Wrote {n} files")
                 all_paths = [path for result in fetch_results for path in result.files]
                 console.print(file_tree(src, all_paths))
+
+            # Summarise peak-window / subsampling when active (VIIRS / MODIS / GFM)
+            if src in ("viirs", "modis", "gfm") and (
+                effective_days_before > 0 or effective_days_after > 0 or max_observations > 0
+            ):
+                n_returned = len(fetch_results)
+                parts = []
+                if effective_days_before > 0 or effective_days_after > 0:
+                    parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
+                if max_observations > 0:
+                    parts.append(f"max {max_observations} obs (priority={peak_priority})")
+                info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
 
             # ── Optional plot + harmonise (GFM) ───────────────────────────
             if src == "gfm" and (plot or harmonise):
@@ -576,48 +782,81 @@ def fetch(
                         with step_status("Harmonising…"):
                             _harmonise_gfm(ds, event, date_label, harm_dir=harm_dir)
 
-            # ── Optional plot + harmonise (VIIRS only) ────────────────────
-            if src == "viirs" and (plot or harmonise):
+            # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────────
+            if src in ("viirs", "modis") and (plot or harmonise):
                 # Dispatch based on strategy
                 if strategy == "peak":
                     best_result, best_date_label = _select_best_result(fetcher, fetch_results)
                     best_ds = fetcher.to_dataset(best_result)
                     png_dir = plot_dir or (output_dir / src / "plots")
                     if plot:
-                        png_out = png_dir / f"{event}_{best_date_label}_viirs.png"
+                        png_out = png_dir / f"{event}_{best_date_label}_{src}.png"
                         with step_status("Plotting…"):
-                            _plot_viirs(best_ds, event, best_date_label, output_png_path=png_out)
+                            _plot_source(
+                                best_ds,
+                                event,
+                                best_date_label,
+                                source_id=src,
+                                output_png_path=png_out,
+                            )
                     if harmonise:
                         harm_dir = output_dir / src / "harmonised"
                         with step_status("Harmonising…"):
-                            _harmonise_viirs(best_ds, event, best_date_label, harm_dir=harm_dir, plot_dir=png_dir)
+                            _harmonise_source(
+                                best_ds,
+                                event,
+                                best_date_label,
+                                source_id=src,
+                                harm_dir=harm_dir,
+                                plot_dir=png_dir,
+                            )
 
                 elif strategy == "aggregate":
                     ds = fetcher.to_dataset(fetch_results[0])
                     label = "aggregated"
                     png_dir = plot_dir or (output_dir / src / "plots")
                     if plot:
-                        png_out = png_dir / f"{event}_{label}_viirs.png"
+                        png_out = png_dir / f"{event}_{label}_{src}.png"
                         with step_status("Plotting…"):
-                            _plot_viirs(ds, event, label, output_png_path=png_out)
+                            _plot_source(ds, event, label, source_id=src, output_png_path=png_out)
                     if harmonise:
                         harm_dir = output_dir / src / "harmonised"
                         with step_status("Harmonising…"):
-                            _harmonise_viirs(ds, event, label, harm_dir=harm_dir, plot_dir=png_dir)
+                            _harmonise_source(
+                                ds,
+                                event,
+                                label,
+                                source_id=src,
+                                harm_dir=harm_dir,
+                                plot_dir=png_dir,
+                            )
 
                 elif strategy == "all":
                     for result in fetch_results:
-                        date_label = _viirs_date_label(result)
+                        date_label = _date_label(result)
                         ds = fetcher.to_dataset(result)
                         png_dir = plot_dir or (output_dir / src / "plots")
                         if plot:
-                            png_out = png_dir / f"{event}_{date_label}_viirs.png"
+                            png_out = png_dir / f"{event}_{date_label}_{src}.png"
                             with step_status(f"Plotting {date_label}…"):
-                                _plot_viirs(ds, event, date_label, output_png_path=png_out)
+                                _plot_source(
+                                    ds,
+                                    event,
+                                    date_label,
+                                    source_id=src,
+                                    output_png_path=png_out,
+                                )
                         if harmonise:
                             harm_dir = output_dir / src / "harmonised"
                             with step_status(f"Harmonising {date_label}…"):
-                                _harmonise_viirs(ds, event, date_label, harm_dir=harm_dir, plot_dir=png_dir)
+                                _harmonise_source(
+                                    ds,
+                                    event,
+                                    date_label,
+                                    source_id=src,
+                                    harm_dir=harm_dir,
+                                    plot_dir=png_dir,
+                                )
         except KeyError:
             fail(f"Unknown source '{src}'")
 
@@ -841,6 +1080,232 @@ def fetch_kurosiwo_viirs(
         raise typer.Exit(code=1)
 
 
+@cli.command("fetch-kurosiwo-modis")
+def fetch_kurosiwo_modis(
+    metadata_path: Path | None = typer.Option(
+        None,
+        "--metadata",
+        help="Path to precomputed KuroSiwo metadata CSV",
+    ),
+    catalogue_path: Path = typer.Option(
+        KUROSIWO_DEFAULT_CATALOGUE,
+        "--catalogue",
+        help="Path to the KuroSiwo GeoPackage catalogue used when metadata CSV is not supplied",
+    ),
+    case: str | None = typer.Option(None, "--case", help="Only fetch one KuroSiwo flood_case"),
+    limit: int | None = typer.Option(None, "--limit", help="Only process the first N cases after filtering"),
+    output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory for MODIS products"),
+    days_before: int = typer.Option(
+        0,
+        "--days-before",
+        help="Days before KuroSiwo date_end to include in the MODIS search window",
+    ),
+    days_after: int = typer.Option(
+        0,
+        "--days-after",
+        help="Days after KuroSiwo date_end to include in the MODIS search window",
+    ),
+    use_metadata_range: bool = typer.Option(
+        False,
+        "--use-metadata-range",
+        help="Use date_start..date_end from the metadata CSV instead of a narrow window around date_end",
+    ),
+    modis_backend: str = typer.Option(
+        "lance_geotiff",
+        "--modis-backend",
+        help="MODIS backend: lance_geotiff (streamable, ~1-week NRT) or laads_hdf4 (download, 2003+).",
+    ),
+    modis_composite: str = typer.Option(
+        "F2",
+        "--modis-composite",
+        help="MODIS composite: F1, F1C, F2, F3. Default: F2 (2-day max-water composite).",
+    ),
+    classify: bool = typer.Option(
+        True,
+        "--classify/--no-classify",
+        help="Classify MCDWD pixels into flood / recurring / permanent / quality layers.",
+    ),
+    stream: bool = typer.Option(
+        True,
+        "--stream/--no-stream",
+        help="Stream remote tiles via /vsicurl/. Only valid with --modis-backend lance_geotiff.",
+    ),
+    plot: bool = typer.Option(
+        False,
+        "--plot",
+        help="Save a PNG visualisation of the peak-flood date for each case.",
+    ),
+    plot_dir: Path | None = typer.Option(
+        None,
+        "--plot-dir",
+        help="Directory to write PNG files (default: <output>/plots/).",
+    ),
+    harmonise: bool = typer.Option(
+        False,
+        "--harmonise",
+        help="Harmonise the peak-flood date to 1 arcmin and write a GeoTIFF alongside the fetch output.",
+    ),
+    keep_processed: bool = typer.Option(
+        True,
+        "--keep-processed/--no-keep-processed",
+        help="Write intermediate processed/ GeoTIFFs. Use --no-keep-processed to save disk space.",
+    ),
+) -> None:
+    """Fetch MODIS data for KuroSiwo cases.
+
+    Args:
+        metadata_path: Optional precomputed metadata CSV path.
+        catalogue_path: KuroSiwo GeoPackage catalogue path used when metadata CSV is omitted.
+        case: Only fetch one KuroSiwo flood case.
+        limit: Limit the number of cases after filtering.
+        output_dir: Output directory for MODIS products.
+        days_before: Days before the KuroSiwo flood date to search.
+        days_after: Days after the KuroSiwo flood date to search.
+        use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
+        modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).
+        modis_composite: Which MCDWD composite to fetch (F1, F1C, F2, F3).
+        classify: If True, write flood-fraction/quality-mask/permanent-water/recurring-flood layers.
+        stream: If True, stream remote tiles without downloading (lance_geotiff only).
+        plot: Save PNG visualisation of the peak-flood date per case.
+        plot_dir: Directory for PNG output (default: <output>/plots/).
+        harmonise: Harmonise the peak-flood date to 1 arcmin.
+        keep_processed: Write intermediate processed/ GeoTIFFs.
+    """
+    config = get_config()
+    output_root = output_dir or config.fetcher.cache_dir / "raw" / "kurosiwo"
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    if metadata_path is not None:
+        events = build_kurosiwo_flood_events(
+            metadata_path,
+            case=case,
+            limit=limit,
+            days_before=days_before,
+            days_after=days_after,
+            use_metadata_range=use_metadata_range,
+        )
+        metadata_source_label = str(metadata_path)
+    else:
+        events = build_kurosiwo_flood_events_from_catalogue(
+            catalogue_path,
+            case=case,
+            limit=limit,
+            days_before=days_before,
+            days_after=days_after,
+            use_metadata_range=use_metadata_range,
+        )
+        metadata_source_label = f"derived from {catalogue_path}"
+
+    fetcher_cls = get_fetcher("modis")
+    effective_stream = stream and modis_backend == "lance_geotiff"
+    fetcher = fetcher_cls(
+        backend=modis_backend,
+        composite=modis_composite,
+        classify=classify,
+        stream=effective_stream,
+        keep_processed=keep_processed,
+    )
+
+    command_header(
+        "fetch-kurosiwo-modis",
+        subtitle=f"{len(events)} case(s) · backend={modis_backend} · composite={modis_composite}",
+    )
+    console.print(f"[bold]KuroSiwo metadata:[/bold] {metadata_source_label}")
+    console.print(f"[bold]Cases selected:[/bold] {len(events)}")
+    console.print(f"[bold]Output root:[/bold] {output_root}")
+
+    total_files = 0
+    failures: list[tuple[str, str]] = []
+    summary_rows: list[list[str]] = []
+
+    with make_progress() as progress:
+        task = progress.add_task("[cyan]Cases[/cyan]", total=len(events))
+
+        for event in events:
+            progress.console.print(
+                f"\n[cyan]Fetching {event.event_id}[/cyan] "
+                f"({event.start_date.isoformat()} → {event.end_date.isoformat()})"
+            )
+            event_modis_dir = output_root / event.event_id / "modis"
+            try:
+                with step_status(f"  Fetching tiles for {event.event_id}…"):
+                    fetch_results = fetcher.fetch(event, event_modis_dir)
+            except Exception as exc:  # pragma: no cover - exercised in real fetch runs
+                failures.append((event.event_id, str(exc)))
+                progress.console.print(f"[bold red]✗[/bold red]  Failed: {exc}")
+                summary_rows.append([event.event_id, "[red]✗ failed[/red]", "0", "—", "—"])
+                progress.advance(task)
+                continue
+
+            _report_fetch_writes("modis", fetch_results, keep_processed=keep_processed)
+            written = sum(len(result.files) for result in fetch_results)
+            total_files += written
+            has_in_memory = any(result.dataset is not None for result in fetch_results)
+            if written == 0 and not has_in_memory:
+                warn("No MODIS files found for this case")
+                summary_rows.append([event.event_id, "[yellow]⚠ empty[/yellow]", "0", "—", "—"])
+                progress.advance(task)
+                continue
+
+            peak_label = "—"
+            harmonised_label = "—"
+
+            if plot or harmonise:
+                best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+                best_ds = fetcher.to_dataset(best_result)
+                peak_label = best_date_label
+                png_dir = plot_dir or (event_modis_dir / "plots")
+
+                if plot:
+                    png_path = png_dir / f"{event.event_id}_{best_date_label}_modis.png"
+                    with step_status(f"  Plotting {best_date_label}…"):
+                        _plot_source(
+                            best_ds,
+                            event.event_id,
+                            best_date_label,
+                            source_id="modis",
+                            output_png_path=png_path,
+                        )
+
+                if harmonise:
+                    harm_dir = event_modis_dir / "harmonised"
+                    with step_status(f"  Harmonising {best_date_label}…"):
+                        _harmonise_source(
+                            best_ds,
+                            event.event_id,
+                            best_date_label,
+                            source_id="modis",
+                            harm_dir=harm_dir,
+                            plot_dir=png_dir,
+                        )
+                    harmonised_label = "✓"
+
+            summary_rows.append(
+                [
+                    event.event_id,
+                    "[green]✓ ok[/green]",
+                    str(written) if written else ("mem" if has_in_memory else "0"),
+                    peak_label,
+                    harmonised_label,
+                ]
+            )
+            progress.advance(task)
+
+    console.print(f"\n[bold]Total files written:[/bold] {total_files}")
+    if summary_rows:
+        console.print(
+            summary_table(
+                "KuroSiwo MODIS — run summary",
+                ["Case", "Status", "Files", "Peak date", "Harmonised"],
+                summary_rows,
+            )
+        )
+    if failures:
+        for failed_case, message in failures:
+            fail(f"{failed_case}: {message}")
+        raise typer.Exit(code=1)
+
+
 @cli.command("build-kurosiwo-metadata")
 def build_kurosiwo_metadata(
     catalogue_path: Path = typer.Option(
@@ -884,11 +1349,13 @@ def harmonise(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be done without doing it"),
 ) -> None:
-    """Harmonise fetched VIIRS data (reproject + normalise) to target resolution.
+    """Harmonise fetched data (reproject + normalise) to target resolution.
 
     Reads processed GeoTIFFs from the fetcher output directory, reprojects
     them to a uniform 1 arcmin grid, normalises flood extent values to 0-1,
-    and writes the harmonised GeoTIFFs.
+    and writes the harmonised GeoTIFFs. Supports the ``viirs`` and ``modis``
+    sources (file names follow the ``{event}_{date}_{source}_{layer}.tif``
+    convention).
     """
     from atlantis.harmoniser import Harmoniser
 
@@ -907,7 +1374,7 @@ def harmonise(
             cfg.target_resolution_arcmin = round(target_resolution * 60, 4)
         if resampling is not None:
             cfg.resampling = resampling  # type: ignore[assignment]
-            if source == "viirs":
+            if source in ("viirs", "modis"):
                 cfg.variable_resampling["flood_fraction"] = resampling
         harmoniser = Harmoniser(config=cfg)
     else:
@@ -926,25 +1393,25 @@ def harmonise(
         # Try root/<source>/processed/ first
         candidate = root / source / "processed"
         if candidate.exists():
-            hits = sorted(candidate.glob(f"{event}_*_viirs_flood_fraction.tif"))
+            hits = sorted(candidate.glob(f"{event}_*_{source}_flood_fraction.tif"))
             if not hits:
-                hits = sorted(candidate.glob(f"{event}_*_viirs_raw.tif"))
+                hits = sorted(candidate.glob(f"{event}_*_{source}_raw.tif"))
             if hits:
                 processed_dir, tif_files = candidate, hits
                 break
         # Fallback: check root directly (files may be flat)
-        hits = sorted(root.glob(f"{event}_*_viirs_flood_fraction.tif"))
+        hits = sorted(root.glob(f"{event}_*_{source}_flood_fraction.tif"))
         if not hits:
-            hits = sorted(root.glob(f"{event}_*_viirs_raw.tif"))
+            hits = sorted(root.glob(f"{event}_*_{source}_raw.tif"))
         if hits:
             processed_dir, tif_files = root, hits
             break
 
-        # KuroSiwo deep pattern: <root>/<case>/viirs/processed/<case>_<date>_*.tif
-        for vdir in sorted(root.rglob("viirs/processed/")):
-            hits = sorted(vdir.glob(f"{event}_*_viirs_flood_fraction.tif"))
+        # KuroSiwo deep pattern: <root>/<case>/<source>/processed/<case>_<date>_*.tif
+        for vdir in sorted(root.rglob(f"{source}/processed/")):
+            hits = sorted(vdir.glob(f"{event}_*_{source}_flood_fraction.tif"))
             if not hits:
-                hits = sorted(vdir.glob(f"{event}_*_viirs_raw.tif"))
+                hits = sorted(vdir.glob(f"{event}_*_{source}_raw.tif"))
             if hits:
                 processed_dir, tif_files = vdir, hits
                 break
@@ -952,7 +1419,7 @@ def harmonise(
             break
 
     if not tif_files:
-        fail(f"No processed VIIRS files found matching '{event}'")
+        fail(f"No processed {_pretty_source(source)} files found matching '{event}'")
         console.print("  Tried: cache dir, scripts/data/, and repository root.")
         console.print("  Run 'atlantis fetch' first, or use --input to point to existing data.")
         raise typer.Exit(code=1)
@@ -1079,6 +1546,7 @@ def list_sources_cmd() -> None:
     source_descriptions = {
         "gfm": "Global Flood Monitor (STAC/EODC)",
         "viirs": "VIIRS Flood Detection (NOAA)",
+        "modis": "MODIS MCDWD Flood Detection (NASA LANCE / LAADS)",
         "rfm": "Regional Flood Model (Phase C)",
     }
     rows = [[src, source_descriptions.get(src, "No description")] for src in sources]
@@ -1090,23 +1558,47 @@ def setup(
     check_only: bool = typer.Option(
         False,
         "--check-only",
-        help="Only verify assets are present without modifying anything.",
+        help="Only verify assets/credentials are present without modifying anything.",
     ),
     update_hashes: bool = typer.Option(
         False,
         "--update-hashes",
         help="Recompute SHA-256 hashes and write them to config/asset_hashes.json.",
     ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Never prompt for missing credentials (default: prompt when stdin is a TTY).",
+    ),
+    verify_aws: bool = typer.Option(
+        False,
+        "--verify-aws",
+        help="After the standard checks, run a live round-trip S3 list against each AWS profile.",
+    ),
 ) -> None:
-    """Bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue).
+    """Bootstrap required data assets and credentials.
 
-    Missing tracked files are automatically restored from git.  Run this
-    once after cloning, or whenever a new data source is added.
+    Restores missing tracked files from git, verifies SHA-256 hashes, and
+    prompts (interactively) for any missing credentials such as
+    ``EARTHDATA_TOKEN`` (used by the MODIS fetcher). Run this once after
+    cloning, or whenever a new data source is added.
+
+    Use ``--verify-aws`` to additionally make a single S3 ``ListObjectsV2``
+    call against each registered AWS profile to confirm credentials and
+    endpoints actually work.
     """
-    from atlantis.utils.setup import run_setup
+    from atlantis.utils.setup import run_setup, verify_aws_profiles
 
     command_header("setup")
-    success = run_setup(auto_fix=not check_only, output=console, update_hashes=update_hashes)
+    interactive: bool | None = False if non_interactive else None
+    success = run_setup(
+        auto_fix=not check_only,
+        output=console,
+        update_hashes=update_hashes,
+        interactive=interactive,
+    )
+    if verify_aws:
+        success = verify_aws_profiles(output_print=console.print) and success
     if not success:
         raise typer.Exit(code=1)
 

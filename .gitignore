@@ -239,6 +239,7 @@ docs/viirs_atbd.md
 
 .ignore
 assets/kurosiwo/**
+assets/ks_catalogue.gpkg
 *.debug/**
 docs/mcdwd_laads_desc.md
 docs/mcdwd_vcdwd_userguide_revF.md

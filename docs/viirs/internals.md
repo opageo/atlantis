@@ -1,6 +1,6 @@
 # VIIRS Internals
 
-Developer-facing documentation for the VIIRS fetcher architecture and processing pipeline. For usage, see [viirs.md](viirs.md).
+Developer-facing documentation for the VIIRS fetcher architecture and processing pipeline. For usage, see [overview.md](overview.md).
 
 ## Architecture
 
