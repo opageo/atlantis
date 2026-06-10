@@ -51,6 +51,19 @@ uv run atlantis demo
 uv sync
 ```
 
+## Credentials & data access
+
+Most backends require a NASA Earthdata account and, for the MODIS LAADS HDF4
+backend, a one-time browser authorization step. Run the setup script to be
+guided through all of it:
+
+```bash
+uv run python scripts/setup.py
+```
+
+See [docs/setup.md](docs/setup.md) for a full description of each credential
+(Earthdata token, LAADS Web pre-authorization, AWS profiles for GFM).
+
 ## CLI
 
 - `atlantis setup` — bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue)
@@ -90,36 +103,32 @@ uv sync --extra notebooks
 
 See [`notebooks/README.md`](notebooks/README.md) for details.
 
-## Download Kuro Siwo Dataset
-
-### Get it from Git-LFS
-The catalog of Kuro Siwo is stored in the git LFS of this repository, under `./assets/ks_catalogue.gpkg`, before you use it, make sure you have `git lfs` installed (if not install if with `git lfs install`) and the dataset is pulled, the first time you may need to execute:
-
-```bash
-git lfs pull
-```
-
-### Get it from S3 bucket
-If you have access to our atlantis bucket (provided on premise to mentors and partners of the project) you can download kurosiwo related data from our s3://atlantis bucket, e.g for the catalog: `s3://atlantis/assets/ks/ks_catalogue.gpkg`
-
-
 ## Testing Github actions/workflows locally
+
 1. install nektos github extension:
+
 ```bash
 gh extension install https://github.com/nektos/gh-act
 ```
-2. Ensure you have docker daemon running:
-Install and run docker daemon in a cent-os rocky-linux system:
+
+1. Ensure you have docker daemon running:
+   Install and run docker daemon in a cent-os rocky-linux system:
+
 ```bash
 sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y docker-ce docker-ce-cli containerd.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
 ```
-3. run actos with:
+
+1. run actos with:
+
 ```bash
 gh act <event-name>
 ```
+
 default event is `push`
 
-4. run specific workflow by job name
+1. run specific workflow by job name
+
 ```bash
 gh act -l #lists all job names
 gh act -j <job-name>
+```

@@ -87,59 +87,21 @@ python -c "from osgeo import gdal; d = gdal.GetDriverByName('HDF4'); print('HDF4
 # Should print: HDF4 driver: OK
 ```
 
-## 8. Test with the MODIS NRT backend
+## 8. Smoke-test the HDF4 backend
 
-The simplest end-to-end check that requires no credentials uses the
-`lance_geotiff` backend (LANCE NRT GeoTIFFs). If you have an
-`EARTHDATA_TOKEN` you can also exercise `laads_hdf4` directly.
+Confirm that Atlantis can see the driver at runtime:
 
 ```bash
 cd ~/repos/atlantis
-
-# Smoke-test: verify LaadsHdf4Backend instantiates without error
-# (confirms GDAL sees the HDF4 driver at runtime)
 python -c "
 from atlantis.fetchers.modis.backend import get_backend
 b = get_backend('laads_hdf4')
 print('laads_hdf4 backend OK:', b)
 "
-
-# Full NRT fetch (requires EARTHDATA_TOKEN, uses lance_geotiff — no HDF4)
-uv run atlantis --verbose fetch \
-  --event MODIS_recent --source modis \
-  --bbox "-98 25 -93 31" \
-  --start-date $(date -u -d '5 days ago' +%Y-%m-%d) \
-  --end-date $(date -u +%Y-%m-%d) \
-  --modis-backend lance_geotiff --modis-composite F2 \
-  --strategy peak --classify \
-  --output ./data/MODIS_recent
 ```
 
-## 9. Pre-authorize the LAADS Web app (one-time, required for `laads_hdf4`)
-
-A valid `EARTHDATA_TOKEN` alone is **not enough** to download HDF4 files
-from `ladsweb.modaps.eosdis.nasa.gov`. The LAADS DAAC archive only serves
-files to clients whose Earthdata user has explicitly authorized the LAADS
-Web OAuth application (`client_id=A6th7HB-3EBoO7iOCiCLlA`). Without this
-one-time approval, every HTTP `GET` against `/archive/.../*.hdf` 303-redirects
-to `/profiles/licenses/...` → `/oauth/login` → URS authorize, and an
-unattended script just sees an HTML login page.
-
-Do it once per Earthdata account:
-
-1. Visit the direct pre-authorize link while logged in to Earthdata:
-   <https://urs.earthdata.nasa.gov/approve_app?client_id=A6th7HB-3EBoO7iOCiCLlA>
-   and click **Authorize**.
-2. Confirm the app shows up under
-   <https://urs.earthdata.nasa.gov/profile> → _Applications_ → _Authorized Apps_
-   as "LAADS Web".
-3. Optionally accept any per-product EULA prompts by opening one HDF4 URL
-   in the browser (e.g. the URL Atlantis tells you about when it errors).
-
-Once pre-authorized, the bearer token alone is sufficient and
-`make demo-modis` runs end-to-end. If you ever revoke the app or generate a
-new token, the existing pre-authorization stays valid (it is bound to the
-user, not the token).
+For running a full end-to-end MODIS fetch (requires `EARTHDATA_TOKEN` and
+LAADS Web pre-authorization), see the [setup guide](setup.md).
 
 ## References
 
