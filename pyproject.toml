@@ -114,7 +114,7 @@ markers = ["e2e: end-to-end tests requiring network access (STAC API + S3)"]
 
 [tool.coverage.run]
 source = ["atlantis"]
-omit = ["*/tests/*", "*/scripts/*", "*/utils/setup.py", "*/stac/*"]
+omit = ["*/tests/*", "*/scripts/*", "*/utils/setup.py", "*/stac/*", "*/cli.py"]
 
 [tool.coverage.report]
 show_missing = true
