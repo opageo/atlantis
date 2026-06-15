@@ -3,9 +3,13 @@ name: E2E Tests
 on:
     workflow_dispatch:
     pull_request:
-        types: [labeled]
+        types: [opened, synchronize, labeled]
     issue_comment:
         types: [created]
+
+concurrency:
+    group: e2e-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
+    cancel-in-progress: true
 
 jobs:
     e2e:
