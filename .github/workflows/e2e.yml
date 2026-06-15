@@ -1,14 +1,29 @@
 name: E2E Tests
 
 on:
-    pull_request:
-        types: [opened, synchronize]
     workflow_dispatch:
+    pull_request:
+        types: [labeled]
+    issue_comment:
+        types: [created]
 
 jobs:
     e2e:
-        if: github.event_name == 'workflow_dispatch'
         runs-on: ubuntu-latest
+
+        if: |
+            github.event_name == 'workflow_dispatch' ||
+            (
+                github.event_name == 'pull_request' &&
+                github.event.action == 'labeled' &&
+                github.event.label.name == 'run-e2e'
+            ) ||
+            (
+                github.event_name == 'issue_comment' &&
+                github.event.issue.pull_request &&
+                contains(github.event.comment.body, '/run-e2e')
+            )
+                
         steps:
             - uses: actions/checkout@v6
 
