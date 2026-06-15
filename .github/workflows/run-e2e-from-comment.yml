@@ -1,0 +1,50 @@
+name: Run E2E from PR comment
+
+on:
+    issue_comment:
+        types: [created]
+
+permissions:
+    actions: write
+    pull-requests: read
+    contents: read
+
+jobs:
+    dispatch-e2e:
+        runs-on: ubuntu-latest
+
+        if: |
+            github.event.issue.pull_request &&
+            startsWith(github.event.comment.body, '/run-e2e')
+
+        steps:
+            - name: Get PR branch
+              id: pr
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  PR_NUMBER: ${{ github.event.issue.number }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  PR_JSON="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
+
+                  HEAD_REF="$(echo "$PR_JSON" | jq -r '.head.ref')"
+                  HEAD_REPO="$(echo "$PR_JSON" | jq -r '.head.repo.full_name')"
+
+                  echo "head_ref=${HEAD_REF}" >> "$GITHUB_OUTPUT"
+                  echo "head_repo=${HEAD_REPO}" >> "$GITHUB_OUTPUT"
+
+            - name: Refuse fork PRs for secret-using E2E
+              if: steps.pr.outputs.head_repo != github.repository
+              run: |
+                  echo "::error::Refusing to run E2E for fork PR because this workflow uses secrets."
+                  exit 1
+
+            - name: Trigger E2E workflow on PR branch
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  PR_NUMBER: ${{ github.event.issue.number }}
+                  HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+              run: |
+                  gh workflow run e2e.yml \
+                    --ref "$HEAD_REF" \
+                    -f pr_number="$PR_NUMBER"
