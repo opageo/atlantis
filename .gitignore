@@ -247,3 +247,4 @@ docs/mod44w_userguide_atbd_v61.md
 tmp/
 .github/prompts/
 *.db
+*.db-journal
