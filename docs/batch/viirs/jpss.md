@@ -165,68 +165,70 @@ atlantis batch viirs run \
 
 ### Recommended worker settings
 
-The CLI defaults (`--workers-min 2 --workers-max 6`) are conservative. For most VMs you'll want to **fix** the worker count instead of relying on adaptive scaling, because adaptive only scales up when the scheduler's task queue stays full for several seconds — for our short (~2–5 s) granules, the queue drains too fast and the cluster lingers at `workers_min`.
+The CLI defaults (`--workers-min 2 --workers-max 6`) are conservative. For most VMs you'll want to **fix** the worker count instead of relying on adaptive scaling — for our short (~2–5 s) granules the queue drains too fast for adaptive to scale up, and the cluster lingers at `workers_min`.
 
 Pick a profile based on what the VM has:
 
-| Profile             | Flags                                                  | Best for                                                                                             | Expected throughput | Estimated full-run time |
-| ------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------- | ----------------------- |
-| **Comfortable**     | `--workers-min 4 --workers-max 4 --memory-limit 4GB`   | 4-core / 16+ GB VM, or when you want spare capacity for other jobs                                   | ~1,500 granules/hr  | ~32 h                   |
-| **Recommended** ⭐  | `--workers-min 8 --workers-max 8 --memory-limit 3GB`   | 8-core / 32 GB VM (`challenge20-2`) — one worker per core, uses ~24 GB RAM                           | ~3,000 granules/hr  | **~16 h**               |
-| **Push the limits** | `--workers-min 12 --workers-max 12 --memory-limit 2GB` | Same 8-core VM but I/O-bound: most worker time is the NOAA download, so over-subscribing CPU is fine | ~4,500 granules/hr  | **~11 h**               |
+| Profile             | Flags                                                    | Best for                                                                                      | Expected throughput | Full-run time (48,928) |
+| ------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------- | ---------------------- |
+| **Comfortable**     | `--workers-min 4  --workers-max 4  --memory-limit 4GB`   | 4-core / 16 GB VM, or alongside other jobs                                                    | ~1,500 granules/hr  | ~32 h                  |
+| **Recommended** ⭐  | `--workers-min 12 --workers-max 12 --memory-limit 2.5GB` | 8-core / 32 GB VM — over-subscribes cores (downloads are I/O-bound)                           | ~4,500 granules/hr  | ~11 h                  |
+| **Push the limits** | `--workers-min 16 --workers-max 16 --memory-limit 1.8GB` | Same 8-core / 32 GB VM with the perf changes (lean classifier + `gc.collect()` between tasks) | ~6,000 granules/hr  | **~8 h**               |
 
-> Each worker uses ~1.3 GB RSS plus ~20 MB tempfile. `--memory-limit` is a Dask cap (kills the worker if exceeded); leave plenty of headroom over the actual RSS so transient spikes don't trigger restarts. Total RAM = `workers × memory_limit` should stay below ~80 % of system RAM.
+> Each worker uses ~0.5–1.3 GB RSS plus ~20 MB tempfile. `--memory-limit` is a Dask cap (kills the worker if exceeded); leave headroom over the actual RSS so transient spikes don't trigger restarts. Total RAM = `workers × memory_limit` should stay under ~80 % of system RAM.
 
-**Why fixed (not adaptive)?** Adaptive scaling is excellent for variable workloads (e.g. mixed-size jobs, long-running services). For a uniform batch like this, fixed workers give cleaner throughput, simpler monitoring, and avoid the "cluster never scaled past minimum" surprise.
+**Why fixed, not adaptive?** Adaptive is excellent for variable workloads. For a uniform batch like this, fixed workers give cleaner throughput, simpler monitoring, and avoid the "cluster never scaled past minimum" surprise.
 
-Example for the recommended profile on the full archive:
+#### Healthy CPU pattern
+
+You'll see CPU oscillate between ~50 % and ~99 % across all cores in clear waves. That's the workers cycling in lockstep:
+
+| Phase                             | CPU       | Bottleneck |
+| --------------------------------- | --------- | ---------- |
+| Download granule from NOAA        | ~50 %     | network    |
+| Classify + harmonise + encode COG | ~99 %     | CPU        |
+| Upload tiny COG to S3             | brief dip | network    |
+
+Both resources alternate — that's optimal. If CPU stays pinned at 99 % the whole time you're CPU-bound (lower workers), if it stays low you're network-bound (raise workers).
+
+#### Example: full archive on the recommended profile
 
 ```bash
-atlantis batch viirs run \
-  --workers-min 8 --workers-max 8 \
-  --memory-limit 3GB \
+uv run atlantis batch viirs run \
+  --workers-min 12 --workers-max 12 \
+  --memory-limit 2.5GB \
   --db-path tracker_full.db \
   --log-every 200
 ```
 
-**Monitor live in three ways** (any one is enough):
+### Monitoring
+
+Three options. Any one is enough; the SQLite tracker is the source of truth.
 
 ```bash
-# 1. Cheap, refreshes every 2 s, works in any terminal
+# 1. Live progress — refreshes every 2 s, works in any terminal
 watch -n 2 "sqlite3 tracker_full.db 'SELECT status, COUNT(*) FROM tasks GROUP BY status'"
 
-# 2. CPU + RAM per worker; filter by pressing F4 and typing 'MainThread'
+# 2. CPU + RAM per worker — press F4 and type 'python3' to filter
 htop
-
-# 3. Dask dashboard — see "Accessing the dashboard from a remote VM" below
 ```
 
-If CPU stays below ~80 % on **all** cores, you have headroom — bump up `--workers-min/--workers-max`. If RAM (`free -h`) climbs past ~26 GB, dial down `--memory-limit` or reduce workers.
+#### 3. Dask dashboard
 
-#### Accessing the dashboard from a remote VM
-
-The Dask dashboard binds to `localhost:8787` **on the machine that runs the orchestrator**. When the orchestrator runs on a remote VM (e.g. `challenge20-2`), `http://localhost:8787` from your laptop browser resolves to _your laptop_, not the VM — you'll see `ERR_CONNECTION_REFUSED`. You need a tunnel.
-
-**Easiest: VS Code Remote-SSH "Ports" panel.** If you're already in a VS Code window connected to the VM:
-
-1. Open the **Ports** panel (View → "Ports", or `Ctrl+Shift+P` → _Ports: Focus on Ports View_).
-2. Click **"Forward a Port"** and enter `8787` → press Enter.
-3. Repeat for `8786` (Bokeh sometimes also needs the scheduler port for live charts).
-4. Click the globe icon next to the `8787` row — VS Code opens your laptop browser at the tunneled URL.
-
-VS Code's auto-forwarding handles simple HTTP fine, but Dask's dashboard upgrades to **WebSocket** for live updates and that handshake isn't always auto-detected. Forwarding the port explicitly via the Ports panel forces a full tunnel.
-
-**Alternative: plain SSH tunnel from a terminal on your laptop** (not the VM):
+The dashboard runs **inside the orchestrator process** on the VM at `localhost:8787`. To view it from your laptop, open an SSH tunnel **on your laptop** (not on the VM) and **leave it running** for the whole batch:
 
 ```bash
-ssh -L 8787:localhost:8787 -L 8786:localhost:8786 ykalfas@<vm-host>
-# Then in your browser:
-#   http://localhost:8787
+ssh -L 8787:localhost:8787 -L 8786:localhost:8786 user@vm-host
 ```
 
-Leave the SSH session open while you're watching.
+Then point your laptop browser at <http://localhost:8787>. The dashboard shows the task graph, per-worker memory, throughput, and exception tracebacks live.
 
-If you don't need the dashboard, the `watch sqlite3 …` and `htop` combo above gives you essentially the same information without any tunneling.
+| Tip                                         | Why                                                                                                                                          |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Forward **both** 8787 and 8786              | 8787 serves the Bokeh page; 8786 is the scheduler the page connects back to for live updates.                                                |
+| The page only works while the run is active | The dashboard is a Python thread inside the orchestrator — it disappears the moment `atlantis batch viirs run` exits.                        |
+| Re-tunnel after restarting a run            | The port forward survives, but VS Code's "Ports" panel sometimes marks the port broken after the upstream disappeared — re-add it if needed. |
+| No dashboard? You're not blocked            | The `watch sqlite3 …` + `htop` combo covers ~90 % of what the dashboard offers.                                                              |
 
 ### Two-VM split (deterministic, no coordination)
 
