@@ -97,53 +97,6 @@ class ProcessTilesResult:
     processed: ProcessedTile
 
 
-def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str) -> "ProcessedTile":
-    """Classify raw VIIRS pixel values into flood fraction and masks.
-
-    Module-level so it is picklable by Dask workers without instantiating
-    :class:`ViirsRasterProcessor`.
-
-    Args:
-        data: Raw pixel values (uint8) from a single-band VIIRS tile.
-        transform: Affine transform of the array.
-        crs: Coordinate reference system string (e.g. ``"EPSG:4326"``).
-
-    Returns:
-        :class:`ProcessedTile` with ``flood_fraction`` populated; other
-        fields (``quality_mask``, ``permanent_water``) are set but callers
-        that only need ``flood_fraction`` may discard them.
-    """
-    fill = np.isin(data, list(FILL_CODES))
-    cloud = np.isin(data, list(CLOUD_CODES))
-    permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
-
-    flood_mask = (data >= 101) & (data <= 200)
-    flood_fraction = np.where(
-        flood_mask,
-        (data.astype(np.float32) - 100.0) / 100.0,
-        np.float32(0.0),
-    )
-
-    quality_mask = np.ones_like(data, dtype=np.uint8)
-    quality_mask[fill | cloud] = 0
-
-    permanent_water_mask = np.zeros_like(data, dtype=np.uint8)
-    permanent_water_mask[permanent_water] = 1
-
-    valid = ~fill
-    n_valid = int(valid.sum())
-    cloud_fraction = float(cloud[valid].sum() / n_valid) if n_valid else 0.0
-
-    return ProcessedTile(
-        flood_fraction=flood_fraction,
-        quality_mask=quality_mask,
-        permanent_water=permanent_water_mask,
-        transform=transform,
-        crs=crs,
-        cloud_fraction=cloud_fraction,
-    )
-
-
 class ViirsRasterProcessor:
     """Processor for VIIRS raster operations.
 
@@ -285,7 +238,16 @@ class ViirsRasterProcessor:
             )
 
     def _classify_pixels(self, data: np.ndarray, transform: rasterio.Affine, crs: str) -> ProcessedTile:
-        """Classify pixel values — delegates to module-level :func:`classify_viirs_pixels`."""
+        """Classify pixel values into flood extent, quality mask, and permanent water.
+
+        Args:
+            data: Raw pixel values from the clipped raster.
+            transform: Affine transform for the data.
+            crs: Coordinate reference system.
+
+        Returns:
+            ProcessedTile with classified arrays.
+        """
         fill = np.isin(data, list(FILL_CODES))
         cloud = np.isin(data, list(CLOUD_CODES))
         permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
@@ -325,8 +287,7 @@ class ViirsRasterProcessor:
         perm_water_pct = n_perm_water / n_total * 100 if n_total else 0.0
         clear_pct = n_clear / n_total * 100 if n_total else 0.0
         logger.debug(
-            "Classification: flood {:.1f}%, cloud {:.1f}%, permanent-water"
-            " {:.1f}%, clear {:.1f}%, fill/no-data {:.1f}%",
+            "Classification: flood {:.1f}%, cloud {:.1f}%, permanent-water {:.1f}%, clear {:.1f}%, fill/no-data {:.1f}%",
             flood_pct,
             cloud_pct,
             perm_water_pct,
