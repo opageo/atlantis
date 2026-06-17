@@ -272,17 +272,27 @@ class ViirsRasterProcessor:
 
         # Cloud fraction over non-fill pixels only (fill pixels are not real observations).
         valid = ~fill
-        cloud_fraction = float(cloud[valid].sum() / valid.sum()) if valid.sum() else 0.0
+        n_valid = int(valid.sum())
+        cloud_fraction = float(cloud[valid].sum() / n_valid) if n_valid else 0.0
 
+        n_total = int(data.size)
+        n_fill = int(fill.sum())
         n_flood = int(flood_mask.sum())
         n_cloud = int(cloud.sum())
         n_perm_water = int(permanent_water.sum())
+        n_clear = n_total - n_fill - n_cloud - n_flood - n_perm_water
+        fill_pct = n_fill / n_total * 100 if n_total else 0.0
+        flood_pct = n_flood / n_total * 100 if n_total else 0.0
+        cloud_pct = n_cloud / n_total * 100 if n_total else 0.0
+        perm_water_pct = n_perm_water / n_total * 100 if n_total else 0.0
+        clear_pct = n_clear / n_total * 100 if n_total else 0.0
         logger.debug(
-            "Classification: {} flood, {} cloud, {} permanent-water pixels (cloud fraction {:.1f}%)",
-            n_flood,
-            n_cloud,
-            n_perm_water,
-            cloud_fraction * 100,
+            "Classification: flood {:.1f}%, cloud {:.1f}%, permanent-water {:.1f}%, clear {:.1f}%, fill/no-data {:.1f}%",
+            flood_pct,
+            cloud_pct,
+            perm_water_pct,
+            clear_pct,
+            fill_pct,
         )
 
         return ProcessedTile(
