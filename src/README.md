@@ -425,8 +425,13 @@ These are suitable for analysis and for conversion through `to_dataset()`, and c
 1. Searches STAC items intersecting the bbox and time window
 2. Streams Cloud-Optimised GeoTIFFs on the fly (no download step)
 3. Coarsens (max-pool) by a configurable factor (default 4×)
-4. Reprojects to EPSG:4326
+4. Reprojects to EPSG:4326 aligned to the canonical 1-arcmin global grid
 5. Accumulates all dates into per-date or aggregated outputs
+
+> **Note:** Unlike VIIRS and MODIS, GFM reprojects to the target 1-arcmin grid
+> *during* fetch (because the native ~20 m SAR data is too large to materialise).
+> When `--harmonise` is used, the reprojection step is effectively a no-op since
+> the data is already grid-aligned. The normaliser still runs to scale values.
 
 ### 6.2 GFM CLI Usage
 
@@ -570,6 +575,8 @@ Key harmoniser settings:
 | `RFMFetcher`    | Modelled flood extent           | Phase C                              | stub        |
 
 All three implemented fetchers share a consistent interface: `search()`, `fetch()`, and `to_dataset()`. They support peak-window filtering (`--peak-days-before/after`, `--max-observations`, `--peak-priority`) and three strategies (`peak`, `aggregate`, `all`).
+
+**Important pipeline difference:** GFM reprojects to the 1-arcmin grid *during* fetch (the native ~20 m SAR data is too large to write at full resolution). VIIRS and MODIS fetch at native resolution (375 m / ~250 m) and harmonise to 1 arcmin only when explicitly requested via `--harmonise` or `atlantis harmonise`.
 
 ### 8.4 `harmoniser/`
 
