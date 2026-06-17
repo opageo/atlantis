@@ -144,6 +144,32 @@ def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str
     )
 
 
+def classify_viirs_flood_fraction(data: np.ndarray) -> np.ndarray:
+    """Decode raw VIIRS pixel codes into a continuous flood-fraction array.
+
+    Lighter-weight sibling of :func:`classify_viirs_pixels` for batch
+    workflows that only need ``flood_fraction``: skips the
+    ``quality_mask`` / ``permanent_water_mask`` allocations entirely
+    (~40 MB saved per 4448×4448 granule).
+
+    VIIRS codes 101–200 encode water fraction as ``(code − 100) / 100``;
+    every other code (incl. fill / cloud / permanent water) maps to 0.0.
+
+    Args:
+        data: Raw pixel values (uint8) from a single-band VIIRS tile.
+
+    Returns:
+        ``float32`` array of flood fraction values in ``[0.0, 1.0]``,
+        same shape as *data*.
+    """
+    flood_mask = (data >= 101) & (data <= 200)
+    return np.where(
+        flood_mask,
+        (data.astype(np.float32) - 100.0) / 100.0,
+        np.float32(0.0),
+    )
+
+
 class ViirsRasterProcessor:
     """Processor for VIIRS raster operations.
 

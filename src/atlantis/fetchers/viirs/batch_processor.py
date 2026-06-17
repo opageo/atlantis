@@ -9,11 +9,14 @@ Pipeline per granule:
      NOAA's source TIFFs are one-row strips (uncompressed, blockysize=1)
      — pathological for HTTP range reads. The tempfile is deleted in a
      ``finally`` block so peak disk = workers × 20 MB ≈ 120 MB total.
-  2. Classify at native 375 m → keep flood_fraction only.
+  2. Classify at native 375 m → keep ``flood_fraction`` only (skip the
+     auxiliary ``quality_mask`` / ``permanent_water`` allocations).
   3. Harmonise to 1-arcmin global grid via Harmoniser.
   4. Scale float32 [0, 1] → uint8 [0, 100], NaN → 255.
   5. Write a true COG into an in-memory MemoryFile (output is ~2-3 KB).
   6. Upload bytes to s3://atlantis/{dest_key}.
+  7. Drop large intermediates and call ``gc.collect()`` so the worker
+     returns memory between tasks instead of accumulating fragmentation.
 
 The COG output stays in-memory because each result is tiny; only the
 ~20 MB input warrants local staging.
@@ -21,6 +24,7 @@ The COG output stays in-memory because each result is tiny; only the
 
 from __future__ import annotations
 
+import gc
 import os
 import tempfile
 import time
@@ -34,8 +38,7 @@ from rasterio.io import MemoryFile
 
 from atlantis.batch import TaskResult
 from atlantis.config import HarmoniseConfig
-from atlantis.fetchers.viirs.dataset import processed_tile_to_dataset
-from atlantis.fetchers.viirs.processor import classify_viirs_pixels
+from atlantis.fetchers.viirs.processor import classify_viirs_flood_fraction
 from atlantis.harmoniser import HARMONISED_NODATA, Harmoniser
 
 #: ECMWF object store endpoint.
@@ -95,6 +98,35 @@ def _download_to_tempfile(url: str, suffix: str = ".tif") -> Path:
     return Path(tmp_path)
 
 
+def _flood_fraction_dataarray(
+    flood_fraction: np.ndarray,
+    transform: rasterio.Affine,
+    crs: str,
+):
+    """Wrap a flood_fraction array into a georeferenced rioxarray DataArray.
+
+    Inlined here (instead of using :func:`processed_tile_to_dataset`) so
+    the batch path never allocates the unused ``quality_mask`` /
+    ``permanent_water`` arrays.
+    """
+    import rioxarray  # noqa: F401 — registers .rio on xarray objects
+    import xarray as xr
+
+    height, width = flood_fraction.shape
+    # Pixel-centre coordinates so the harmoniser sees a fully-georeferenced array.
+    x_coords = transform.c + (np.arange(width) + 0.5) * transform.a
+    y_coords = transform.f + (np.arange(height) + 0.5) * transform.e
+    da = xr.DataArray(
+        flood_fraction,
+        dims=("y", "x"),
+        coords={"y": y_coords, "x": x_coords},
+        name="flood_fraction",
+    )
+    da.rio.write_crs(crs, inplace=True)
+    da.rio.write_transform(transform, inplace=True)
+    return da
+
+
 def process_granule(task: dict) -> TaskResult:
     """Process a single VIIRS granule end-to-end.
 
@@ -119,38 +151,40 @@ def process_granule(task: dict) -> TaskResult:
         # ── Step 1: download raw granule to a tempfile ────────────────────
         src_path = _download_to_tempfile(source_uri)
 
-        # ── Step 2: read + classify ───────────────────────────────────────
+        # ── Step 2: read + classify (flood_fraction only) ───────────────
         with rasterio.open(src_path) as src:
             data = src.read(1)
             transform = src.transform
             crs = src.crs.to_string() if src.crs else "EPSG:4326"
 
-        processed = classify_viirs_pixels(data, transform, crs)
+        flood_fraction = classify_viirs_flood_fraction(data)
+        del data  # raw uint8 array no longer needed (~20 MB)
 
         # Build a minimal xarray Dataset with just flood_fraction.
-        ds = processed_tile_to_dataset(
-            processed,
-            event_id=task.get("date", ""),
-            source_id="viirs",
-        )
-        ds = ds[["flood_fraction"]]
+        import xarray as xr
+
+        da = _flood_fraction_dataarray(flood_fraction, transform, crs)
+        ds = xr.Dataset({"flood_fraction": da})
+        del flood_fraction, da
 
         # ── Step 3: harmonise to 1 arcmin ────────────────────────────────
         harmoniser = Harmoniser(HarmoniseConfig())
         ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="flood_fraction")
+        del ds
 
         # ── Step 4: scale float32 [0,1] → uint8 [0,100], NaN → 255 ──────
-        arr = ds_harm["flood_fraction"].values
+        harm_da = ds_harm["flood_fraction"]
+        arr = harm_da.values
         scaled = np.where(
             np.isnan(arr),
             np.uint8(HARMONISED_NODATA),
             np.round(arr * 100).clip(0, 100).astype(np.uint8),
         )
 
-        harm_da = ds_harm["flood_fraction"]
         harm_transform = harm_da.rio.transform()
         harm_crs = harm_da.rio.crs
         height, width = scaled.shape
+        del arr, harm_da, ds_harm
 
         # ── Step 5: write COG into MemoryFile (output is ~2-3 KB) ───────
         profile = {
@@ -165,12 +199,14 @@ def process_granule(task: dict) -> TaskResult:
             with mem.open(**profile) as dst:
                 dst.write(scaled, 1)
             cog_bytes = mem.read()
+        del scaled
 
         # ── Step 6: upload to s3://atlantis/{dest_key} ────────────────────
         dest_uri = f"s3://atlantis/{dest_key}"
         fs = _s3fs_filesystem()
         with fs.open(dest_uri, "wb") as f:
             f.write(cog_bytes)
+        del cog_bytes
 
         elapsed = time.monotonic() - t0
         logger.debug("processed {} in {:.1f}s → {}", task_id, elapsed, dest_uri)
@@ -179,3 +215,7 @@ def process_granule(task: dict) -> TaskResult:
     finally:
         if src_path is not None:
             src_path.unlink(missing_ok=True)
+        # ── Step 7: free aggressively so unmanaged memory doesn't accumulate.
+        # Linux glibc doesn't always release malloc fragments back to the OS;
+        # an explicit gc.collect() between tasks keeps worker RSS flat.
+        gc.collect()
