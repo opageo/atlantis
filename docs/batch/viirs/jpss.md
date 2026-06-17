@@ -29,9 +29,9 @@ Four properties drive every design choice:
 | Per-task API  | `client.map()` + `as_completed()`                                                   | Streams results back as they finish so the SQLite tracker is always current — survives multi-day runs and VM crashes.                                                                                   |
 | Worker model  | 2–6 **processes**, 1 thread each (Python)                                           | `rasterio` is process-safe but not always thread-safe. GDAL's internal C-thread pool (`GDAL_NUM_THREADS`) is independent of the Python GIL, so we still get warp/encode parallelism inside each worker. |
 | Source I/O    | `requests.get(..., stream=True)` → `tempfile.mkstemp()`                             | NOAA source TIFFs are pathological (one-row strips, uncompressed) so `/vsicurl/` issues thousands of small range reads. A single sequential GET is ~2.8× faster. Tempfile is unlinked in a `finally`.   |
-| Source format | Plain GeoTIFF, 375 m, ~20 MB each                                                   | Decoded with `ViirsRasterProcessor._classify_pixels` (extracted to a module-level function for picklability).                                                                                           |
+| Source format | Plain GeoTIFF, 375 m, ~20 MB each                                                   | Decoded with `classify_viirs_flood_fraction` — a lightweight, picklable module-level sibling of `classify_viirs_pixels` that returns only the flood-fraction array.                                     |
 | Reprojection  | `Harmoniser` (existing)                                                             | Same reproject + 1-arcmin-grid logic the rest of Atlantis uses. We don't fork the science.                                                                                                              |
-| Output format | `rasterio.MemoryFile(driver="COG", compress="DEFLATE", blocksize=512, predictor=2)` | True COG with overviews `[2, 4, 8, 16]`. Output is ~2–3 KB → no point touching disk.                                                                                                                    |
+| Output format | `rasterio.MemoryFile(driver="COG", compress="DEFLATE", blocksize=512, predictor=2)` | True COG with `overviews="AUTO"` (GDAL chooses the levels). Output is ~2–3 KB → no point touching disk.                                                                                                  |
 | Upload        | `s3fs.S3FileSystem(endpoint_url=...)`                                               | Custom endpoint = ECMWF object store. Credentials come from the `default` boto3 profile written by `atlantis setup`.                                                                                    |
 | Resume DB     | **SQLite, one DB per VM**                                                           | No shared state, no NFS coordination. Two-VM split = trivial `UNION ALL` merge afterwards.                                                                                                              |
 | Packaging     | `atlantis[batch]` extras                                                            | Keeps the core install lean. Adds `dask[distributed]`, `bokeh`, `rio-cogeo`, and pulls in `[geo]` transitively.                                                                                         |
@@ -53,7 +53,7 @@ NOAA S3 granule (375 m GeoTIFF, ~20 MB)
   ▼
  raw array
   │
-  │  classify_viirs_pixels()                    ← keep ONLY flood_fraction
+  │  classify_viirs_flood_fraction()            ← keep ONLY flood_fraction
   ▼                                              (discard quality_mask, permanent_water, raw)
  flood_fraction (float32, native 375 m)
   │
@@ -65,7 +65,7 @@ NOAA S3 granule (375 m GeoTIFF, ~20 MB)
   ▼
  flood_fraction (uint8, 1 arcmin)
   │
-  │  rasterio.MemoryFile(driver="COG", ...)     ← DEFLATE, 512×512, overviews [2,4,8,16]
+  │  rasterio.MemoryFile(driver="COG", ...)     ← DEFLATE, 512×512, overviews=AUTO
   ▼                                              (output ~2–3 KB — stays in memory)
  COG bytes (in-memory)
   │
@@ -136,7 +136,7 @@ This makes MODIS a drop-in: add `fetchers/modis/inventory.py` + `fetchers/modis/
 | Variable      | `flood_fraction` only                                                                           |
 | Dtype / range | `uint8`, 0–100 (percent), `nodata=255`                                                          |
 | Resolution    | 1 arcmin (`HarmoniseConfig.target_resolution_arcmin=1.0`)                                       |
-| Format        | `driver="COG"`, `compress="DEFLATE"`, `blocksize=512`, `predictor=2`, overviews `[2, 4, 8, 16]` |
+| Format        | `driver="COG"`, `compress="DEFLATE"`, `blocksize=512`, `predictor=2`, `overviews="AUTO"` (resampling: `average`) |
 | Endpoint      | `https://object-store.os-api.cci1.ecmwf.int` (ECMWF object store)                               |
 
 The `{date}/GLB{aoi_id:03d}.tif` key shape is browsable per-day with `ecaws s3 ls` and uniquely determined by `(date, aoi_id)`, so re-runs are idempotent (same input → same output URI → S3 last-writer-wins).
