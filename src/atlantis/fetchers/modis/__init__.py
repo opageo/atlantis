@@ -354,6 +354,7 @@ class MODISFetcher(AbstractFloodFetcher):
             diagnostics.outside_lance_window = True
 
         diagnostics.result_count = len(results)
+        logger.debug("Search complete: {} result(s) across {} date(s)", len(results), diagnostics.dates_probed)
         return results
 
     # ── Fetch ───────────────────────────────────────────────────────────
