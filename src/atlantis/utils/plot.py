@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    import xarray as xr
     from matplotlib.patches import Patch
 
 # ── VIIRS pixel code legend ──────────────────────────────────────────────────
@@ -103,7 +104,9 @@ def legend_patches() -> list[Patch]:
 # ── Plot functions ────────────────────────────────────────────────────────────
 
 
-def plot_raw(da: "xr.DataArray", title: str, output_path: Path) -> None:  # type: ignore[name-defined]  # noqa: F821
+def plot_raw(
+    da: "xr.DataArray", title: str, output_path: Path, *, announce: bool = True
+) -> None:  # type: ignore[name-defined]  # noqa: F821
     """Render a raw VIIRS raster with the pixel-code legend as a side panel."""
     import matplotlib.pyplot as plt
 
@@ -131,7 +134,8 @@ def plot_raw(da: "xr.DataArray", title: str, output_path: Path) -> None:  # type
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Saved: {output_path}")
+    if announce:
+        print(f"  Saved: {output_path}")
 
 
 def plot_classified(
@@ -139,6 +143,8 @@ def plot_classified(
     title: str,
     output_path: Path,
     cmap: str = "Blues",
+    *,
+    announce: bool = True,
 ) -> None:
     """Render a classified flood raster (binary 0/1 or flood fraction 0–1)."""
     import matplotlib.pyplot as plt
@@ -159,4 +165,5 @@ def plot_classified(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Saved: {output_path}")
+    if announce:
+        print(f"  Saved: {output_path}")
