@@ -110,6 +110,7 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not e2e'"
 env = ["R:AWS_PROFILE=default"]
 markers = ["e2e: end-to-end tests requiring network access (STAC API + S3)"]
 
