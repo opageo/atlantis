@@ -287,7 +287,8 @@ class ViirsRasterProcessor:
         perm_water_pct = n_perm_water / n_total * 100 if n_total else 0.0
         clear_pct = n_clear / n_total * 100 if n_total else 0.0
         logger.debug(
-            "Classification: flood {:.1f}%, cloud {:.1f}%, permanent-water {:.1f}%, clear {:.1f}%, fill/no-data {:.1f}%",
+            "Classification: flood {:.1f}%, cloud {:.1f}%, permanent-water {:.1f}%,"
+            " clear {:.1f}%, fill/no-data {:.1f}%",
             flood_pct,
             cloud_pct,
             perm_water_pct,
