@@ -105,20 +105,20 @@ See [`notebooks/README.md`](notebooks/README.md) for details.
 
 ## Testing Github actions/workflows locally
 
-1. install nektos github extension:
+### Install nektos github extension:
 
 ```bash
 gh extension install https://github.com/nektos/gh-act
 ```
 
-1. Ensure you have docker daemon running:
+### Ensure you have docker daemon running:
    Install and run docker daemon in a cent-os rocky-linux system:
 
 ```bash
 sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y docker-ce docker-ce-cli containerd.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
 ```
 
-1. run actos with:
+### Run actos with:
 
 ```bash
 gh act <event-name>
@@ -126,7 +126,7 @@ gh act <event-name>
 
 default event is `push`
 
-1. run specific workflow by job name
+### Run specific workflow by job name
 
 ```bash
 gh act -l #lists all job names
