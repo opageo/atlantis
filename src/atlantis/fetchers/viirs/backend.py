@@ -139,7 +139,10 @@ class NoaaS3Backend(ViirsBackend):
 
     def get_directory_links(self, base_url: str, location: str, timeout: int) -> list[str]:
         """Return object keys from a public S3 prefix listing."""
-        logger.debug("Listing S3 prefix: {}?prefix={}", base_url, location)
+        # Extract date components (YYYY/MM/DD) from the prefix path for readable logging.
+        parts = location.rstrip("/").split("/")
+        date_label = "/".join(parts[-3:]) if len(parts) >= 3 else location
+        logger.debug("Listing S3 prefix for {}: {}?prefix={}", date_label, base_url, location)
         response = requests.get(base_url, params={"prefix": location}, timeout=timeout)
         if response.status_code == 404:
             return []
