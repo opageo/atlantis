@@ -250,6 +250,7 @@ dependencies = [
     { name = "ipympl" },
     { name = "loguru" },
     { name = "matplotlib" },
+    { name = "odc-stac" },
     { name = "pandas", extra = ["pyarrow"] },
     { name = "plotly" },
     { name = "pydantic" },
@@ -293,7 +294,6 @@ notebooks = [
     { name = "matplotlib" },
     { name = "metview" },
     { name = "numpy" },
-    { name = "odc-stac" },
     { name = "pyproj" },
     { name = "pystac" },
     { name = "pystac-client" },
@@ -321,6 +321,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-env" },
+    { name = "pytest-timeout" },
     { name = "pytest-xdist" },
     { name = "ripgrep" },
     { name = "ruff" },
@@ -342,7 +343,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'ml'", specifier = ">=3.11.0" },
     { name = "metview", marker = "extra == 'notebooks'", specifier = ">=1.16" },
     { name = "numpy", marker = "extra == 'ml'", specifier = ">=2.4.6" },
-    { name = "odc-stac", marker = "extra == 'notebooks'", specifier = ">=0.4" },
+    { name = "odc-stac", specifier = ">=0.4" },
     { name = "pandas", extras = ["pyarrow"], specifier = "<3" },
     { name = "plotly", specifier = ">=6.7.0" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -379,6 +380,7 @@ dev = [
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-env" },
+    { name = "pytest-timeout", specifier = ">=2.3.0" },
     { name = "pytest-xdist", specifier = ">=3.2.0" },
     { name = "ripgrep", specifier = ">=15.1.0" },
     { name = "ruff", specifier = ">=0.15.17" },
@@ -3315,6 +3317,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ff/69/4db1c30625af0621df8dbe73797b38b6d1b04e15d021dd5d26a6d297f78c/pytest_env-1.6.0.tar.gz", hash = "sha256:ac02d6fba16af54d61e311dd70a3c61024a4e966881ea844affc3c8f0bf207d3", size = 16163, upload-time = "2026-03-12T22:39:43.78Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/16/ad52f56b96d851a2bcfdc1e754c3531341885bd7177a128c13ff2ca72ab4/pytest_env-1.6.0-py3-none-any.whl", hash = "sha256:1e7f8a62215e5885835daaed694de8657c908505b964ec8097a7ce77b403d9a3", size = 10400, upload-time = "2026-03-12T22:39:41.887Z" },
+]
+
+[[package]]
+name = "pytest-timeout"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ac/82/4c9ecabab13363e72d880f2fb504c5f750433b2b6f16e99f4ec21ada284c/pytest_timeout-2.4.0.tar.gz", hash = "sha256:7e68e90b01f9eff71332b25001f85c75495fc4e3a836701876183c4bcfd0540a", size = 17973, upload-time = "2025-05-05T19:44:34.99Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/b6/3127540ecdf1464a00e5a01ee60a1b09175f6913f0644ac748494d9c4b21/pytest_timeout-2.4.0-py3-none-any.whl", hash = "sha256:c42667e5cdadb151aeb5b26d114aff6bdf5a907f176a007a30b940d3d865b5c2", size = 14382, upload-time = "2025-05-05T19:44:33.502Z" },
 ]
 
 [[package]]

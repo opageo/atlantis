@@ -1,0 +1,26 @@
+name: Trigger E2E from comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+jobs:
+  trigger-e2e:
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/run-e2e')
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Add run-e2e label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$PR_NUMBER" --add-label "run-e2e"
