@@ -1,0 +1,19 @@
+name: E2E Required Info
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  info:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: E2E instructions
+        run: |
+          echo "E2E tests are required before merging to main."
+          echo ""
+          echo "Trigger them by either:"
+          echo "  1. Adding the label: run-e2e"
+          echo "  2. Commenting: /run-e2e"

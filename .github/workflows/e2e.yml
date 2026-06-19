@@ -2,21 +2,16 @@ name: E2E Tests
 
 on:
   workflow_dispatch:
-    inputs:
-      pr_number:
-        required: false
-        type: string
   pull_request:
-    types: [opened, synchronize, labeled]
+    branches: [main]
+    types: [labeled]
 
 concurrency:
-  group: e2e-${{ github.event.pull_request.number || inputs.pr_number || github.ref }}
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
-
     if: |
       github.event_name == 'workflow_dispatch' ||
       (
@@ -25,14 +20,16 @@ jobs:
         github.event.label.name == 'run-e2e'
       )
 
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout PR code for pull_request event
+      - name: Checkout PR code
         if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Checkout selected branch for workflow_dispatch
+      - name: Checkout selected ref
         if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v4
 
@@ -55,3 +52,10 @@ jobs:
           NO_COLOR: "1"
           GDAL_HTTP_UNSAFESSL: "YES"
         run: uv run pytest tests/ -m e2e -v --timeout=600
+
+      - name: Remove run-e2e label after successful run
+        if: github.event_name == 'pull_request' && success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr edit "${{ github.event.pull_request.number }}" --remove-label "run-e2e" || true
