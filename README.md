@@ -102,6 +102,34 @@ git lfs pull
 ### Get it from S3 bucket
 If you have access to our atlantis bucket (provided on premise to mentors and partners of the project) you can download kurosiwo related data from our s3://atlantis bucket, e.g for the catalog: `s3://atlantis/assets/ks/ks_catalogue.gpkg`
 
+## E2E Testing
+
+End-to-end tests (marked with `@pytest.mark.e2e`) require network access and AWS credentials to fetch data from STAC APIs and S3. These tests are **skipped by default** in local test runs due to pytest configuration in `pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+addopts = "-m 'not e2e'"
+```
+
+### Running E2E tests locally
+
+To run E2E tests locally, you must:
+
+1. Have AWS credentials configured
+2. Explicitly include them with the `-m e2e` flag:
+
+```bash
+uv run pytest tests/ -m e2e -v
+```
+
+### Triggering E2E tests in PRs
+
+E2E tests are **required before merging to main** but don't run on every commit. Trigger them manually on a PR by either:
+
+1. **Adding the `run-e2e` label** — the `.github/workflows/e2e.yml` workflow runs immediately
+2. **Commenting `/run-e2e`** — the `.github/workflows/run-e2e-from-comment.yml` workflow adds the label, which triggers the E2E workflow
+
+After a successful E2E run, the `run-e2e` label is automatically removed. To re-run after pushing new commits, simply re-add the label or comment `/run-e2e` again.
 
 ## Testing Github actions/workflows locally
 1. install nektos github extension:
