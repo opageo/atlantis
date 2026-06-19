@@ -21,6 +21,7 @@ dependencies = [
   "ipympl>=0.10.0",
   "plotly>=6.7.0",
   "rasterstats>=0.21.0",
+  "odc-stac>=0.4",
 ]
 
 [project.scripts]
@@ -58,6 +59,7 @@ dev = [
   "poethepoet>=0.46.0",
   "pytest>=8.0.0",
   "pytest-cov>=6.0.0",
+  "pytest-timeout>=2.3.0",
   "pytest-xdist>=3.2.0",
   "ruff>=0.15.17",
   "pre-commit>=4.2.0",
@@ -109,6 +111,7 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not e2e'"
 env = ["R:AWS_PROFILE=default"]
 markers = ["e2e: end-to-end tests requiring network access (STAC API + S3)"]
 
