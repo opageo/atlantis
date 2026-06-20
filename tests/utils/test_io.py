@@ -1,8 +1,14 @@
 """Tests for I/O utility functions."""
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from atlantis.utils.io import (
+    DownloadContentError,
+    _validate_not_html,
+    download_file,
     ensure_dir,
     get_cache_path,
     get_etag,
@@ -141,3 +147,99 @@ class TestDownloadFile:
         result = ensure_dir(target)
         assert result == target
         assert target.is_dir()
+
+
+class TestDownloadFileValidation:
+    """Tests for download_file HTML-response rejection."""
+
+    def test_rejects_html_content_type(self, tmp_path: Path) -> None:
+        """Raises DownloadContentError when Content-Type is text/html."""
+        response = MagicMock()
+        response.status_code = 200
+        response.raise_for_status = MagicMock()
+        response.headers = {"Content-Type": "text/html; charset=utf-8"}
+
+        with patch("requests.get", return_value=response):
+            with pytest.raises(DownloadContentError, match="authentication failure"):
+                download_file(
+                    "https://example.com/file.hdf",
+                    output_path=tmp_path / "file.hdf",
+                )
+
+    def test_rejects_html_body(self, tmp_path: Path) -> None:
+        """Raises DownloadContentError when body starts with HTML."""
+        response = MagicMock()
+        response.status_code = 200
+        response.raise_for_status = MagicMock()
+        response.headers = {"Content-Type": "application/octet-stream"}
+        response.iter_content = MagicMock(return_value=iter([b"<!DOCTYPE html>\n<html><body>Login</body></html>"]))
+
+        with patch("requests.get", return_value=response):
+            with pytest.raises(DownloadContentError, match="response body is HTML"):
+                download_file(
+                    "https://example.com/file.hdf",
+                    output_path=tmp_path / "file.hdf",
+                )
+        # Ensure no partial file is left behind.
+        assert not (tmp_path / "file.hdf").exists()
+        assert not (tmp_path / "file.hdf.part").exists()
+
+    def test_accepts_binary_data(self, tmp_path: Path) -> None:
+        """Succeeds when the response contains genuine binary data."""
+        hdf4_magic = b"\x0e\x03\x13\x01" + b"\x00" * 8188
+        response = MagicMock()
+        response.status_code = 200
+        response.raise_for_status = MagicMock()
+        response.headers = {"Content-Type": "application/octet-stream"}
+        response.iter_content = MagicMock(return_value=iter([hdf4_magic]))
+
+        with patch("requests.get", return_value=response):
+            result = download_file(
+                "https://example.com/file.hdf",
+                output_path=tmp_path / "file.hdf",
+            )
+        assert result.exists()
+        assert result.read_bytes() == hdf4_magic
+
+    def test_no_partial_file_on_network_error(self, tmp_path: Path) -> None:
+        """No .part or final file remains if the download raises mid-stream."""
+        response = MagicMock()
+        response.status_code = 200
+        response.raise_for_status = MagicMock()
+        response.headers = {"Content-Type": "application/octet-stream"}
+
+        def _exploding_iter(chunk_size=None):
+            yield b"\x0e\x03\x13\x01"
+            raise OSError("connection reset")
+
+        response.iter_content = _exploding_iter
+
+        with patch("requests.get", return_value=response):
+            with pytest.raises(OSError, match="connection reset"):
+                download_file(
+                    "https://example.com/file.hdf",
+                    output_path=tmp_path / "file.hdf",
+                )
+        assert not (tmp_path / "file.hdf").exists()
+        assert not (tmp_path / "file.hdf.part").exists()
+
+
+class TestValidateNotHtml:
+    """Tests for _validate_not_html helper."""
+
+    def test_raises_on_doctype(self) -> None:
+        _validate_not_html(b"\x0e\x03\x13\x01data", "http://x")  # OK
+        with pytest.raises(DownloadContentError):
+            _validate_not_html(b"<!DOCTYPE html><html>", "http://x")
+
+    def test_raises_on_html_tag(self) -> None:
+        with pytest.raises(DownloadContentError):
+            _validate_not_html(b"<html><head>", "http://x")
+
+    def test_ignores_leading_whitespace(self) -> None:
+        with pytest.raises(DownloadContentError):
+            _validate_not_html(b"   \n  <!DOCTYPE html>", "http://x")
+
+    def test_passes_binary(self) -> None:
+        _validate_not_html(b"\x89PNG\r\n\x1a\n", "http://x")
+        _validate_not_html(b"\x0e\x03\x13\x01", "http://x")

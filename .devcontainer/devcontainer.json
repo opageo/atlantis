@@ -3,6 +3,10 @@
     "build": {
         "dockerfile": "./dockerfile"
     },
+    "mounts": [
+        "source=${localEnv:HOME}/.aws/credentials,target=/home/ubuntu/.aws/credentials,type=bind,readonly",
+        "source=${localEnv:HOME}/.aws/config,target=/home/ubuntu/.aws/config,type=bind,readonly"
+    ],
     "runArgs": [
         "--hostname=atlantis"
     ],
@@ -13,7 +17,7 @@
     "customizations": {
         "vscode": {
             "settings": {
-                "python.defaultInterpreterPath": "/workspaces/.venv/bin/python",
+                "python.defaultInterpreterPath": "/home/ubuntu/.venv/bin/python",
                 "python.terminal.activateEnvironment": false,
                 "[python]": {
                     "editor.defaultFormatter": "charliermarsh.ruff",
@@ -29,8 +33,7 @@
             ]
         }
     },
-    "postCreateCommand": "uv sync",
-    "postStartCommand": "git config --global --add safe.directory /workspaces/atlantis",
-    "remoteUser": "root",
-    "initializeCommand": "echo 'Git credentials will be forwarded from host'"
+    "postCreateCommand": "uv sync"
+    // "postStartCommand": "git config --global --add safe.directory /workspaces/atlantis",
+    // "initializeCommand": "echo 'Git credentials will be forwarded from host'"
 }

@@ -6,9 +6,16 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import boto3
+import numpy as np
 import pytest
+import rasterio
 import requests
+from rasterio.session import AWSSession
+from typer.testing import CliRunner
+from upath import UPath
 
+from atlantis.cli import cli
 from atlantis.fetchers.modis.backend import (
     LaadsHdf4Backend,
     LanceGeotiffBackend,
@@ -255,3 +262,142 @@ class TestRegistry:
     def test_get_backend_unknown_raises(self):
         with pytest.raises(ValueError):
             get_backend("nonexistent")
+
+
+## ---- End-to-end: Harvey 2017, LAADS HDF4 backend --------------------------
+# Mirrors `make example-harvey-modis`:
+#   uv run atlantis --verbose fetch \
+#       --event Harvey_2017 --source modis \
+#       --bbox "-97.27 28.24 -95.54 29.80" \
+#       --start-date 2017-08-28 --end-date 2017-08-31 \
+#       --modis-backend laads_hdf4 --modis-composite F2 \
+#       --strategy all --peak-window-days 2 --max-observations 3 \
+#       --peak-priority balanced --plot --harmonise --no-keep-processed \
+#       --output ./data/Harvey_2017
+#
+# Requires: EARTHDATA_TOKEN env var, network access to LAADS + AWS S3.
+# Run with:
+#   uv run python -m pytest tests/fetchers/modis/test_backend.py -v -k e2e
+
+S3_REFERENCE_BASE = "s3://atlantis/reference/Harvey_2017/modis/harmonised"
+
+HARVEY_EVENT_ID = "Harvey_2017"
+HARVEY_BBOX = "-97.27 28.24 -95.54 29.80"
+HARVEY_START = "2017-08-28"
+HARVEY_END = "2017-08-31"
+
+
+def _run_modis_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
+    """Run the MODIS fetch pipeline via the CLI app and return harmonised TIF paths."""
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "--verbose",
+            "fetch",
+            "--event",
+            HARVEY_EVENT_ID,
+            "--source",
+            "modis",
+            "--bbox",
+            HARVEY_BBOX,
+            "--start-date",
+            HARVEY_START,
+            "--end-date",
+            HARVEY_END,
+            "--modis-backend",
+            "laads_hdf4",
+            "--modis-composite",
+            "F2",
+            "--strategy",
+            strategy,
+            "--peak-window-days",
+            "2",
+            "--max-observations",
+            "3",
+            "--peak-priority",
+            "balanced",
+            "--harmonise",
+            "--plot",
+            "--no-keep-processed",
+            "--output",
+            str(output_dir),
+        ],
+    )
+    if result.exit_code != 0:
+        output = result.stdout if result.stdout else ""
+        exc = f"\n{result.exception}" if result.exception else ""
+        pytest.fail(f"MODIS pipeline failed (strategy={strategy}):\noutput: {output[-2000:]}{exc}")
+
+    harm_dir = output_dir / "modis" / "harmonised"
+    tifs = sorted(harm_dir.glob("*_modis_harmonised.tif"))
+    if not tifs:
+        pytest.fail(
+            f"No harmonised TIFs produced (strategy={strategy}).\nOutput dir contents: {list(output_dir.rglob('*'))}"
+        )
+    return tifs
+
+
+def _compare_rasters(produced: UPath, reference: UPath) -> None:
+    """Compare two GeoTIFFs: metadata + pixel data must match exactly."""
+    with rasterio.open(produced.as_posix()) as src_p, rasterio.open(reference.as_uri()) as src_r:
+        assert src_p.crs == src_r.crs, f"CRS mismatch: {src_p.crs} vs {src_r.crs}"
+        assert src_p.width == src_r.width, f"Width mismatch: {src_p.width} vs {src_r.width}"
+        assert src_p.height == src_r.height, f"Height mismatch: {src_p.height} vs {src_r.height}"
+        assert src_p.transform == src_r.transform, (
+            f"Transform mismatch:\n  produced:  {src_p.transform}\n  reference: {src_r.transform}"
+        )
+        assert src_p.dtypes == src_r.dtypes, f"Dtype mismatch: {src_p.dtypes} vs {src_r.dtypes}"
+        assert src_p.nodata == src_r.nodata, f"Nodata mismatch: {src_p.nodata} vs {src_r.nodata}"
+
+        data_p = src_p.read()
+        data_r = src_r.read()
+        np.testing.assert_array_equal(
+            data_p,
+            data_r,
+            err_msg=(
+                f"Pixel data mismatch between:\n"
+                f"  produced:  {produced}\n"
+                f"  reference: {reference}\n"
+                f"  Shape: {data_p.shape}, dtype: {data_p.dtype}\n"
+                f"  Differing pixels: {int(np.sum(data_p != data_r))}"
+            ),
+        )
+
+
+@pytest.mark.e2e
+class TestModisHdf4E2E:
+    """End-to-end test: MODIS LAADS HDF4 pipeline for Harvey 2017 (strategy=all)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, tmp_path):
+        self.tmp_path = tmp_path
+
+    def test_all_strategy_matches_reference(self):
+        """Pipeline output with strategy=all matches S3 reference byte-for-byte."""
+        output_dir = UPath(self.tmp_path / "output")
+        tifs = _run_modis_pipeline("all", output_dir)
+
+        boto3_session = boto3.Session(profile_name="default")
+        aws_s3_endpoint = boto3_session.client("s3").meta.endpoint_url.removeprefix("https://")
+
+        with rasterio.Env(
+            AWSSession(boto3_session),
+            AWS_S3_ENDPOINT=aws_s3_endpoint,
+            AWS_HTTPS="YES",
+            AWS_VIRTUAL_HOSTING="FALSE",
+        ):
+            ref_dir = UPath(S3_REFERENCE_BASE)
+            ref_tifs = sorted(ref_dir.glob("*_modis_harmonised.tif"))
+            assert ref_tifs, f"No reference TIFs found at {S3_REFERENCE_BASE}"
+
+            for ref_tif in ref_tifs:
+                produced = None
+                for tif in tifs:
+                    if tif.name == ref_tif.name:
+                        produced = tif
+                        break
+                assert produced is not None, (
+                    f"Reference file {ref_tif.name} not found in produced outputs: {[t.name for t in tifs]}"
+                )
+                _compare_rasters(produced, ref_tif)

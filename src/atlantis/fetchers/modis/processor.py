@@ -208,6 +208,9 @@ class ProcessTilesResult:
 def find_hdf4_subdataset(hdf_path: Path, composite: str) -> str:
     """Return the GDAL subdataset URI for the requested MCDWD composite.
 
+    Uses GDAL directly (``osgeo.gdal``) because rasterio no longer supports
+    opening HDF4 container files.
+
     Args:
         hdf_path: Path to a downloaded ``.hdf`` file.
         composite: One of ``F1``, ``F1C``, ``F2``, ``F3``.
@@ -221,9 +224,18 @@ def find_hdf4_subdataset(hdf_path: Path, composite: str) -> str:
         FileNotFoundError: if the HDF4 file has no matching subdataset
             (corrupt download or unexpected layer naming).
     """
+    from osgeo import gdal  # type: ignore[import-not-found]
+
     layer_suffix = COMPOSITE_TO_HDF_LAYER[composite.upper()]
-    with rasterio.open(hdf_path) as ds:
-        subdatasets = list(ds.subdatasets)
+
+    ds = gdal.Open(str(hdf_path))
+    if ds is None:
+        raise FileNotFoundError(f"GDAL could not open HDF4 file: {hdf_path}")
+
+    subdataset_info = ds.GetSubDatasets()  # list of (uri, description) tuples
+    ds = None  # close
+
+    subdatasets = [uri for uri, _desc in subdataset_info]
     for uri in subdatasets:
         # Subdataset URIs end with `…:Grid_Water_Composite:Flood_2Day_250m`
         # — match only on the suffix because path encoding varies.
@@ -239,46 +251,70 @@ def find_hdf4_subdataset(hdf_path: Path, composite: str) -> str:
 def open_hdf4_tile(hdf_path: Path, composite: str) -> "DatasetReader":
     """Open the requested composite from an MCDWD HDF4 file.
 
+    Uses GDAL directly to read the HDF4 subdataset data and geotransform,
+    then wraps the result in a rasterio MemoryFile-backed dataset for
+    downstream compatibility with :func:`rasterio.merge.merge`.
+
     Falls back to assigning the affine from ``tile_bounds_from_hv`` when
-    GDAL fails to parse the HDF-EOS Grid metadata (older builds).
+    GDAL fails to parse the HDF-EOS Grid metadata.
     """
+    from osgeo import gdal, osr  # type: ignore[import-not-found]
+
     uri = find_hdf4_subdataset(hdf_path, composite)
-    src = rasterio.open(uri)
-    needs_affine = src.transform == rasterio.Affine.identity() or not src.crs
-    if not needs_affine:
-        return src
 
-    # Defensive fallback: synthesise the affine from the tile h/v.
-    src.close()
-    hv = parse_hv_from_filename(hdf_path.name)
-    if hv is None:
-        raise RuntimeError(f"HDF4 file {hdf_path.name} lacks an affine and the filename has no h/v token")
-    h, v = hv
-    west, south, east, north = tile_bounds_from_hv(h, v)
-    transform = from_bounds(west, south, east, north, MODIS_TILE_PIXELS, MODIS_TILE_PIXELS)
-    # Re-open and override the metadata in-memory via VRT.
-    from rasterio.vrt import WarpedVRT  # noqa: F401 — imported for side effects
+    gdal_ds = gdal.Open(uri)
+    if gdal_ds is None:
+        raise RuntimeError(f"GDAL could not open subdataset: {uri}")
 
-    tmp_meta = {
+    band = gdal_ds.GetRasterBand(1)
+    data = band.ReadAsArray()
+
+    # Try to extract geotransform and CRS from GDAL metadata.
+    gt = gdal_ds.GetGeoTransform()
+    srs = gdal_ds.GetProjection()
+    gdal_ds = None  # close
+
+    # Determine if the geotransform is valid (not the default identity).
+    has_valid_gt = gt is not None and gt != (0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    has_valid_crs = bool(srs)
+
+    if has_valid_gt and has_valid_crs:
+        # GDAL geotransform: (origin_x, pixel_width, 0, origin_y, 0, pixel_height)
+        transform = rasterio.Affine(gt[1], gt[2], gt[0], gt[4], gt[5], gt[3])
+        # Convert OGC WKT to a CRS string rasterio understands.
+        sr = osr.SpatialReference()
+        sr.ImportFromWkt(srs)
+        sr.AutoIdentifyEPSG()
+        epsg = sr.GetAuthorityCode(None)
+        crs = f"EPSG:{epsg}" if epsg else "EPSG:4326"
+    else:
+        logger.warning(
+            "GDAL geotransform/CRS not found in HDF4 subdataset; falling back to filename parsing for {}", hdf_path
+        )
+        # Fallback: synthesise the affine from the tile h/v in the filename.
+        hv = parse_hv_from_filename(hdf_path.name)
+        if hv is None:
+            raise RuntimeError(f"HDF4 file {hdf_path.name} lacks a geotransform and the filename has no h/v token")
+        h, v = hv
+        west, south, east, north = tile_bounds_from_hv(h, v)
+        transform = from_bounds(west, south, east, north, MODIS_TILE_PIXELS, MODIS_TILE_PIXELS)
+        crs = "EPSG:4326"
+
+    # Wrap in a rasterio MemoryFile so downstream merge/mask works unchanged.
+    logger.info("")
+    meta = {
         "driver": "GTiff",
-        "height": MODIS_TILE_PIXELS,
-        "width": MODIS_TILE_PIXELS,
+        "height": data.shape[0],
+        "width": data.shape[1],
         "count": 1,
         "dtype": "uint8",
-        "crs": "EPSG:4326",
+        "crs": crs,
         "transform": transform,
         "nodata": INSUFFICIENT_DATA_CODE,
     }
-    # Read once via the original URI to materialise the band, then return
-    # a MemoryFile-backed dataset with the corrected affine.
-    raw = rasterio.open(uri)
-    try:
-        data = raw.read(1)
-    finally:
-        raw.close()
     memfile = MemoryFile()
-    dst = memfile.open(**tmp_meta)
-    dst.write(data, 1)
+    dst = memfile.open(**meta)
+    dst.write(data.astype(np.uint8), 1)
     return dst
 
 

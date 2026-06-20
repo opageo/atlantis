@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from getpass import getpass
 from pathlib import Path
 
+from osgeo import gdal
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _ASSET_HASHES_PATH = _REPO_ROOT / "config" / "asset_hashes.json"
 _ENV_PATH = _REPO_ROOT / ".env"
@@ -132,37 +134,18 @@ def _git_restore(path: Path) -> bool:
         return False
 
 
-def _check_geo_dependency() -> bool:
-    """Return True if the ``geo`` extra dependencies are importable."""
-    try:
-        import geopandas  # noqa: F401
-        import shapely  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
 def _check_hdf4_support() -> bool:
     """Return True if the system GDAL exposes the HDF4 driver.
 
     Required by the MODIS ``laads_hdf4`` backend (historical reprocessed
     archive, 2003–2025). The LANCE GeoTIFF backend does not need this.
     """
-    try:
-        from osgeo import gdal  # type: ignore[import-not-found]
+    driver = gdal.GetDriverByName("HDF4")
 
-        driver_names = {gdal.GetDriver(i).ShortName for i in range(gdal.GetDriverCount())}
-        return "HDF4" in driver_names or "HDF4Image" in driver_names
-    except ImportError:
-        pass
-    try:
-        import rasterio
-
-        drivers = set(rasterio.drivers.raster_driver_extensions().values())
-        return "HDF4" in drivers or "HDF4Image" in drivers
-    except Exception:
+    if driver is None:
         return False
+    else:
+        return True
 
 
 # ── Credentials registry ──────────────────────────────────────────────────
@@ -706,13 +689,6 @@ def run_setup(
         interactive = False
 
     _print("[bold]Asset check[/bold]\n")
-
-    # ── Step 1: geo dependencies ────────────────────────────────────────────
-    if _check_geo_dependency():
-        _print("[bold green]✓[/bold green]  geo dependencies (geopandas, shapely)")
-    else:
-        _print("[bold yellow]⚠[/bold yellow]  geo dependencies not installed")
-        _print("       Run: uv sync --extra geo\n")
 
     # GDAL HDF4 support (optional — only the MODIS laads_hdf4 backend needs it).
     if _check_hdf4_support():
