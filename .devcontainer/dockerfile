@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1
+
+FROM ghcr.io/osgeo/gdal:ubuntu-full-3.13.1
+
+SHELL ["sh", "-exc"]
+
+ARG app=atlantis
+ARG pythonVersion=python3.12
+
+LABEL org.opencontainers.image.url=https://github.com/ECMWFCode4Earth/atlantis/issues \
+    org.opencontainers.image.title="ECMWF Atlantis Ubuntu Image" \
+    org.opencontainers.image.description="ECMWF Atlantis Code4Earth" \
+    org.opencontainers.image.vendor="ECMWF" \
+    org.opencontainers.image.authors="lagamura, kalfasyan"
+
+COPY --from=ghcr.io/astral-sh/uv:0.10 /uv /uvx /bin/
+
+RUN apt-get -qq update && \
+    apt-get install -y curl make g++
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PROJECT_ENVIRONMENT=/workspaces/.venv \
+    PATH=/workspaces/.venv/bin:$PATH
