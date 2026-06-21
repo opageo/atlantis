@@ -5,7 +5,8 @@
     },
     "mounts": [
         "source=${localEnv:HOME}/.aws/credentials,target=/home/ubuntu/.aws/credentials,type=bind,readonly",
-        "source=${localEnv:HOME}/.aws/config,target=/home/ubuntu/.aws/config,type=bind,readonly"
+        "source=${localEnv:HOME}/.aws/config,target=/home/ubuntu/.aws/config,type=bind,readonly",
+        "source=${localEnv:HOME}/.gitconfig,target=/home/ubuntu/.gitconfig,type=bind,readonly"
     ],
     "runArgs": [
         "--hostname=atlantis"
@@ -33,6 +34,7 @@
             ]
         }
     },
+    "remoteUser": "ubuntu",
     "postCreateCommand": "uv sync"
     // "postStartCommand": "git config --global --add safe.directory /workspaces/atlantis",
     // "initializeCommand": "echo 'Git credentials will be forwarded from host'"
