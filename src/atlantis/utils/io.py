@@ -16,13 +16,15 @@ DEFAULT_CACHE_DIR = Path.home() / ".cache" / "atlantis"
 # Domains that should retain the Authorization header across redirects.
 # LAADS/LANCE servers redirect through urs.earthdata.nasa.gov for OAuth;
 # Python requests strips auth headers on cross-domain redirects by default.
-_NASA_AUTH_HOSTS = frozenset({
-    "urs.earthdata.nasa.gov",
-    "ladsweb.modaps.eosdis.nasa.gov",
-    "nrt3.modaps.eosdis.nasa.gov",
-    "nrt4.modaps.eosdis.nasa.gov",
-    "e4ftl01.cr.usgs.gov",
-})
+_NASA_AUTH_HOSTS = frozenset(
+    {
+        "urs.earthdata.nasa.gov",
+        "ladsweb.modaps.eosdis.nasa.gov",
+        "nrt3.modaps.eosdis.nasa.gov",
+        "nrt4.modaps.eosdis.nasa.gov",
+        "e4ftl01.cr.usgs.gov",
+    }
+)
 
 
 class _EarthdataSession(requests.Session):
@@ -67,10 +69,7 @@ class _EarthdataSession(requests.Session):
             if orig_host in _NASA_AUTH_HOSTS and redir_host in _NASA_AUTH_HOSTS:
                 return
             # Also keep if both share the same parent domain (*.eosdis.nasa.gov).
-            if (
-                orig_host.endswith(".eosdis.nasa.gov")
-                and redir_host.endswith(".eosdis.nasa.gov")
-            ):
+            if orig_host.endswith(".eosdis.nasa.gov") and redir_host.endswith(".eosdis.nasa.gov"):
                 return
 
         super().rebuild_auth(prepared_request, response)
