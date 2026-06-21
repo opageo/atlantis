@@ -242,3 +242,7 @@ dev-install:  ## Install with dev dependencies
 
 version:  ## Show current version
 	@python -c "import atlantis; print(f'Current version: {atlantis.__version__}')"
+
+### docker
+docker-build:  ## Build Docker image
+	cd docker build -t atlantis:latest .
