@@ -183,11 +183,12 @@ into one continuous flood layer plus two binary masks:
 | ----------------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
 | `flood_fraction`  | `101 <= pixel <= 200 ? (pixel - 100) / 100 : 0` | Flooded-water fraction in `[0.0, 1.0]`; written as uint8 percent `[0,100]` |
 | `quality_mask`    | `pixel ∉ {0,1,30}`                              | 1 = valid clear-sky observation (0 = fill or cloud cover)                  |
-| `permanent_water` | `pixel == 17`                                   | 1 = known permanent water body                                             |
+| `permanent_water` | `pixel == 99`                                   | 1 = NOAA NormalWater reference (permanent / open reference water)          |
 
-Water types (17=permanent, 20=seasonal, 99=open) are **valid observations** — they
-receive `quality=1`, contribute `0` to `flood_fraction`, and permanent water is tracked
-through its own classification.
+The authoritative legend lives in the band tag `WaterDetection#TypeDescription`
+inside each NOAA GeoTIFF. Per that tag, code `99 = NormalWater` is the reference-water
+class and is the basis of `permanent_water`. Codes `17` (Vegetation) and `20` (Snow/ice)
+are valid observations — they receive `quality=1` and contribute `0` to `flood_fraction`.
 
 There is no thresholding step inside `_classify_pixels()` in the current pipeline. If you
 need a binary flood mask, apply a downstream threshold to `flood_fraction`.

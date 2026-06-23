@@ -15,14 +15,14 @@ The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the
 | Code    | Meaning                                           |
 | ------- | ------------------------------------------------- |
 | 1       | Fill / No data (nodata sentinel)                  |
-| 17      | Permanent water                                   |
-| 20      | Seasonal water                                    |
+| 17      | Vegetation                                        |
+| 20      | Snow / ice                                        |
 | 30      | Cloud cover                                       |
-| 99      | Open water                                        |
+| 99      | Permanent water (NOAA NormalWater reference)      |
 | 101–200 | **Flood water** — water fraction % = `code − 100` |
 | ≥160    | High-confidence flood (≥60% water fraction)       |
 
-> **Note:** The ATBD netCDF format uses different codes (e.g. 16=bare land, 17=vegetation). The GeoTIFF distribution simplifies these — land pixels are omitted, and codes 17/20/99 carry water-related meanings instead.
+> **Note:** The authoritative legend is embedded in each NOAA GeoTIFF as the band tag `WaterDetection#TypeDescription`. The table above mirrors that tag for the classes Atlantis decodes; additional classes (16=Bareland, 27=River/lake ice, 38=mixed snow/ice/water, 50=Shadow) are present in the source data but currently pass through as `0` flood fraction with no dedicated layer.
 
 By default Atlantis decodes raw VIIRS codes into a continuous `flood_fraction` layer plus `quality_mask` and `permanent_water` masks. Pass `--no-classify` to write raw integer pixel codes instead.
 

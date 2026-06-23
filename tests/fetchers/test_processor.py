@@ -141,12 +141,13 @@ class TestViirsRasterProcessor:
         geom = box(105.0, 28.0, 115.0, 38.0)
         processor = ViirsRasterProcessor(area_geometry=geom, classify=True)
 
-        # Create tile with mixed codes
+        # Create tile with mixed codes (per the embedded NOAA TIFF legend:
+        # 17=Vegetation, 20=Snow/ice, 30=Cloud, 99=NormalWater/permanent water).
         tile_path = tmp_path / "mixed.tif"
         data = np.array(
             [
-                [1, 17, 30, 99],  # fill, permanent water, cloud, open water
-                [101, 160, 200, 20],  # flood (1%), flood (60%), flood (100%), seasonal water
+                [1, 17, 30, 99],  # fill, vegetation, cloud, permanent water
+                [101, 160, 200, 20],  # flood (1%), flood (60%), flood (100%), snow/ice
             ],
             dtype=np.uint8,
         )
@@ -174,8 +175,8 @@ class TestViirsRasterProcessor:
         expected_quality = np.array([[0, 1, 0, 1], [1, 1, 1, 1]], dtype=np.uint8)
         np.testing.assert_array_equal(quality, expected_quality)
 
-        # Permanent water: code 17 → 1
-        expected_water = np.array([[0, 1, 0, 0], [0, 0, 0, 0]], dtype=np.uint8)
+        # Permanent water: code 99 → 1 (per embedded NOAA TIFF legend)
+        expected_water = np.array([[0, 0, 0, 1], [0, 0, 0, 0]], dtype=np.uint8)
         np.testing.assert_array_equal(water, expected_water)
 
     def test_classify_continuous_fractions(self, tmp_path):

@@ -31,7 +31,10 @@ TilePath = Union[Path, str]
 FLOOD_MIN_CODE = 160  #: conservative default: ≥60% water fraction
 FILL_CODES = {0, 1}
 CLOUD_CODES = {30}
-PERMANENT_WATER_CODES = {17}
+# Code 99 ("NormalWater" per the embedded NOAA TIFF metadata tag
+# ``WaterDetection#TypeDescription``) is the VIIRS reference-water class — what
+# Atlantis exposes as ``permanent_water``. Code 17 is Vegetation, not water.
+PERMANENT_WATER_CODES = {99}
 SEASONAL_WATER_CODES = {20}
 OPEN_WATER_CODES = {99}
 

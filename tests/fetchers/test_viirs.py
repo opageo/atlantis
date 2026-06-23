@@ -649,7 +649,9 @@ def test_fetch_and_to_dataset(tmp_path, monkeypatch):
     )
 
     tile1_data = np.full((10, 10), 170, dtype=np.uint8)
-    tile2_data = np.full((10, 10), 17, dtype=np.uint8)
+    # Code 99 ("NormalWater") is the embedded NOAA legend's permanent-water class;
+    # bottom half overwritten with cloud (30).
+    tile2_data = np.full((10, 10), 99, dtype=np.uint8)
     tile2_data[5:, :] = 30
 
     tile1_tif = tmp_path / "tile_077.tif"
@@ -710,7 +712,7 @@ def test_fetch_and_to_dataset(tmp_path, monkeypatch):
     assert int(dataset["quality_mask"].min()) == 0
     assert int(dataset["quality_mask"].max()) == 1
     assert int(dataset["permanent_water"].max()) == 1
-    # Permanent water pixels (code 17) are valid observations → quality=1, not 0
+    # Permanent water pixels (code 99) are valid observations → quality=1, not 0
     perm_water_mask = dataset["permanent_water"].values.astype(bool)
     assert (dataset["quality_mask"].values[perm_water_mask] == 1).all(), (
         "permanent water pixels should have quality=1 (valid observation)"
@@ -783,8 +785,9 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
 
     # Tile 077: all flood
     tile1_data = np.full((10, 10), 170, dtype=np.uint8)
-    # Tile 078: top half = permanent water, bottom half = cloud
-    tile2_data = np.full((10, 10), 17, dtype=np.uint8)
+    # Tile 078: top half = permanent water (code 99, "NormalWater" per embedded
+    # NOAA TIFF legend), bottom half = cloud (30).
+    tile2_data = np.full((10, 10), 99, dtype=np.uint8)
     tile2_data[5:, :] = 30
 
     tile1_tif = tmp_path / "077.tif"

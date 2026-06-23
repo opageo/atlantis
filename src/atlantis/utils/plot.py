@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 
 VIIRS_CODES: dict[int, tuple[str, str]] = {
     1: ("Fill / No data", "#000000"),
-    17: ("Permanent water", "#1f77b4"),
-    20: ("Seasonal water", "#17becf"),
+    17: ("Vegetation", "#2ca02c"),
+    20: ("Snow / ice", "#17becf"),
     30: ("Cloud", "#cccccc"),
-    99: ("Open water", "#4682B4"),
+    99: ("Permanent water", "#1f77b4"),
     160: ("Flood (≥60% frac)", "#FF0000"),
 }
 
