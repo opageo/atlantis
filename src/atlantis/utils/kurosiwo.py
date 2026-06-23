@@ -46,10 +46,15 @@ def load_kurosiwo_catalogue(catalogue_path: Path) -> gpd.GeoDataFrame:
         GeoDataFrame with the raw KuroSiwo catalogue.
     """
     if not catalogue_path.exists():
-        raise FileNotFoundError(f"KuroSiwo catalogue not found: {catalogue_path}")
+        raise FileNotFoundError(
+            f"KuroSiwo catalogue not found: {catalogue_path}. "
+            "Download it with `uv run python scripts/download_kurosiwo.py`."
+        )
     if is_lfs_pointer(catalogue_path):
         raise RuntimeError(
-            f"KuroSiwo catalogue at {catalogue_path} is a Git LFS pointer. Run `git lfs pull` before deriving metadata."
+            f"KuroSiwo catalogue at {catalogue_path} is a Git LFS pointer "
+            "(legacy storage). Replace it by running "
+            "`uv run python scripts/download_kurosiwo.py`."
         )
     return gpd.read_file(catalogue_path)
 

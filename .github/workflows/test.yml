@@ -15,7 +15,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
         with:
@@ -34,8 +34,9 @@ jobs:
       - name: Run tests with coverage
         env:
           NO_COLOR: "1"
-        run: uv run pytest tests/ --cov=atlantis --cov-report=json --cov-report=term-missing -v
+        run: uv run pytest tests/ -m "not e2e" --cov=atlantis --cov-report=json --cov-report=term-missing -v
 
-      - name: Update Coverage Badge
-        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        uses: we-cli/coverage-badge-action@main
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7 # v7
+        with:
+          files: coverage.json

@@ -101,7 +101,7 @@ class TestGFMFetcherStructure:
         assert fetcher.api_url == DEFAULT_GFM_STAC_URL
         assert fetcher.coarsen_factor == DEFAULT_COARSEN_FACTOR
         assert fetcher.resampling == Resampling.average
-        assert fetcher.strategy == "aggregate"
+        assert fetcher.strategy == "peak"
         assert fetcher.keep_processed is True
 
     def test_instantiation_custom(self):

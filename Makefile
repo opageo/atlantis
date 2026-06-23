@@ -31,6 +31,8 @@
 # observations split symmetrically (balanced) before/after the peak.
 PEAK_FLAGS    := --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced
 COMMON_FLAGS  := --plot --harmonise --no-keep-processed
+# Note: --harmonise is always enabled for GFM (re-encode only); explicit flag
+# is kept here so the same COMMON_FLAGS works across all three sources.
 
 # MODIS backend selection (see header note).
 MODIS_HIST    := --modis-backend laads_hdf4 --modis-composite F2

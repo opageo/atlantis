@@ -179,11 +179,11 @@ touching disk.
 Unless `--no-classify` is passed, `_classify_pixels()` decodes raw VIIRS integer codes
 into one continuous flood layer plus two binary masks:
 
-| Layer             | Rule                                           | Meaning                                                                 |
-| ----------------- | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| Layer             | Rule                                            | Meaning                                                                    |
+| ----------------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
 | `flood_fraction`  | `101 <= pixel <= 200 ? (pixel - 100) / 100 : 0` | Flooded-water fraction in `[0.0, 1.0]`; written as uint8 percent `[0,100]` |
-| `quality_mask`    | `pixel ∉ {0,1,30}`                             | 1 = valid clear-sky observation (0 = fill or cloud cover)               |
-| `permanent_water` | `pixel == 17`                                  | 1 = known permanent water body                                          |
+| `quality_mask`    | `pixel ∉ {0,1,30}`                              | 1 = valid clear-sky observation (0 = fill or cloud cover)                  |
+| `permanent_water` | `pixel == 17`                                   | 1 = known permanent water body                                             |
 
 Water types (17=permanent, 20=seasonal, 99=open) are **valid observations** — they
 receive `quality=1`, contribute `0` to `flood_fraction`, and permanent water is tracked

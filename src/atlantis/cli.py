@@ -517,11 +517,13 @@ def _harmonise_gfm(
     date_label,
     *,
     harm_dir,
+    plot_dir,
 ):
-    """Harmonise GFM data and save GeoTIFF + PNG."""
+    """Harmonise GFM data and save GeoTIFF (harm_dir) + PNG (plot_dir)."""
     from atlantis.harmoniser import Harmoniser
 
     harm_dir.mkdir(parents=True, exist_ok=True)
+    plot_dir.mkdir(parents=True, exist_ok=True)
     h = Harmoniser()
     ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
 
@@ -529,7 +531,7 @@ def _harmonise_gfm(
     write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
     console.print(f"  Harmonised → {tif_path.name}")
 
-    png_harm_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.png"
+    png_harm_path = plot_dir / f"{event_id}_{date_label}_gfm_harmonised.png"
     plot_classified(
         ds_harm["flood_fraction"],
         title=f"{event_id}: GFM harmonised flood extent {date_label} (1 arcmin)",
@@ -721,6 +723,16 @@ def fetch(
         console.print(f"[bold]MODIS backend:[/bold] {modis_backend} ({modis_mode}, composite={modis_composite})")
         if modis_backend == "laads_hdf4":
             info("LAADS HDF4 backend: tiles are downloaded; --stream is ignored.")
+    if "gfm" in sources:
+        if not stream:
+            info("GFM always streams via STAC/COG; --no-stream is ignored.")
+        if not classify:
+            info(
+                "GFM always produces classified layers (flood_fraction, quality_mask,"
+                " permanent_water); --no-classify is ignored."
+            )
+        if not harmonise:
+            info("GFM: harmonised output enabled by default (re-encodes float32→uint8 for cross-source stacking).")
 
     flood_event: FloodEvent | None = None
     if bbox or start_date or end_date:
@@ -795,10 +807,16 @@ def fetch(
                 continue
 
             step_names = _fetch_step_names(src)
-            if plot:
-                step_names.append("Plot outputs")
-            if harmonise:
+            if src == "gfm":
+                # GFM always harmonises (re-encodes float32→uint8 for cross-source
+                # stacking) and skips the standalone plot — the harmonised PNG is
+                # on the same 1-arcmin grid and shows the same flood extent.
                 step_names.append("Harmonise outputs")
+            else:
+                if plot:
+                    step_names.append("Plot outputs")
+                if harmonise:
+                    step_names.append("Harmonise outputs")
 
             with task_checklist(step_names, verbose=_VERBOSE_OUTPUT) as checklist:
                 try:
@@ -846,25 +864,26 @@ def fetch(
                         parts.append(f"max {max_observations} obs (priority={peak_priority})")
                     info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
 
-                # ── Optional plot + harmonise (GFM) ───────────────────────
-                if src == "gfm" and (plot or harmonise):
-                    if plot:
-                        with checklist.step("Plot outputs"):
-                            for result in fetch_results:
-                                ds = fetcher.to_dataset(result)
-                                date_label = result.date_token or "gfm"
-                                png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{date_label}_gfm.png"
-                                _plot_gfm(ds, event, date_label, output_png_path=png_out)
-                        checklist.complete("Plot outputs", detail=f"{len(fetch_results)} output(s)")
-
-                    if harmonise:
-                        with checklist.step("Harmonise outputs"):
-                            for result in fetch_results:
-                                ds = fetcher.to_dataset(result)
-                                date_label = result.date_token or "gfm"
-                                harm_dir = output_dir / src / "harmonised"
-                                _harmonise_gfm(ds, event, date_label, harm_dir=harm_dir)
-                        checklist.complete("Harmonise outputs", detail=f"{len(fetch_results)} output(s)")
+                # ── Harmonise (GFM) ────────────────────────────────────────
+                # GFM is already on the canonical 1-arcmin grid; harmonise only
+                # re-encodes float32 [0,1] → uint8 [0,100]. Always ON so output
+                # is directly stackable with VIIRS/MODIS harmonised. The
+                # harmonised PNG (same grid as raw) replaces the standalone plot.
+                if src == "gfm":
+                    png_dir = plot_dir or (output_dir / src / "plots")
+                    harm_dir = output_dir / src / "harmonised"
+                    with checklist.step("Harmonise outputs"):
+                        for result in fetch_results:
+                            ds = fetcher.to_dataset(result)
+                            date_label = result.date_token or "gfm"
+                            _harmonise_gfm(
+                                ds,
+                                event,
+                                date_label,
+                                harm_dir=harm_dir,
+                                plot_dir=png_dir,
+                            )
+                    checklist.complete("Harmonise outputs", detail=f"{len(fetch_results)} output(s)")
 
                 # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────
                 if src in ("viirs", "modis") and (plot or harmonise):
@@ -1865,6 +1884,92 @@ def list_events_cmd(
     command_header("list-events")
     console.print(f"[bold]Archive:[/bold] {archive_root}")
     warn("No events found (archive not yet implemented)")
+
+
+# ── Batch subcommand ──────────────────────────────────────────────────────────
+
+batch_app = typer.Typer(help="Batch-process satellite datasets to s3://atlantis/.")
+cli.add_typer(batch_app, name="batch")
+
+viirs_batch_app = typer.Typer(help="Batch-process VIIRS granules to 1-arcmin COGs.")
+batch_app.add_typer(viirs_batch_app, name="viirs")
+
+
+@viirs_batch_app.command("run")
+def batch_viirs(
+    inventory: str = typer.Option(
+        "s3://atlantis/assets/viirs/jpss/2020/catalogue.parquet",
+        "--inventory",
+        help="Path or S3 URI to the VIIRS JPSS catalogue Parquet file.",
+    ),
+    output: str = typer.Option(
+        "s3://atlantis/viirs/jpss/2020/",
+        "--output",
+        help="S3 prefix for output COGs (must start with s3://atlantis/).",
+    ),
+    partition: str | None = typer.Option(
+        None,
+        "--partition",
+        help="Row slice of the catalogue to process, e.g. '0:24464'. None = full catalogue.",
+    ),
+    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+    memory_limit: str = typer.Option("6GB", "--memory-limit", help="Memory cap per worker."),
+    dashboard_port: int = typer.Option(8787, "--dashboard-port", help="Dask dashboard port."),
+    db_path: Path = typer.Option(Path("tracker.db"), "--db-path", help="SQLite resume database path."),
+    retries: int = typer.Option(3, "--retries", help="Dask retry count per granule."),
+    log_every: int = typer.Option(100, "--log-every", help="Log a progress line every N completions."),
+) -> None:
+    """Batch-process VIIRS JPSS 2020 granules → 1-arcmin uint8 flood-fraction COGs.
+
+    Reads the catalogue from --inventory, converts each row to a task, and
+    runs all tasks through a Dask LocalCluster.  Progress is persisted in
+    --db-path so the run can be safely interrupted and resumed.
+
+    Two-VM split example:
+
+        VM1: atlantis batch viirs run --partition 0:24464  --db-path tracker_vm1.db
+        VM2: atlantis batch viirs run --partition 24464:48928 --db-path tracker_vm2.db
+    """
+    from atlantis.batch import BatchConfig, run_batch
+    from atlantis.fetchers.viirs.batch_processor import process_granule
+    from atlantis.fetchers.viirs.inventory import load_inventory, slice_partition, to_tasks
+    from atlantis.utils.setup import AWS_PROFILES
+
+    command_header("batch viirs")
+
+    # ── Pre-flight checks ─────────────────────────────────────────────────
+    if not output.startswith("s3://atlantis/"):
+        fail("--output must start with 's3://atlantis/'")
+        raise typer.Exit(code=1)
+
+    ecmwf_profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+    if ecmwf_profile is None or not ecmwf_profile.endpoint_url:
+        fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+        raise typer.Exit(code=1)
+
+    # ── Load & slice catalogue ────────────────────────────────────────────
+    info(f"Loading catalogue from {inventory} …")
+    df = load_inventory(inventory)
+    df = slice_partition(df, partition)
+    tasks = to_tasks(df, output_prefix=output.removeprefix("s3://atlantis/").strip("/"))
+
+    console.print(
+        f"  [bold]{len(tasks)}[/bold] granules to process" + (f"  (partition {partition})" if partition else "")
+    )
+
+    cfg = BatchConfig(
+        db_path=db_path,
+        workers_min=workers_min,
+        workers_max=workers_max,
+        memory_limit_per_worker=memory_limit,
+        dashboard_port=dashboard_port,
+        retries=retries,
+        log_every=log_every,
+    )
+
+    # ── Run ───────────────────────────────────────────────────────────────
+    run_batch(tasks, process_fn=process_granule, cfg=cfg)
 
 
 if __name__ == "__main__":
