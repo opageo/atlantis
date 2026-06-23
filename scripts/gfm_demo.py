@@ -1,57 +1,65 @@
-r"""VIIRS fetch and visualisation demo.
+r"""GFM fetch and visualisation demo.
 
 Showcases two independent workflows using the Atlantis Python API:
 
-1. **Arbitrary event** — fetch + visualise VIIRS for any user-supplied bbox
-   and date range (no KuroSiwo catalogue needed).
+1. **Arbitrary event** — fetch + visualise GFM for any user-supplied bbox
+   and date range. Queries the EODC STAC API for Sentinel-1 SAR flood
+   extent data.
 
-2. **KuroSiwo event** — fetch + visualise VIIRS for a random (or specified)
+2. **KuroSiwo event** — fetch + visualise GFM for a random (or specified)
    event from the KuroSiwo catalogue, using the pre-built metadata CSV.
 
 Visualisations are saved as PNG files under ``scripts/`` (tracked).
 Downloaded GeoTIFFs are written under ``scripts/data/`` (untracked).
 
+.. important::
+
+    **GFM data is already on the canonical 1-arcmin EPSG:4326 grid.**
+
+    Unlike VIIRS (375 m) and MODIS (250 m), the GFM processor reprojects
+    Sentinel-1 SAR data directly onto the canonical 1-arcmin global grid
+    during ``fetch()``. The ``flood_fraction`` output is therefore at the
+    same resolution that VIIRS / MODIS reach only after ``--harmonise``.
+
+    Running ``--harmonise`` on GFM output re-encodes ``float32 [0, 1]``
+    to ``uint8 [0, 100]`` (nodata = 255) for parity with other sources
+    — it does **not** change the spatial resolution.
+
 .. note::
 
-    The VIIRS fetcher depends on a global AOI tile grid.  Run the one-time
-    setup before using this demo::
-
-        uv run python scripts/setup.py
+    No AOI grid bootstrap is needed for GFM (unlike VIIRS which requires
+    ``uv run python scripts/setup.py``). Data is accessed via the EODC
+    STAC API and streamed on-the-fly through ``odc.stac``.
 
 Usage::
 
     # Arbitrary bbox + date range — Valencia 2024 flood example
-    uv run python scripts/viirs_demo.py arbitrary \
-        --event-id valencia_2024 \
-        --bbox "-1.2 39.0 0.2 39.8" \
-        --start-date 2024-10-30 \
-        --end-date 2024-11-01
+    uv run python scripts/gfm_demo.py arbitrary \
+        --event-id Valencia_2024 \
+        --bbox "-1.5 38.8 0.5 40.0" \
+        --start-date 2024-10-29 \
+        --end-date 2024-11-04
 
-    # KuroSiwo event — bbox and dates resolved from the catalogue automatically
-    uv run python scripts/viirs_demo.py kurosiwo --ks-case KuroSiwo_470
+    # KuroSiwo event — bbox and dates resolved from the catalogue
+    uv run python scripts/gfm_demo.py kurosiwo --ks-case KuroSiwo_470
 
-    # Stream tiles, harmonise to 1 arcmin, use inclusive flood threshold
-    uv run python scripts/viirs_demo.py kurosiwo \
-        --ks-case KuroSiwo_1111004 --stream --harmonise \
-        --days-before 1 --days-after 1 --flood-threshold 101
+    # Harmonise to uint8 percentage, pick only the peak date
+    uv run python scripts/gfm_demo.py arbitrary \
+        --event-id Valencia_2024 \
+        --bbox "-1.5 38.8 0.5 40.0" \
+        --start-date 2024-10-29 \
+        --end-date 2024-11-04 \
+        --harmonise --strategy peak
 
 .. tip::
 
-    The same data operations are available directly via the ``atlantis`` CLI.
-
-    Arbitrary event (Valencia 2024 flood)::
+    The same operations are available via the ``atlantis`` CLI::
 
         uv run atlantis fetch \
-            --event valencia_2024 --source viirs \
-            --bbox "-1.2 39.0 0.2 39.8" \
-            --start-date 2024-10-30 --end-date 2024-11-01 \
-            --classify --stream --plot --harmonise
-
-    KuroSiwo event::
-
-        uv run atlantis fetch-kurosiwo-viirs \
-            --case KuroSiwo_1111004 --classify --stream \
-            --plot --harmonise --days-before 1 --days-after 1
+            --event Valencia_2024 --source gfm \
+            --bbox "-1.5 38.8 0.5 40.0" \
+            --start-date 2024-10-29 --end-date 2024-11-04 \
+            --plot --harmonise
 """
 
 from __future__ import annotations
@@ -68,17 +76,8 @@ import typer
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-# ── guard: the VIIRS AOI grid must exist before either demo mode works ───────
-_AOI_GRID = _REPO_ROOT / "src" / "atlantis" / "fetchers" / "viirs" / "data" / "viirs_aois.geojson"
-if not _AOI_GRID.exists():
-    sys.exit(
-        "The VIIRS AOI tile grid is missing.\n"
-        f"Expected: {_AOI_GRID.relative_to(_REPO_ROOT)}\n\n"
-        "Run once to bootstrap it:\n"
-        "  uv run python scripts/setup.py"
-    )
-
-from atlantis.fetchers.viirs import VIIRSFetcher  # noqa: E402
+from atlantis.fetchers.gfm import GFMFetcher  # noqa: E402
+from atlantis.harmoniser import write_harmonised_raster  # noqa: E402
 from atlantis.models.event import FloodEvent  # noqa: E402
 from atlantis.utils.kurosiwo import (  # noqa: E402
     KUROSIWO_DEFAULT_CATALOGUE,
@@ -87,11 +86,8 @@ from atlantis.utils.kurosiwo import (  # noqa: E402
     build_kurosiwo_flood_events_from_catalogue,
 )
 from atlantis.utils.plot import (  # noqa: E402
-    date_from_filename,
     pixel_stats_classified,
-    pixel_stats_raw,
     plot_classified,
-    plot_raw,
 )
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -108,27 +104,39 @@ def _fetch_and_visualise(
     output_dir: Path,
     png_path: Path,
     *,
-    stream: bool,
-    classify: bool,
+    strategy: str,
+    coarsen_factor: int,
     harmonise: bool,
-    flood_threshold: int,
     harmonised_png_path: Path,
 ) -> None:
-    """Run the full fetch → stats → best-date plot → optional harmonise pipeline."""
-    fetcher = VIIRSFetcher(
-        classify=classify,
-        stream=stream,
-        strategy="peak",
+    """Run the full fetch → stats → best-date plot → optional harmonise pipeline.
+
+    GFM data is loaded from the EODC STAC API via ``odc.stac`` and processed
+    into ``flood_fraction``, ``quality_mask``, and ``permanent_water`` layers
+    on the canonical 1-arcmin EPSG:4326 grid.
+    """
+    # ── Banner: explain the 1-arcmin output ───────────────────────────────
+    print()
+    print("  ┌──────────────────────────────────────────────────────────────┐")
+    print("  │  GFM data is already on the canonical 1-arcmin EPSG:4326    │")
+    print("  │  grid.  Unlike VIIRS (375 m) and MODIS (250 m), the fetched │")
+    print("  │  flood_fraction raster needs no resampling.                  │")
+    print("  │                                                              │")
+    print("  │  --harmonise re-encodes float32 [0,1] → uint8 [0,100]       │")
+    print("  │  (nodata=255) for parity with other sources — same grid.    │")
+    print("  └──────────────────────────────────────────────────────────────┘")
+    print()
+
+    fetcher = GFMFetcher(
+        strategy=strategy,
+        coarsen_factor=coarsen_factor,
         keep_processed=True,
     )
-    # Note: flood_min_code is not a direct init arg for VIIRSFetcher,
-    # it's usually handled in the processor or via config.
-    # I'll leave it as is if it was working before, but check if it needs adjustment.
 
     search_results = fetcher.search(event)
-    print(f"  Found {len(search_results)} VIIRS tile(s) in the NOAA S3 archive")
+    print(f"  Found {len(search_results)} GFM STAC item(s) on EODC")
     if not search_results:
-        print("  No tiles found — try a different date, bbox, or increase --days-before/--days-after")
+        print("  No items found — try a different date range, bbox, or check EODC STAC availability")
         return
 
     fetch_results = fetcher.fetch(event, output_dir)
@@ -136,19 +144,19 @@ def _fetch_and_visualise(
         print("  Fetch returned no results — nothing to plot")
         return
 
-    print(f"  Fetched {sum(len(r.files) for r in fetch_results)} file(s):")
+    print(f"  Fetched {len(fetch_results)} result(s):")
     for result in fetch_results:
         for path in result.files:
             print(f"    {path.relative_to(_REPO_ROOT)}")
 
     # ── Select the date with the most flood pixels ────────────────────────
     best_result = fetch_results[0]
-    best_date = date_from_filename(fetch_results[0].files[0].name)
+    best_date = fetch_results[0].date_token or "gfm"
     best_flood_count = 0
 
     for result in fetch_results:
         ds = fetcher.to_dataset(result)
-        dlabel = date_from_filename(result.files[0].name)
+        dlabel = result.date_token or "gfm"
         print(f"\n  {dlabel}")
         if "flood_fraction" in ds:
             flooded = pixel_stats_classified(ds["flood_fraction"].values)
@@ -156,8 +164,6 @@ def _fetch_and_visualise(
                 best_flood_count = flooded
                 best_result = result
                 best_date = dlabel
-        else:
-            pixel_stats_raw(ds["raw"].values)
 
     best_ds = fetcher.to_dataset(best_result)
     print(f"\n  Plotting peak-flood date: {best_date} ({best_flood_count:,} flooded px)")
@@ -165,13 +171,7 @@ def _fetch_and_visualise(
     if "flood_fraction" in best_ds:
         plot_classified(
             best_ds["flood_fraction"],
-            title=f"{event.event_id}: VIIRS flood fraction {best_date} (375 m, threshold={flood_threshold})",
-            output_path=png_path,
-        )
-    else:
-        plot_raw(
-            best_ds["raw"],
-            title=f"{event.event_id}: VIIRS raw composite {best_date} (375 m)",
+            title=f"{event.event_id}: GFM flood fraction {best_date} (1 arcmin)",
             output_path=png_path,
         )
 
@@ -182,15 +182,15 @@ def _fetch_and_visualise(
         harm_dir = output_dir / "harmonised"
         harm_dir.mkdir(parents=True, exist_ok=True)
         h = Harmoniser()
-        ds_harm = h.harmonise(best_ds, source_id="viirs")
+        ds_harm = h.harmonise(best_ds, source_id="gfm", flood_variable="flood_fraction")
         flood_var = "flood_fraction" if "flood_fraction" in ds_harm else list(ds_harm.data_vars)[0]
-        tif_path = harm_dir / f"{event.event_id}_{best_date}_viirs_harmonised.tif"
-        ds_harm[flood_var].rio.to_raster(str(tif_path), dtype="float32", compress="LZW", nodata=float("nan"))
+        tif_path = harm_dir / f"{event.event_id}_{best_date}_gfm_harmonised.tif"
+        write_harmonised_raster(ds_harm[flood_var], tif_path)
         print(f"  Harmonised GeoTIFF: {tif_path.relative_to(_REPO_ROOT)}")
-        pixel_stats_classified(ds_harm[flood_var].values, name="flood fraction (1 arcmin)")
+        pixel_stats_classified(ds_harm[flood_var].values, name="flood fraction (1 arcmin, uint8 %)")
         plot_classified(
             ds_harm[flood_var],
-            title=f"{event.event_id}: VIIRS harmonised {best_date} (1 arcmin)",
+            title=f"{event.event_id}: GFM harmonised {best_date} (1 arcmin, uint8 %)",
             output_path=harmonised_png_path,
         )
 
@@ -199,37 +199,36 @@ def _fetch_and_visualise(
 # Typer application
 # ─────────────────────────────────────────────────────────────────────────────
 
-app = typer.Typer(help="VIIRS fetch and visualisation demo.")
-
-_FLOOD_THRESHOLD_OPTION = typer.Option(
-    101,
-    "--flood-threshold",
-    min=101,
-    max=200,
-    help="Minimum VIIRS pixel code for flood (101=most inclusive, 200=most conservative). Default: 101 (all flood).",
-)
+app = typer.Typer(help="GFM fetch and visualisation demo.")
 
 
 @app.command()
 def arbitrary(
-    event_id: str = typer.Option("valencia_2024", "--event-id", help="Label for output file names."),
+    event_id: str = typer.Option("Valencia_2024", "--event-id", help="Label for output file names."),
     bbox: str = typer.Option(
-        "-1.2 39.0 0.2 39.8",
+        "-1.5 38.8 0.5 40.0",
         "--bbox",
         help="Bounding box: 'west south east north' in degrees.",
     ),
-    start_date: str = typer.Option("2024-10-30", "--start-date", help="Start date (YYYY-MM-DD)."),
-    end_date: str = typer.Option("2024-11-01", "--end-date", help="End date (YYYY-MM-DD)."),
-    stream: bool = typer.Option(False, "--stream", help="Stream tiles via /vsicurl/ instead of downloading."),
-    classify: bool = typer.Option(
-        False,
-        "--classify",
-        help="Classify pixels into flood/quality/water layers (saves 3 files). Default: raw output.",
+    start_date: str = typer.Option("2024-10-29", "--start-date", help="Start date (YYYY-MM-DD)."),
+    end_date: str = typer.Option("2024-11-04", "--end-date", help="End date (YYYY-MM-DD)."),
+    strategy: str = typer.Option(
+        "peak",
+        "--strategy",
+        help="Date selection strategy: peak (most-flooded date), aggregate (mean), all (every date).",
     ),
-    harmonise: bool = typer.Option(False, "--harmonise", help="Resample output to 1 arcmin after fetching."),
-    flood_threshold: int = _FLOOD_THRESHOLD_OPTION,
+    coarsen_factor: int = typer.Option(
+        4,
+        "--coarsen-factor",
+        help="Spatial coarsening factor before reprojection (default 4 → ~80 m intermediate).",
+    ),
+    harmonise: bool = typer.Option(
+        False,
+        "--harmonise",
+        help="Re-encode output as uint8 percent [0,100] (same grid — no resampling needed for GFM).",
+    ),
 ) -> None:
-    """Fetch + visualise VIIRS for any user-defined bbox and date range."""
+    """Fetch + visualise GFM for any user-defined bbox and date range."""
     print("\n" + "=" * 60)
     print("Arbitrary event — user-defined bbox + date range")
     print("=" * 60)
@@ -245,7 +244,7 @@ def arbitrary(
         start_date=date.fromisoformat(start_date),
         end_date=date.fromisoformat(end_date),
     )
-    output_dir = DATA_DIR / event.event_id / "viirs"
+    output_dir = DATA_DIR / event.event_id / "gfm"
     print(f"  BBox: west={w}, south={s}, east={e}, north={n}")
     print(f"  Dates: {event.start_date} -> {event.end_date}")
     print(f"  Output: {output_dir.relative_to(_REPO_ROOT)}")
@@ -253,12 +252,11 @@ def arbitrary(
     _fetch_and_visualise(
         event,
         output_dir,
-        png_path=SCRIPTS_DIR / "viirs_arbitrary_event.png",
-        harmonised_png_path=SCRIPTS_DIR / "viirs_arbitrary_harmonised.png",
-        stream=stream,
-        classify=classify,
+        png_path=SCRIPTS_DIR / "gfm_arbitrary_event.png",
+        harmonised_png_path=SCRIPTS_DIR / "gfm_arbitrary_harmonised.png",
+        strategy=strategy,
+        coarsen_factor=coarsen_factor,
         harmonise=harmonise,
-        flood_threshold=flood_threshold,
     )
     _done()
 
@@ -272,16 +270,23 @@ def kurosiwo(
     ),
     days_before: int = typer.Option(0, "--days-before", help="Days before the KuroSiwo flood date to include."),
     days_after: int = typer.Option(0, "--days-after", help="Days after the KuroSiwo flood date to include."),
-    stream: bool = typer.Option(False, "--stream", help="Stream tiles via /vsicurl/ instead of downloading."),
-    classify: bool = typer.Option(
-        False,
-        "--classify",
-        help="Classify pixels into flood/quality/water layers (saves 3 files). Default: raw output.",
+    strategy: str = typer.Option(
+        "peak",
+        "--strategy",
+        help="Date selection strategy: peak (most-flooded date), aggregate (mean), all (every date).",
     ),
-    harmonise: bool = typer.Option(False, "--harmonise", help="Resample output to 1 arcmin after fetching."),
-    flood_threshold: int = _FLOOD_THRESHOLD_OPTION,
+    coarsen_factor: int = typer.Option(
+        4,
+        "--coarsen-factor",
+        help="Spatial coarsening factor before reprojection (default 4 → ~80 m intermediate).",
+    ),
+    harmonise: bool = typer.Option(
+        False,
+        "--harmonise",
+        help="Re-encode output as uint8 percent [0,100] (same grid — no resampling needed for GFM).",
+    ),
 ) -> None:
-    """Fetch + visualise VIIRS for a KuroSiwo catalogue event."""
+    """Fetch + visualise GFM for a KuroSiwo catalogue event."""
     print("\n" + "=" * 60)
     print("KuroSiwo event")
     print("=" * 60)
@@ -312,7 +317,7 @@ def kurosiwo(
         return
 
     event = events[0]
-    output_dir = DATA_DIR / event.event_id / "viirs"
+    output_dir = DATA_DIR / event.event_id / "gfm"
     print(f"  Case:   {event.event_id}")
     print(f"  BBox:   {event.bbox}")
     print(f"  Dates:  {event.start_date} -> {event.end_date}  (+-{days_before}/{days_after} days)")
@@ -321,12 +326,11 @@ def kurosiwo(
     _fetch_and_visualise(
         event,
         output_dir,
-        png_path=SCRIPTS_DIR / "viirs_kurosiwo_event.png",
-        harmonised_png_path=SCRIPTS_DIR / "viirs_kurosiwo_harmonised.png",
-        stream=stream,
-        classify=classify,
+        png_path=SCRIPTS_DIR / "gfm_kurosiwo_event.png",
+        harmonised_png_path=SCRIPTS_DIR / "gfm_kurosiwo_harmonised.png",
+        strategy=strategy,
+        coarsen_factor=coarsen_factor,
         harmonise=harmonise,
-        flood_threshold=flood_threshold,
     )
     _done()
 
@@ -355,7 +359,7 @@ def _random_ks_case() -> str:
 
 def _done() -> None:
     print("\nDone.")
-    print(f"  Visualisations: {SCRIPTS_DIR.relative_to(_REPO_ROOT)}/viirs_*.png")
+    print(f"  Visualisations: {SCRIPTS_DIR.relative_to(_REPO_ROOT)}/gfm_*.png")
     print(f"  Data:           {DATA_DIR.relative_to(_REPO_ROOT)}/")
 
 
