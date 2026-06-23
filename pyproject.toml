@@ -11,10 +11,10 @@ dependencies = [
   "rich>=13.0.0",
   "boto3",
   "universal-pathlib",
-  "s3fs>=2024.10.0",
+  "s3fs>=2026.6.0",
   "python-dotenv>=1.0.0",
   "pydantic>=2.0",
-  "pydantic-settings>=2.0",
+  "pydantic-settings>=2.14.2",
   "geopandas>=1.1",
   "pandas[pyarrow] < 3",
   "matplotlib>=3.11.0",
@@ -41,7 +41,18 @@ geo = [
   "beautifulsoup4>=4.12",
   "requests>=2.34.2",
 ]
-ml = ["torch>=2.12.0", "numpy>=2.4.6", "scikit-learn>=1.9.0", "matplotlib>=3.11.0"]
+ml = [
+  "torch>=2.12.1",
+  "numpy>=2.4.6",
+  "scikit-learn>=1.9.0",
+  "matplotlib>=3.11.0",
+]
+batch = [
+  "atlantis[geo]",              # rasterio, pyproj, shapely, xarray, rioxarray
+  "dask[distributed]>=2024.10", # LocalCluster + Client + as_completed
+  "bokeh>=3.0",                 # enables the Dask dashboard at :8787
+  "rio-cogeo>=5.0",             # `rio cogeo validate` for verification
+]
 notebooks = [
   "atlantis[geo,ml]",
   "earthkit-data",
@@ -57,11 +68,11 @@ notebooks = [
 dev = [
   "pytest-env",
   "poethepoet>=0.46.0",
-  "pytest>=8.0.0",
+  "pytest>=9.1.1",
   "pytest-cov>=6.0.0",
   "pytest-timeout>=2.3.0",
   "pytest-xdist>=3.2.0",
-  "ruff>=0.15.17",
+  "ruff>=0.15.18",
   "pre-commit>=4.2.0",
   "ipython>=9.14.1",
   "ipykernel>=7.3.0",
