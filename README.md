@@ -53,24 +53,41 @@ uv sync
 
 ## CLI
 
-- `atlantis setup` — bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue)
-- `atlantis demo` — run the Valencia 2024 flood example end-to-end
-- `atlantis fetch` — fetch VIIRS inundation data for an explicit bbox/date window
-- `atlantis build-kurosiwo-metadata` — derive KuroSiwo metadata CSV from the GeoPackage catalogue
-- `atlantis fetch-kurosiwo-viirs` — fetch VIIRS for KuroSiwo cases directly from the catalogue or a metadata CSV
-- `atlantis harmonise` — resample fetched outputs to a uniform grid (1 arcmin) with normalisation
-- `atlantis archive` — write Zarr archives (placeholder)
-- `atlantis validate` — validate the archive (placeholder)
+The commands you'll use most often:
 
-  > **Recommended flags for new users:** The default `peak` strategy
-  > fetches and processes all dates, then keeps only the peak-flood date in memory.
-  > Add `--no-keep-processed` to skip writing intermediate 375 m files, or
-  > `--strategy aggregate` to return a temporal mean/mode composite.
-  > Use `--no-stream` to download tiles to disk, or `--no-classify` for raw pixel codes.
-  > See [docs/viirs/overview.md](docs/viirs/overview.md) for details.
-  >
-  > The exact working VIIRS and KuroSiwo extraction workflow is documented
-  > in [src/README.md](src/README.md).
+- `atlantis setup` — bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue) and credentials
+- `atlantis demo` — run the Valencia 2024 flood example end-to-end
+- `atlantis fetch` — fetch raw inundation data (VIIRS / MODIS / GFM) for an explicit bbox + date window
+- `atlantis harmonise` — resample fetched outputs to a uniform 1 arcmin grid with normalisation
+
+KuroSiwo helpers (auto-resolve bbox/dates from the bundled catalogue):
+
+- `atlantis build-kurosiwo-metadata` — derive the metadata CSV from the GeoPackage catalogue
+- `atlantis fetch-kurosiwo-viirs` — fetch VIIRS for one or many KuroSiwo cases
+- `atlantis fetch-kurosiwo-modis` — fetch MODIS for one or many KuroSiwo cases
+
+Utility, archive, and batch commands:
+
+- `atlantis list-sources` — list all registered data sources
+- `atlantis archive` / `atlantis validate` / `atlantis list-events` — Zarr archive write/validate/list (placeholders)
+- `atlantis batch viirs run` — batch-process the VIIRS JPSS catalogue to 1 arcmin COGs on S3 via Dask
+
+Add `--verbose` (or `-v`) **before** the subcommand for debug logging,
+e.g. `uv run atlantis --verbose fetch ...`.
+
+> **Full reference:** See [docs/cli.md](docs/cli.md) for every command,
+> every flag, defaults, and sensor-specific options. For task-oriented
+> walkthroughs across real flood events see
+> [CLI_Examples.md](CLI_Examples.md).
+>
+> **Recommended flags for new users:** the default `peak` strategy
+> fetches and processes all dates, then keeps only the peak-flood date
+> in memory. Add `--no-keep-processed` to skip writing intermediate
+> 375 m files, or `--strategy aggregate` to return a temporal mean/mode
+> composite. Use `--no-stream` to download tiles to disk, or
+> `--no-classify` for raw pixel codes. See
+> [docs/viirs/overview.md](docs/viirs/overview.md) for sensor-specific
+> details and [src/README.md](src/README.md) for the architecture guide.
 
 ## Notebooks
 
@@ -93,6 +110,7 @@ See [`notebooks/README.md`](notebooks/README.md) for details.
 ## Download Kuro Siwo Dataset
 
 ### Get it from Git-LFS
+
 The catalog of Kuro Siwo is stored in the git LFS of this repository, under `./assets/ks_catalogue.gpkg`, before you use it, make sure you have `git lfs` installed (if not install if with `git lfs install`) and the dataset is pulled, the first time you may need to execute:
 
 ```bash
@@ -100,6 +118,7 @@ git lfs pull
 ```
 
 ### Get it from S3 bucket
+
 If you have access to our atlantis bucket (provided on premise to mentors and partners of the project) you can download kurosiwo related data from our s3://atlantis bucket, e.g for the catalog: `s3://atlantis/assets/ks/ks_catalogue.gpkg`
 
 ## E2E Testing
@@ -132,22 +151,31 @@ E2E tests are **required before merging to main** but don't run on every commit.
 After a successful E2E run, the `run-e2e` label is automatically removed. To re-run after pushing new commits, simply re-add the label or comment `/run-e2e` again.
 
 ## Testing Github actions/workflows locally
-1. install nektos github extension:
-```bash
-gh extension install https://github.com/nektos/gh-act
-```
-2. Ensure you have docker daemon running:
-Install and run docker daemon in a cent-os rocky-linux system:
-```bash
-sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y docker-ce docker-ce-cli containerd.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
-```
-3. run actos with:
-```bash
-gh act <event-name>
-```
-default event is `push`
 
-4. run specific workflow by job name
-```bash
-gh act -l #lists all job names
-gh act -j <job-name>
+1. install nektos github extension:
+
+   ```bash
+   gh extension install https://github.com/nektos/gh-act
+   ```
+
+1. Ensure you have docker daemon running:
+   Install and run docker daemon in a cent-os rocky-linux system:
+
+   ```bash
+   sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y docker-ce docker-ce-cli containerd.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
+   ```
+
+1. run actos with:
+
+   ```bash
+   gh act <event-name>
+   ```
+
+   default event is `push`
+
+1. run specific workflow by job name
+
+   ```bash
+   gh act -l #lists all job names
+   gh act -j <job-name>
+   ```
