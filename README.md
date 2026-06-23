@@ -64,13 +64,13 @@ uv sync
 
   > **Recommended flags for new users:** The default `peak` strategy
   > fetches and processes all dates, then keeps only the peak-flood date in memory.
-  > Add `--no-keep-processed` to skip writing intermediate 375 m files, or
+  > Add `--no-keep-processed` to skip writing intermediate files, or
   > `--strategy aggregate` to return a temporal mean/mode composite.
   > Use `--no-stream` to download tiles to disk, or `--no-classify` for raw pixel codes.
-  > See [docs/viirs/overview.md](docs/viirs/overview.md) for details.
-  >
-  > The exact working VIIRS and KuroSiwo extraction workflow is documented
-  > in [src/README.md](src/README.md).
+  > For GFM, `--harmonise` is enabled by default (re-encodes to uint8 for
+  > cross-source stacking); `--no-stream` and `--no-classify` are ignored.
+  > See [docs/viirs/overview.md](docs/viirs/overview.md) and
+  > [docs/gfm/overview.md](docs/gfm/overview.md) for details.
 
 ## Notebooks
 
@@ -93,6 +93,7 @@ See [`notebooks/README.md`](notebooks/README.md) for details.
 ## Download Kuro Siwo Dataset
 
 ### Get it from Git-LFS
+
 The catalog of Kuro Siwo is stored in the git LFS of this repository, under `./assets/ks_catalogue.gpkg`, before you use it, make sure you have `git lfs` installed (if not install if with `git lfs install`) and the dataset is pulled, the first time you may need to execute:
 
 ```bash
@@ -100,6 +101,7 @@ git lfs pull
 ```
 
 ### Get it from S3 bucket
+
 If you have access to our atlantis bucket (provided on premise to mentors and partners of the project) you can download kurosiwo related data from our s3://atlantis bucket, e.g for the catalog: `s3://atlantis/assets/ks/ks_catalogue.gpkg`
 
 ## E2E Testing
@@ -132,22 +134,32 @@ E2E tests are **required before merging to main** but don't run on every commit.
 After a successful E2E run, the `run-e2e` label is automatically removed. To re-run after pushing new commits, simply re-add the label or comment `/run-e2e` again.
 
 ## Testing Github actions/workflows locally
-1. install nektos github extension:
+
+### Install nektos github extension
+
 ```bash
 gh extension install https://github.com/nektos/gh-act
 ```
-2. Ensure you have docker daemon running:
+
+### Ensure you have docker daemon running
+
 Install and run docker daemon in a cent-os rocky-linux system:
+
 ```bash
 sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y docker-ce docker-ce-cli containerd.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
 ```
-3. run actos with:
+
+### Run act
+
 ```bash
 gh act <event-name>
 ```
+
 default event is `push`
 
-4. run specific workflow by job name
+### Run specific workflow by job name
+
 ```bash
 gh act -l #lists all job names
 gh act -j <job-name>
+```

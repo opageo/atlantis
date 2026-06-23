@@ -37,6 +37,6 @@ jobs:
         run: uv run pytest tests/ -m "not e2e" --cov=atlantis --cov-report=json --cov-report=term-missing -v
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7  # v7
+        uses: codecov/codecov-action@v7 # v7
         with:
           files: coverage.json

@@ -1047,3 +1047,92 @@ def test_fetch_peak_window_days_mutex_with_specific_flags(monkeypatch, tmp_path)
         ],
     )
     assert result.exit_code != 0 or "cannot be combined" in result.output
+
+
+# ── GFM CLI warnings ─────────────────────────────────────────────────────────
+
+
+def test_gfm_warns_on_no_stream():
+    """GFM should warn when --no-stream is passed (always streams via STAC/COG)."""
+    from unittest.mock import patch
+
+    with patch("atlantis.cli.get_fetcher") as mock_get:
+        mock_fetcher_cls = MagicMock()
+        mock_get.return_value = mock_fetcher_cls
+        mock_fetcher_cls.return_value.fetch.return_value = []
+
+        result = runner.invoke(
+            cli,
+            [
+                "fetch",
+                "--event",
+                "Test_2024",
+                "--source",
+                "gfm",
+                "--bbox",
+                "-1 38 0 39",
+                "--start-date",
+                "2024-01-01",
+                "--end-date",
+                "2024-01-02",
+                "--no-stream",
+            ],
+        )
+        assert "GFM always streams" in result.output
+
+
+def test_gfm_warns_on_no_classify():
+    """GFM should warn when --no-classify is passed."""
+    from unittest.mock import patch
+
+    with patch("atlantis.cli.get_fetcher") as mock_get:
+        mock_fetcher_cls = MagicMock()
+        mock_get.return_value = mock_fetcher_cls
+        mock_fetcher_cls.return_value.fetch.return_value = []
+
+        result = runner.invoke(
+            cli,
+            [
+                "fetch",
+                "--event",
+                "Test_2024",
+                "--source",
+                "gfm",
+                "--bbox",
+                "-1 38 0 39",
+                "--start-date",
+                "2024-01-01",
+                "--end-date",
+                "2024-01-02",
+                "--no-classify",
+            ],
+        )
+        assert "GFM always produces classified layers" in result.output
+
+
+def test_gfm_harmonise_always_enabled():
+    """GFM should emit info that harmonise is enabled by default when not explicitly passed."""
+    from unittest.mock import patch
+
+    with patch("atlantis.cli.get_fetcher") as mock_get:
+        mock_fetcher_cls = MagicMock()
+        mock_get.return_value = mock_fetcher_cls
+        mock_fetcher_cls.return_value.fetch.return_value = []
+
+        result = runner.invoke(
+            cli,
+            [
+                "fetch",
+                "--event",
+                "Test_2024",
+                "--source",
+                "gfm",
+                "--bbox",
+                "-1 38 0 39",
+                "--start-date",
+                "2024-01-01",
+                "--end-date",
+                "2024-01-02",
+            ],
+        )
+        assert "harmonised output enabled by default" in result.output

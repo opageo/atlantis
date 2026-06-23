@@ -55,13 +55,13 @@ Typical folder layout:
 The MODIS flood products are categorical. The full semantics and release
 history are documented later in this page; the quick reference is:
 
-| Code  | Meaning |
-| ----- | ------- |
-| `0`   | No water |
+| Code  | Meaning                   |
+| ----- | ------------------------- |
+| `0`   | No water                  |
 | `1`   | Surface / reference water |
-| `2`   | Recurring flood |
-| `3`   | Unusual flood |
-| `255` | Insufficient data |
+| `2`   | Recurring flood           |
+| `3`   | Unusual flood             |
+| `255` | Insufficient data         |
 
 Atlantis typically maps those codes into `flood_fraction`, `quality_mask`,
 `permanent_water`, and `recurring_flood` for downstream analysis.
@@ -227,11 +227,11 @@ Detected water is split into "surface water" (class `1`) and "flood" (class
 `3`) by intersection with a reference water layer. The provenance of that
 layer has changed across releases:
 
-| Release       | Date      | Reference water layer                                                                                        |
-| ------------- | --------- | ------------------------------------------------------------------------------------------------------------ |
-| Beta / Beta 2 | 2021–2023 | **MOD44W Collection 5** (Carroll et al. 2009; static, derived from 2000–2002 MODIS Terra + SRTM)             |
-| Release 1     | Apr 2024  | **Yearly MOD44W Collection 6.1** (Carroll et al. 2024), 5-year majority rule |
-| Release 1.1   | Dec 2025  | Same as Release 1 + monthly **Recurring flood** mask (next section)                                          |
+| Release       | Date      | Reference water layer                                                                            |
+| ------------- | --------- | ------------------------------------------------------------------------------------------------ |
+| Beta / Beta 2 | 2021–2023 | **MOD44W Collection 5** (Carroll et al. 2009; static, derived from 2000–2002 MODIS Terra + SRTM) |
+| Release 1     | Apr 2024  | **Yearly MOD44W Collection 6.1** (Carroll et al. 2024), 5-year majority rule                     |
+| Release 1.1   | Dec 2025  | Same as Release 1 + monthly **Recurring flood** mask (next section)                              |
 
 #### How the yearly mask is built (Release 1 onward)
 
@@ -485,7 +485,7 @@ operationally important uses:
 2. **Filter by AOI.** Walk the JSON, keep only entries whose `<TILE>`
    matches the `hXXvYY` set returned by `modis_ll_tiles_for_aoi(...)`,
    and stream those URLs through `/vsicurl/`. This is the MODIS analogue
-  of the [VIIRS NoaaS3Backend listing flow](../viirs/internals.md#stage-2--materialise-inputs--viirsfetcherfetch).
+   of the [VIIRS NoaaS3Backend listing flow](../viirs/internals.md#stage-2--materialise-inputs--viirsfetcherfetch).
 
 The LAADS DAAC archive does **not** advertise an equivalent JSON API; for
 LAADS the HTML listing under `archive/allData/61/MCDWD_L3/<YYYY>/<DDD>/`
@@ -678,7 +678,7 @@ Mapping the VIIRS pipeline onto MODIS, the obvious recipe is:
 1. **Use LANCE GeoTIFFs (`MCDWD_L3_F2_NRT` etc.) wherever possible.** They
    stream cleanly via `/vsicurl/`, one band per file, just like the NOAA
    VIIRS S3 tiles. Atlantis already has the `merge → mask` plumbing in
-  [`ViirsRasterProcessor`](../../src/atlantis/fetchers/viirs/processor.py)
+   [`ViirsRasterProcessor`](../../src/atlantis/fetchers/viirs/processor.py)
    that can be reused almost verbatim.
 2. **Use LAADS HDF4 (`MCDWD_L3`, `MCDWD_L3_NRT`) for any non-NRT date.**
    These can't be streamed efficiently, so the pipeline must download the
@@ -687,7 +687,7 @@ Mapping the VIIRS pipeline onto MODIS, the obvious recipe is:
    the `prepare_input_geotiffs()` helper in
    [ifs-floodbench/Scripts/extract_modis_flood.py](https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/extract_modis_flood.py).
 3. **Re-use the existing AOI snapping / 1-arcmin harmonisation grid**
-  ([VIIRS canonical 1-arcmin global grid](../viirs/overview.md#canonical-1-arcmin-global-grid)).
+   ([VIIRS canonical 1-arcmin global grid](../viirs/overview.md#canonical-1-arcmin-global-grid)).
    MODIS is at ~250 m, finer than VIIRS' 375 m and finer than the 1-arcmin
    target, so `average` resampling is appropriate for `flood_fraction`-
    style downstreams. Note that the MODIS product is **categorical**

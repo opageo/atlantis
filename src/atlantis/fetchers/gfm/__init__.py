@@ -50,7 +50,7 @@ class GFMFetcher(AbstractFloodFetcher):
         api_url: STAC API endpoint.
         coarsen_factor: Spatial coarsening before reprojection.
         resampling: Resampling method for reprojection.
-        strategy: Date selection strategy ("peak", "aggregate", "all").
+        strategy: Date selection strategy ("peak", "aggregate", "all"). Default: "peak".
         keep_processed: Whether to write intermediate GeoTIFFs.
     """
 
@@ -61,7 +61,7 @@ class GFMFetcher(AbstractFloodFetcher):
         api_url: str | None = None,
         coarsen_factor: int = DEFAULT_COARSEN_FACTOR,
         resampling: Resampling = Resampling.average,
-        strategy: str = "aggregate",
+        strategy: str = "peak",
         keep_processed: bool = True,
         peak_days_before: int = 0,
         peak_days_after: int = 0,

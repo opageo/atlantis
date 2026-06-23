@@ -660,6 +660,16 @@ def fetch(
         console.print(f"[bold]MODIS backend:[/bold] {modis_backend} ({modis_mode}, composite={modis_composite})")
         if modis_backend == "laads_hdf4":
             info("LAADS HDF4 backend: tiles are downloaded; --stream is ignored.")
+    if "gfm" in sources:
+        if not stream:
+            info("GFM always streams via STAC/COG; --no-stream is ignored.")
+        if not classify:
+            info(
+                "GFM always produces classified layers (flood_fraction, quality_mask,"
+                " permanent_water); --no-classify is ignored."
+            )
+        if not harmonise:
+            info("GFM: harmonised output enabled by default (re-encodes float32→uint8 for cross-source stacking).")
 
     flood_event: FloodEvent | None = None
     if bbox or start_date or end_date:
@@ -769,18 +779,23 @@ def fetch(
                 info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
 
             # ── Optional plot + harmonise (GFM) ───────────────────────────
-            if src == "gfm" and (plot or harmonise):
-                for result in fetch_results:
-                    ds = fetcher.to_dataset(result)
-                    date_label = result.date_token or "gfm"
-                    if plot:
-                        png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{date_label}_gfm.png"
-                        with step_status("Plotting…"):
-                            _plot_gfm(ds, event, date_label, output_png_path=png_out)
-                    if harmonise:
-                        harm_dir = output_dir / src / "harmonised"
-                        with step_status("Harmonising…"):
-                            _harmonise_gfm(ds, event, date_label, harm_dir=harm_dir)
+            # GFM is already on the canonical 1-arcmin grid; harmonise only
+            # re-encodes float32 [0,1] → uint8 [0,100].  Default to ON so
+            # output is directly stackable with VIIRS/MODIS harmonised.
+            if src == "gfm":
+                gfm_harmonise = True  # always produce the uint8 harmonised raster
+                if plot or gfm_harmonise:
+                    for result in fetch_results:
+                        ds = fetcher.to_dataset(result)
+                        date_label = result.date_token or "gfm"
+                        if plot:
+                            png_out = (plot_dir or (output_dir / src / "plots")) / f"{event}_{date_label}_gfm.png"
+                            with step_status("Plotting…"):
+                                _plot_gfm(ds, event, date_label, output_png_path=png_out)
+                        if gfm_harmonise:
+                            harm_dir = output_dir / src / "harmonised"
+                            with step_status("Harmonising…"):
+                                _harmonise_gfm(ds, event, date_label, harm_dir=harm_dir)
 
             # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────────
             if src in ("viirs", "modis") and (plot or harmonise):

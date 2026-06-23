@@ -100,13 +100,13 @@ flowchart TD
 Call chain for a typical fetch:
 
 - `MODISFetcher.search()` in `__init__.py` derives the required `hXXvYY` tiles
-    and asks the selected backend for listings and filename matches.
+  and asks the selected backend for listings and filename matches.
 - `MODISFetcher.fetch()` in `__init__.py` materialises either streamed GeoTIFFs
-    or downloaded HDF4-derived GeoTIFFs.
+  or downloaded HDF4-derived GeoTIFFs.
 - `ModisRasterProcessor.process_tiles()` in `processor.py` handles mosaic,
-    clip, classification, and writing the intermediate products.
+  clip, classification, and writing the intermediate products.
 - `MODISFetcher` then dispatches to the date-selection strategy (`peak`,
-    `aggregate`, or `all`) before packaging the final `FetchResult` objects.
+  `aggregate`, or `all`) before packaging the final `FetchResult` objects.
 
 ## Auth and streaming
 
@@ -117,7 +117,7 @@ The fetcher injects the token in two complementary places:
 
 1. **`requests.get(headers=...)`** for HTML / JSON listings and HDF4
    downloads. The optional `headers=` keyword on
-    [`atlantis.utils.io.download_file`](../../src/atlantis/utils/io.py)
+   [`atlantis.utils.io.download_file`](../../src/atlantis/utils/io.py)
    forwards it to `requests`.
 2. **`rasterio.Env(GDAL_HTTP_HEADERS="Authorization: Bearer …")`**
    for `/vsicurl/` streaming. Scoped to the per-date processing block in
