@@ -13,15 +13,12 @@ ML-ready archive of satellite-derived flood inundation observations
 
 [![Python versions][python-badge]][python-url]
 [![Ruff][ruff-badge]][ruff-url]
-[![cov][cov-badge]][cov-url]
 [![Gitleaks status][gitleaks-badge]][gitleaks-url]
 
 [python-badge]: https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue
 [python-url]: https://github.com/opageo/atlantis
 [ruff-badge]: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
 [ruff-url]: https://github.com/astral-sh/ruff
-[cov-badge]: https://ECMWFCode4Earth.github.io/atlantis/badges/coverage.svg
-[cov-url]: https://github.com/ECMWFCode4Earth/atlantis/actions
 [gitleaks-badge]: https://github.com/opageo/atlantis/actions/workflows/gitleaks.yml/badge.svg
 [gitleaks-url]: https://github.com/opageo/atlantis/actions/workflows/gitleaks.yml
 
