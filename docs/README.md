@@ -22,5 +22,9 @@ design notes.
 
 - [src/README.md](../src/README.md) - Architecture guide, module layout, CLI
   examples, and extension points.
+- [cli.md](./cli.md) - Full CLI reference: every command, every flag,
+  defaults, and sensor-specific options.
 - [CLI_Examples.md](../CLI_Examples.md) - End-to-end example commands across
   real flood events.
+- [development.md](./development.md) - Contributor guide: running tests,
+  E2E workflow, and testing GitHub Actions locally.

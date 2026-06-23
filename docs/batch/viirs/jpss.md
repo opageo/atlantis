@@ -31,7 +31,7 @@ Four properties drive every design choice:
 | Source I/O    | `requests.get(..., stream=True)` → `tempfile.mkstemp()`                             | NOAA source TIFFs are pathological (one-row strips, uncompressed) so `/vsicurl/` issues thousands of small range reads. A single sequential GET is ~2.8× faster. Tempfile is unlinked in a `finally`.   |
 | Source format | Plain GeoTIFF, 375 m, ~20 MB each                                                   | Decoded with `classify_viirs_flood_fraction` — a lightweight, picklable module-level sibling of `classify_viirs_pixels` that returns only the flood-fraction array.                                     |
 | Reprojection  | `Harmoniser` (existing)                                                             | Same reproject + 1-arcmin-grid logic the rest of Atlantis uses. We don't fork the science.                                                                                                              |
-| Output format | `rasterio.MemoryFile(driver="COG", compress="DEFLATE", blocksize=512, predictor=2)` | True COG with `overviews="AUTO"` (GDAL chooses the levels). Output is ~2–3 KB → no point touching disk.                                                                                                  |
+| Output format | `rasterio.MemoryFile(driver="COG", compress="DEFLATE", blocksize=512, predictor=2)` | True COG with `overviews="AUTO"` (GDAL chooses the levels). Output is ~2–3 KB → no point touching disk.                                                                                                 |
 | Upload        | `s3fs.S3FileSystem(endpoint_url=...)`                                               | Custom endpoint = ECMWF object store. Credentials come from the `default` boto3 profile written by `atlantis setup`.                                                                                    |
 | Resume DB     | **SQLite, one DB per VM**                                                           | No shared state, no NFS coordination. Two-VM split = trivial `UNION ALL` merge afterwards.                                                                                                              |
 | Packaging     | `atlantis[batch]` extras                                                            | Keeps the core install lean. Adds `dask[distributed]`, `bokeh`, `rio-cogeo`, and pulls in `[geo]` transitively.                                                                                         |
@@ -130,14 +130,14 @@ This makes MODIS a drop-in: add `fetchers/modis/inventory.py` + `fetchers/modis/
 
 ### Output COGs
 
-| Property      | Value                                                                                           |
-| ------------- | ----------------------------------------------------------------------------------------------- |
-| S3 location   | `s3://atlantis/viirs/jpss/2020/{date}/GLB{aoi_id:03d}.tif`                                      |
-| Variable      | `flood_fraction` only                                                                           |
-| Dtype / range | `uint8`, 0–100 (percent), `nodata=255`                                                          |
-| Resolution    | 1 arcmin (`HarmoniseConfig.target_resolution_arcmin=1.0`)                                       |
+| Property      | Value                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------- |
+| S3 location   | `s3://atlantis/viirs/jpss/2020/{date}/GLB{aoi_id:03d}.tif`                                                       |
+| Variable      | `flood_fraction` only                                                                                            |
+| Dtype / range | `uint8`, 0–100 (percent), `nodata=255`                                                                           |
+| Resolution    | 1 arcmin (`HarmoniseConfig.target_resolution_arcmin=1.0`)                                                        |
 | Format        | `driver="COG"`, `compress="DEFLATE"`, `blocksize=512`, `predictor=2`, `overviews="AUTO"` (resampling: `average`) |
-| Endpoint      | `https://object-store.os-api.cci1.ecmwf.int` (ECMWF object store)                               |
+| Endpoint      | `https://object-store.os-api.cci1.ecmwf.int` (ECMWF object store)                                                |
 
 The `{date}/GLB{aoi_id:03d}.tif` key shape is browsable per-day with `ecaws s3 ls` and uniquely determined by `(date, aoi_id)`, so re-runs are idempotent (same input → same output URI → S3 last-writer-wins).
 
