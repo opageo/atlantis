@@ -1,25 +1,28 @@
-"""End-to-end tests for the GFM pipeline.
+"""End-to-end tests for the MODIS pipeline (Valencia 2024).
 
 Compare pipeline outputs (harmonised GeoTIFFs) byte-for-byte against
 reference files stored on S3 at:
-    s3://atlantis/reference/Valencia_2024_gfm/gfm/harmonised/
+    s3://atlantis/reference/Valencia_2024_modis/modis/harmonised/
 
 These tests require:
-    - Network access to the EODC STAC API (GFM data)
+    - EARTHDATA_TOKEN environment variable (LAADS DAAC access)
+    - Network access to LAADS DAAC (MODIS HDF4 data)
     - Network access to AWS S3 (reference files)
 
 Run with:
-    uv run python -m pytest tests/fetchers/test_gfm_e2e.py -v -m e2e
+    uv run python -m pytest tests/fetchers/test_modis_e2e.py -v -m e2e
 """
 
 from __future__ import annotations
+
+import os
 
 import pytest
 from upath import UPath
 
 from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env
 
-S3_REFERENCE_BASE = "s3://atlantis/reference/Valencia_2024_gfm/gfm/harmonised"
+S3_REFERENCE_BASE = "s3://atlantis/reference/Valencia_2024_modis/"
 
 # Event parameters matching the reference run
 EVENT_ID = "Valencia_2024"
@@ -27,30 +30,36 @@ BBOX = "-1.5 38.8 0.5 40.0"
 START_DATE = "2024-10-29"
 END_DATE = "2024-11-04"
 
+MODIS_EXTRA_ARGS = ["--modis-backend", "laads_hdf4", "--modis-composite", "F2"]
+
 # Expected reference filenames per strategy
 REFERENCE_FILES = {
-    "peak": "Valencia_2024_2024-10-31_gfm_harmonised.tif",
-    "aggregate": "Valencia_2024_aggregated_gfm_harmonised.tif",
+    "peak": "Valencia_2024_2024-10-31_modis_harmonised.tif",
+    "aggregate": "Valencia_2024_aggregated_modis_harmonised.tif",
 }
 
 
-def _run_gfm_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
-    """Run the GFM fetch pipeline and return harmonised TIF paths."""
+def _run_modis_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
+    """Run the MODIS fetch pipeline and return harmonised TIF paths."""
     return run_pipeline(
-        "gfm",
+        "modis",
         event_id=EVENT_ID,
         bbox=BBOX,
         start_date=START_DATE,
         end_date=END_DATE,
         strategy=strategy,
         output_dir=output_dir,
-        env={"GDAL_HTTP_UNSAFESSL": "YES"},
+        extra_args=MODIS_EXTRA_ARGS,
     )
 
 
 @pytest.mark.e2e
-class TestGfmE2EPeak:
-    """End-to-end test: GFM pipeline with --strategy peak."""
+@pytest.mark.skipif(
+    not os.getenv("EARTHDATA_TOKEN"),
+    reason="LAADS HDF4 backend requires EARTHDATA_TOKEN",
+)
+class TestModisE2EPeak:
+    """End-to-end test: MODIS pipeline with --strategy peak."""
 
     @pytest.fixture(autouse=True)
     def _setup(self, tmp_path):
@@ -61,7 +70,7 @@ class TestGfmE2EPeak:
         reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["peak"]
 
         output_dir = UPath(self.tmp_path / "output")
-        tifs = _run_gfm_pipeline("peak", output_dir)
+        tifs = _run_modis_pipeline("peak", output_dir)
 
         # Find the matching output file
         produced = None
@@ -71,8 +80,6 @@ class TestGfmE2EPeak:
                 break
 
         if produced is None:
-            # The peak date may vary if data availability changes;
-            # compare whichever single file was produced
             assert len(tifs) == 1, f"Peak strategy should produce exactly 1 file, got {len(tifs)}: {tifs}"
             produced = tifs[0]
 
@@ -81,8 +88,12 @@ class TestGfmE2EPeak:
 
 
 @pytest.mark.e2e
-class TestGfmE2EAggregate:
-    """End-to-end test: GFM pipeline with --strategy aggregate."""
+@pytest.mark.skipif(
+    not os.getenv("EARTHDATA_TOKEN"),
+    reason="LAADS HDF4 backend requires EARTHDATA_TOKEN",
+)
+class TestModisE2EAggregate:
+    """End-to-end test: MODIS pipeline with --strategy aggregate."""
 
     @pytest.fixture(autouse=True)
     def _setup(self, tmp_path):
@@ -93,7 +104,7 @@ class TestGfmE2EAggregate:
         reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["aggregate"]
 
         output_dir = UPath(self.tmp_path / "output")
-        tifs = _run_gfm_pipeline("aggregate", output_dir)
+        tifs = _run_modis_pipeline("aggregate", output_dir)
 
         produced = None
         for tif in tifs:

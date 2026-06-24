@@ -28,7 +28,10 @@ dependencies = [
   "xarray",
   "zarr>=3.2",
   "requests>=2.34.2",
-  "gdal==3.13.0"
+  "gdal==3.13.0",
+  "pystac>=1.9",
+  "pystac-client>=0.7",
+  "beautifulsoup4>=4.12",
 ]
 
 [project.scripts]
@@ -36,11 +39,8 @@ atlantis = "atlantis.cli:cli"
 
 [project.optional-dependencies]
 geo = [
-  "pystac>=1.9",
-  "pystac-client>=0.7",
   "pyproj>=3.6",
   "shapely>=2.0",
-  "beautifulsoup4>=4.12",
 ]
 ml = [
   "torch>=2.12.0",
@@ -121,7 +121,6 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not e2e'"
 env = ["R:AWS_PROFILE=default"]
 markers = ["e2e: end-to-end tests requiring network access (STAC API + S3)"]
 
