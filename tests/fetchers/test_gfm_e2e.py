@@ -34,8 +34,8 @@ END_DATE = "2024-11-04"
 
 # Expected reference filenames per strategy
 REFERENCE_FILES = {
-    "peak": "Valencia_2024_2024-10-31_gfm_harmonised.tif",
-    "aggregate": "Valencia_2024_aggregated_gfm_harmonised.tif",
+    "peak": "Valencia_2024_20241031_gfm_harmonised.tif",
+    "aggregate": "Valencia_2024_20241030_20241101_gfm_harmonised.tif",
 }
 
 
@@ -58,14 +58,7 @@ def _run_gfm_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
             END_DATE,
             "--strategy",
             strategy,
-            "--peak-window-days",
-            "2",
-            "--max-observations",
-            "3",
-            "--peak-priority",
-            "balanced",
             "--harmonise",
-            "--no-keep-processed",
             "--output",
             str(output_dir),
         ],

@@ -46,7 +46,7 @@ from atlantis.fetchers.modis.processor import (
 from atlantis.fetchers.modis.selection import flood_pixel_count, select_peak_window, subsample_around_peak
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.models.event import FloodEvent
-from atlantis.utils.io import HtmlResponseError, download_file, ensure_dir
+from atlantis.utils.io import download_file, ensure_dir
 
 if TYPE_CHECKING:
     import xarray as xr
@@ -434,21 +434,7 @@ class MODISFetcher(AbstractFloodFetcher):
                 ):
                     filename = r.properties["filename"]
                     download_path = raw_dir / filename
-                    try:
-                        download_file(r.url, output_path=download_path, headers=headers)
-                    except HtmlResponseError as exc:
-                        logger.error(
-                            "MODIS download blocked by EULA / auth redirect for {} → {}\n"
-                            "  Your Earthdata token is valid, but you have not accepted the "
-                            "LAADS DAAC license for this product yet.\n"
-                            "  Fix: open {} in a browser while logged in to "
-                            "https://urs.earthdata.nasa.gov/ and click 'Accept' on the "
-                            "license prompt. The same approval covers all MCDWD_L3 files.",
-                            filename,
-                            exc,
-                            r.url,
-                        )
-                        return []
+                    download_file(r.url, output_path=download_path, headers=headers)
                     tile_paths_local.append(download_path)
                 if not tile_paths_local:
                     continue

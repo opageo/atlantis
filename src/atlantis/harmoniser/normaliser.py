@@ -20,22 +20,14 @@ class NormaliserConfig:
         normalise_range: Tuple of (min, max) for normalisation (0.0-1.0 default).
         fill_value: Value to use for missing data.
         clip: Whether to clip values outside normalise_range.
-        skip_normalise_vars: Set of variable names to skip normalisation for.
-            ``flood_fraction`` is included because it is already a physical
-            fraction in ``[0, 1]`` produced by every fetcher (VIIRS, MODIS,
-            GFM). A per-image min-max stretch would corrupt its physical
-            meaning. With ``clip=True`` the harmoniser still enforces the
-            ``[0, 1]`` boundary defensively without rescaling.
-            ``quality_mask``, ``permanent_water``, and ``raw`` are skipped
-            because they carry discrete codes that must not be stretched.
+        skip_normalise_vars: Set of variable names to skip normalisation for
+            (e.g. quality_mask, permanent_water — already binary).
     """
 
     normalise_range: tuple[float, float] = (0.0, 1.0)
     fill_value: float = -9999.0
     clip: bool = True
-    skip_normalise_vars: set[str] = field(
-        default_factory=lambda: {"flood_fraction", "quality_mask", "permanent_water", "raw"}
-    )
+    skip_normalise_vars: set[str] = field(default_factory=lambda: {"quality_mask", "permanent_water", "raw"})
 
 
 class Normaliser:

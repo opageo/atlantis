@@ -87,13 +87,13 @@ Call chain for a single request:
 ## Stage 1 - Search and grouping
 
 `GfmStacBackend` is intentionally small. It wraps the EODC STAC API with three
- responsibilities:
+responsibilities:
 
-| Responsibility | Implementation |
-| -------------- | -------------- |
+| Responsibility         | Implementation                              |
+| ---------------------- | ------------------------------------------- |
 | STAC endpoint defaults | `DEFAULT_GFM_STAC_URL`, `GFM_COLLECTION_ID` |
-| Item search | `GfmStacBackend.search()` |
-| Per-date grouping | `GfmStacBackend.group_items_by_date()` |
+| Item search            | `GfmStacBackend.search()`                   |
+| Per-date grouping      | `GfmStacBackend.group_items_by_date()`      |
 
 The search step converts the event bbox into a Shapely polygon, queries the
 STAC collection, and returns one `SearchResult` per item. Grouping is date-only:
@@ -123,10 +123,10 @@ factor is `4`, which turns native ~20 m pixels into an effective ~80 m grid.
 GFM uses discrete codes, so classification happens before reprojection. The
 processor builds three float32 masks on the coarsened native grid:
 
-| Mask    | Rule |
-| ------- | ---- |
-| `flood` | `ensemble_flood_extent == 1` |
-| `perm`  | `reference_water_mask == 2` |
+| Mask    | Rule                            |
+| ------- | ------------------------------- |
+| `flood` | `ensemble_flood_extent == 1`    |
+| `perm`  | `reference_water_mask == 2`     |
 | `valid` | Either source band is not `255` |
 
 This avoids averaging discrete class codes directly. After reprojection with
@@ -179,11 +179,11 @@ $$
 
 The fetcher supports the same three top-level strategies exposed in the docs:
 
-| Strategy    | Implementation | Behavior |
-| ----------- | -------------- | -------- |
-| `peak`      | `_strategy_peak()` | Pick the date with the highest `flood_pixel_count()` |
+| Strategy    | Implementation          | Behavior                                                       |
+| ----------- | ----------------------- | -------------------------------------------------------------- |
+| `peak`      | `_strategy_peak()`      | Pick the date with the highest `flood_pixel_count()`           |
 | `aggregate` | `_strategy_aggregate()` | Mean flood fraction, OR quality, majority-vote permanent water |
-| `all`       | `_strategy_all()` | Keep one `FetchResult` per date |
+| `all`       | `_strategy_all()`       | Keep one `FetchResult` per date                                |
 
 Peak-window filtering and observation subsampling live in
 `selection.py`:
@@ -202,14 +202,14 @@ The result is the in-memory payload returned through `FetchResult.dataset`.
 
 ## Edge cases
 
-| Scenario | Behavior |
-| -------- | -------- |
-| No STAC items match the event | `fetch()` returns `[]` early |
-| STAC items have no datetime | `group_items_by_date()` skips them |
-| A date group produces no valid data | `process_items()` returns `None` and the date is skipped |
-| Tied peak flood counts | The earliest date wins |
-| Non-date tokens enter peak-window helpers | They are excluded by `_parse_yyyymmdd()` |
-| Aggregate strategy on a single date | `aggregate_tiles()` returns that tile unchanged |
+| Scenario                                  | Behavior                                                 |
+| ----------------------------------------- | -------------------------------------------------------- |
+| No STAC items match the event             | `fetch()` returns `[]` early                             |
+| STAC items have no datetime               | `group_items_by_date()` skips them                       |
+| A date group produces no valid data       | `process_items()` returns `None` and the date is skipped |
+| Tied peak flood counts                    | The earliest date wins                                   |
+| Non-date tokens enter peak-window helpers | They are excluded by `_parse_yyyymmdd()`                 |
+| Aggregate strategy on a single date       | `aggregate_tiles()` returns that tile unchanged          |
 
 ## Test anchors
 

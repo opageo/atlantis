@@ -158,16 +158,6 @@ class Reprojector:
         dst_height = max(1, int(round((north - south) / self.target_resolution)))
         dst_transform = from_bounds(west, south, east, north, dst_width, dst_height)
 
-        # ── Fast-path: input already on the canonical target grid ─────────
-        # When source CRS, resolution, and snapped bounds all match the target
-        # there is nothing to warp.  Return a copy with provenance attrs only.
-        if self._is_already_on_target_grid(dataset, src_crs, dst_crs, dst_width, dst_height, dst_transform):
-            logger.debug("Reprojector fast-path: input already on target grid — skipping warp")
-            ds_out = dataset.copy(deep=True)
-            ds_out.attrs["processing"] = "harmonised"
-            ds_out.attrs["target_resolution"] = dst_transform.a
-            return ds_out
-
         logger.debug(
             "Reprojecting: {} -> {} at {:.6f}° resolution, "
             "output grid {}x{} px, bounds ({:.4f}, {:.4f}, {:.4f}, {:.4f})",
@@ -206,40 +196,6 @@ class Reprojector:
         # ── 4. Build output dataset ───────────────────────────────────────
         ds_out = self._build_dataset(reprojected, west, north, dst_width, dst_height, dst_transform, dataset.attrs)
         return ds_out
-
-    def _is_already_on_target_grid(
-        self,
-        dataset: "xr.Dataset",
-        src_crs: str,
-        dst_crs: str,
-        dst_width: int,
-        dst_height: int,
-        dst_transform: rasterio.Affine,
-    ) -> bool:
-        """Return True when the dataset is already on the canonical target grid.
-
-        Checks CRS equality, pixel size, and grid shape within tight tolerances
-        so a genuine reproject is not skipped by accident.
-        """
-        if src_crs.upper() != dst_crs.upper():
-            return False
-
-        # Check pixel size (transform.a = pixel width).
-        try:
-            existing_transform = dataset.rio.transform()
-            existing_px = abs(existing_transform.a)
-        except Exception:
-            return False
-        if abs(existing_px - self.target_resolution) > 1e-9:
-            return False
-
-        # Check grid shape matches what we would warp to.
-        first_var = next(iter(dataset.data_vars.values()))
-        h, w = first_var.shape[-2], first_var.shape[-1]
-        if h != dst_height or w != dst_width:
-            return False
-
-        return True
 
     def validate_crs(self, dataset: "xr.Dataset") -> bool:
         """Validate that dataset has a valid CRS.

@@ -216,7 +216,7 @@ This section consolidates the operational material that used to live in the sepa
 - `uv` installed
 - Geo dependencies installed
 - Network access (VIIRS: NOAA S3 or GMU; GFM: EODC STAC; MODIS: NASA LANCE/LAADS)
-- For MODIS: `EARTHDATA_TOKEN` environment variable (register at https://urs.earthdata.nasa.gov/)
+- For MODIS: `EARTHDATA_TOKEN` environment variable (register at <https://urs.earthdata.nasa.gov/>)
 - For KuroSiwo runs: either the catalogue at `assets/ks_catalogue.gpkg` or a precomputed metadata CSV
 
 Install the required dependencies and bootstrap assets with:
@@ -429,7 +429,7 @@ These are suitable for analysis and for conversion through `to_dataset()`, and c
 5. Accumulates all dates into per-date or aggregated outputs
 
 > **Note:** Unlike VIIRS and MODIS, GFM reprojects to the target 1-arcmin grid
-> *during* fetch (because the native ~20 m SAR data is too large to materialise).
+> _during_ fetch (because the native ~20 m SAR data is too large to materialise).
 > When `--harmonise` is used, the reprojection step is effectively a no-op since
 > the data is already grid-aligned. The normaliser still runs to scale values.
 
@@ -473,10 +473,10 @@ Key GFM-specific options:
 
 ### 7.2 MODIS Backends
 
-| Backend          | Coverage                    | Access mode                    | Auth              |
-| ---------------- | --------------------------- | ------------------------------ | ----------------- |
-| `lance_geotiff`  | NRT (~last week)            | Stream via `/vsicurl/`         | `EARTHDATA_TOKEN` |
-| `laads_hdf4`     | 2003–2025 + archived NRT    | Download HDF4                  | `EARTHDATA_TOKEN` |
+| Backend         | Coverage                 | Access mode            | Auth              |
+| --------------- | ------------------------ | ---------------------- | ----------------- |
+| `lance_geotiff` | NRT (~last week)         | Stream via `/vsicurl/` | `EARTHDATA_TOKEN` |
+| `laads_hdf4`    | 2003–2025 + archived NRT | Download HDF4          | `EARTHDATA_TOKEN` |
 
 ### 7.3 MODIS CLI Usage
 
@@ -504,12 +504,12 @@ uv run atlantis fetch-kurosiwo-modis \
 
 ### 7.4 MODIS Composites
 
-| Composite | Description                                     |
-| --------- | ----------------------------------------------- |
-| `F1`      | 1-day flood detection                           |
-| `F1C`     | 1-day flood detection (cloud-corrected)         |
-| `F2`      | 2-day max-water composite (default)             |
-| `F3`      | 3-day max-water composite                       |
+| Composite | Description                             |
+| --------- | --------------------------------------- |
+| `F1`      | 1-day flood detection                   |
+| `F1C`     | 1-day flood detection (cloud-corrected) |
+| `F2`      | 2-day max-water composite (default)     |
+| `F3`      | 3-day max-water composite               |
 
 ### 7.5 MODIS Output Semantics
 
@@ -567,16 +567,16 @@ Key harmoniser settings:
 
 ### 8.3 `fetchers/`
 
-| Fetcher         | Data                            | Backend                              | Status      |
-| --------------- | ------------------------------- | ------------------------------------ | ----------- |
-| `GFMFetcher`    | SAR flood maps (Sentinel-1)     | STAC/EODC                            | implemented |
-| `VIIRSFetcher`  | Archived VIIRS flood composites | NOAA S3 / GMU JPSS Flood archive     | implemented |
-| `MODISFetcher`  | MCDWD flood detection (~250 m)  | NASA LANCE (NRT) / LAADS (archive)   | implemented |
-| `RFMFetcher`    | Modelled flood extent           | Phase C                              | stub        |
+| Fetcher        | Data                            | Backend                            | Status      |
+| -------------- | ------------------------------- | ---------------------------------- | ----------- |
+| `GFMFetcher`   | SAR flood maps (Sentinel-1)     | STAC/EODC                          | implemented |
+| `VIIRSFetcher` | Archived VIIRS flood composites | NOAA S3 / GMU JPSS Flood archive   | implemented |
+| `MODISFetcher` | MCDWD flood detection (~250 m)  | NASA LANCE (NRT) / LAADS (archive) | implemented |
+| `RFMFetcher`   | Modelled flood extent           | Phase C                            | stub        |
 
 All three implemented fetchers share a consistent interface: `search()`, `fetch()`, and `to_dataset()`. They support peak-window filtering (`--peak-days-before/after`, `--max-observations`, `--peak-priority`) and three strategies (`peak`, `aggregate`, `all`).
 
-**Important pipeline difference:** GFM reprojects to the 1-arcmin grid *during* fetch (the native ~20 m SAR data is too large to write at full resolution). VIIRS and MODIS fetch at native resolution (375 m / ~250 m) and harmonise to 1 arcmin only when explicitly requested via `--harmonise` or `atlantis harmonise`.
+**Important pipeline difference:** GFM reprojects to the 1-arcmin grid _during_ fetch (the native ~20 m SAR data is too large to write at full resolution). VIIRS and MODIS fetch at native resolution (375 m / ~250 m) and harmonise to 1 arcmin only when explicitly requested via `--harmonise` or `atlantis harmonise`.
 
 ### 8.4 `harmoniser/`
 
@@ -587,6 +587,7 @@ The harmonisation pipeline consists of:
 3. **Tile** (planned) — uniform 224×224 tiling for ML models
 
 The `Harmoniser` orchestrator class chains Reprojector → Normaliser and is used by:
+
 - The `--harmonise` flag on `fetch` / `fetch-kurosiwo-viirs` / `fetch-kurosiwo-modis`
 - The standalone `atlantis harmonise` command
 
@@ -633,9 +634,9 @@ Validation is still planned. The API surface exists (`checker.py`, `ml_loader.py
 
 ```bash
 uv sync                           # Core only
-uv sync --extra geo               # xarray, zarr, rioxarray, odc-stac, pystac-client, pyproj, shapely, rasterio, requests, beautifulsoup4
+uv sync --extra geo               # xarray, zarr, rioxarray, pystac-client, pyproj, shapely, rasterio, requests, beautifulsoup4
 uv sync --extra ml                # torch, numpy, scikit-learn, matplotlib
-uv sync --extra notebooks         # geo + ml + notebook-only tooling such as earthkit-data, cartopy, metview
+uv sync --extra notebooks         # geo + ml + notebook-only tooling such as earthkit-data, cartopy, odc-stac, metview
 ```
 
 For the working fetch paths, `uv sync --extra geo` is the relevant setup step. MODIS additionally requires an `EARTHDATA_TOKEN` environment variable.
