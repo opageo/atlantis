@@ -21,8 +21,13 @@ jobs:
       )
 
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/osgeo/gdal:ubuntu-full-3.13.0
+      options: --user root
 
     steps:
+      - run: apt-get update && apt-get install -y g++
+
       - name: Checkout PR code
         if: github.event_name == 'pull_request'
         uses: actions/checkout@v7

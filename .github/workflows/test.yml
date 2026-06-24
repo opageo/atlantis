@@ -19,7 +19,7 @@ jobs:
       options: --user root
 
     steps:
-      - run: apt-get update && apt-get install -y curl g++
+      - run: apt-get update && apt-get install -y git curl g++
 
       - uses: actions/checkout@v7
 
