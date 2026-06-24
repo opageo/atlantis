@@ -14,6 +14,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/osgeo/gdal:ubuntu-full-3.13.0
     steps:
       - uses: actions/checkout@v7
 
@@ -34,6 +36,7 @@ jobs:
       - name: Run tests with coverage
         env:
           NO_COLOR: "1"
+          EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
         run: uv run pytest tests/ -m "not e2e" --cov=atlantis --cov-report=json --cov-report=term-missing -v
 
       - name: Upload coverage to Codecov
