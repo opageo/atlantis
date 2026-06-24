@@ -13750,7 +13750,6 @@ packages:
   - xarray>=2024.1 ; extra == 'geo'
   - zarr>=3.0 ; extra == 'geo'
   - rioxarray>=0.15 ; extra == 'geo'
-  - odc-stac>=0.4 ; extra == 'geo'
   - pystac>=1.9 ; extra == 'geo'
   - pystac-client>=0.7 ; extra == 'geo'
   - pyproj>=3.6 ; extra == 'geo'
