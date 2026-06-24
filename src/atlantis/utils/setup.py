@@ -697,7 +697,8 @@ def run_setup(
         _print("[bold yellow]⚠[/bold yellow]  GDAL HDF4 driver not available")
         _print("       Required by: MODIS --modis-backend laads_hdf4 (historical archive 2003+)")
         _print("       Not required for: MODIS --modis-backend lance_geotiff (NRT, last ~1 week)")
-        _print("       Install via conda: conda install -c conda-forge libgdal-hdf4\n")
+        _print("       conda:  conda install -c conda-forge libgdal-hdf4")
+        _print("       source: see docs/gdal-install.md\n")
 
     # ── Step 2: required assets ─────────────────────────────────────────────
     any_missing = False

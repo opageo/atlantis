@@ -51,6 +51,19 @@ uv run atlantis demo
 uv sync
 ```
 
+## Credentials & data access
+
+Most backends require a NASA Earthdata account and, for the MODIS LAADS HDF4
+backend, a one-time browser authorization step. Run the setup script to be
+guided through all of it:
+
+```bash
+uv run python scripts/setup.py
+```
+
+See [docs/setup.md](docs/setup.md) for a full description of each credential
+(Earthdata token, LAADS Web pre-authorization, AWS profiles for GFM).
+
 ## CLI
 
 - `atlantis setup` — bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue)
@@ -90,64 +103,32 @@ uv sync --extra notebooks
 
 See [`notebooks/README.md`](notebooks/README.md) for details.
 
-## Download Kuro Siwo Dataset
-
-### Get it from Git-LFS
-The catalog of Kuro Siwo is stored in the git LFS of this repository, under `./assets/ks_catalogue.gpkg`, before you use it, make sure you have `git lfs` installed (if not install if with `git lfs install`) and the dataset is pulled, the first time you may need to execute:
-
-```bash
-git lfs pull
-```
-
-### Get it from S3 bucket
-If you have access to our atlantis bucket (provided on premise to mentors and partners of the project) you can download kurosiwo related data from our s3://atlantis bucket, e.g for the catalog: `s3://atlantis/assets/ks/ks_catalogue.gpkg`
-
-## E2E Testing
-
-End-to-end tests (marked with `@pytest.mark.e2e`) require network access and AWS credentials to fetch data from STAC APIs and S3. These tests are **skipped by default** in local test runs due to pytest configuration in `pyproject.toml`:
-
-```toml
-[tool.pytest.ini_options]
-addopts = "-m 'not e2e'"
-```
-
-### Running E2E tests locally
-
-To run E2E tests locally, you must:
-
-1. Have AWS credentials configured
-2. Explicitly include them with the `-m e2e` flag:
-
-```bash
-uv run pytest tests/ -m e2e -v
-```
-
-### Triggering E2E tests in PRs
-
-E2E tests are **required before merging to main** but don't run on every commit. Trigger them manually on a PR by either:
-
-1. **Adding the `run-e2e` label** — the `.github/workflows/e2e.yml` workflow runs immediately
-2. **Commenting `/run-e2e`** — the `.github/workflows/run-e2e-from-comment.yml` workflow adds the label, which triggers the E2E workflow
-
-After a successful E2E run, the `run-e2e` label is automatically removed. To re-run after pushing new commits, simply re-add the label or comment `/run-e2e` again.
-
 ## Testing Github actions/workflows locally
-1. install nektos github extension:
+
+### Install nektos github extension
+
 ```bash
 gh extension install https://github.com/nektos/gh-act
 ```
-2. Ensure you have docker daemon running:
+
+### Ensure you have docker daemon running
+
 Install and run docker daemon in a cent-os rocky-linux system:
+
 ```bash
 sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y docker-ce docker-ce-cli containerd.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
 ```
-3. run actos with:
+
+### Run actos with
+
 ```bash
 gh act <event-name>
 ```
+
 default event is `push`
 
-4. run specific workflow by job name
+### Run specific workflow by job name
+
 ```bash
 gh act -l #lists all job names
 gh act -j <job-name>

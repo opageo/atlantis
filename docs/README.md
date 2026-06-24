@@ -14,12 +14,14 @@ design notes.
 
 ## Architecture and Design
 
-- [KuroSiwo STAC design](./kurosiwo-stac-design.md)
-- [STAC architecture diagrams](./mermaid_stac_ks_labeled.md)
-- [Compact STAC mermaid diagram](./mermaid_stac_ks.md)
+- [KuroSiwo STAC design](./kurosiwo/stac-design.md)
+- [STAC architecture diagrams](./kurosiwo/stac_ks_labeled.md)
+- [Compact STAC mermaid diagram](./kurosiwo/stac_ks.md)
 
 ## Getting Started
 
+- [setup.md](./setup.md) - Credentials and one-time account setup (Earthdata
+  token, LAADS Web pre-authorization, AWS profiles, KuroSiwo catalogue).
 - [src/README.md](../src/README.md) - Architecture guide, module layout, CLI
   examples, and extension points.
 - [CLI_Examples.md](../CLI_Examples.md) - End-to-end example commands across

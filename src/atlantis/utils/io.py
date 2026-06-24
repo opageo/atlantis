@@ -106,6 +106,21 @@ def get_cache_path(url: str, cache_dir: Path | None = None) -> Path:
     return cache_dir / f"{url_hash}{extension}"
 
 
+class HtmlResponseError(RuntimeError):
+    """Raised when an HTTP download yields an HTML page instead of binary data.
+
+    Typically indicates an authentication/EULA-acceptance redirect (e.g. NASA
+    Earthdata / LAADS DAAC sending users to ``/profiles/licenses/...`` or
+    ``/oauth/login`` when the user has not approved the data archive yet).
+    """
+
+
+def _looks_like_html(payload: bytes) -> bool:
+    """Return True when *payload* starts with an HTML document marker."""
+    head = payload.lstrip()[:256].lower()
+    return head.startswith(b"<!doctype html") or head.startswith(b"<html")
+
+
 def download_file(
     url: str,
     output_path: Path | None = None,
@@ -113,8 +128,12 @@ def download_file(
     headers: dict | None = None,
     chunk_size: int = 8192,
     progress: bool = True,
+    headers: dict[str, str] | None = None,
 ) -> Path:
     """Download a file from URL with caching support.
+
+    Refuses to cache HTML responses (typical of auth/EULA redirects) so that
+    a bad first request does not poison the cache.
 
     Args:
         url: URL to download.
@@ -123,13 +142,15 @@ def download_file(
         headers: Optional HTTP headers to include in the request.
         chunk_size: Download chunk size in bytes.
         progress: Whether to show progress bar.
+        headers: Optional HTTP headers (e.g. bearer token).
 
     Returns:
         Path to downloaded file.
 
     Raises:
-        DownloadContentError: If the server returned an HTML page (e.g.
-            authentication redirect) instead of the expected binary file.
+        ImportError: If requests is not installed.
+        HtmlResponseError: If the server returned HTML (likely an auth/EULA
+            redirect). The partial file is removed before raising.
     """
     destination = output_path or get_cache_path(url, cache_dir)
     ensure_dir(destination.parent)
@@ -139,43 +160,40 @@ def download_file(
         return destination
 
     logger.debug("Downloading {} -> {}", url, destination)
-
-    # Use a session that preserves auth headers across NASA redirects when
-    # an Authorization header is provided (Earthdata Bearer token flow).
-    if headers and "Authorization" in headers:
-        session = _EarthdataSession()
-        session.headers.update(headers)
-        response = session.get(url, stream=True, timeout=60)
-    else:
-        response = requests.get(url, stream=True, timeout=60, headers=headers)
+    response = requests.get(url, stream=True, timeout=60, headers=headers or {})
     response.raise_for_status()
 
-    # Guard: reject HTML responses masquerading as data files (e.g. Earthdata
-    # login redirects that return 200 with an HTML body).
-    content_type = response.headers.get("Content-Type", "")
-    if "text/html" in content_type:
-        raise DownloadContentError(
-            f"Expected binary data but received HTML (Content-Type: {content_type}). "
-            f"URL: {url} — this usually indicates an authentication failure or redirect."
+    # Reject HTML payloads up front via the Content-Type header. NASA LAADS,
+    # for example, returns 200 + an HTML login page when the user has not
+    # accepted the data archive EULA.
+    content_type = response.headers.get("Content-Type", "").lower()
+    if "text/html" in content_type or "application/xhtml" in content_type:
+        raise HtmlResponseError(
+            f"Server returned HTML (Content-Type: {content_type or 'unknown'}) for {url}. "
+            "This usually means an authentication/EULA redirect. For NASA Earthdata + LAADS "
+            "DAAC: log in at https://urs.earthdata.nasa.gov/, then visit the file URL once "
+            "in a browser and accept the LAADS DAAC license prompt."
         )
 
-    # Stream to a temporary file first; promote to destination only after
-    # validating the first chunk isn't HTML.
-    tmp_destination = destination.with_suffix(destination.suffix + ".part")
-    first_chunk = True
-    try:
-        with tmp_destination.open("wb") as file_handle:
-            for chunk in response.iter_content(chunk_size=chunk_size):
-                if chunk:
-                    if first_chunk:
-                        _validate_not_html(chunk, url)
-                        first_chunk = False
-                    file_handle.write(chunk)
-        tmp_destination.rename(destination)
-    except Exception:
-        # Clean up partial download on any failure.
-        tmp_destination.unlink(missing_ok=True)
-        raise
+    with destination.open("wb") as file_handle:
+        first_chunk = True
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if not chunk:
+                continue
+            # Sniff the first chunk: some servers return text/plain or omit
+            # Content-Type entirely while still serving an HTML login page.
+            if first_chunk and _looks_like_html(chunk):
+                file_handle.close()
+                destination.unlink(missing_ok=True)
+                raise HtmlResponseError(
+                    f"Server returned HTML body for {url}. "
+                    "This usually means an authentication/EULA redirect. For NASA "
+                    "Earthdata + LAADS DAAC: log in at https://urs.earthdata.nasa.gov/, "
+                    "then visit the file URL once in a browser and accept the LAADS "
+                    "DAAC license prompt."
+                )
+            first_chunk = False
+            file_handle.write(chunk)
 
     etag = response.headers.get("ETag")
     if etag:

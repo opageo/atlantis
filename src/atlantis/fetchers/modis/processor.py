@@ -208,8 +208,8 @@ class ProcessTilesResult:
 def find_hdf4_subdataset(hdf_path: Path, composite: str) -> str:
     """Return the GDAL subdataset URI for the requested MCDWD composite.
 
-    Uses GDAL directly (``osgeo.gdal``) because rasterio no longer supports
-    opening HDF4 container files.
+    Uses ``osgeo.gdal`` directly because rasterio bundles its own GDAL build
+    which may lack HDF4 support (e.g. the PyPI wheel).
 
     Args:
         hdf_path: Path to a downloaded ``.hdf`` file.
@@ -221,100 +221,117 @@ def find_hdf4_subdataset(hdf_path: Path, composite: str) -> str:
 
     Raises:
         KeyError: if *composite* is not recognised.
+        RuntimeError: if osgeo.gdal is not available.
         FileNotFoundError: if the HDF4 file has no matching subdataset
             (corrupt download or unexpected layer naming).
     """
-    from osgeo import gdal  # type: ignore[import-not-found]
+    try:
+        from osgeo import gdal as _gdal  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise RuntimeError(
+            "osgeo.gdal is required to list HDF4 subdatasets. "
+            "Install GDAL with HDF4 support and reinstall the GDAL Python bindings."
+        ) from exc
 
     layer_suffix = COMPOSITE_TO_HDF_LAYER[composite.upper()]
-
-    ds = gdal.Open(str(hdf_path))
+    ds = _gdal.Open(str(hdf_path))
     if ds is None:
-        raise FileNotFoundError(f"GDAL could not open HDF4 file: {hdf_path}")
-
-    subdataset_info = ds.GetSubDatasets()  # list of (uri, description) tuples
+        raise FileNotFoundError(f"GDAL could not open {hdf_path}. Ensure GDAL was compiled with HDF4 support.")
+    subdatasets = ds.GetSubDatasets()  # list of (uri, description) tuples
     ds = None  # close
-
-    subdatasets = [uri for uri, _desc in subdataset_info]
-    for uri in subdatasets:
-        # Subdataset URIs end with `…:Grid_Water_Composite:Flood_2Day_250m`
-        # — match only on the suffix because path encoding varies.
+    uris = [uri for uri, _desc in subdatasets]
+    for uri in uris:
         if uri.endswith(":" + layer_suffix):
             logger.debug("HDF4 subdataset for {} -> {}", composite, uri)
             return uri
     raise FileNotFoundError(
-        f"Composite '{composite}' (subdataset '{layer_suffix}') not found in {hdf_path}. "
-        f"Available subdatasets: {subdatasets}"
+        f"Composite '{composite}' (subdataset '{layer_suffix}') not found in {hdf_path}. Available subdatasets: {uris}"
     )
 
 
 def open_hdf4_tile(hdf_path: Path, composite: str) -> "DatasetReader":
     """Open the requested composite from an MCDWD HDF4 file.
 
-    Uses GDAL directly to read the HDF4 subdataset data and geotransform,
-    then wraps the result in a rasterio MemoryFile-backed dataset for
-    downstream compatibility with :func:`rasterio.merge.merge`.
+    Uses ``osgeo.gdal`` to translate the HDF4 subdataset to an in-memory
+    GeoTIFF, then hands it to rasterio — this works even when rasterio's
+    bundled GDAL lacks HDF4 support (e.g. the PyPI wheel).
 
     Falls back to assigning the affine from ``tile_bounds_from_hv`` when
     GDAL fails to parse the HDF-EOS Grid metadata.
     """
-    from osgeo import gdal, osr  # type: ignore[import-not-found]
+    try:
+        from osgeo import gdal as _gdal  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise RuntimeError(
+            "osgeo.gdal is required to read HDF4 tiles. "
+            "Install GDAL with HDF4 support and reinstall the GDAL Python bindings."
+        ) from exc
 
     uri = find_hdf4_subdataset(hdf_path, composite)
 
-    gdal_ds = gdal.Open(uri)
-    if gdal_ds is None:
-        raise RuntimeError(f"GDAL could not open subdataset: {uri}")
+    # Translate the subdataset to an in-memory GeoTIFF so rasterio can open
+    # it without needing HDF4 in its own bundled GDAL.
+    vsimem_path = f"/vsimem/{hdf_path.stem}_{composite}.tif"
+    translated = _gdal.Translate(vsimem_path, uri)
+    if translated is None:
+        raise RuntimeError(f"gdal.Translate failed for subdataset {uri}")
+    translated.FlushCache()
+    translated = None  # close before reading bytes
 
-    band = gdal_ds.GetRasterBand(1)
-    data = band.ReadAsArray()
+    vsifile = _gdal.VSIFOpenL(vsimem_path, "rb")
+    _gdal.VSIFSeekL(vsifile, 0, 2)
+    size = _gdal.VSIFTellL(vsifile)
+    _gdal.VSIFSeekL(vsifile, 0, 0)
+    data_bytes = _gdal.VSIFReadL(1, size, vsifile)
+    _gdal.VSIFCloseL(vsifile)
+    _gdal.Unlink(vsimem_path)
 
-    # Try to extract geotransform and CRS from GDAL metadata.
-    gt = gdal_ds.GetGeoTransform()
-    srs = gdal_ds.GetProjection()
-    gdal_ds = None  # close
+    # ``VSIFReadL`` returns a ``bytearray`` in the current GDAL bindings, but
+    # rasterio's ``MemoryFile`` only accepts ``bytes`` (or a file-like). Cast
+    # once here so callers always get a working dataset.
+    if not isinstance(data_bytes, bytes):
+        data_bytes = bytes(data_bytes)
 
-    # Determine if the geotransform is valid (not the default identity).
-    has_valid_gt = gt is not None and gt != (0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
-    has_valid_crs = bool(srs)
+    memfile = MemoryFile(data_bytes)
+    src = memfile.open()
+    # The DatasetReader is backed by the MemoryFile buffer; without a strong
+    # reference the MemoryFile is GC'd as soon as this function returns and
+    # subsequent reads (e.g. inside ``merge``) fail with
+    # ``TIFFReadEncodedStrip() failed``. Pin it to the dataset so it lives
+    # exactly as long as the caller's reader.
+    src._atlantis_memfile = memfile  # type: ignore[attr-defined]
 
-    if has_valid_gt and has_valid_crs:
-        # GDAL geotransform: (origin_x, pixel_width, 0, origin_y, 0, pixel_height)
-        transform = rasterio.Affine(gt[1], gt[2], gt[0], gt[4], gt[5], gt[3])
-        # Convert OGC WKT to a CRS string rasterio understands.
-        sr = osr.SpatialReference()
-        sr.ImportFromWkt(srs)
-        sr.AutoIdentifyEPSG()
-        epsg = sr.GetAuthorityCode(None)
-        crs = f"EPSG:{epsg}" if epsg else "EPSG:4326"
-    else:
-        logger.warning(
-            "GDAL geotransform/CRS not found in HDF4 subdataset; falling back to filename parsing for {}", hdf_path
-        )
-        # Fallback: synthesise the affine from the tile h/v in the filename.
-        hv = parse_hv_from_filename(hdf_path.name)
-        if hv is None:
-            raise RuntimeError(f"HDF4 file {hdf_path.name} lacks a geotransform and the filename has no h/v token")
-        h, v = hv
-        west, south, east, north = tile_bounds_from_hv(h, v)
-        transform = from_bounds(west, south, east, north, MODIS_TILE_PIXELS, MODIS_TILE_PIXELS)
-        crs = "EPSG:4326"
+    needs_affine = src.transform == rasterio.Affine.identity() or not src.crs
+    if not needs_affine:
+        return src
 
-    # Wrap in a rasterio MemoryFile so downstream merge/mask works unchanged.
-    logger.info("")
-    meta = {
-        "driver": "GTiff",
-        "height": data.shape[0],
-        "width": data.shape[1],
-        "count": 1,
-        "dtype": "uint8",
-        "crs": crs,
-        "transform": transform,
-        "nodata": INSUFFICIENT_DATA_CODE,
-    }
-    memfile = MemoryFile()
-    dst = memfile.open(**meta)
-    dst.write(data.astype(np.uint8), 1)
+    # Defensive fallback: synthesise the affine from the tile h/v.
+    src.close()
+    hv = parse_hv_from_filename(hdf_path.name)
+    if hv is None:
+        raise RuntimeError(f"HDF4 file {hdf_path.name} lacks an affine and the filename has no h/v token")
+    h, v = hv
+    west, south, east, north = tile_bounds_from_hv(h, v)
+    transform = from_bounds(west, south, east, north, MODIS_TILE_PIXELS, MODIS_TILE_PIXELS)
+    fallback_src = memfile.open()
+    data = fallback_src.read(1)
+    fallback_src.close()
+    memfile.close()
+
+    out_memfile = MemoryFile()
+    dst = out_memfile.open(
+        driver="GTiff",
+        height=MODIS_TILE_PIXELS,
+        width=MODIS_TILE_PIXELS,
+        count=1,
+        dtype="uint8",
+        crs="EPSG:4326",
+        transform=transform,
+        nodata=INSUFFICIENT_DATA_CODE,
+    )
+    dst.write(data, 1)
+    # Pin the synthesised MemoryFile so the returned dataset stays readable.
+    dst._atlantis_memfile = out_memfile  # type: ignore[attr-defined]
     return dst
 
 
