@@ -39,6 +39,19 @@ uv run atlantis setup
 uv run atlantis demo
 ```
 
+### Using pixi (recommended for newcomers)
+
+[Pixi](https://pixi.sh) installs **all** dependencies — including GDAL with
+HDF4 support — in a single command:
+
+```bash
+pixi install        # resolve & install everything from conda-forge
+pixi run setup      # bootstrap credentials & data assets
+pixi run demo       # run the Valencia 2024 flood example
+```
+
+See [docs/pixi-setup.md](docs/pixi-setup.md) for the full guide.
+
 > **Architecture and sensor guides?** See [docs/README.md](docs/README.md)
 > for the data-source documentation index and shared design notes.
 

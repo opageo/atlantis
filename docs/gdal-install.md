@@ -1,5 +1,10 @@
 # Installing GDAL 3.13 with HDF4 support (Rocky 9 / RHEL 9)
 
+> **Using pixi?** You can skip this entire guide. The pixi environment
+> installs GDAL with the HDF4 driver automatically via conda-forge
+> (`libgdal-hdf4`). Just run `pixi install && pixi run verify-gdal`.
+> See [pixi-setup.md](pixi-setup.md).
+
 The MODIS historical backend (`laads_hdf4`) requires GDAL compiled with HDF4
 driver support. This guide covers building GDAL 3.13 from source on Rocky
 Linux 9 (or any RHEL 9 derivative).
