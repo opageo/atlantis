@@ -1735,6 +1735,262 @@ def demo(
     console.print(_ft(str(out), output_files))
 
 
+@cli.command("demo-modis")
+def demo_modis(
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output directory (default: data/Valencia_2024).",
+    ),
+    harmonise: bool = typer.Option(
+        True,
+        "--harmonise/--no-harmonise",
+        help="Harmonise the peak-flood date to 1 arcmin. Default: on.",
+    ),
+    stream: bool = typer.Option(
+        True,
+        "--stream/--no-stream",
+        help="Stream remote tiles (only for lance_geotiff backend). Default: on.",
+    ),
+    modis_backend: str = typer.Option(
+        "laads_hdf4",
+        "--modis-backend",
+        help="MODIS backend: laads_hdf4 (download, 2003+) or lance_geotiff (streamable, ~1-week NRT only).",
+    ),
+    modis_composite: str = typer.Option(
+        "F2",
+        "--modis-composite",
+        help="MODIS composite: F1, F1C, F2, F3. Default: F2 (2-day max-water composite).",
+    ),
+) -> None:
+    """Run the Valencia 2024 flood demo with MODIS data.
+
+    Fetches MODIS data for the Valencia flood event (Oct–Nov 2024),
+    plots the peak-flood date, and optionally harmonises to 1 arcmin.
+    A quick way to verify that MODIS fetching works end-to-end.
+
+    Note: the default backend is laads_hdf4 because Valencia 2024 is a
+    historical event outside the ~1-week LANCE NRT window. This backend
+    requires EARTHDATA_TOKEN (run `uv run atlantis setup` once).
+    """
+    from datetime import date
+
+    from atlantis.utils.setup import get_missing_assets
+
+    # Pre-flight: check assets are present
+    missing = get_missing_assets()
+    if missing:
+        fail("Cannot run demo — required assets are missing:")
+        for item in missing:
+            console.print(f"  - {item}")
+        console.print("\nRun [bold]uv run atlantis setup[/bold] first.")
+        raise typer.Exit(code=1)
+
+    out = output_dir or Path("data/Valencia_2024")
+    out.mkdir(parents=True, exist_ok=True)
+
+    command_header("demo-modis", subtitle="Valencia 2024 flood — MODIS")
+
+    event = FloodEvent(
+        event_id="Valencia_2024",
+        bbox=(-1.5, 38.8, 0.5, 40.0),
+        start_date=date(2024, 10, 29),
+        end_date=date(2024, 11, 4),
+    )
+
+    effective_stream = stream and modis_backend == "lance_geotiff"
+    fetcher_cls = get_fetcher("modis")
+    fetcher = fetcher_cls(
+        backend=modis_backend,
+        composite=modis_composite,
+        classify=True,
+        stream=effective_stream,
+        keep_processed=True,
+    )
+
+    modis_dir = out / "modis"
+
+    console.print(f"[bold]Event:[/bold] {event.event_id}")
+    console.print(f"[bold]BBox:[/bold]  {event.bbox}")
+    console.print(f"[bold]Dates:[/bold] {event.start_date} → {event.end_date}")
+    console.print(f"[bold]Backend:[/bold] {modis_backend} (composite={modis_composite})")
+    console.print(f"[bold]Output:[/bold] {out}\n")
+
+    try:
+        with step_status("Fetching MODIS tiles…"):
+            fetch_results = fetcher.fetch(event, modis_dir)
+    except requests.RequestException as exc:
+        fail(f"Network error while fetching MODIS: {exc}")
+        if modis_backend == "laads_hdf4":
+            info("Hint: LAADS requires EARTHDATA_TOKEN. Run `uv run atlantis setup` to configure.")
+        raise typer.Exit(code=1)
+    if not fetch_results:
+        warn("No MODIS data found for this region/date range.")
+        if modis_backend == "lance_geotiff":
+            info(
+                "Hint: lance_geotiff only covers a ~1-week NRT window. "
+                "Use --modis-backend laads_hdf4 for historical events."
+            )
+        raise typer.Exit(code=1)
+
+    _report_fetch_writes("modis", fetch_results, keep_processed=True)
+
+    # Select best date
+    best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+    best_ds = fetcher.to_dataset(best_result)
+
+    # Plot
+    plot_dir_path = modis_dir / "plots"
+    plot_dir_path.mkdir(parents=True, exist_ok=True)
+    png_path = plot_dir_path / f"Valencia_2024_{best_date_label}_modis.png"
+    with step_status("Plotting peak-flood date…"):
+        _plot_source(best_ds, "Valencia_2024", best_date_label, source_id="modis", output_png_path=png_path)
+
+    # Harmonise
+    if harmonise:
+        harm_dir = modis_dir / "harmonised"
+        with step_status("Harmonising to 1 arcmin…"):
+            _harmonise_source(
+                best_ds,
+                "Valencia_2024",
+                best_date_label,
+                source_id="modis",
+                harm_dir=harm_dir,
+                plot_dir=plot_dir_path,
+            )
+
+    console.print("")
+    ok("Demo complete!")
+    from atlantis.utils.ui import file_tree as _ft
+
+    if harmonise:
+        output_files = [
+            png_path,
+            harm_dir / f"Valencia_2024_{best_date_label}_modis_harmonised.tif",
+            plot_dir_path / f"Valencia_2024_{best_date_label}_modis_harmonised.png",
+        ]
+    else:
+        output_files = [png_path]
+    console.print(_ft(str(out), output_files))
+
+
+@cli.command("demo-gfm")
+def demo_gfm(
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output directory (default: data/Valencia_2024).",
+    ),
+    harmonise: bool = typer.Option(
+        True,
+        "--harmonise/--no-harmonise",
+        help="Harmonise the peak-flood date to 1 arcmin. Default: on.",
+    ),
+) -> None:
+    """Run the Valencia 2024 flood demo with GFM (Sentinel-1 SAR) data.
+
+    Fetches GFM data for the Valencia flood event (Oct–Nov 2024),
+    plots the peak-flood date, and optionally harmonises to 1 arcmin.
+    A quick way to verify that GFM fetching works end-to-end.
+    """
+    from datetime import date
+
+    from atlantis.utils.setup import get_missing_assets
+
+    # Pre-flight: check assets are present
+    missing = get_missing_assets()
+    if missing:
+        fail("Cannot run demo — required assets are missing:")
+        for item in missing:
+            console.print(f"  - {item}")
+        console.print("\nRun [bold]uv run atlantis setup[/bold] first.")
+        raise typer.Exit(code=1)
+
+    out = output_dir or Path("data/Valencia_2024")
+    out.mkdir(parents=True, exist_ok=True)
+
+    command_header("demo-gfm", subtitle="Valencia 2024 flood — GFM")
+
+    event = FloodEvent(
+        event_id="Valencia_2024",
+        bbox=(-1.5, 38.8, 0.5, 40.0),
+        start_date=date(2024, 10, 29),
+        end_date=date(2024, 11, 4),
+    )
+
+    fetcher_cls = get_fetcher("gfm")
+    fetcher = fetcher_cls(
+        strategy="peak",
+        keep_processed=True,
+    )
+
+    gfm_dir = out / "gfm"
+
+    console.print(f"[bold]Event:[/bold] {event.event_id}")
+    console.print(f"[bold]BBox:[/bold]  {event.bbox}")
+    console.print(f"[bold]Dates:[/bold] {event.start_date} → {event.end_date}")
+    console.print(f"[bold]Output:[/bold] {out}\n")
+
+    try:
+        with step_status("Fetching GFM tiles…"):
+            fetch_results = fetcher.fetch(event, gfm_dir)
+    except (requests.RequestException, Exception) as exc:
+        if "SSL" in str(exc) or "ConnectionError" in type(exc).__name__:
+            fail(f"Network error while fetching GFM: {exc}")
+            info(
+                "Hint: the EODC STAC API (stac.eodc.eu) may be unreachable due to "
+                "SSL/proxy issues. Try setting REQUESTS_CA_BUNDLE or SSL_CERT_FILE "
+                "to your corporate CA bundle."
+            )
+            raise typer.Exit(code=1)
+        raise
+    if not fetch_results:
+        warn("No GFM data found for this region/date range.")
+        raise typer.Exit(code=1)
+
+    _report_fetch_writes("gfm", fetch_results, keep_processed=True)
+
+    # Select best date
+    best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+    best_ds = fetcher.to_dataset(best_result)
+
+    # Plot
+    plot_dir_path = gfm_dir / "plots"
+    plot_dir_path.mkdir(parents=True, exist_ok=True)
+    png_path = plot_dir_path / f"Valencia_2024_{best_date_label}_gfm.png"
+    with step_status("Plotting peak-flood date…"):
+        _plot_source(best_ds, "Valencia_2024", best_date_label, source_id="gfm", output_png_path=png_path)
+
+    # Harmonise
+    if harmonise:
+        harm_dir = gfm_dir / "harmonised"
+        with step_status("Harmonising to 1 arcmin…"):
+            _harmonise_source(
+                best_ds,
+                "Valencia_2024",
+                best_date_label,
+                source_id="gfm",
+                harm_dir=harm_dir,
+                plot_dir=plot_dir_path,
+            )
+
+    console.print("")
+    ok("Demo complete!")
+    from atlantis.utils.ui import file_tree as _ft
+
+    if harmonise:
+        output_files = [
+            png_path,
+            harm_dir / f"Valencia_2024_{best_date_label}_gfm_harmonised.tif",
+            plot_dir_path / f"Valencia_2024_{best_date_label}_gfm_harmonised.png",
+        ]
+    else:
+        output_files = [png_path]
+    console.print(_ft(str(out), output_files))
+
+
 @cli.command("list-events")
 def list_events_cmd(
     archive_root: Path | None = typer.Option(None, "--archive", "-a", help="Archive root directory"),
