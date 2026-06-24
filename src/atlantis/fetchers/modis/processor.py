@@ -158,15 +158,24 @@ class ProcessedTile:
     Attributes:
         transform: Affine transform for the processed (clipped) raster.
         crs: Coordinate reference system (EPSG:4326).
-        cloud_fraction: Fraction of pixels coded as ``255`` (insufficient
-            data — includes cloud, terrain shadow, and HAND-masked terrain)
-            within the AOI.
+        cloud_fraction: Fraction of pixels coded as ``255`` ("Insufficient
+            data", per NASA MCDWD User Guide Rev F Table 7) within the AOI.
+            The field name is historical and a misnomer: code ``255`` is a
+            catch-all sentinel and what feeds into it depends on the composite.
+            The embedded LANCE TIFF ``description`` tag is authoritative for a
+            given file; e.g. F2 says ``no clouds removed; terrain shadow pixels
+            masked; HAND pixels masked``, while F1C also removes cloud shadow.
+            Treat this value as "fraction of insufficient-data pixels", not
+            literal cloud cover.
         raw: Original uint8 codes when ``--no-classify`` is used.
         flood_fraction: Binary float32 mask ``(class == 3).astype(float32)``.
             Drives the harmoniser ``average`` resampling to a true % flooded
             at coarser resolution.
-        quality_mask: ``(class != 255).astype(uint8)`` — 1 = valid clear-sky
-            observation, 0 = insufficient data or HAND-masked terrain.
+        quality_mask: ``(class != 255).astype(uint8)`` — 1 = valid
+            observation, 0 = insufficient data (composite-specific: always
+            HAND-masked and terrain-shadow-masked; cloud / cloud-shadow
+            coverage depends on the composite — see the embedded TIFF
+            ``description`` tag).
         permanent_water: ``(class == 1).astype(uint8)``.
         recurring_flood: ``(class == 2).astype(uint8)`` — MODIS-only.
             Always ``None`` when ``--no-classify`` is used.
@@ -487,8 +496,11 @@ class ModisRasterProcessor:
         flood_mask = data == UNUSUAL_FLOOD_CODE
         recurring_flood = (data == RECURRING_FLOOD_CODE).astype(np.uint8)
         permanent_water = (data == SURFACE_WATER_CODE).astype(np.uint8)
-        # quality_mask: 1 = valid observation, 0 = insufficient data or HAND-masked.
-        # Note: HAND-masked terrain reports as 255 — preserve that distinction.
+        # quality_mask: 1 = valid observation, 0 = insufficient data (catch-all).
+        # Per the embedded LANCE TIFF description, the 255 sentinel covers (at least)
+        # HAND-masked terrain and terrain-shadow pixels for every composite, plus
+        # cloud-shadow for F1C. F2/F3 do NOT remove clouds, so a pixel can be 255
+        # purely from "insufficient observations" rather than cloud cover.
         quality_mask = (data != INSUFFICIENT_DATA_CODE).astype(np.uint8)
 
         flood_fraction = flood_mask.astype(np.float32)
@@ -497,7 +509,7 @@ class ModisRasterProcessor:
         cloud_fraction = float(1.0 - valid.sum() / valid.size) if valid.size else 0.0
 
         logger.debug(
-            "Classification: {} flood, {} recurring, {} permanent-water, {} insufficient (cloud-like fraction {:.1f}%)",
+            "Classification: {} flood, {} recurring, {} permanent-water, {} insufficient (255 fraction {:.1f}%)",
             int(flood_mask.sum()),
             int(recurring_flood.sum()),
             int(permanent_water.sum()),
