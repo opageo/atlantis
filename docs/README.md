@@ -20,8 +20,13 @@ design notes.
 
 ## Getting Started
 
-- [setup.md](./setup.md) - Credentials and one-time account setup (Earthdata
-  token, LAADS Web pre-authorization, AWS profiles, KuroSiwo catalogue).
+- [pixi-setup.md](./pixi-setup.md) - New user onboarding path with a bundled
+  GDAL + HDF4 environment (no manual GDAL build).
+- [setup.md](./setup.md) - Shared credentials and one-time account setup
+  (Earthdata token, LAADS Web pre-authorization, AWS profiles, KuroSiwo
+  catalogue) used by both `uv` and `pixi` workflows.
+- [gdal-install.md](./gdal-install.md) - Manual GDAL build guide for advanced
+  `uv` setups that need explicit HDF4 support.
 - [src/README.md](../src/README.md) - Architecture guide, module layout, CLI
   examples, and extension points.
 - [CLI_Examples.md](../CLI_Examples.md) - End-to-end example commands across
