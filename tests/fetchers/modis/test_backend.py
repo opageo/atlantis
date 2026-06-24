@@ -23,6 +23,7 @@ from atlantis.fetchers.modis.backend import (
     list_backends,
     parse_prod_timestamp,
 )
+from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env
 
 
 @pytest.fixture
@@ -129,16 +130,14 @@ class TestLanceGeotiffBackend:
         download_link = (
             "/archive/allData/61/MCDWD_L3_F2_NRT/2026/032/MCDWD_L3_F2_NRT.A2026032.h09v05.061.2026032142200.tif"
         )
-        payload = json.dumps(
-            {
-                "content": [
-                    {
-                        "name": "MCDWD_L3_F2_NRT.A2026032.h09v05.061.2026032142200.tif",
-                        "downloadsLink": download_link,
-                    }
-                ]
-            }
-        )
+        payload = json.dumps({
+            "content": [
+                {
+                    "name": "MCDWD_L3_F2_NRT.A2026032.h09v05.061.2026032142200.tif",
+                    "downloadsLink": download_link,
+                }
+            ]
+        })
         entries = LanceGeotiffBackend._parse_json_listing(payload, base_url="https://nrt3.modaps.eosdis.nasa.gov")
         assert len(entries) == 1
         assert entries[0].prod_timestamp == "2026032142200"
@@ -272,8 +271,6 @@ class TestRegistry:
 # Requires: EARTHDATA_TOKEN env var, network access to LAADS + AWS S3.
 # Run with:
 #   uv run python -m pytest tests/fetchers/modis/test_backend.py -v -k e2e
-
-from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env
 
 S3_REFERENCE_BASE = "s3://atlantis/reference/Harvey_2017/modis/harmonised"
 
