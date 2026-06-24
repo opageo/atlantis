@@ -125,7 +125,6 @@ def download_file(
     url: str,
     output_path: Path | None = None,
     cache_dir: Path | None = None,
-    headers: dict | None = None,
     chunk_size: int = 8192,
     progress: bool = True,
     headers: dict[str, str] | None = None,
