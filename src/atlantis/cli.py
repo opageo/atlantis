@@ -458,7 +458,7 @@ def _harmonise_gfm(
     harm_dir,
     plot_dir,
 ):
-    """Harmonise GFM data and save GeoTIFF (harm_dir) + PNG (plot_dir)."""
+    """Harmonise GFM data and save GeoTIFF + PNG preview."""
     from atlantis.harmoniser import Harmoniser
 
     harm_dir.mkdir(parents=True, exist_ok=True)
@@ -781,27 +781,34 @@ def fetch(
                 info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
 
             # ── Optional plot + harmonise (GFM) ───────────────────────────
-            # GFM is already on the canonical 1-arcmin grid; harmonise only
-            # re-encodes float32 [0,1] → uint8 [0,100].  Always ON so output
-            # is directly stackable with VIIRS/MODIS harmonised.
-            #
-            # Since harmonised and unharmonised GFM are on the same grid and
-            # show the same flood extent (only encoding differs), we skip the
-            # standalone `_plot_gfm` call and rely on the harmonised PNG.
-            if src == "gfm":
+            # GFM is already on the canonical 1-arcmin grid. Harmonisation
+            # therefore re-encodes `flood_fraction` to uint8 percentages on
+            # the same grid, while `--plot` can still save a non-harmonised
+            # PNG preview when harmonisation is not requested.
+            if src == "gfm" and (plot or harmonise):
                 png_dir = plot_dir or (output_dir / src / "plots")
                 harm_dir = output_dir / src / "harmonised"
                 for result in fetch_results:
                     ds = fetcher.to_dataset(result)
                     date_label = result.date_token or "gfm"
-                    with step_status("Harmonising…"):
-                        _harmonise_gfm(
-                            ds,
-                            event,
-                            date_label,
-                            harm_dir=harm_dir,
-                            plot_dir=png_dir,
-                        )
+                    if harmonise:
+                        with step_status("Harmonising…"):
+                            _harmonise_gfm(
+                                ds,
+                                event,
+                                date_label,
+                                harm_dir=harm_dir,
+                                plot_dir=png_dir,
+                            )
+                    else:
+                        png_out = png_dir / f"{event}_{date_label}_gfm.png"
+                        with step_status("Plotting…"):
+                            _plot_gfm(
+                                ds,
+                                event,
+                                date_label,
+                                output_png_path=png_out,
+                            )
 
             # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────────
             if src in ("viirs", "modis") and (plot or harmonise):

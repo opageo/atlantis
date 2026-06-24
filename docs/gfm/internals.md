@@ -24,6 +24,18 @@ pipeline. For usage, see [overview.md](overview.md) and [api.md](api.md).
 └─────────────────────┘    └────────────────────────┘
 ```
 
+## Current upstream asset scope
+
+The EODC `GFM` collection advertises more assets than Atlantis currently uses.
+Today the fetcher loads only:
+
+- `ensemble_flood_extent`
+- `reference_water_mask`
+
+Other upstream assets such as `ensemble_water_extent`, `ensemble_likelihood`,
+`exclusion_mask`, `advisory_flags`, and the DLR / TUW / LIST intermediate
+flood-extent and likelihood layers are not yet exposed through `GFMFetcher`.
+
 ## Processing pipeline
 
 When you run `atlantis fetch --source gfm`, Atlantis executes a date-grouped
@@ -101,9 +113,10 @@ all items with the same `YYYYMMDD` token are processed together.
 
 ## Stage 2 - Native load and coarsen
 
-The processor loads each STAC item in its native CRS and native ground sampling
-distance using `odc.stac.load()`. The first item provides the source CRS and GSD
-used for the group.
+The processor loads each STAC item in its native projected CRS and native
+ground sampling distance using `odc.stac.load()`. The first item provides the
+source CRS and GSD used for the group. This is still upstream source space,
+not Atlantis' canonical 1-arcmin grid.
 
 ### Why coarsen first?
 
@@ -131,6 +144,10 @@ processor builds three float32 masks on the coarsened native grid:
 
 This avoids averaging discrete class codes directly. After reprojection with
 `average`, each mask becomes a coverage fraction on the output grid.
+
+The important implication is that none of the public Atlantis outputs is a
+direct rename of an upstream GFM asset. All three are derived products built
+from those binary masks.
 
 ## Stage 4 - Canonical-grid reprojection and accumulation
 
@@ -173,6 +190,9 @@ $$
 \text{permanent\_water} = \mathbb{1}\left[\frac{\text{perm\_water\_count}}{\text{valid\_count}} > 0.5\right]
 $$
 
+`quality_mask` is therefore a valid-observation coverage mask, not the
+upstream `advisory_flags` or `exclusion_mask` layer.
+
 `cloud_fraction` is computed as the fraction of pixels with no valid coverage.
 
 ## Strategy layer
@@ -199,6 +219,8 @@ into a georeferenced `xarray.Dataset`. It derives pixel-center coordinates from
 the affine transform and writes both CRS and transform via `rioxarray`.
 
 The result is the in-memory payload returned through `FetchResult.dataset`.
+When `keep_processed=True`, the written `processed/` GeoTIFFs are already on
+the same canonical 1-arcmin grid as the in-memory dataset.
 
 ## Edge cases
 

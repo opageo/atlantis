@@ -642,6 +642,50 @@ def _make_fetcher_ds_map(tmp_path, event_id="Yangtze_2020", date_token="20200722
     return DummyFetcher, fetch_result, ds
 
 
+def _make_gfm_fetcher_ds_map(tmp_path, event_id="Valencia_2024", date_token="20241031"):
+    """Return (DummyFetcher, ds_dict) for use in GFM fetch tests."""
+    bbox = (-1.5, 38.8, 0.5, 40.0)
+    tif_path = tmp_path / f"{event_id}_{date_token}_gfm_flood_fraction.tif"
+    metadata = TileMetadata(
+        event_id=event_id,
+        source_id="gfm",
+        fetch_timestamp=datetime.now(timezone.utc),
+        bbox=bbox,
+    )
+    fetch_result = FetchResult(
+        event_id=event_id,
+        source_id="gfm",
+        files=[tif_path],
+        metadata=metadata,
+        date_token=date_token,
+    )
+    ds = _FakeDataset({"flood_fraction": np.ones((4, 4), dtype=np.float32) * 0.5})
+    in_memory_result = FetchResult(
+        event_id=event_id,
+        source_id="gfm",
+        files=[],
+        metadata=metadata,
+        date_token=date_token,
+        dataset=ds,  # type: ignore[arg-type]
+    )
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def fetch(self, event, output_dir):
+            if self.kwargs.get("keep_processed", True):
+                return [fetch_result]
+            return [in_memory_result]
+
+        def to_dataset(self, result):
+            if result.dataset is not None:
+                return result.dataset
+            return ds
+
+    return DummyFetcher, fetch_result, ds
+
+
 def test_fetch_with_plot_saves_png(monkeypatch, tmp_path):
     """``--plot`` should call ``plot_classified`` for the 375 m output."""
     DummyFetcher, fetch_result, ds = _make_fetcher_ds_map(tmp_path)
@@ -1110,29 +1154,111 @@ def test_gfm_warns_on_no_classify():
         assert "GFM always produces classified layers" in result.output
 
 
-def test_gfm_harmonise_always_enabled():
-    """GFM should emit info that harmonise is enabled by default when not explicitly passed."""
-    from unittest.mock import patch
+def test_gfm_fetch_without_plot_or_harmonise_skips_harmonised_outputs(monkeypatch, tmp_path):
+    """GFM without `--plot` or `--harmonise` should not write extra preview outputs."""
+    DummyFetcher, _, _ = _make_gfm_fetcher_ds_map(tmp_path)
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: DummyFetcher)
 
-    with patch("atlantis.cli.get_fetcher") as mock_get:
-        mock_fetcher_cls = MagicMock()
-        mock_get.return_value = mock_fetcher_cls
-        mock_fetcher_cls.return_value.fetch.return_value = []
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not (tmp_path / "gfm" / "harmonised").exists()
+    assert not (tmp_path / "gfm" / "plots").exists()
 
-        result = runner.invoke(
-            cli,
-            [
-                "fetch",
-                "--event",
-                "Test_2024",
-                "--source",
-                "gfm",
-                "--bbox",
-                "-1 38 0 39",
-                "--start-date",
-                "2024-01-01",
-                "--end-date",
-                "2024-01-02",
-            ],
-        )
-        assert "harmonised output enabled by default" in result.output
+
+def test_gfm_fetch_with_plot_saves_png_without_harmonised_dir(monkeypatch, tmp_path):
+    """GFM `--plot` should save a PNG preview without creating harmonised output."""
+    DummyFetcher, _, _ = _make_gfm_fetcher_ds_map(tmp_path)
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: DummyFetcher)
+
+    plot_calls: list = []
+    monkeypatch.setattr(
+        "atlantis.cli.plot_classified",
+        lambda da, *, title, output_path: plot_calls.append(output_path),
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+            "--plot",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert any(str(p).endswith("_gfm.png") for p in plot_calls)
+    assert not (tmp_path / "gfm" / "harmonised").exists()
+
+
+def test_gfm_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
+    """GFM `--harmonise` should save the harmonised TIFF and its PNG preview."""
+    DummyFetcher, _, _ = _make_gfm_fetcher_ds_map(tmp_path)
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: DummyFetcher)
+
+    harm_ds = _FakeDataset({"flood_fraction": np.ones((4, 4), dtype=np.float32) * 0.5})
+
+    mock_harmoniser_cls = MagicMock()
+    mock_harmoniser_cls.return_value.harmonise.return_value = harm_ds
+    monkeypatch.setattr("atlantis.harmoniser.Harmoniser", mock_harmoniser_cls)
+
+    write_calls: list = []
+    monkeypatch.setattr(
+        "atlantis.cli.write_harmonised_raster",
+        lambda da, path: write_calls.append(path),
+    )
+
+    plot_calls: list = []
+    monkeypatch.setattr(
+        "atlantis.cli.plot_classified",
+        lambda da, *, title, output_path: plot_calls.append(output_path),
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+            "--harmonise",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert len(write_calls) == 1
+    assert any(str(p).endswith("_gfm_harmonised.png") for p in plot_calls)
