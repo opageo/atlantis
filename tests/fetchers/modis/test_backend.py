@@ -130,14 +130,16 @@ class TestLanceGeotiffBackend:
         download_link = (
             "/archive/allData/61/MCDWD_L3_F2_NRT/2026/032/MCDWD_L3_F2_NRT.A2026032.h09v05.061.2026032142200.tif"
         )
-        payload = json.dumps({
-            "content": [
-                {
-                    "name": "MCDWD_L3_F2_NRT.A2026032.h09v05.061.2026032142200.tif",
-                    "downloadsLink": download_link,
-                }
-            ]
-        })
+        payload = json.dumps(
+            {
+                "content": [
+                    {
+                        "name": "MCDWD_L3_F2_NRT.A2026032.h09v05.061.2026032142200.tif",
+                        "downloadsLink": download_link,
+                    }
+                ]
+            }
+        )
         entries = LanceGeotiffBackend._parse_json_listing(payload, base_url="https://nrt3.modaps.eosdis.nasa.gov")
         assert len(entries) == 1
         assert entries[0].prod_timestamp == "2026032142200"
