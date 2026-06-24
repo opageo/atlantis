@@ -20,18 +20,29 @@ from atlantis.batch.config import BatchConfig
 from atlantis.batch.tracker import get_pending, init_db, mark_done, mark_failed, stats
 
 
-class _LoguruWorkerPlugin:
-    """Configure loguru inside each Dask worker process."""
+def _build_loguru_worker_plugin() -> Any:  # noqa: ANN401
+    """Build a Dask ``WorkerPlugin`` that wires loguru inside each worker.
 
-    name = "loguru_setup"
+    Defined lazily so that ``atlantis.batch.orchestrator`` can still be
+    imported when the optional ``[batch]`` extras (dask/distributed) are
+    not installed.
+    """
+    from distributed.diagnostics.plugin import WorkerPlugin
 
-    def setup(self, worker: Any) -> None:  # noqa: ANN401
-        import sys
+    class _LoguruWorkerPlugin(WorkerPlugin):
+        """Configure loguru inside each Dask worker process."""
 
-        from loguru import logger as wlogger
+        name = "loguru_setup"
 
-        wlogger.remove()
-        wlogger.add(sys.stderr, level="INFO", enqueue=True)
+        def setup(self, worker: Any) -> None:  # noqa: ANN401
+            import sys
+
+            from loguru import logger as wlogger
+
+            wlogger.remove()
+            wlogger.add(sys.stderr, level="INFO", enqueue=True)
+
+    return _LoguruWorkerPlugin()
 
 
 def run_batch(
@@ -78,7 +89,7 @@ def run_batch(
     cluster.adapt(minimum=cfg.workers_min, maximum=cfg.workers_max)
 
     with Client(cluster) as client:
-        client.register_worker_plugin(_LoguruWorkerPlugin())
+        client.register_plugin(_build_loguru_worker_plugin())
         logger.info("Dashboard: {}", client.dashboard_link)
 
         futures = client.map(process_fn, pending_tasks, retries=cfg.retries, pure=False)
