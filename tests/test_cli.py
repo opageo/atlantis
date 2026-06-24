@@ -719,7 +719,7 @@ class TestPlotViirs:
     def test_calls_plot_classified_for_flood_extent(self, tmp_path, monkeypatch):
         calls: list[dict] = []
 
-        def _capture(da, *, title, output_path):
+        def _capture(da, *, title, output_path, announce=True):
             calls.append({"da": da, "title": title, "path": output_path})
 
         monkeypatch.setattr("atlantis.cli.plot_classified", _capture)
@@ -734,7 +734,7 @@ class TestPlotViirs:
     def test_calls_plot_raw_when_no_flood(self, tmp_path, monkeypatch):
         calls: list[dict] = []
 
-        def _capture(da, *, title, output_path):
+        def _capture(da, *, title, output_path, announce=True):
             calls.append({"da": da, "title": title, "path": output_path})
 
         monkeypatch.setattr("atlantis.cli.plot_raw", _capture)
@@ -785,7 +785,7 @@ def test_fetch_with_plot_saves_png(monkeypatch, tmp_path):
     plot_calls: list = []
     monkeypatch.setattr(
         "atlantis.cli.plot_classified",
-        lambda da, *, title, output_path: plot_calls.append(output_path),
+        lambda da, *, title, output_path, announce=True: plot_calls.append(output_path),
     )
 
     result = runner.invoke(
@@ -846,7 +846,7 @@ def test_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
     plot_calls: list = []
     monkeypatch.setattr(
         "atlantis.cli.plot_classified",
-        lambda da, *, title, output_path: plot_calls.append(output_path),
+        lambda da, *, title, output_path, announce=True: plot_calls.append(output_path),
     )
 
     result = runner.invoke(
@@ -1026,7 +1026,7 @@ def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path)
     plot_calls: list = []
     monkeypatch.setattr(
         "atlantis.cli.plot_classified",
-        lambda da, *, title, output_path: plot_calls.append(output_path),
+        lambda da, *, title, output_path, announce=True: plot_calls.append(output_path),
     )
 
     write_calls: list = []
