@@ -30,7 +30,8 @@
                 "ms-python.vscode-pylance",
                 "charliermarsh.ruff",
                 "ms-toolsai.jupyter",
-                "github.copilot"
+                "github.copilot",
+                "astral-sh.ty"
             ]
         }
     },

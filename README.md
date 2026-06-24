@@ -139,9 +139,10 @@ In the project of Atlantis we are exploring using [devcontainers](https://contai
 
 ### Prerequisites of Devcontainers
 1. You are using [vs-code](https://code.visualstudio.com/) as your development editor.
-2. You have set your `~/.aws/config` and `~/.aws/credentials` files with the suggested configuration for using the Atlantis S3 Storage bucket and authenticating against the several datasets providers - request for the administrators aws keys and setup template.
-3. You have created an EARTHDATA_TOKEN for using MODIS pipeline [how-to-setup-earthdata-token](#earthdata-token-guideline).
-4. *Extra if you need to actively contribute: enable SSH-Agent forwarding to authenticate against github. Here is [how-to](#add-ssh-forwarding) if you are using already a remote-ssh connection to your VM
+2. You have installed the dev-containers extension (https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+3. You have set your `~/.aws/config` and `~/.aws/credentials` files with the suggested configuration for using the Atlantis S3 Storage bucket and authenticating against the several datasets providers - request for the administrators aws keys and setup template.
+4. You have created an EARTHDATA_TOKEN for using MODIS pipeline [how-to-setup-earthdata-token](#earthdata-token-guideline).
+5. *Extra if you need to actively contribute: enable SSH-Agent forwarding to authenticate against github. Here is [how-to](#add-ssh-forwarding) if you are using already a remote-ssh connection to your VM
 
 #### Earthdata Token guideline:
 - Create an account at https://search.earthdata.nasa.gov/ 
