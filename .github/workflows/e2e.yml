@@ -51,6 +51,7 @@ jobs:
         env:
           NO_COLOR: "1"
           GDAL_HTTP_UNSAFESSL: "YES"
+          EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
         run: uv run pytest tests/ -m e2e -v --timeout=600
 
       - name: Remove run-e2e label after successful run
