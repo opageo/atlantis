@@ -1096,62 +1096,97 @@ def test_fetch_peak_window_days_mutex_with_specific_flags(monkeypatch, tmp_path)
 # ── GFM CLI warnings ─────────────────────────────────────────────────────────
 
 
-def test_gfm_warns_on_no_stream():
-    """GFM should warn when --no-stream is passed (always streams via STAC/COG)."""
-    from unittest.mock import patch
+class _EmptyGfmFetcher:
+    """Minimal GFM fetcher stub that returns no results without triggering diagnostics."""
 
-    with patch("atlantis.cli.get_fetcher") as mock_get:
-        mock_fetcher_cls = MagicMock()
-        mock_get.return_value = mock_fetcher_cls
-        mock_fetcher_cls.return_value.fetch.return_value = []
+    last_diagnostics = None
 
-        result = runner.invoke(
-            cli,
-            [
-                "fetch",
-                "--event",
-                "Test_2024",
-                "--source",
-                "gfm",
-                "--bbox",
-                "-1 38 0 39",
-                "--start-date",
-                "2024-01-01",
-                "--end-date",
-                "2024-01-02",
-                "--no-stream",
-            ],
-        )
-        assert "GFM always streams" in result.output
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    def fetch(self, event, output_dir):
+        return []
 
 
-def test_gfm_warns_on_no_classify():
-    """GFM should warn when --no-classify is passed."""
-    from unittest.mock import patch
+def test_gfm_warns_on_no_stream(monkeypatch, tmp_path):
+    """GFM should warn when `--no-stream` is passed (GFM always streams via STAC/COG)."""
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: _EmptyGfmFetcher)
 
-    with patch("atlantis.cli.get_fetcher") as mock_get:
-        mock_fetcher_cls = MagicMock()
-        mock_get.return_value = mock_fetcher_cls
-        mock_fetcher_cls.return_value.fetch.return_value = []
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+            "--no-stream",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "GFM always streams" in result.stdout
 
-        result = runner.invoke(
-            cli,
-            [
-                "fetch",
-                "--event",
-                "Test_2024",
-                "--source",
-                "gfm",
-                "--bbox",
-                "-1 38 0 39",
-                "--start-date",
-                "2024-01-01",
-                "--end-date",
-                "2024-01-02",
-                "--no-classify",
-            ],
-        )
-        assert "GFM always produces classified layers" in result.output
+
+def test_gfm_warns_on_no_classify(monkeypatch, tmp_path):
+    """GFM should warn when `--no-classify` is passed (GFM always produces classified layers)."""
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: _EmptyGfmFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+            "--no-classify",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "GFM always produces classified layers" in result.stdout
+
+
+def test_gfm_hints_about_harmonise_default(monkeypatch, tmp_path):
+    """Without `--harmonise`, GFM should hint about the canonical-grid encoding."""
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: _EmptyGfmFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "1-arcmin canonical grid" in result.stdout
+    assert "--harmonise" in result.stdout
 
 
 def test_gfm_fetch_without_plot_or_harmonise_skips_harmonised_outputs(monkeypatch, tmp_path):

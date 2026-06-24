@@ -172,17 +172,17 @@ issues, the LANCE retention window, empty listings, or tile mismatches.
 
 ## MODISFetcher parameters
 
-| Parameter         | Type   | Default           | Description                                                                                                |
-| ----------------- | ------ | ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| `backend`         | `str`  | `"lance_geotiff"` | `"lance_geotiff"` (NRT, streamable) or `"laads_hdf4"` (historical, download)                               |
-| `composite`       | `str`  | `"F2"`            | One of `"F1"` / `"F1C"` / `"F2"` / `"F3"` (1-day, 1-day cloud-shadow screened, 2-day, 3-day)               |
-| `classify`        | `bool` | `False`           | Decode raw codes into VIIRS-parity layers + `recurring_flood`; the CLI turns this on by default            |
+| Parameter         | Type   | Default           | Description                                                                                  |
+| ----------------- | ------ | ----------------- | -------------------------------------------------------------------------------------------- |
+| `backend`         | `str`  | `"lance_geotiff"` | `"lance_geotiff"` (NRT, streamable) or `"laads_hdf4"` (historical, download)                 |
+| `composite`       | `str`  | `"F2"`            | One of `"F1"` / `"F1C"` / `"F2"` / `"F3"` (1-day, 1-day cloud-shadow screened, 2-day, 3-day) |
+| `classify`        | `bool` | `False`           | Decode raw codes into VIIRS-parity layers + `recurring_flood`; the CLI turns this on by default |
 | `stream`          | `bool` | `False`           | `/vsicurl/` streaming. Only valid with `lance_geotiff`; raises otherwise. The CLI turns this on by default |
-| `strategy`        | `str`  | `"peak"`          | Multi-date reduction: `"peak"`, `"aggregate"`, `"all"`                                                     |
-| `keep_processed`  | `bool` | `True`            | Write intermediate processed/ GeoTIFFs                                                                     |
-| `base_url`        | `str`  | per-backend       | Override the backend's primary base URL                                                                    |
-| `backup_base_url` | `str`  | `nrt4` mirror     | LANCE-only: secondary host used as fallback on connection error                                            |
-| `timeout`         | `int`  | `300`             | HTTP request timeout (seconds)                                                                             |
+| `strategy`        | `str`  | `"peak"`          | Multi-date reduction: `"peak"`, `"aggregate"`, `"all"`                                       |
+| `keep_processed`  | `bool` | `True`            | Write intermediate processed/ GeoTIFFs                                                       |
+| `base_url`        | `str`  | per-backend       | Override the backend's primary base URL                                                      |
+| `backup_base_url` | `str`  | `nrt4` mirror     | LANCE-only: secondary host used as fallback on connection error                              |
+| `timeout`         | `int`  | `300`             | HTTP request timeout (seconds)                                                               |
 
 ## Output layers (with `--classify` / `classify=True`)
 
