@@ -10,7 +10,11 @@ source overview, see [overview.md](overview.md).
 flowchart TD
   START["atlantis fetch --source gfm"] --> SEARCH["Search EODC STAC"]
   SEARCH --> GROUP["Group items by date"]
-  GROUP --> STRATEGY{"--strategy?"}
+  GROUP --> PROCESS["Load native ~20 m COGs (odc.stac)"]
+  PROCESS --> COARSEN["Coarsen ×4 → ~80 m intermediate"]
+  COARSEN --> REPROJECT["Reproject to canonical 1-arcmin EPSG:4326 grid"]
+  REPROJECT --> CLASSIFY["Derive flood_fraction · quality_mask · permanent_water"]
+  CLASSIFY --> STRATEGY{"--strategy?"}
 
   STRATEGY -->|peak| PEAK["Pick date with max flood_pixel_count"]
   STRATEGY -->|aggregate| AGG["Mean flood_fraction and combine masks"]
@@ -20,19 +24,29 @@ flowchart TD
   AGG --> KEEP
   ALL --> KEEP
 
-  KEEP -->|on| WRITE["Write processed/ GeoTIFFs"]
-  KEEP -->|off| MEMORY["Keep processed tiles in memory"]
+  KEEP -->|on| WRITE["Write processed/ GeoTIFFs\n(already on canonical grid)"]
+  KEEP -->|off| MEMORY["Keep in memory"]
 
-  WRITE --> HARM{"--harmonise?"}
-  MEMORY --> HARM
-  HARM -->|No| DONE["Done"]
-  HARM -->|Yes| HARMONISE["Snap AOI to canonical 1-arcmin grid"]
-  HARMONISE --> PLOT{"--plot?"}
-  PLOT -->|Yes| PNG["Write harmonised TIFF + PNG"]
-  PLOT -->|No| TIFF["Write harmonised TIFF"]
+  WRITE --> OUTPUT{"--harmonise / --plot?"}
+  MEMORY --> OUTPUT
+  OUTPUT -->|"--harmonise"| HARMONISE["Re-encode flood_fraction\nfloat32 → uint8 %\n+ write TIFF & PNG"]
+  OUTPUT -->|"--plot only"| PNG["Write PNG preview"]
+  OUTPUT -->|neither| DONE["Done"]
+  HARMONISE --> DONE
   PNG --> DONE
-  TIFF --> DONE
 ```
+
+Because GFM processing already reprojects onto the canonical 1-arcmin grid,
+the `processed/` outputs are spatially identical to harmonised outputs from
+other sources. `--harmonise` therefore only re-encodes `flood_fraction` from
+float32 [0,1] to uint8 [0,100] — no additional resampling occurs.
+
+- **`--harmonise`** writes the re-encoded flood GeoTIFF plus a PNG preview.
+  When both flags are passed, `--harmonise` subsumes `--plot`.
+- **`--plot`** (without `--harmonise`) writes a PNG preview of the processed
+  `flood_fraction` layer.
+- **Neither** — only the `processed/` GeoTIFFs are written (unless
+  `--no-keep-processed` is also set).
 
 ## Mode summary
 
@@ -42,11 +56,11 @@ flowchart TD
 | `aggregate` | Multi-item or multi-date coverage smoothing | One aggregated `FetchResult`         |
 | `all`       | Time-series analysis                        | One `FetchResult` per surviving date |
 
-| Flag combination      | Effect                                           |
-| --------------------- | ------------------------------------------------ |
-| `--no-keep-processed` | Skip intermediate ~80 m outputs                  |
-| `--harmonise`         | Write canonical 1-arcmin flood percentage raster |
-| `--plot`              | Save PNG previews alongside raster outputs       |
+| Flag combination      | Effect                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `--no-keep-processed` | Skip the processed canonical-grid GeoTIFFs                                         |
+| `--harmonise`         | Write the harmonised flood TIFF plus a harmonised PNG preview                      |
+| `--plot`              | Without `--harmonise`, write a PNG preview of the processed `flood_fraction` layer |
 
 ## CLI reference
 
@@ -64,7 +78,10 @@ uv run atlantis fetch \
 
 ### `atlantis harmonise --source gfm`
 
-Resample previously fetched GFM outputs to a uniform 1-arcmin grid:
+Re-run harmonisation on previously fetched GFM `processed/*_flood_fraction.tif`
+outputs. For the standard GFM fetch path this is usually a same-grid re-encode,
+because those processed outputs are already snapped to the canonical 1-arcmin
+grid unless you override the harmoniser settings:
 
 ```bash
 uv run atlantis harmonise \
@@ -76,12 +93,12 @@ uv run atlantis harmonise \
 
 ### Output control
 
-| Flag                  | Default      | Effect                                                                                                                                          |
-| --------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--harmonise`         | **on** (GFM) | Re-encodes float32 [0,1] → uint8 [0,100] (no resampling — GFM is already 1-arcmin). Always enabled by default for GFM.                          |
-| `--no-keep-processed` | off          | Write only the harmonised output (no intermediate ~80 m files)                                                                                  |
-| `--plot`              | off          | Save a PNG of each result date                                                                                                                  |
-| `--strategy`          | `peak`       | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). Same default across all sources. |
+| Flag                  | Default | Effect                                                                                                                                          |
+| --------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--harmonise`         | off     | Write a harmonised flood TIFF plus a harmonised PNG preview. At default settings this is a same-grid float32 → uint8 re-encode.                 |
+| `--no-keep-processed` | off     | Skip the processed `flood_fraction` / mask GeoTIFFs and keep results in memory only unless you also request `--plot` or `--harmonise`           |
+| `--plot`              | off     | Write a PNG preview of the processed `flood_fraction` layer when `--harmonise` is not requested                                                 |
+| `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). Same default across all sources. |
 
 ### Processing
 
@@ -89,6 +106,13 @@ uv run atlantis harmonise \
 | ---------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--gfm-coarsen-factor` | `4`       | Spatial coarsening factor before reprojection. Reduces native ~20 m to ~80 m by default. Higher values trade resolution for speed/noise reduction. |
 | `--gfm-resampling`     | `average` | Resampling method when reprojecting to EPSG:4326. Any rasterio method name is accepted.                                                            |
+
+### Cross-source CLI flags ignored by GFM
+
+| Flag            | Current GFM behavior                                                                 |
+| --------------- | ------------------------------------------------------------------------------------ |
+| `--no-classify` | Ignored. GFM always derives `flood_fraction`, `quality_mask`, and `permanent_water`. |
+| `--no-stream`   | Ignored. GFM always streams source COGs via STAC / `odc.stac`.                       |
 
 ### Harmonisation
 
@@ -106,7 +130,7 @@ footprint. Multiple items can cover the same date and bbox.
 ### Step-by-step
 
 ```text
-STAC search → group by date → per-item loop → classify → accumulate → harmonise
+STAC search → group by date → per-item loop → accumulate → classify → harmonise flood layer
                                     │
                     load (native CRS, ~20 m, odc.stac)
                     coarsen (max-pool × coarsen_factor)
@@ -221,7 +245,7 @@ harmonised GeoTIFF + PNG.
 
 ## Output format
 
-### Processed outputs (~80 m, native UTM → EPSG:4326)
+### Processed outputs (canonical 1-arcmin grid)
 
 | File                    | Dtype   | Nodata  | Values                                         |
 | ----------------------- | ------- | ------- | ---------------------------------------------- |
@@ -230,8 +254,11 @@ harmonised GeoTIFF + PNG.
 | `*_permanent_water.tif` | uint8   | 255     | 1 = permanent water, 0 = not                   |
 
 - **CRS**: EPSG:4326 (WGS84)
+- **Resolution**: canonical 1/60° grid (same grid as harmonised output)
 - **Compression**: LZW
-- Resolution varies with native GSD and `--gfm-coarsen-factor`
+
+The native ~20 m rasters and the coarsened ~80 m intermediate arrays are not
+written to disk by Atlantis' public GFM fetch path.
 
 ### Harmonised output (1 arcmin)
 
@@ -248,6 +275,10 @@ harmonised GeoTIFF + PNG.
 Harmonised flood extent values are stored as **integer percentages** (0–100),
 where 0 = no flood and 100 = fully flooded (same encoding as VIIRS harmonised
 outputs). This gives 1% precision while using 4× less disk space than float32.
+
+Only the harmonised `flood_fraction` layer is written to the GeoTIFF. The
+side masks (`quality_mask`, `permanent_water`) remain part of the in-memory
+dataset unless you keep the processed outputs.
 
 Compatible with `rioxarray`, `rasterio`, QGIS, and any GDAL-based tool.
 
