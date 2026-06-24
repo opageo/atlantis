@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM ghcr.io/osgeo/gdal:ubuntu-full-3.13.1
+FROM ghcr.io/osgeo/gdal:ubuntu-full-3.13.0
 
 SHELL ["sh", "-exc"]
 

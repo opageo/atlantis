@@ -28,7 +28,7 @@ dependencies = [
   "xarray",
   "zarr>=3.2",
   "requests>=2.34.2",
-  "gdal==3.13.1"
+  "gdal==3.13.0"
 ]
 
 [project.scripts]
