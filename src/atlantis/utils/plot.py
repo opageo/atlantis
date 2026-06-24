@@ -104,9 +104,7 @@ def legend_patches() -> list[Patch]:
 # ── Plot functions ────────────────────────────────────────────────────────────
 
 
-def plot_raw(
-    da: "xr.DataArray", title: str, output_path: Path, *, announce: bool = True
-) -> None:  # type: ignore[name-defined]  # noqa: F821
+def plot_raw(da: "xr.DataArray", title: str, output_path: Path, *, announce: bool = True) -> None:  # type: ignore[name-defined]  # noqa: F821
     """Render a raw VIIRS raster with the pixel-code legend as a side panel."""
     import matplotlib.pyplot as plt
 
