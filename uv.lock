@@ -276,6 +276,7 @@ notebooks = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "atlantis", extra = ["batch"] },
     { name = "ipykernel" },
     { name = "ipython" },
     { name = "nbstripout" },
@@ -338,6 +339,7 @@ provides-extras = ["geo", "ml", "batch", "notebooks"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "atlantis", extras = ["batch"] },
     { name = "ipykernel", specifier = ">=7.3.0" },
     { name = "ipython", specifier = ">=9.14.1" },
     { name = "nbstripout", specifier = ">=0.9.1" },
