@@ -233,12 +233,18 @@ def find_hdf4_subdataset(hdf_path: Path, composite: str) -> str:
             "Install GDAL with HDF4 support and reinstall the GDAL Python bindings."
         ) from exc
 
+    if _gdal.GetDriverByName("HDF4") is None:
+        raise RuntimeError("GDAL was compiled without HDF4 support; cannot read MCDWD .hdf files")
+
     layer_suffix = COMPOSITE_TO_HDF_LAYER[composite.upper()]
     ds = _gdal.Open(str(hdf_path))
     if ds is None:
-        raise FileNotFoundError(f"GDAL could not open {hdf_path}. Ensure GDAL was compiled with HDF4 support.")
+        raise FileNotFoundError(
+            f"GDAL could not open {hdf_path}. Is it a valid HDF4 file? Ensure the authentication layer "
+            f"did not respond with an HTML page instead of the binary data."
+        )
     subdatasets = ds.GetSubDatasets()  # list of (uri, description) tuples
-    ds = None  # close
+    ds.Close()  # close
     uris = [uri for uri, _desc in subdatasets]
     for uri in uris:
         if uri.endswith(":" + layer_suffix):
