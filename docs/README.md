@@ -14,9 +14,9 @@ design notes.
 
 ## Architecture and Design
 
-- [KuroSiwo STAC design](./kurosiwo/stac-design.md)
-- [STAC architecture diagrams](./kurosiwo/stac_ks_labeled.md)
-- [Compact STAC mermaid diagram](./kurosiwo/stac_ks.md)
+- [KuroSiwo STAC design](./kurosiwo-stac-design.md)
+- [STAC architecture diagrams](./mermaid_stac_ks_labeled.md)
+- [Compact STAC mermaid diagram](./mermaid_stac_ks.md)
 
 ## Getting Started
 
@@ -24,5 +24,9 @@ design notes.
   token, LAADS Web pre-authorization, AWS profiles, KuroSiwo catalogue).
 - [src/README.md](../src/README.md) - Architecture guide, module layout, CLI
   examples, and extension points.
+- [cli.md](./cli.md) - Full CLI reference: every command, every flag,
+  defaults, and sensor-specific options.
 - [CLI_Examples.md](../CLI_Examples.md) - End-to-end example commands across
   real flood events.
+- [development.md](./development.md) - Contributor guide: running tests,
+  E2E workflow, and testing GitHub Actions locally.

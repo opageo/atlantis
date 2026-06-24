@@ -106,25 +106,25 @@ harmoniser writes the usual uint8 percentage raster for downstream analysis.
 
 `GFMFetcher.to_dataset()` returns an `xarray.Dataset` with these variables:
 
-| Variable          | Dtype     | Meaning |
-| ----------------- | --------- | ------- |
-| `flood_fraction`  | `float32` | Fraction of valid observations classified as flood |
-| `quality_mask`    | `uint8`   | `1` where at least one valid observation exists |
+| Variable          | Dtype     | Meaning                                                 |
+| ----------------- | --------- | ------------------------------------------------------- |
+| `flood_fraction`  | `float32` | Fraction of valid observations classified as flood      |
+| `quality_mask`    | `uint8`   | `1` where at least one valid observation exists         |
 | `permanent_water` | `uint8`   | `1` where permanent water exceeds 50% of valid coverage |
 
 ## GFMFetcher parameters
 
-| Parameter          | Type         | Default               | Description |
-| ------------------ | ------------ | --------------------- | ----------- |
-| `api_url`          | `str | None` | EODC STAC endpoint    | Override the STAC API root |
-| `coarsen_factor`   | `int`        | `4`                   | Max-pool factor before reprojection |
-| `resampling`       | `Resampling` | `Resampling.average`  | Reprojection resampling method |
-| `strategy`         | `str`        | `"aggregate"`        | One of `peak`, `aggregate`, or `all` |
-| `keep_processed`   | `bool`       | `True`                | Write intermediate processed GeoTIFFs |
-| `peak_days_before` | `int`        | `0`                   | Window filter before the peak date |
-| `peak_days_after`  | `int`        | `0`                   | Window filter after the peak date |
-| `max_observations` | `int`        | `0`                   | Cap the number of returned dates after windowing |
-| `peak_priority`    | `str`        | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced` |
+| Parameter          | Type         | Default              | Description                                      |
+| ------------------ | ------------ | -------------------- | ------------------------------------------------ | -------------------------- |
+| `api_url`          | `str         | None`                | EODC STAC endpoint                               | Override the STAC API root |
+| `coarsen_factor`   | `int`        | `4`                  | Max-pool factor before reprojection              |
+| `resampling`       | `Resampling` | `Resampling.average` | Reprojection resampling method                   |
+| `strategy`         | `str`        | `"aggregate"`        | One of `peak`, `aggregate`, or `all`             |
+| `keep_processed`   | `bool`       | `True`               | Write intermediate processed GeoTIFFs            |
+| `peak_days_before` | `int`        | `0`                  | Window filter before the peak date               |
+| `peak_days_after`  | `int`        | `0`                  | Window filter after the peak date                |
+| `max_observations` | `int`        | `0`                  | Cap the number of returned dates after windowing |
+| `peak_priority`    | `str`        | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`   |
 
 ## Notes
 
@@ -134,4 +134,4 @@ harmoniser writes the usual uint8 percentage raster for downstream analysis.
   loads Cloud-Optimised GeoTIFF assets via STAC discovery and `odc.stac`.
 - For implementation details behind `search()`, `fetch()`, and `to_dataset()`, see
   [internals.md](internals.md) and the code in
-  [src/atlantis/fetchers/gfm/__init__.py](../../src/atlantis/fetchers/gfm/__init__.py).
+  [src/atlantis/fetchers/gfm/**init**.py](../../src/atlantis/fetchers/gfm/__init__.py).

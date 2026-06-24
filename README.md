@@ -13,15 +13,12 @@ ML-ready archive of satellite-derived flood inundation observations
 
 [![Python versions][python-badge]][python-url]
 [![Ruff][ruff-badge]][ruff-url]
-[![cov][cov-badge]][cov-url]
 [![Gitleaks status][gitleaks-badge]][gitleaks-url]
 
 [python-badge]: https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue
 [python-url]: https://github.com/opageo/atlantis
 [ruff-badge]: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
 [ruff-url]: https://github.com/astral-sh/ruff
-[cov-badge]: https://ECMWFCode4Earth.github.io/atlantis/badges/coverage.svg
-[cov-url]: https://github.com/ECMWFCode4Earth/atlantis/actions
 [gitleaks-badge]: https://github.com/opageo/atlantis/actions/workflows/gitleaks.yml/badge.svg
 [gitleaks-url]: https://github.com/opageo/atlantis/actions/workflows/gitleaks.yml
 
@@ -66,24 +63,33 @@ See [docs/setup.md](docs/setup.md) for a full description of each credential
 
 ## CLI
 
-- `atlantis setup` — bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue)
-- `atlantis demo` — run the Valencia 2024 flood example end-to-end
-- `atlantis fetch` — fetch VIIRS inundation data for an explicit bbox/date window
-- `atlantis build-kurosiwo-metadata` — derive KuroSiwo metadata CSV from the GeoPackage catalogue
-- `atlantis fetch-kurosiwo-viirs` — fetch VIIRS for KuroSiwo cases directly from the catalogue or a metadata CSV
-- `atlantis harmonise` — resample fetched outputs to a uniform grid (1 arcmin) with normalisation
-- `atlantis archive` — write Zarr archives (placeholder)
-- `atlantis validate` — validate the archive (placeholder)
+The commands you'll use most often:
 
-  > **Recommended flags for new users:** The default `peak` strategy
-  > fetches and processes all dates, then keeps only the peak-flood date in memory.
-  > Add `--no-keep-processed` to skip writing intermediate 375 m files, or
-  > `--strategy aggregate` to return a temporal mean/mode composite.
-  > Use `--no-stream` to download tiles to disk, or `--no-classify` for raw pixel codes.
-  > See [docs/viirs/overview.md](docs/viirs/overview.md) for details.
-  >
-  > The exact working VIIRS and KuroSiwo extraction workflow is documented
-  > in [src/README.md](src/README.md).
+- `atlantis setup` — bootstrap required data assets and credentials
+- `atlantis demo` — run the Valencia 2024 flood example end-to-end
+- `atlantis fetch` — fetch raw inundation data (VIIRS / MODIS / GFM) for an explicit bbox + date window
+- `atlantis harmonise` — resample fetched outputs to a uniform 1 arcmin grid with normalisation
+- `atlantis list-sources` — list all registered data sources
+
+Add `--verbose` (or `-v`) **before** the subcommand for debug logging,
+e.g. `uv run atlantis --verbose fetch ...`.
+
+> **Full reference:** See [docs/cli.md](docs/cli.md) for every command,
+> every flag, defaults, and sensor-specific options. For task-oriented
+> walkthroughs across real flood events see
+> [CLI_Examples.md](CLI_Examples.md).
+>
+> **Recommended flags for new users:** the default `peak` strategy
+> fetches and processes all dates, then keeps only the peak-flood date
+> in memory. Add `--no-keep-processed` to skip writing intermediate
+> files, or `--strategy aggregate` to return a temporal mean/mode
+> composite. Use `--no-stream` to download tiles to disk, or
+> `--no-classify` for raw pixel codes. For GFM, `--harmonise` is
+> enabled by default (re-encodes to uint8 for cross-source stacking);
+> `--no-stream` and `--no-classify` are ignored.
+> See [docs/viirs/overview.md](docs/viirs/overview.md),
+> [docs/gfm/overview.md](docs/gfm/overview.md), and
+> [src/README.md](src/README.md) for details.
 
 ## Notebooks
 
@@ -103,74 +109,21 @@ uv sync --extra notebooks
 
 See [`notebooks/README.md`](notebooks/README.md) for details.
 
-## Testing Github actions/workflows locally
+### KuroSiwo catalogue
 
-### Install nektos github extension
-
-```bash
-gh extension install https://github.com/nektos/gh-act
-```
-
-### Ensure you have docker daemon running
-
-Install and run docker daemon in a cent-os rocky-linux system:
+The KuroSiwo draft notebooks
+([`kurosiwo_eda.ipynb`](notebooks/drafts/kurosiwo_eda.ipynb),
+[`kurosiwo_viirs_showcase_cli.ipynb`](notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb))
+require the KuroSiwo catalogue (~500 MB). Download it on demand with:
 
 ```bash
-sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y docker-ce docker-ce-cli containerd.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
+uv run python scripts/download_kurosiwo.py
 ```
 
-### Run actos with
+This places the file at `assets/ks_catalogue.gpkg`. Alternatively, fetch it
+from the atlantis S3 bucket: `s3://atlantis/assets/ks/ks_catalogue.gpkg`.
 
-```bash
-gh act <event-name>
-```
+## Development
 
-default event is `push`
-
-### Run specific workflow by job name
-
-```bash
-gh act -l #lists all job names
-gh act -j <job-name>
-```
-
-## Using devcontainer as zero setup environment for Atlantis
-In the project of Atlantis we are exploring using [devcontainers](https://containers.dev/) github's technology for offering a zero-setup containerized environment to be ready to go for running all the Atlantis features.
-
-### Prerequisites of Devcontainers
-1. You are using [vs-code](https://code.visualstudio.com/) as your development editor.
-2. You have installed the dev-containers extension (https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-3. You have set your `~/.aws/config` and `~/.aws/credentials` files with the suggested configuration for using the Atlantis S3 Storage bucket and authenticating against the several datasets providers - request for the administrators aws keys and setup template.
-4. You have created an EARTHDATA_TOKEN for using MODIS pipeline [how-to-setup-earthdata-token](#earthdata-token-guideline).
-5. *Extra if you need to actively contribute: enable SSH-Agent forwarding to authenticate against github. Here is [how-to](#add-ssh-forwarding) if you are using already a remote-ssh connection to your VM
-
-#### Earthdata Token guideline:
-- Create an account at https://search.earthdata.nasa.gov/ 
-- **Important note:** you need to add the organization/institute field for your token to be enabled.
-- Generate a token by clicking to -> profile -> Generate_Token tab
-- Make sure you expose the token to your environment variables as: `EARTHDATA_TOKEN=<TOKEN>`
-  The simplest way is adding the token to the `.env` file in your workspace, which is automatically activated from vs-code. 
-  **Be careful** and never commit an environment file exposing your token/credentials  
-
-#### Add SSH forwarding
-##### For your vscode-server - in case your already using a remote-ssh connection
-
-In order to enable active authentication in your dev-container session, you'll need to forward the ssh-agent.
-For linux systems, while conencted in a VM with remote-ssh vs-code server, create the `~/.vscode-server/server-env-setup` and add:
-```bash
-# Sourced by the VS Code Server on startup.
-# Make the host's ssh-agent (started by ~/.bash_profile on login) visible
-# to the VS Code Server process so the Dev Containers extension can forward it.
-
-if [ -z "$SSH_AUTH_SOCK" ] && [ -f "$HOME/.ssh/ssh-agent" ]; then
-    # Start a new agent if the recorded socket is stale or missing.
-    if ! eval "$(cat "$HOME/.ssh/ssh-agent")" > /dev/null 2>&1 \
-       || [ ! -S "$SSH_AUTH_SOCK" ]; then
-        ssh-agent -s > "$HOME/.ssh/ssh-agent"
-        eval "$(cat "$HOME/.ssh/ssh-agent")" > /dev/null
-        ssh-add "$HOME/.ssh/id_ed25519" > /dev/null 2>&1
-    fi
-    export SSH_AUTH_SOCK SSH_AGENT_PID
-fi
-```
-if you use your own ssh key instead of the default `$HOME/.ssh/id_ed25519` replace that accordingly.
+Contributor docs (running tests, E2E workflow, testing GitHub Actions
+locally) live in [docs/development.md](docs/development.md).
