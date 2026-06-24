@@ -370,26 +370,18 @@ def _plot_source(
     pretty = _pretty_source(source_id)
     res = _resolution_label(source_id)
     if "flood_fraction" in best_ds:
-        plot_kwargs = {
-            "title": f"{event_id}: {pretty} flood extent {date_label} ({res})",
-            "output_path": output_png_path,
-        }
-        if not announce:
-            plot_kwargs["announce"] = False
         plot_classified(
             best_ds["flood_fraction"],
-            **plot_kwargs,
+            title=f"{event_id}: {pretty} flood extent {date_label} ({res})",
+            output_path=output_png_path,
+            announce=announce,
         )
     else:
-        plot_kwargs = {
-            "title": f"{event_id}: {pretty} raw composite {date_label} ({res})",
-            "output_path": output_png_path,
-        }
-        if not announce:
-            plot_kwargs["announce"] = False
         plot_raw(
             best_ds["raw"],
-            **plot_kwargs,
+            title=f"{event_id}: {pretty} raw composite {date_label} ({res})",
+            output_path=output_png_path,
+            announce=announce,
         )
 
 
@@ -443,26 +435,18 @@ def _harmonise_source(
 
     png_harm_path = plot_dir / f"{event_id}_{date_label}_{source_id}_harmonised.png"
     if flood_var == "flood_fraction":
-        plot_kwargs = {
-            "title": f"{event_id}: {pretty} harmonised flood extent {date_label} (1 arcmin)",
-            "output_path": png_harm_path,
-        }
-        if not announce:
-            plot_kwargs["announce"] = False
         plot_classified(
             ds_harm[flood_var],
-            **plot_kwargs,
+            title=f"{event_id}: {pretty} harmonised flood extent {date_label} (1 arcmin)",
+            output_path=png_harm_path,
+            announce=announce,
         )
     else:
-        plot_kwargs = {
-            "title": f"{event_id}: {pretty} harmonised composite {date_label} (1 arcmin)",
-            "output_path": png_harm_path,
-        }
-        if not announce:
-            plot_kwargs["announce"] = False
         plot_raw(
             ds_harm[flood_var],
-            **plot_kwargs,
+            title=f"{event_id}: {pretty} harmonised composite {date_label} (1 arcmin)",
+            output_path=png_harm_path,
+            announce=announce,
         )
 
     return ds_harm
