@@ -150,8 +150,8 @@ def _fetch_and_visualise(
         ds = fetcher.to_dataset(result)
         dlabel = date_from_filename(result.files[0].name)
         print(f"\n  {dlabel}")
-        if "flood_fraction" in ds:
-            flooded = pixel_stats_classified(ds["flood_fraction"].values)
+        if "flood_extent" in ds:
+            flooded = pixel_stats_classified(ds["flood_extent"].values)
             if flooded > best_flood_count:
                 best_flood_count = flooded
                 best_result = result
@@ -162,10 +162,10 @@ def _fetch_and_visualise(
     best_ds = fetcher.to_dataset(best_result)
     print(f"\n  Plotting peak-flood date: {best_date} ({best_flood_count:,} flooded px)")
 
-    if "flood_fraction" in best_ds:
+    if "flood_extent" in best_ds:
         plot_classified(
-            best_ds["flood_fraction"],
-            title=f"{event.event_id}: VIIRS flood fraction {best_date} (375 m, threshold={flood_threshold})",
+            best_ds["flood_extent"],
+            title=f"{event.event_id}: VIIRS flood extent {best_date} (375 m, threshold={flood_threshold})",
             output_path=png_path,
         )
     else:
@@ -183,7 +183,7 @@ def _fetch_and_visualise(
         harm_dir.mkdir(parents=True, exist_ok=True)
         h = Harmoniser()
         ds_harm = h.harmonise(best_ds, source_id="viirs")
-        flood_var = "flood_fraction" if "flood_fraction" in ds_harm else list(ds_harm.data_vars)[0]
+        flood_var = "flood_extent" if "flood_extent" in ds_harm else list(ds_harm.data_vars)[0]
         tif_path = harm_dir / f"{event.event_id}_{best_date}_viirs_harmonised.tif"
         ds_harm[flood_var].rio.to_raster(str(tif_path), dtype="float32", compress="LZW", nodata=float("nan"))
         print(f"  Harmonised GeoTIFF: {tif_path.relative_to(_REPO_ROOT)}")

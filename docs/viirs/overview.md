@@ -90,13 +90,13 @@ uv run atlantis harmonise \
 
 #### Output control
 
-| Flag                  | Default | Effect                                                                                                                                                                                   |
-| --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--classify`          | on      | Produce classified `flood_fraction`, `quality_mask`, and `permanent_water` layers instead of raw pixel codes                                                                             |
-| `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                                                                                                                                           |
-| `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF                                                                                                                                 |
-| `--no-keep-processed` | off     | Skip writing intermediate 375 m GeoTIFFs; keep processed rasters in memory unless combined with `--harmonise` and/or `--plot`                                                            |
-| `--plot`              | off     | Save a PNG of the peak-flood date                                                                                                                                                        |
+| Flag                  | Default | Effect                                                                                                                                                                                         |
+| --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--classify`          | on      | Produce classified `flood_fraction`, `quality_mask`, and `permanent_water` layers instead of raw pixel codes                                                                                   |
+| `--no-classify`       |         | Write raw integer pixel codes (single GeoTIFF)                                                                                                                                                 |
+| `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF                                                                                                                                       |
+| `--no-keep-processed` | off     | Skip writing intermediate 375 m GeoTIFFs; keep processed rasters in memory unless combined with `--harmonise` and/or `--plot`                                                                  |
+| `--plot`              | off     | Save a PNG of the peak-flood date                                                                                                                                                              |
 | `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). See [Strategies in detail](pipeline.md#strategies-in-detail-pixel-level). |
 
 #### Peak-window filtering and subsampling

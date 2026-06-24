@@ -75,10 +75,9 @@ per-date pass-through), see
 - **`--strategy aggregate`** — temporal mean (continuous) / mode (categorical) composite over the window.
 - **`--strategy all`** — write one harmonised output per date (time-series).
 - **`--no-keep-processed`** — skip intermediate 375 m files; write only the harmonised output.
-- **`--harmonise`** — resample to 1 arcmin (~1.85 km) on a global grid. For GFM, this is always enabled (re-encodes float32→uint8 on the same grid — no resampling needed).
+- **`--harmonise`** — resample to 1 arcmin (~1.85 km) on a global grid.
 - **`--plot`** — save a PNG of the peak-flood date.
-- **`--stream` / `--no-stream`** — stream tiles from NOAA S3 (default) or download to `raw/`. Ignored for GFM (always streams via STAC/COG).
-- **`--classify` / `--no-classify`** — write classified layers or raw codes. Ignored for GFM (always classified).
+- **`--stream` / `--no-stream`** — stream tiles from NOAA S3 (default) or download to `raw/`.
 - **`--no-classify`** — write raw integer pixel codes (single GeoTIFF) instead of flood/quality/permanent-water masks.
 - **`--verbose`** — enable debug-level logging for fetch/harmonise internals.
 

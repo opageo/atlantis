@@ -112,14 +112,14 @@ plt.show()
 
 ## VIIRSFetcher parameters
 
-| Parameter        | Type   | Default     | Description                                                                                                     |
-| ---------------- | ------ | ----------- | --------------------------------------------------------------------------------------------------------------- |
-| `stream`         | `bool` | `False`     | Stream tiles via `/vsicurl/` instead of downloading; the CLI turns this on by default                           |
-| `classify`       | `bool` | `False`     | Decode raw codes into `flood_fraction`, `quality_mask`, and `permanent_water`; the CLI turns this on by default |
-| `strategy`       | `str`  | `"peak"`    | Multi-date reduction: `"peak"`, `"aggregate"`, or `"all"`                                                       |
-| `keep_processed` | `bool` | `True`      | Write intermediate `processed/` GeoTIFFs when classified or raw outputs are materialised                        |
-| `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)                                                                    |
-| `data_format`    | `str`  | `"tif"`     | Remote format to query; only `"tif"` is currently implemented                                                   |
+| Parameter        | Type   | Default      | Description                                                                 |
+| ---------------- | ------ | ------------ | --------------------------------------------------------------------------- |
+| `stream`         | `bool` | `False`      | Stream tiles via `/vsicurl/` instead of downloading; the CLI turns this on by default |
+| `classify`       | `bool` | `False`      | Decode raw codes into `flood_fraction`, `quality_mask`, and `permanent_water`; the CLI turns this on by default |
+| `strategy`       | `str`  | `"peak"`     | Multi-date reduction: `"peak"`, `"aggregate"`, or `"all"`                 |
+| `keep_processed` | `bool` | `True`       | Write intermediate `processed/` GeoTIFFs when classified or raw outputs are materialised |
+| `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)                              |
+| `data_format`    | `str`  | `"tif"`     | Remote format to query; only `"tif"` is currently implemented              |
 
 > See [overview.md § Backends](overview.md#backends) for a detailed comparison of the two
 > sources (host, compositing window, tile naming, AOI grid, coverage years and

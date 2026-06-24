@@ -32,6 +32,7 @@ geo = [
   "xarray>=2024.1",
   "zarr>=3.0",
   "rioxarray>=0.15",
+  "odc-stac>=0.4",
   "pystac>=1.9",
   "pystac-client>=0.7",
   "pyproj>=3.6",

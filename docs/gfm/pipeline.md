@@ -36,17 +36,17 @@ flowchart TD
 
 ## Mode summary
 
-| Strategy    | Best for                                    | Result shape                         |
-| ----------- | ------------------------------------------- | ------------------------------------ |
-| `peak`      | Single representative flood date            | One `FetchResult`                    |
-| `aggregate` | Multi-item or multi-date coverage smoothing | One aggregated `FetchResult`         |
-| `all`       | Time-series analysis                        | One `FetchResult` per surviving date |
+| Strategy    | Best for | Result shape |
+| ----------- | -------- | ------------ |
+| `peak`      | Single representative flood date | One `FetchResult` |
+| `aggregate` | Multi-item or multi-date coverage smoothing | One aggregated `FetchResult` |
+| `all`       | Time-series analysis | One `FetchResult` per surviving date |
 
-| Flag combination      | Effect                                           |
-| --------------------- | ------------------------------------------------ |
-| `--no-keep-processed` | Skip intermediate ~80 m outputs                  |
-| `--harmonise`         | Write canonical 1-arcmin flood percentage raster |
-| `--plot`              | Save PNG previews alongside raster outputs       |
+| Flag combination | Effect |
+| ---------------- | ------ |
+| `--no-keep-processed` | Skip intermediate ~80 m outputs |
+| `--harmonise` | Write canonical 1-arcmin flood percentage raster |
+| `--plot` | Save PNG previews alongside raster outputs |
 
 ## CLI reference
 
@@ -76,19 +76,19 @@ uv run atlantis harmonise \
 
 ### Output control
 
-| Flag                  | Default      | Effect                                                                                                                                          |
-| --------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--harmonise`         | **on** (GFM) | Re-encodes float32 [0,1] → uint8 [0,100] (no resampling — GFM is already 1-arcmin). Always enabled by default for GFM.                          |
-| `--no-keep-processed` | off          | Write only the harmonised output (no intermediate ~80 m files)                                                                                  |
-| `--plot`              | off          | Save a PNG of each result date                                                                                                                  |
-| `--strategy`          | `peak`       | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). Same default across all sources. |
+| Flag                  | Default     | Effect                                                                                               |
+| --------------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
+| `--harmonise`         | off         | Produce a resampled 1-arcmin flood-fraction GeoTIFF                                                 |
+| `--no-keep-processed` | off         | Write only the harmonised output (no intermediate ~80 m files)                                      |
+| `--plot`              | off         | Save a PNG of each result date                                                                       |
+| `--strategy`          | `peak`      | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs) |
 
 ### Processing
 
-| Flag                   | Default   | Effect                                                                                                                                             |
-| ---------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Flag                   | Default   | Effect                                                       |
+| ---------------------- | --------- | ------------------------------------------------------------ |
 | `--gfm-coarsen-factor` | `4`       | Spatial coarsening factor before reprojection. Reduces native ~20 m to ~80 m by default. Higher values trade resolution for speed/noise reduction. |
-| `--gfm-resampling`     | `average` | Resampling method when reprojecting to EPSG:4326. Any rasterio method name is accepted.                                                            |
+| `--gfm-resampling`     | `average` | Resampling method when reprojecting to EPSG:4326. Any rasterio method name is accepted. |
 
 ### Harmonisation
 
@@ -126,10 +126,10 @@ STAC search → group by date → per-item loop → classify → accumulate → 
 `ensemble_flood_extent` has discrete codes (0 = dry, 1 = flood, 255 = nodata).
 Applying `Resampling.average` directly on these codes would produce fractional
 intermediates like 0.5 — which cannot be reliably thresholded back to 0 or 1.
-Instead, Atlantis converts to a float32 binary mask _first_ (at the coarsened
+Instead, Atlantis converts to a float32 binary mask *first* (at the coarsened
 native resolution where codes are still discrete), then reprojects with
-`average` resampling. After reprojection each pixel contains the _fraction of
-its area_ that was flooded — exactly what we want to accumulate across items.
+`average` resampling. After reprojection each pixel contains the *fraction of
+its area* that was flooded — exactly what we want to accumulate across items.
 
 #### Why max-pool for coarsening?
 
@@ -182,15 +182,15 @@ The output filename carries only the single winning date token, e.g.
 
 All dates are stacked and reduced element-wise:
 
-| Layer             | Reduction                                   | Rationale                             |
-| :---------------- | :------------------------------------------ | :------------------------------------ |
-| `flood_fraction`  | `np.nanmean(stack, axis=0)`                 | Continuous variable → arithmetic mean |
-| `quality_mask`    | `np.any(stack > 0, axis=0)`                 | 1 if any date had valid data          |
-| `permanent_water` | majority vote (`mean(stack, axis=0) > 0.5`) | Most-frequent value across dates      |
-| `cloud_fraction`  | scalar `1 − valid_pixels/total_pixels`      | Tile-level metadata                   |
+| Layer             | Reduction                                         | Rationale                               |
+| :---------------- | :------------------------------------------------ | :-------------------------------------- |
+| `flood_fraction`  | `np.nanmean(stack, axis=0)`                       | Continuous variable → arithmetic mean   |
+| `quality_mask`    | `np.any(stack > 0, axis=0)`                       | 1 if any date had valid data            |
+| `permanent_water` | majority vote (`mean(stack, axis=0) > 0.5`)       | Most-frequent value across dates        |
+| `cloud_fraction`  | scalar `1 − valid_pixels/total_pixels`            | Tile-level metadata                     |
 
 `nanmean` means pixels that were unobserved (NaN) on some dates are averaged
-over the dates that _did_ observe them — no bias toward missing data.
+over the dates that *did* observe them — no bias toward missing data.
 
 The output `date_token` spans the full range:
 `{first_date}_{last_date}`, e.g. `20241030_20241101`. For a single date the
@@ -223,11 +223,11 @@ harmonised GeoTIFF + PNG.
 
 ### Processed outputs (~80 m, native UTM → EPSG:4326)
 
-| File                    | Dtype   | Nodata  | Values                                         |
-| ----------------------- | ------- | ------- | ---------------------------------------------- |
-| `*_flood_fraction.tif`  | float32 | -9999.0 | [0, 1] — fraction of obs flooded; NaN → nodata |
-| `*_quality_mask.tif`    | uint8   | 255     | 1 = valid observation, 0 = no data             |
-| `*_permanent_water.tif` | uint8   | 255     | 1 = permanent water, 0 = not                   |
+| File                  | Dtype   | Nodata  | Values                          |
+| --------------------- | ------- | ------- | ------------------------------- |
+| `*_flood_fraction.tif` | float32 | -9999.0 | [0, 1] — fraction of obs flooded; NaN → nodata |
+| `*_quality_mask.tif`   | uint8   | 255     | 1 = valid observation, 0 = no data |
+| `*_permanent_water.tif`| uint8   | 255     | 1 = permanent water, 0 = not    |
 
 - **CRS**: EPSG:4326 (WGS84)
 - **Compression**: LZW
@@ -235,15 +235,15 @@ harmonised GeoTIFF + PNG.
 
 ### Harmonised output (1 arcmin)
 
-| Property        | Value                                                  |
-| --------------- | ------------------------------------------------------ |
-| **CRS**         | EPSG:4326 (WGS84)                                      |
-| **Dtype**       | uint8                                                  |
-| **Nodata**      | 255                                                    |
-| **Values**      | 0–100 (flood fraction as integer percentage)           |
-| **Resolution**  | 1/60° ≈ 1.85 km at the equator                         |
-| **Grid**        | Canonical global grid, pixel centres at `±(k+0.5)/60°` |
-| **Compression** | LZW                                                    |
+| Property    | Value                                                     |
+| ----------- | --------------------------------------------------------- |
+| **CRS**     | EPSG:4326 (WGS84)                                         |
+| **Dtype**   | uint8                                                     |
+| **Nodata**  | 255                                                       |
+| **Values**  | 0–100 (flood fraction as integer percentage)              |
+| **Resolution** | 1/60° ≈ 1.85 km at the equator                        |
+| **Grid**    | Canonical global grid, pixel centres at `±(k+0.5)/60°`   |
+| **Compression** | LZW                                                   |
 
 Harmonised flood extent values are stored as **integer percentages** (0–100),
 where 0 = no flood and 100 = fully flooded (same encoding as VIIRS harmonised
@@ -256,13 +256,13 @@ through `FetcherConfig`.
 
 ## Configuration reference
 
-| Config field          | Env var                        | Default   | Meaning                                               |
-| --------------------- | ------------------------------ | --------- | ----------------------------------------------------- |
-| `gfm_api_url`         | `ATLANTIS_GFM_API_URL`         | EODC URL  | STAC API endpoint                                     |
-| `gfm_coarsen_factor`  | `ATLANTIS_GFM_COARSEN_FACTOR`  | `4`       | Spatial coarsening factor applied before reprojection |
-| `gfm_resampling`      | `ATLANTIS_GFM_RESAMPLING`      | `average` | Resampling method for reprojection to EPSG:4326       |
-| `target_resolution`   | `ATLANTIS_TARGET_RESOLUTION`   | `1/60`    | Harmonised output resolution in degrees               |
-| `snap_to_global_grid` | `ATLANTIS_SNAP_TO_GLOBAL_GRID` | `True`    | Align harmonised output to canonical global grid      |
+| Config field          | Env var                     | Default   | Meaning                                               |
+| --------------------- | --------------------------- | --------- | ----------------------------------------------------- |
+| `gfm_api_url`         | `ATLANTIS_GFM_API_URL`      | EODC URL  | STAC API endpoint                                     |
+| `gfm_coarsen_factor`  | `ATLANTIS_GFM_COARSEN_FACTOR` | `4`     | Spatial coarsening factor applied before reprojection |
+| `gfm_resampling`      | `ATLANTIS_GFM_RESAMPLING`   | `average` | Resampling method for reprojection to EPSG:4326       |
+| `target_resolution`   | `ATLANTIS_TARGET_RESOLUTION` | `1/60`   | Harmonised output resolution in degrees               |
+| `snap_to_global_grid` | `ATLANTIS_SNAP_TO_GLOBAL_GRID` | `True` | Align harmonised output to canonical global grid      |
 
 All config fields can also be set in a `.env` file at the repository root.
 
