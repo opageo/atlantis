@@ -137,6 +137,10 @@ harmonised GeoTIFF contains the flood layer only; `quality_mask` and
   loads Cloud-Optimised GeoTIFF assets via STAC discovery and `odc.stac`.
 - Atlantis currently loads only `ensemble_flood_extent` and
   `reference_water_mask` from the upstream GFM collection.
+- Upstream `advisory_flags`, `exclusion_mask`, and likelihood assets are not
+  currently folded into `quality_mask`. In Atlantis, `quality_mask` means
+  valid-observation coverage from the two loaded source layers, not a broader
+  confidence or exclusion flag.
 - For implementation details behind `search()`, `fetch()`, and `to_dataset()`, see
   [internals.md](internals.md) and the code in
   [src/atlantis/fetchers/gfm/**init**.py](../../src/atlantis/fetchers/gfm/__init__.py).

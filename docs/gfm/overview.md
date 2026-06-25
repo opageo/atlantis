@@ -167,6 +167,14 @@ including:
 - `tuw_flood_extent`, `tuw_likelihood`
 - `list_flood_extent`, `list_likelihood`
 
+Atlantis intentionally keeps its public outputs tied to the two discrete source
+layers above. `quality_mask` means "at least one valid observation exists"
+after combining `ensemble_flood_extent` and `reference_water_mask`; it is not a
+proxy for `advisory_flags`, `exclusion_mask`, or any likelihood product.
+Those upstream assets remain candidates for future auxiliary outputs, but they
+do not currently alter `flood_fraction`, `quality_mask`, or
+`permanent_water` semantics.
+
 Atlantis does not yet provide a `--gfm-bands` selector or a raw-output mode
 for those assets.
 

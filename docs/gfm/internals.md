@@ -36,6 +36,14 @@ Other upstream assets such as `ensemble_water_extent`, `ensemble_likelihood`,
 `exclusion_mask`, `advisory_flags`, and the DLR / TUW / LIST intermediate
 flood-extent and likelihood layers are not yet exposed through `GFMFetcher`.
 
+This is deliberate in the current pipeline. Atlantis derives its public layers
+from the two discrete source assets so the semantics stay stable:
+`flood_fraction` comes from flood coverage, `permanent_water` comes from the
+permanent-water code, and `quality_mask` records observation coverage only. The
+fetcher does not currently reinterpret `advisory_flags` or `exclusion_mask` as
+validity masks, because that would change the meaning of `quality_mask` from
+"observed" to a mixed coverage-and-confidence signal.
+
 ## Processing pipeline
 
 When you run `atlantis fetch --source gfm`, Atlantis executes a date-grouped
