@@ -3300,7 +3300,7 @@ packages:
 - pypi: ./
   name: atlantis
   version: 0.1.1
-  sha256: ad7b8c3edfa69cf35c85dfc8547b76b8389f2807f298d25f24acebf13e2b52a6
+  sha256: fc18e5c529852cb402dcef1fd075cb33040a957b94f88a42937d2c527c42a560
   requires_dist:
   - typer>=0.26.7
   - loguru>=0.7.0
@@ -3318,33 +3318,32 @@ packages:
   - plotly>=6.7.0
   - rasterstats>=0.21.0
   - odc-stac>=0.4
-  - xarray>=2024.1 ; extra == 'geo'
-  - zarr>=3.0 ; extra == 'geo'
-  - rioxarray>=0.15 ; extra == 'geo'
-  - pystac>=1.9 ; extra == 'geo'
-  - pystac-client>=0.7 ; extra == 'geo'
+  - numpy>=2
+  - rasterio>=1.4
+  - rioxarray>=0.22
+  - xarray
+  - zarr>=3.2
+  - requests>=2.34.2
+  - gdal==3.13.0
+  - pystac>=1.9
+  - pystac-client>=0.7
+  - beautifulsoup4>=4.12
   - pyproj>=3.6 ; extra == 'geo'
   - shapely>=2.0 ; extra == 'geo'
-  - rasterio>=1.3 ; extra == 'geo'
-  - beautifulsoup4>=4.12 ; extra == 'geo'
-  - requests>=2.34.2 ; extra == 'geo'
-  - torch>=2.12.1 ; extra == 'ml'
-  - numpy>=2.4.6 ; extra == 'ml'
+  - torch>=2.12.0 ; extra == 'ml'
   - scikit-learn>=1.9.0 ; extra == 'ml'
-  - matplotlib>=3.11.0 ; extra == 'ml'
   - atlantis[geo] ; extra == 'batch'
   - dask[distributed]>=2024.10 ; extra == 'batch'
   - bokeh>=3.0 ; extra == 'batch'
-  - rio-cogeo>=5.0 ; extra == 'batch'
+  - rio-cogeo ; extra == 'batch'
   - atlantis[geo,ml] ; extra == 'notebooks'
   - earthkit-data ; extra == 'notebooks'
-  - rasterio>=1.3 ; extra == 'notebooks'
   - affine>=2.4 ; extra == 'notebooks'
   - cartopy>=0.22 ; extra == 'notebooks'
   - beautifulsoup4>=4.12 ; extra == 'notebooks'
   - requests>=2.34.2 ; extra == 'notebooks'
   - metview>=1.16 ; extra == 'notebooks'
-  requires_python: '>=3.11,<3.15'
+  requires_python: '>=3.12,<3.15'
 - conda: https://conda.anaconda.org/conda-forge/noarch/attrs-26.1.0-pyhcf101f3_0.conda
   sha256: 1b6124230bb4e571b1b9401537ecff575b7b109cc3a21ee019f65e083b8399ab
   md5: c6b0543676ecb1fb2d7643941fe375f2

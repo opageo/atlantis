@@ -65,3 +65,44 @@ default event is `push`
 gh act -l #lists all job names
 gh act -j <job-name>
 ```
+
+## Using devcontainer as zero setup environment for Atlantis
+In the project of Atlantis we are exploring using [devcontainers](https://containers.dev/) github's technology for offering a zero-setup containerized environment to be ready to go for running all the Atlantis features.
+
+### Prerequisites of Devcontainers
+1. You are using [vs-code](https://code.visualstudio.com/) as your development editor.
+2. You have installed the dev-containers extension (https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+3. You have set your `~/.aws/config` and `~/.aws/credentials` files with the suggested configuration for using the Atlantis S3 Storage bucket and authenticating against the several datasets providers - request for the administrators aws keys and setup template.
+4. You have created an EARTHDATA_TOKEN for using MODIS pipeline [how-to-setup-earthdata-token](#earthdata-token-guideline).
+5. *Extra if you need to actively contribute: enable SSH-Agent forwarding to authenticate against github. Here is [how-to](#add-ssh-forwarding) if you are using already a remote-ssh connection to your VM
+
+#### Earthdata Token guideline:
+- Create an account at https://search.earthdata.nasa.gov/ 
+- **Important note:** you need to add the organization/institute field for your token to be enabled.
+- Generate a token by clicking to -> profile -> Generate_Token tab
+- Make sure you expose the token to your environment variables as: `EARTHDATA_TOKEN=<TOKEN>`
+  The simplest way is adding the token to the `.env` file in your workspace, which is automatically activated from vs-code. 
+  **Be careful** and never commit an environment file exposing your token/credentials  
+
+#### Add SSH forwarding
+##### For your vscode-server - in case your already using a remote-ssh connection
+
+In order to enable active authentication in your dev-container session, you'll need to forward the ssh-agent.
+For linux systems, while conencted in a VM with remote-ssh vs-code server, create the `~/.vscode-server/server-env-setup` and add:
+```bash
+# Sourced by the VS Code Server on startup.
+# Make the host's ssh-agent (started by ~/.bash_profile on login) visible
+# to the VS Code Server process so the Dev Containers extension can forward it.
+
+if [ -z "$SSH_AUTH_SOCK" ] && [ -f "$HOME/.ssh/ssh-agent" ]; then
+    # Start a new agent if the recorded socket is stale or missing.
+    if ! eval "$(cat "$HOME/.ssh/ssh-agent")" > /dev/null 2>&1 \
+       || [ ! -S "$SSH_AUTH_SOCK" ]; then
+        ssh-agent -s > "$HOME/.ssh/ssh-agent"
+        eval "$(cat "$HOME/.ssh/ssh-agent")" > /dev/null
+        ssh-add "$HOME/.ssh/id_ed25519" > /dev/null 2>&1
+    fi
+    export SSH_AUTH_SOCK SSH_AGENT_PID
+fi
+```
+if you use your own ssh key instead of the default `$HOME/.ssh/id_ed25519` replace that accordingly.

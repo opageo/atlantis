@@ -21,8 +21,13 @@ jobs:
       )
 
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/osgeo/gdal:ubuntu-full-3.13.0
+      options: --user root
 
     steps:
+      - run: apt-get update && apt-get install -y g++
+
       - name: Checkout PR code
         if: github.event_name == 'pull_request'
         uses: actions/checkout@v7
@@ -36,7 +41,7 @@ jobs:
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
         with:
           version: "0.11.x"
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Set up AWS config
         run: |
@@ -51,6 +56,7 @@ jobs:
         env:
           NO_COLOR: "1"
           GDAL_HTTP_UNSAFESSL: "YES"
+          EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
         run: uv run pytest tests/ -m e2e -v --timeout=600
 
       - name: Remove run-e2e label after successful run

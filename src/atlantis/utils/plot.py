@@ -7,9 +7,17 @@ the demo script and optionally by CLI commands with ``--plot``.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+# Plotting helpers only ever save figures via fig.savefig; we never display.
+# Pin matplotlib to the headless Agg backend before pyplot is imported so the
+# CLI doesn't pick up an interactive (Tk) backend, which crashes at shutdown
+# with "Tcl_AsyncDelete: async handler deleted by the wrong thread" when the
+# rich.console.status spinner thread tears down concurrently.
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 import numpy as np
 

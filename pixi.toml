@@ -72,6 +72,15 @@ geos = "*"
 [pypi-dependencies]
 atlantis = { path = ".", editable = true }
 
+# ----------------------------------------------------------------------------
+# GDAL is provided by the conda stack above (gdal/libgdal-hdf4). pyproject.toml
+# pins gdal==3.13.0 for pure-uv users, but conda-forge may pin a different
+# build per platform (e.g. 3.12.3 on osx-arm64). This override lets pixi's PyPI
+# solve accept whatever GDAL conda installs instead of failing on the pin.
+# ----------------------------------------------------------------------------
+[pypi-options.dependency-overrides]
+gdal = ">=3.11"
+
 # ============================================================================
 # Feature: dev (development tools)
 # ============================================================================
