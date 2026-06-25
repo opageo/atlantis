@@ -55,18 +55,21 @@ class TestHarmoniseConfig:
 class TestArchiveConfig:
     def test_default_values(self):
         cfg = ArchiveConfig()
-        assert cfg.archive_root == Path.home() / "atlantis-data"
-        assert cfg.raw_subdir == "raw"
-        assert cfg.ml_subdir == "ml-ready"
+        assert cfg.archive_root == str(Path.home() / "atlantis-data")
+        assert cfg.raw_store == "raw.zarr"
+        assert cfg.ml_store == "ml-ready.zarr"
         assert cfg.checkpoint_dir == ".checkpoints"
-        assert cfg.default_chunk_size == 224
+        assert cfg.raw_chunk_size == 1024
+        assert cfg.ml_tile_size == 256
+        assert cfg.ml_shard_size == 2048
+        assert cfg.scale_factor == 0.01
 
     def test_env_override(self, monkeypatch):
-        monkeypatch.setenv("ATLANTIS_ARCHIVE_ROOT", "/custom/archive")
-        monkeypatch.setenv("ATLANTIS_DEFAULT_CHUNK_SIZE", "512")
+        monkeypatch.setenv("ATLANTIS_ARCHIVE_ROOT", "s3://atlantis/cube")
+        monkeypatch.setenv("ATLANTIS_ML_TILE_SIZE", "128")
         cfg = ArchiveConfig()
-        assert cfg.archive_root == Path("/custom/archive")
-        assert cfg.default_chunk_size == 512
+        assert cfg.archive_root == "s3://atlantis/cube"
+        assert cfg.ml_tile_size == 128
 
 
 class TestFetcherConfig:
@@ -115,7 +118,7 @@ class TestAtlantisConfig:
         """Sub-configs should still work after parent env override."""
         cfg = AtlantisConfig()
         assert cfg.harmonise.tile_size == 224
-        assert cfg.archive.archive_root == Path.home() / "atlantis-data"
+        assert cfg.archive.archive_root == str(Path.home() / "atlantis-data")
         assert cfg.fetcher.viirs_backend == "noaa_s3"
 
 

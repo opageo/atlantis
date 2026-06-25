@@ -1164,15 +1164,13 @@ def fetch_kurosiwo_viirs(
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
 
-            summary_rows.append(
-                [
-                    event.event_id,
-                    "[green]✓ ok[/green]",
-                    str(written) if written else ("mem" if has_in_memory else "0"),
-                    peak_label,
-                    harmonised_label,
-                ]
-            )
+            summary_rows.append([
+                event.event_id,
+                "[green]✓ ok[/green]",
+                str(written) if written else ("mem" if has_in_memory else "0"),
+                peak_label,
+                harmonised_label,
+            ])
             progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
@@ -1402,15 +1400,13 @@ def fetch_kurosiwo_modis(
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
 
-            summary_rows.append(
-                [
-                    event.event_id,
-                    "[green]✓ ok[/green]",
-                    str(written) if written else ("mem" if has_in_memory else "0"),
-                    peak_label,
-                    harmonised_label,
-                ]
-            )
+            summary_rows.append([
+                event.event_id,
+                "[green]✓ ok[/green]",
+                str(written) if written else ("mem" if has_in_memory else "0"),
+                peak_label,
+                harmonised_label,
+            ])
             progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
@@ -1597,35 +1593,102 @@ def harmonise(
 def archive(
     event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
     source: str | None = typer.Option(None, "--source", "-s", help="Data source (default: all available)"),
-    archive_root: Path | None = typer.Option(None, "--archive", "-a", help="Archive root directory"),
-    raw_only: bool = typer.Option(False, "--raw-only", help="Only write raw archive (skip ML-ready)"),
+    input_dir: Path | None = typer.Option(
+        None, "--input", "-i", help="Harmonised data directory (default: ./data/<event>)"
+    ),
+    archive_root: str | None = typer.Option(None, "--archive", "-a", help="Archive root (local path or s3:// URI)"),
+    raw_only: bool = typer.Option(False, "--raw-only", help="Only write the analysis-ready cube (skip ML-ready)"),
 ) -> None:
-    """Write harmonised data to Zarr archive (raw + ML-ready).
+    """Write harmonised GeoTIFFs into the consolidated Zarr datacube.
+
+    Reads harmonised rasters from ``<input>/<source>/harmonised/*.tif`` and
+    region-writes each into the per-source group of the global 1-arcmin
+    datacube (analysis-ready ``raw`` and, unless ``--raw-only``, ``ml-ready``).
 
     Args:
         event: Flood event ID to archive.
-        source: Data source (default: all available).
-        archive_root: Root directory for archive storage.
-        raw_only: Skip ML-ready archive (write raw only).
+        source: Data source (default: all sources found under the input dir).
+        input_dir: Harmonised data directory (default: ``./data/<event>``).
+        archive_root: Archive root — local path or ``s3://`` URI.
+        raw_only: Skip the ML-ready cube (write the analysis-ready cube only).
     """
+    import re
+
+    import rioxarray as rxr
+
+    from atlantis.archive.writer import ArchiveWriter
+
     config = get_config()
-    archive_root = archive_root or config.archive.archive_root
+    root = archive_root or config.archive.archive_root
+    in_dir = input_dir or (Path("data") / event)
 
     command_header("archive", subtitle=f"{event} · {source or 'all'}")
-    console.print(f"[bold]Archiving event:[/bold] {event}")
-    console.print(f"[bold]Archive root:[/bold] {archive_root}")
+    console.print(f"[bold]Event:[/bold] {event}")
+    console.print(f"[bold]Input:[/bold] {in_dir}")
+    console.print(f"[bold]Archive root:[/bold] {root}")
 
-    if source:
-        console.print(f"[bold]Source:[/bold] {source}")
-    else:
-        console.print("[bold]Source:[/bold] all available")
+    if not in_dir.exists():
+        fail(f"Input directory not found: {in_dir}")
+        raise typer.Exit(code=1)
 
-    if raw_only:
-        info("Writing raw archive only")
-    else:
-        info("Writing raw + ML-ready archives")
+    sources = (
+        [source] if source else sorted(p.name for p in in_dir.iterdir() if p.is_dir() and (p / "harmonised").is_dir())
+    )
+    if not sources:
+        fail(f"No harmonised data found under {in_dir}")
+        raise typer.Exit(code=1)
 
-    warn("Archive writing not yet implemented")
+    date_re = re.compile(r"(\d{4})-(\d{2})-(\d{2})|(\d{8})")
+
+    def _parse_date(name: str) -> date | None:
+        m = date_re.search(name)
+        if not m:
+            return None
+        if m.group(4):
+            token = m.group(4)
+            return date(int(token[:4]), int(token[4:6]), int(token[6:8]))
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+    # ── Collect harmonised rasters + derive event extent ──────────────────
+    items: list[tuple[str, "object", date | None, tuple[float, float, float, float]]] = []
+    for src in sources:
+        for tif in sorted((in_dir / src / "harmonised").glob("*.tif")):
+            da = rxr.open_rasterio(tif).squeeze(drop=True)
+            ds = da.to_dataset(name="flood_fraction")
+            items.append((src, ds, _parse_date(tif.name), tuple(da.rio.bounds())))
+
+    if not items:
+        fail("No harmonised .tif files found to archive.")
+        raise typer.Exit(code=1)
+
+    dates = sorted({d for _, _, d, _ in items if d is not None})
+    start = dates[0] if dates else date.today()
+    end = dates[-1] if dates else start
+    west = min(b[0] for *_, b in items)
+    south = min(b[1] for *_, b in items)
+    east = max(b[2] for *_, b in items)
+    north = max(b[3] for *_, b in items)
+
+    flood_event = FloodEvent(
+        event_id=event,
+        bbox=(float(west), float(south), float(east), float(north)),
+        start_date=start,
+        end_date=end,
+        sources=sources,
+    )
+
+    writer = ArchiveWriter(root, config.archive)
+    info(f"Writing {'raw only' if raw_only else 'raw + ML-ready'} datacube ({len(items)} raster(s))")
+    with make_progress() as progress:
+        task = progress.add_task("[cyan]Archiving[/cyan]", total=len(items) * (1 if raw_only else 2))
+        for src, ds, d, _ in items:
+            writer.write_raw(ds, flood_event, src, time=d or start)
+            progress.advance(task)
+            if not raw_only:
+                writer.write_ml_ready(ds, flood_event, src, time=d or start)
+                progress.advance(task)
+
+    ok(f"Archived {len(items)} raster(s) from {len(sources)} source(s) into datacube at {root}")
 
 
 @cli.command()
@@ -1839,13 +1902,11 @@ def demo(
 
     output_files = [path for result in fetch_results for path in result.files]
     if harmonise:
-        output_files.extend(
-            [
-                png_path,
-                harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
-                plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
-            ]
-        )
+        output_files.extend([
+            png_path,
+            harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
+            plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
+        ])
     else:
         output_files.append(png_path)
     console.print(_ft(str(out), output_files))

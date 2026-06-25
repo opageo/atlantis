@@ -99,14 +99,27 @@ class HarmoniseConfig(BaseSettings):
 
 
 class ArchiveConfig(BaseSettings):
-    """Configuration for archive paths and settings.
+    """Configuration for the consolidated Zarr datacube archive.
+
+    The archive is a single Zarr store per layer with one group per source,
+    co-registered on the canonical global 1-arcmin grid. It lives locally or on
+    S3 (``ATLANTIS_ARCHIVE_ROOT=s3://bucket/prefix``).
 
     Attributes:
-        archive_root: Root directory for archive storage.
-        raw_subdir: Subdirectory for raw (unprocessed) data.
-        ml_subdir: Subdirectory for ML-ready data.
+        archive_root: Root location for archive storage (local path or ``s3://`` URI).
+        storage_options: fsspec options for remote roots (credentials, ``anon``, ...).
+        raw_store: Name of the analysis-ready datacube store (global grid).
+        ml_store: Name of the ML-ready datacube store (tiled + sharded).
         checkpoint_dir: Subdirectory for checkpoint markers.
-        default_chunk_size: Default chunk size for Zarr storage.
+        raw_chunk_size: Spatial chunk size (pixels) for the analysis-ready cube.
+        ml_tile_size: Spatial chunk size (pixels) for ML tiles — the data-loader
+            read granularity. 256 is power-of-two and ``/32``-friendly for U-Nets.
+        ml_shard_size: Spatial shard size (pixels) for the ML cube — the S3 object
+            granularity. Must be a multiple of ``ml_tile_size``.
+        scale_factor: CF ``scale_factor`` for ``flood_fraction`` so the uint8
+            ``[0, 100]`` storage decodes to float ``[0, 1]`` (CMF-comparable).
+        time_epoch: CF epoch (``YYYY-MM-DD``) for the integer ``time`` axis.
+        default_chunk_size: Deprecated alias retained for compatibility.
     """
 
     model_config = SettingsConfigDict(
@@ -116,10 +129,16 @@ class ArchiveConfig(BaseSettings):
         extra="ignore",
     )
 
-    archive_root: Path = Field(default_factory=lambda: Path.home() / "atlantis-data")
-    raw_subdir: str = "raw"
-    ml_subdir: str = "ml-ready"
+    archive_root: str = Field(default_factory=lambda: str(Path.home() / "atlantis-data"))
+    storage_options: dict[str, Any] = Field(default_factory=dict)
+    raw_store: str = "raw.zarr"
+    ml_store: str = "ml-ready.zarr"
     checkpoint_dir: str = ".checkpoints"
+    raw_chunk_size: int = 1024
+    ml_tile_size: int = 256
+    ml_shard_size: int = 2048
+    scale_factor: float = 0.01
+    time_epoch: str = "2020-01-01"
     default_chunk_size: int = 224
 
 
