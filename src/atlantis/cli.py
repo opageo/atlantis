@@ -22,6 +22,7 @@ from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers,
 from atlantis.fetchers.base import FetchResult  # noqa: E402
 from atlantis.harmoniser import write_harmonised_raster  # noqa: E402
 from atlantis.models.event import FloodEvent  # noqa: E402
+from atlantis.utils.checklist import is_task_checklist_active, task_checklist  # noqa: E402
 from atlantis.utils.kurosiwo import (  # noqa: E402
     KUROSIWO_DEFAULT_CATALOGUE,
     KUROSIWO_DEFAULT_METADATA,
@@ -52,12 +53,39 @@ from atlantis.utils.ui import (  # noqa: E402
 
 cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.")
 
+_VERBOSE_OUTPUT = False
+
+
+def _should_emit_verbose_log(record: dict) -> bool:
+    """Keep Atlantis logs out of stderr while a live checklist is active."""
+    logger_name = record["name"]
+    if logger_name.startswith("atlantis") and is_task_checklist_active():
+        return False
+    return True
+
+
+def _fetch_animation_profile(source_id: str) -> str | None:
+    """Return the fixed animation profile to use for a fetch step, if any."""
+    if source_id in {"viirs", "modis"}:
+        return f"{source_id}_fetch"
+    return None
+
+
+def _fetch_step_names(source_id: str) -> list[str]:
+    """Return the top-level fetch-phase checklist rows for *source_id*."""
+    if source_id in {"viirs", "modis"}:
+        return ["Fetch tiles", "Process tiles"]
+    return ["Fetch tiles"]
+
 
 @cli.callback()
 def _main(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose debug logging."),
 ) -> None:
     """Atlantis CLI — configure global options."""
+    global _VERBOSE_OUTPUT
+
+    _VERBOSE_OUTPUT = verbose
     logger.remove()
     logger.disable("atlantis")
     if verbose:
@@ -67,6 +95,7 @@ def _main(
             level="DEBUG",
             format="<dim>{time:HH:mm:ss}</dim> | <level>{message}</level>",
             colorize=True,
+            filter=_should_emit_verbose_log,
         )
 
 
@@ -335,6 +364,7 @@ def _plot_source(
     *,
     source_id: str,
     output_png_path,
+    announce: bool = True,
 ):
     """Save a PNG visualisation of the peak-flood date for any source."""
     pretty = _pretty_source(source_id)
@@ -344,12 +374,14 @@ def _plot_source(
             best_ds["flood_fraction"],
             title=f"{event_id}: {pretty} flood extent {date_label} ({res})",
             output_path=output_png_path,
+            announce=announce,
         )
     else:
         plot_raw(
             best_ds["raw"],
             title=f"{event_id}: {pretty} raw composite {date_label} ({res})",
             output_path=output_png_path,
+            announce=announce,
         )
 
 
@@ -360,9 +392,17 @@ def _plot_viirs(
     date_label,
     *,
     output_png_path,
+    announce: bool = True,
 ):
     """Save a PNG visualisation of the VIIRS peak-flood date."""
-    _plot_source(best_ds, event_id, date_label, source_id="viirs", output_png_path=output_png_path)
+    _plot_source(
+        best_ds,
+        event_id,
+        date_label,
+        source_id="viirs",
+        output_png_path=output_png_path,
+        announce=announce,
+    )
 
 
 def _harmonise_source(
@@ -373,6 +413,7 @@ def _harmonise_source(
     source_id: str,
     harm_dir,
     plot_dir,
+    announce: bool = True,
 ):
     """Reproject + normalise and save harmonised GeoTIFF + PNG (any source).
 
@@ -389,7 +430,8 @@ def _harmonise_source(
 
     tif_path = harm_dir / f"{event_id}_{date_label}_{source_id}_harmonised.tif"
     write_harmonised_raster(ds_harm[flood_var], tif_path)
-    console.print(f"  Harmonised → {tif_path.name}")
+    if announce:
+        console.print(f"  Harmonised → {tif_path.name}")
 
     png_harm_path = plot_dir / f"{event_id}_{date_label}_{source_id}_harmonised.png"
     if flood_var == "flood_fraction":
@@ -397,12 +439,14 @@ def _harmonise_source(
             ds_harm[flood_var],
             title=f"{event_id}: {pretty} harmonised flood extent {date_label} (1 arcmin)",
             output_path=png_harm_path,
+            announce=announce,
         )
     else:
         plot_raw(
             ds_harm[flood_var],
             title=f"{event_id}: {pretty} harmonised composite {date_label} (1 arcmin)",
             output_path=png_harm_path,
+            announce=announce,
         )
 
     return ds_harm
@@ -416,6 +460,7 @@ def _harmonise_viirs(
     *,
     harm_dir,
     plot_dir,
+    announce: bool = True,
 ):
     """Reproject + normalise and save harmonised GeoTIFF (in ``harm_dir``) + PNG (in ``plot_dir``).
 
@@ -428,6 +473,7 @@ def _harmonise_viirs(
         source_id="viirs",
         harm_dir=harm_dir,
         plot_dir=plot_dir,
+        announce=announce,
     )
 
 
@@ -745,146 +791,176 @@ def fetch(
                 warn("Event catalogue lookup not yet implemented; provide --bbox/--start-date/--end-date")
                 continue
 
-            try:
-                with step_status(f"Fetching {src} tiles…"):
-                    fetch_results = fetcher.fetch(flood_event, output_dir / src)
-            except requests.RequestException as exc:
-                fail(f"Network error while fetching {src}: {exc}")
-                if src == "viirs" and viirs_backend == "gmu_legacy":
-                    info(
-                        "Hint: jpssflood.gmu.edu is intermittently offline. Retry later, or "
-                        "use --viirs-backend noaa_s3 for years 2012–2020 / 2023–2026."
-                    )
-                continue
-            if not fetch_results:
-                _report_empty_fetch(src, fetcher)
-                continue
+            step_names = _fetch_step_names(src)
+            if plot:
+                step_names.append("Plot outputs")
+            if harmonise:
+                step_names.append("Harmonise outputs")
 
-            if src in ("viirs", "modis"):
-                _report_fetch_writes(src, fetch_results, keep_processed=keep_processed)
-            else:
-                n = sum(len(result.files) for result in fetch_results)
-                ok(f"Wrote {n} files")
-                all_paths = [path for result in fetch_results for path in result.files]
-                console.print(file_tree(src, all_paths))
+            with task_checklist(step_names, verbose=_VERBOSE_OUTPUT) as checklist:
+                try:
+                    profile = _fetch_animation_profile(src)
+                    fetch_step_name = "Process tiles" if profile is not None else "Fetch tiles"
+                    with checklist.step(fetch_step_name, profile=profile, pre_step="Fetch tiles" if profile else None):
+                        fetch_results = fetcher.fetch(flood_event, output_dir / src)
+                except requests.RequestException as exc:
+                    fail(f"Network error while fetching {src}: {exc}")
+                    if src == "viirs" and viirs_backend == "gmu_legacy":
+                        info(
+                            "Hint: jpssflood.gmu.edu is intermittently offline. Retry later, or "
+                            "use --viirs-backend noaa_s3 for years 2012–2020 / 2023–2026."
+                        )
+                    continue
 
-            # Summarise peak-window / subsampling when active (VIIRS / MODIS / GFM)
-            if src in ("viirs", "modis", "gfm") and (
-                effective_days_before > 0 or effective_days_after > 0 or max_observations > 0
-            ):
-                n_returned = len(fetch_results)
-                parts = []
-                if effective_days_before > 0 or effective_days_after > 0:
-                    parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
-                if max_observations > 0:
-                    parts.append(f"max {max_observations} obs (priority={peak_priority})")
-                info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
+                if not fetch_results:
+                    checklist.warn("Fetch tiles", detail="no files")
+                    _report_empty_fetch(src, fetcher)
+                    continue
 
-            # ── Optional plot + harmonise (GFM) ───────────────────────────
-            # GFM is already on the canonical 1-arcmin grid. Harmonisation
-            # therefore re-encodes `flood_fraction` to uint8 percentages on
-            # the same grid, while `--plot` can still save a non-harmonised
-            # PNG preview when harmonisation is not requested.
-            if src == "gfm" and (plot or harmonise):
-                png_dir = plot_dir or (output_dir / src / "plots")
-                harm_dir = output_dir / src / "harmonised"
-                for result in fetch_results:
-                    ds = fetcher.to_dataset(result)
-                    date_label = result.date_token or "gfm"
-                    if harmonise:
-                        with step_status("Harmonising…"):
-                            _harmonise_gfm(
-                                ds,
-                                event,
-                                date_label,
-                                harm_dir=harm_dir,
-                                plot_dir=png_dir,
-                            )
-                    else:
-                        png_out = png_dir / f"{event}_{date_label}_gfm.png"
-                        with step_status("Plotting…"):
-                            _plot_gfm(
-                                ds,
-                                event,
-                                date_label,
-                                output_png_path=png_out,
-                            )
+                written_files = sum(len(result.files) for result in fetch_results)
+                fetch_detail = f"{written_files} file(s)" if written_files else f"{len(fetch_results)} result(s)"
+                if profile is not None:
+                    checklist.complete("Process tiles", detail=fetch_detail)
+                else:
+                    checklist.complete("Fetch tiles", detail=fetch_detail)
 
-            # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────────
-            if src in ("viirs", "modis") and (plot or harmonise):
-                # Dispatch based on strategy
-                if strategy == "peak":
-                    best_result, best_date_label = _select_best_result(fetcher, fetch_results)
-                    best_ds = fetcher.to_dataset(best_result)
+                if src in ("viirs", "modis"):
+                    _report_fetch_writes(src, fetch_results, keep_processed=keep_processed)
+                else:
+                    ok(f"Wrote {written_files} files")
+                    all_paths = [path for result in fetch_results for path in result.files]
+                    console.print(file_tree(src, all_paths))
+
+                # Summarise peak-window / subsampling when active (VIIRS / MODIS / GFM)
+                if src in ("viirs", "modis", "gfm") and (
+                    effective_days_before > 0 or effective_days_after > 0 or max_observations > 0
+                ):
+                    n_returned = len(fetch_results)
+                    parts = []
+                    if effective_days_before > 0 or effective_days_after > 0:
+                        parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
+                    if max_observations > 0:
+                        parts.append(f"max {max_observations} obs (priority={peak_priority})")
+                    info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
+
+                # ── Optional plot + harmonise (GFM) ───────────────────────────
+                # GFM is already on the canonical 1-arcmin grid. Harmonisation
+                # therefore re-encodes `flood_fraction` to uint8 percentages on
+                # the same grid, while `--plot` can still save a non-harmonised
+                # PNG preview when harmonisation is not requested. Flag semantics
+                # match VIIRS/MODIS: nothing extra is written unless requested.
+                if src == "gfm" and (plot or harmonise):
                     png_dir = plot_dir or (output_dir / src / "plots")
-                    if plot:
-                        png_out = png_dir / f"{event}_{best_date_label}_{src}.png"
-                        with step_status("Plotting…"):
-                            _plot_source(
-                                best_ds,
-                                event,
-                                best_date_label,
-                                source_id=src,
-                                output_png_path=png_out,
-                            )
+                    harm_dir = output_dir / src / "harmonised"
                     if harmonise:
-                        harm_dir = output_dir / src / "harmonised"
-                        with step_status("Harmonising…"):
-                            _harmonise_source(
-                                best_ds,
-                                event,
-                                best_date_label,
-                                source_id=src,
-                                harm_dir=harm_dir,
-                                plot_dir=png_dir,
-                            )
-
-                elif strategy == "aggregate":
-                    ds = fetcher.to_dataset(fetch_results[0])
-                    label = "aggregated"
-                    png_dir = plot_dir or (output_dir / src / "plots")
-                    if plot:
-                        png_out = png_dir / f"{event}_{label}_{src}.png"
-                        with step_status("Plotting…"):
-                            _plot_source(ds, event, label, source_id=src, output_png_path=png_out)
-                    if harmonise:
-                        harm_dir = output_dir / src / "harmonised"
-                        with step_status("Harmonising…"):
-                            _harmonise_source(
-                                ds,
-                                event,
-                                label,
-                                source_id=src,
-                                harm_dir=harm_dir,
-                                plot_dir=png_dir,
-                            )
-
-                elif strategy == "all":
-                    for result in fetch_results:
-                        date_label = _date_label(result)
-                        ds = fetcher.to_dataset(result)
-                        png_dir = plot_dir or (output_dir / src / "plots")
-                        if plot:
-                            png_out = png_dir / f"{event}_{date_label}_{src}.png"
-                            with step_status(f"Plotting {date_label}…"):
-                                _plot_source(
+                        with checklist.step("Harmonise outputs"):
+                            for result in fetch_results:
+                                ds = fetcher.to_dataset(result)
+                                date_label = result.date_token or "gfm"
+                                _harmonise_gfm(
                                     ds,
                                     event,
                                     date_label,
+                                    harm_dir=harm_dir,
+                                    plot_dir=png_dir,
+                                )
+                        checklist.complete("Harmonise outputs", detail=f"{len(fetch_results)} date(s)")
+                    else:
+                        with checklist.step("Plot outputs"):
+                            for result in fetch_results:
+                                ds = fetcher.to_dataset(result)
+                                date_label = result.date_token or "gfm"
+                                png_out = png_dir / f"{event}_{date_label}_gfm.png"
+                                _plot_gfm(
+                                    ds,
+                                    event,
+                                    date_label,
+                                    output_png_path=png_out,
+                                )
+                        checklist.complete("Plot outputs", detail=f"{len(fetch_results)} date(s)")
+
+                # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────────
+                if src in ("viirs", "modis") and (plot or harmonise):
+                    png_dir = plot_dir or (output_dir / src / "plots")
+
+                    if strategy == "peak":
+                        best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+                        best_ds = fetcher.to_dataset(best_result)
+                        if plot:
+                            with checklist.step("Plot outputs"):
+                                png_out = png_dir / f"{event}_{best_date_label}_{src}.png"
+                                _plot_source(
+                                    best_ds,
+                                    event,
+                                    best_date_label,
                                     source_id=src,
                                     output_png_path=png_out,
                                 )
+                            checklist.complete("Plot outputs", detail=best_date_label)
                         if harmonise:
-                            harm_dir = output_dir / src / "harmonised"
-                            with step_status(f"Harmonising {date_label}…"):
+                            with checklist.step("Harmonise outputs"):
+                                harm_dir = output_dir / src / "harmonised"
                                 _harmonise_source(
-                                    ds,
+                                    best_ds,
                                     event,
-                                    date_label,
+                                    best_date_label,
                                     source_id=src,
                                     harm_dir=harm_dir,
                                     plot_dir=png_dir,
                                 )
+                            checklist.complete("Harmonise outputs", detail=best_date_label)
+
+                    elif strategy == "aggregate":
+                        ds = fetcher.to_dataset(fetch_results[0])
+                        label = "aggregated"
+                        if plot:
+                            with checklist.step("Plot outputs"):
+                                png_out = png_dir / f"{event}_{label}_{src}.png"
+                                _plot_source(ds, event, label, source_id=src, output_png_path=png_out)
+                            checklist.complete("Plot outputs", detail=label)
+                        if harmonise:
+                            with checklist.step("Harmonise outputs"):
+                                harm_dir = output_dir / src / "harmonised"
+                                _harmonise_source(
+                                    ds,
+                                    event,
+                                    label,
+                                    source_id=src,
+                                    harm_dir=harm_dir,
+                                    plot_dir=png_dir,
+                                )
+                            checklist.complete("Harmonise outputs", detail=label)
+
+                    elif strategy == "all":
+                        if plot:
+                            with checklist.step("Plot outputs"):
+                                for result in fetch_results:
+                                    date_label = _date_label(result)
+                                    ds = fetcher.to_dataset(result)
+                                    png_out = png_dir / f"{event}_{date_label}_{src}.png"
+                                    _plot_source(
+                                        ds,
+                                        event,
+                                        date_label,
+                                        source_id=src,
+                                        output_png_path=png_out,
+                                    )
+                            checklist.complete("Plot outputs", detail=f"{len(fetch_results)} date(s)")
+                        if harmonise:
+                            with checklist.step("Harmonise outputs"):
+                                for result in fetch_results:
+                                    date_label = _date_label(result)
+                                    ds = fetcher.to_dataset(result)
+                                    harm_dir = output_dir / src / "harmonised"
+                                    _harmonise_source(
+                                        ds,
+                                        event,
+                                        date_label,
+                                        source_id=src,
+                                        harm_dir=harm_dir,
+                                        plot_dir=png_dir,
+                                    )
+                            checklist.complete("Harmonise outputs", detail=f"{len(fetch_results)} date(s)")
         except KeyError:
             fail(f"Unknown source '{src}'")
 
@@ -1041,46 +1117,64 @@ def fetch_kurosiwo_viirs(
                 f"({event.start_date.isoformat()} → {event.end_date.isoformat()})"
             )
             event_viirs_dir = output_root / event.event_id / "viirs"
-            try:
-                with step_status(f"  Fetching tiles for {event.event_id}…"):
-                    fetch_results = fetcher.fetch(event, event_viirs_dir)
-            except Exception as exc:  # pragma: no cover - exercised in real fetch runs
-                failures.append((event.event_id, str(exc)))
-                progress.console.print(f"[bold red]✗[/bold red]  Failed: {exc}")
-                summary_rows.append([event.event_id, "[red]✗ failed[/red]", "0", "—", "—"])
-                progress.advance(task)
-                continue
+            step_names = _fetch_step_names("viirs")
+            if plot:
+                step_names.append("Plot outputs")
+            if actual_harmonise:
+                step_names.append("Harmonise outputs")
 
-            _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
-            written = sum(len(result.files) for result in fetch_results)
-            total_files += written
-            has_in_memory = any(result.dataset is not None for result in fetch_results)
-            if written == 0 and not has_in_memory:
-                warn("No VIIRS files found for this case")
-                summary_rows.append([event.event_id, "[yellow]⚠ empty[/yellow]", "0", "—", "—"])
-                progress.advance(task)
-                continue
+            with task_checklist(step_names, verbose=_VERBOSE_OUTPUT) as checklist:
+                try:
+                    with checklist.step("Process tiles", profile="viirs_fetch", pre_step="Fetch tiles"):
+                        fetch_results = fetcher.fetch(event, event_viirs_dir)
+                except Exception as exc:  # pragma: no cover - exercised in real fetch runs
+                    failures.append((event.event_id, str(exc)))
+                    summary_rows.append([event.event_id, "[red]✗ failed[/red]", "0", "—", "—"])
+                    progress.advance(task)
+                    continue
 
-            peak_label = "—"
-            harmonised_label = "—"
+                _report_viirs_fetch_writes(fetch_results, keep_processed=keep_processed)
+                written = sum(len(result.files) for result in fetch_results)
+                total_files += written
+                has_in_memory = any(result.dataset is not None for result in fetch_results)
+                if written == 0 and not has_in_memory:
+                    checklist.warn("Fetch tiles", detail="no files")
+                    warn("No VIIRS files found for this case")
+                    summary_rows.append([event.event_id, "[yellow]⚠ empty[/yellow]", "0", "—", "—"])
+                    progress.advance(task)
+                    continue
 
-            # ── Per-date stats + best-date selection ──────────────────────────
-            if plot or actual_harmonise:
-                best_result, best_date_label = _select_best_result(fetcher, fetch_results)
-                best_ds = fetcher.to_dataset(best_result)
-                peak_label = best_date_label
-                png_dir = plot_dir or (event_viirs_dir / "plots")
+                fetch_detail = f"{written} file(s)" if written else f"{len(fetch_results)} result(s)"
+                checklist.complete("Process tiles", detail=fetch_detail)
 
-                if plot:
-                    png_path = png_dir / f"{event.event_id}_{best_date_label}_viirs.png"
-                    with step_status(f"  Plotting {best_date_label}…"):
-                        _plot_viirs(best_ds, event.event_id, best_date_label, output_png_path=png_path)
+                peak_label = "—"
+                harmonised_label = "—"
 
-                if actual_harmonise:
-                    harm_dir = event_viirs_dir / "harmonised"
-                    with step_status(f"  Harmonising {best_date_label}…"):
-                        _harmonise_viirs(best_ds, event.event_id, best_date_label, harm_dir=harm_dir, plot_dir=png_dir)
-                    harmonised_label = "✓"
+                # ── Per-date stats + best-date selection ──────────────────────
+                if plot or actual_harmonise:
+                    best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+                    best_ds = fetcher.to_dataset(best_result)
+                    peak_label = best_date_label
+                    png_dir = plot_dir or (event_viirs_dir / "plots")
+
+                    if plot:
+                        with checklist.step("Plot outputs"):
+                            png_path = png_dir / f"{event.event_id}_{best_date_label}_viirs.png"
+                            _plot_viirs(best_ds, event.event_id, best_date_label, output_png_path=png_path)
+                        checklist.complete("Plot outputs", detail=best_date_label)
+
+                    if actual_harmonise:
+                        with checklist.step("Harmonise outputs"):
+                            harm_dir = event_viirs_dir / "harmonised"
+                            _harmonise_viirs(
+                                best_ds,
+                                event.event_id,
+                                best_date_label,
+                                harm_dir=harm_dir,
+                                plot_dir=png_dir,
+                            )
+                        checklist.complete("Harmonise outputs", detail=best_date_label)
+                        harmonised_label = "✓"
 
             summary_rows.append(
                 [
@@ -1255,58 +1349,70 @@ def fetch_kurosiwo_modis(
                 f"({event.start_date.isoformat()} → {event.end_date.isoformat()})"
             )
             event_modis_dir = output_root / event.event_id / "modis"
-            try:
-                with step_status(f"  Fetching tiles for {event.event_id}…"):
-                    fetch_results = fetcher.fetch(event, event_modis_dir)
-            except Exception as exc:  # pragma: no cover - exercised in real fetch runs
-                failures.append((event.event_id, str(exc)))
-                progress.console.print(f"[bold red]✗[/bold red]  Failed: {exc}")
-                summary_rows.append([event.event_id, "[red]✗ failed[/red]", "0", "—", "—"])
-                progress.advance(task)
-                continue
+            step_names = _fetch_step_names("modis")
+            if plot:
+                step_names.append("Plot outputs")
+            if harmonise:
+                step_names.append("Harmonise outputs")
 
-            _report_fetch_writes("modis", fetch_results, keep_processed=keep_processed)
-            written = sum(len(result.files) for result in fetch_results)
-            total_files += written
-            has_in_memory = any(result.dataset is not None for result in fetch_results)
-            if written == 0 and not has_in_memory:
-                warn("No MODIS files found for this case")
-                summary_rows.append([event.event_id, "[yellow]⚠ empty[/yellow]", "0", "—", "—"])
-                progress.advance(task)
-                continue
+            with task_checklist(step_names, verbose=_VERBOSE_OUTPUT) as checklist:
+                try:
+                    with checklist.step("Process tiles", profile="modis_fetch", pre_step="Fetch tiles"):
+                        fetch_results = fetcher.fetch(event, event_modis_dir)
+                except Exception as exc:  # pragma: no cover - exercised in real fetch runs
+                    failures.append((event.event_id, str(exc)))
+                    summary_rows.append([event.event_id, "[red]✗ failed[/red]", "0", "—", "—"])
+                    progress.advance(task)
+                    continue
 
-            peak_label = "—"
-            harmonised_label = "—"
+                _report_fetch_writes("modis", fetch_results, keep_processed=keep_processed)
+                written = sum(len(result.files) for result in fetch_results)
+                total_files += written
+                has_in_memory = any(result.dataset is not None for result in fetch_results)
+                if written == 0 and not has_in_memory:
+                    checklist.warn("Fetch tiles", detail="no files")
+                    warn("No MODIS files found for this case")
+                    summary_rows.append([event.event_id, "[yellow]⚠ empty[/yellow]", "0", "—", "—"])
+                    progress.advance(task)
+                    continue
 
-            if plot or harmonise:
-                best_result, best_date_label = _select_best_result(fetcher, fetch_results)
-                best_ds = fetcher.to_dataset(best_result)
-                peak_label = best_date_label
-                png_dir = plot_dir or (event_modis_dir / "plots")
+                fetch_detail = f"{written} file(s)" if written else f"{len(fetch_results)} result(s)"
+                checklist.complete("Process tiles", detail=fetch_detail)
 
-                if plot:
-                    png_path = png_dir / f"{event.event_id}_{best_date_label}_modis.png"
-                    with step_status(f"  Plotting {best_date_label}…"):
-                        _plot_source(
-                            best_ds,
-                            event.event_id,
-                            best_date_label,
-                            source_id="modis",
-                            output_png_path=png_path,
-                        )
+                peak_label = "—"
+                harmonised_label = "—"
 
-                if harmonise:
-                    harm_dir = event_modis_dir / "harmonised"
-                    with step_status(f"  Harmonising {best_date_label}…"):
-                        _harmonise_source(
-                            best_ds,
-                            event.event_id,
-                            best_date_label,
-                            source_id="modis",
-                            harm_dir=harm_dir,
-                            plot_dir=png_dir,
-                        )
-                    harmonised_label = "✓"
+                if plot or harmonise:
+                    best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+                    best_ds = fetcher.to_dataset(best_result)
+                    peak_label = best_date_label
+                    png_dir = plot_dir or (event_modis_dir / "plots")
+
+                    if plot:
+                        with checklist.step("Plot outputs"):
+                            png_path = png_dir / f"{event.event_id}_{best_date_label}_modis.png"
+                            _plot_source(
+                                best_ds,
+                                event.event_id,
+                                best_date_label,
+                                source_id="modis",
+                                output_png_path=png_path,
+                            )
+                        checklist.complete("Plot outputs", detail=best_date_label)
+
+                    if harmonise:
+                        with checklist.step("Harmonise outputs"):
+                            harm_dir = event_modis_dir / "harmonised"
+                            _harmonise_source(
+                                best_ds,
+                                event.event_id,
+                                best_date_label,
+                                source_id="modis",
+                                harm_dir=harm_dir,
+                                plot_dir=png_dir,
+                            )
+                        checklist.complete("Harmonise outputs", detail=best_date_label)
+                        harmonised_label = "✓"
 
             summary_rows.append(
                 [
@@ -1408,87 +1514,93 @@ def harmonise(
     else:
         harmoniser = Harmoniser()
 
-    # ── Find processed files ──────────────────────────────────────────
-    import rioxarray as rxr
-
-    processed_dir: Path | None = None
-    tif_files: list[Path] = []
-
-    # Search strategy: try the standard layout first, then rglob broadly
-    for root in (input_root, Path.cwd() / "scripts" / "data", Path.cwd()):
-        if not root.exists():
-            continue
-        # Try root/<source>/processed/ first
-        candidate = root / source / "processed"
-        if candidate.exists():
-            hits = sorted(candidate.glob(f"{event}_*_{source}_flood_fraction.tif"))
-            if not hits:
-                hits = sorted(candidate.glob(f"{event}_*_{source}_raw.tif"))
-            if hits:
-                processed_dir, tif_files = candidate, hits
-                break
-        # Fallback: check root directly (files may be flat)
-        hits = sorted(root.glob(f"{event}_*_{source}_flood_fraction.tif"))
-        if not hits:
-            hits = sorted(root.glob(f"{event}_*_{source}_raw.tif"))
-        if hits:
-            processed_dir, tif_files = root, hits
-            break
-
-        # KuroSiwo deep pattern: <root>/<case>/<source>/processed/<case>_<date>_*.tif
-        for vdir in sorted(root.rglob(f"{source}/processed/")):
-            hits = sorted(vdir.glob(f"{event}_*_{source}_flood_fraction.tif"))
-            if not hits:
-                hits = sorted(vdir.glob(f"{event}_*_{source}_raw.tif"))
-            if hits:
-                processed_dir, tif_files = vdir, hits
-                break
-        if tif_files:
-            break
-
-    if not tif_files:
-        fail(f"No processed {_pretty_source(source)} files found matching '{event}'")
-        console.print("  Tried: cache dir, scripts/data/, and repository root.")
-        console.print("  Run 'atlantis fetch' first, or use --input to point to existing data.")
-        raise typer.Exit(code=1)
-
     output_path = output_root / source / "harmonised"
     output_path.mkdir(parents=True, exist_ok=True)
 
     resolution_str = f"{harmoniser.config.target_resolution_arcmin} arcmin"
     command_header("harmonise", subtitle=f"{event} · {source} · {resolution_str}")
-    console.print(f"[bold]Harmonising {len(tif_files)} file(s)[/bold]")
-    console.print(f"[bold]Input:[/bold] {processed_dir}")
-    console.print(f"[bold]Output:[/bold] {output_path}")
-    console.print(f"[bold]Target resolution:[/bold] {resolution_str} ({harmoniser.config.target_resolution:.8f}°)")
-    console.print(f"[bold]Resampling:[/bold] {harmoniser.config.resampling}")
+    import rioxarray as rxr
 
-    if dry_run:
-        dry_rows = []
-        for tf in tif_files:
-            stem = tf.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
-            out = output_path / f"{stem}.tif"
-            dry_rows.append([tf.name, out.name])
-        console.print(summary_table("Dry run — would process", ["Input file", "Output file"], dry_rows))
-        return
+    processed_dir: Path | None = None
+    tif_files: list[Path] = []
+    phase_names = ["Discover inputs", "Preview outputs" if dry_run else "Harmonise files"]
 
-    harmonised_count = 0
-    with make_progress() as progress:
-        task = progress.add_task("[cyan]Harmonising[/cyan]", total=len(tif_files))
-        for tif_path in tif_files:
-            # Determine if this is flood_fraction, raw, or quality_mask
-            input_var = "flood_fraction" if "flood_fraction" in tif_path.name else "raw"
-            stem = tif_path.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
-            out_path = output_path / f"{stem}.tif"
+    with task_checklist(phase_names, verbose=_VERBOSE_OUTPUT) as checklist:
+        with checklist.step("Discover inputs"):
+            # Search strategy: try the standard layout first, then rglob broadly
+            for root in (input_root, Path.cwd() / "scripts" / "data", Path.cwd()):
+                if not root.exists():
+                    continue
+                candidate = root / source / "processed"
+                if candidate.exists():
+                    hits = sorted(candidate.glob(f"{event}_*_{source}_flood_fraction.tif"))
+                    if not hits:
+                        hits = sorted(candidate.glob(f"{event}_*_{source}_raw.tif"))
+                    if hits:
+                        processed_dir, tif_files = candidate, hits
+                        break
 
-            progress.update(task, description=f"[cyan]Harmonising[/cyan] {tif_path.name}")
-            ds = rxr.open_rasterio(tif_path).squeeze(drop=True).to_dataset(name=input_var)
-            ds_harmonised = harmoniser.harmonise(ds, source_id=source, flood_variable=input_var)
+                hits = sorted(root.glob(f"{event}_*_{source}_flood_fraction.tif"))
+                if not hits:
+                    hits = sorted(root.glob(f"{event}_*_{source}_raw.tif"))
+                if hits:
+                    processed_dir, tif_files = root, hits
+                    break
 
-            flood_var = input_var if input_var in ds_harmonised.data_vars else "flood_fraction"
-            write_harmonised_raster(ds_harmonised[flood_var], out_path)
-            harmonised_count += 1
-            progress.advance(task)
+                for vdir in sorted(root.rglob(f"{source}/processed/")):
+                    hits = sorted(vdir.glob(f"{event}_*_{source}_flood_fraction.tif"))
+                    if not hits:
+                        hits = sorted(vdir.glob(f"{event}_*_{source}_raw.tif"))
+                    if hits:
+                        processed_dir, tif_files = vdir, hits
+                        break
+                if tif_files:
+                    break
+
+        if not tif_files:
+            checklist.fail("Discover inputs", detail="no processed files")
+            fail(f"No processed {_pretty_source(source)} files found matching '{event}'")
+            console.print("  Tried: cache dir, scripts/data/, and repository root.")
+            console.print("  Run 'atlantis fetch' first, or use --input to point to existing data.")
+            raise typer.Exit(code=1)
+
+        checklist.complete("Discover inputs", detail=f"{len(tif_files)} file(s)")
+
+        console.print(f"[bold]Harmonising {len(tif_files)} file(s)[/bold]")
+        console.print(f"[bold]Input:[/bold] {processed_dir}")
+        console.print(f"[bold]Output:[/bold] {output_path}")
+        console.print(f"[bold]Target resolution:[/bold] {resolution_str} ({harmoniser.config.target_resolution:.8f}°)")
+        console.print(f"[bold]Resampling:[/bold] {harmoniser.config.resampling}")
+
+        if dry_run:
+            with checklist.step("Preview outputs"):
+                dry_rows = []
+                for tf in tif_files:
+                    stem = tf.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
+                    out = output_path / f"{stem}.tif"
+                    dry_rows.append([tf.name, out.name])
+                console.print(summary_table("Dry run — would process", ["Input file", "Output file"], dry_rows))
+            checklist.complete("Preview outputs", detail=f"{len(dry_rows)} file(s)")
+            return
+
+        harmonised_count = 0
+        with checklist.step("Harmonise files"):
+            with make_progress() as progress:
+                task = progress.add_task("[cyan]Harmonising[/cyan]", total=len(tif_files))
+                for tif_path in tif_files:
+                    input_var = "flood_fraction" if "flood_fraction" in tif_path.name else "raw"
+                    stem = tif_path.stem.replace("flood_fraction", "harmonised").replace("raw", "harmonised")
+                    out_path = output_path / f"{stem}.tif"
+
+                    progress.update(task, description=f"[cyan]Harmonising[/cyan] {tif_path.name}")
+                    ds = rxr.open_rasterio(tif_path).squeeze(drop=True).to_dataset(name=input_var)
+                    ds_harmonised = harmoniser.harmonise(ds, source_id=source, flood_variable=input_var)
+
+                    flood_var = input_var if input_var in ds_harmonised.data_vars else "flood_fraction"
+                    write_harmonised_raster(ds_harmonised[flood_var], out_path)
+                    harmonised_count += 1
+                    progress.advance(task)
+        checklist.complete("Harmonise files", detail=f"{harmonised_count} file(s)")
 
     ok(f"Wrote {harmonised_count} harmonised file(s) to {output_path}")
 
@@ -1696,49 +1808,58 @@ def demo(
     console.print(f"[bold]Dates:[/bold] {event.start_date} → {event.end_date}")
     console.print(f"[bold]Output:[/bold] {out}\n")
 
-    with step_status("Fetching VIIRS tiles…"):
-        fetch_results = fetcher.fetch(event, viirs_dir)
-    if not fetch_results:
-        warn("No VIIRS data found for this region/date range.")
-        raise typer.Exit(code=1)
-
-    _report_viirs_fetch_writes(fetch_results, keep_processed=True)
-
-    # Select best date
-    best_result, best_date_label = _select_best_result(fetcher, fetch_results)
-    best_ds = fetcher.to_dataset(best_result)
-
-    # Plot
-    plot_dir_path = viirs_dir / "plots"
-    plot_dir_path.mkdir(parents=True, exist_ok=True)
-    png_path = plot_dir_path / f"Valencia_2024_{best_date_label}_viirs.png"
-    with step_status("Plotting peak-flood date…"):
-        _plot_viirs(best_ds, "Valencia_2024", best_date_label, output_png_path=png_path)
-
-    # Harmonise
+    step_names = ["Fetch tiles", "Process tiles", "Plot outputs"]
     if harmonise:
-        harm_dir = viirs_dir / "harmonised"
-        with step_status("Harmonising to 1 arcmin…"):
-            _harmonise_viirs(
-                best_ds,
-                "Valencia_2024",
-                best_date_label,
-                harm_dir=harm_dir,
-                plot_dir=plot_dir_path,
-            )
+        step_names.append("Harmonise outputs")
+
+    with task_checklist(step_names, verbose=_VERBOSE_OUTPUT) as checklist:
+        with checklist.step("Process tiles", profile="viirs_fetch", pre_step="Fetch tiles"):
+            fetch_results = fetcher.fetch(event, viirs_dir)
+        if not fetch_results:
+            checklist.warn("Fetch tiles", detail="no files")
+            warn("No VIIRS data found for this region/date range.")
+            raise typer.Exit(code=1)
+
+        checklist.complete("Process tiles", detail=f"{sum(len(result.files) for result in fetch_results)} file(s)")
+
+        best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+        best_ds = fetcher.to_dataset(best_result)
+
+        plot_dir_path = viirs_dir / "plots"
+        plot_dir_path.mkdir(parents=True, exist_ok=True)
+        png_path = plot_dir_path / f"Valencia_2024_{best_date_label}_viirs.png"
+        with checklist.step("Plot outputs"):
+            _plot_viirs(best_ds, "Valencia_2024", best_date_label, output_png_path=png_path, announce=False)
+        checklist.complete("Plot outputs", detail=best_date_label)
+
+        if harmonise:
+            harm_dir = viirs_dir / "harmonised"
+            with checklist.step("Harmonise outputs"):
+                _harmonise_viirs(
+                    best_ds,
+                    "Valencia_2024",
+                    best_date_label,
+                    harm_dir=harm_dir,
+                    plot_dir=plot_dir_path,
+                    announce=False,
+                )
+            checklist.complete("Harmonise outputs", detail=best_date_label)
 
     console.print("")
     ok("Demo complete!")
     from atlantis.utils.ui import file_tree as _ft
 
+    output_files = [path for result in fetch_results for path in result.files]
     if harmonise:
-        output_files = [
-            png_path,
-            harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
-            plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
-        ]
+        output_files.extend(
+            [
+                png_path,
+                harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
+                plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
+            ]
+        )
     else:
-        output_files = [png_path]
+        output_files.append(png_path)
     console.print(_ft(str(out), output_files))
 
 

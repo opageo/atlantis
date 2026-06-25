@@ -8,10 +8,11 @@ import numpy as np
 from typer.testing import CliRunner
 
 from atlantis import __version__
-from atlantis.cli import _plot_viirs, _select_best_result, cli
+from atlantis.cli import _plot_viirs, _select_best_result, _should_emit_verbose_log, cli
 from atlantis.fetchers.base import FetchResult
 from atlantis.models.event import FloodEvent
 from atlantis.models.metadata import TileMetadata
+from atlantis.utils.checklist import task_checklist
 
 runner = CliRunner()
 
@@ -152,6 +153,22 @@ def test_no_verbose_keeps_loguru_disabled(monkeypatch):
     assert calls["disabled"] == ["atlantis"]
     assert "enabled" not in calls
     assert calls["added"] is False
+
+
+def test_verbose_sink_suppresses_fetcher_logs_during_checklist() -> None:
+    """Atlantis logs should not hit stderr while a live checklist is active."""
+    fetcher_record = {"name": "atlantis.fetchers.viirs.processor"}
+    harmoniser_record = {"name": "atlantis.harmoniser.reprojector"}
+    external_record = {"name": "urllib3.connectionpool"}
+
+    assert _should_emit_verbose_log(fetcher_record) is True
+    assert _should_emit_verbose_log(harmoniser_record) is True
+    assert _should_emit_verbose_log(external_record) is True
+
+    with task_checklist(["Fetch tiles"]):
+        assert _should_emit_verbose_log(fetcher_record) is False
+        assert _should_emit_verbose_log(harmoniser_record) is False
+        assert _should_emit_verbose_log(external_record) is True
 
 
 def test_fetch_command():
@@ -360,6 +377,70 @@ def test_fetch_kurosiwo_viirs_command_from_catalogue(monkeypatch, tmp_path):
     assert "Total files written: 1" in result.stdout
 
 
+def test_fetch_kurosiwo_modis_command(monkeypatch, tmp_path):
+    """Test metadata-driven KuroSiwo MODIS CLI flow."""
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            assert kwargs == {
+                "backend": "lance_geotiff",
+                "composite": "F2",
+                "classify": True,
+                "stream": True,
+                "keep_processed": True,
+            }
+
+        def fetch(self, event, output_dir):
+            assert isinstance(event, FloodEvent)
+            assert event.event_id == "KuroSiwo_470"
+            assert output_dir == tmp_path / "KuroSiwo_470" / "modis"
+            return [
+                FetchResult(
+                    event_id=event.event_id,
+                    source_id="modis",
+                    files=[tmp_path / "KuroSiwo_470" / "modis" / "obs.tif"],
+                    metadata=TileMetadata(
+                        event_id=event.event_id,
+                        source_id="modis",
+                        fetch_timestamp=datetime.now(timezone.utc),
+                        bbox=event.bbox,
+                    ),
+                )
+            ]
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+    monkeypatch.setattr(
+        "atlantis.cli.build_kurosiwo_flood_events",
+        lambda *args, **kwargs: [
+            FloodEvent(
+                event_id="KuroSiwo_470",
+                bbox=(-0.8627, 8.2639, 1.9947, 11.7312),
+                start_date=date(2020, 10, 14),
+                end_date=date(2020, 10, 14),
+                sources=["modis"],
+            )
+        ],
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch-kurosiwo-modis",
+            "--metadata",
+            str(tmp_path / "kurosiwo.csv"),
+            "--case",
+            "KuroSiwo_470",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Cases selected: 1" in result.stdout
+    assert "Fetching KuroSiwo_470" in result.stdout
+    assert "Total files written: 1" in result.stdout
+
+
 def test_fetch_command_supports_legacy_viirs_backend(monkeypatch, tmp_path):
     """Test explicit legacy backend selection for generic VIIRS fetch."""
 
@@ -546,6 +627,60 @@ def test_harmonise_command(tmp_path):
     assert "1 file(s)" in result.stdout
 
 
+def test_demo_command(monkeypatch, tmp_path):
+    """Test demo command runs the checklist-wrapped happy path."""
+
+    fetch_result = FetchResult(
+        event_id="Valencia_2024",
+        source_id="viirs",
+        files=[tmp_path / "viirs" / "obs.tif"],
+        metadata=TileMetadata(
+            event_id="Valencia_2024",
+            source_id="viirs",
+            fetch_timestamp=datetime.now(timezone.utc),
+            bbox=(-1.5, 38.8, 0.5, 40.0),
+        ),
+    )
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            assert kwargs == {
+                "classify": True,
+                "stream": True,
+                "strategy": "peak",
+                "keep_processed": True,
+            }
+
+        def fetch(self, event, output_dir):
+            assert event.event_id == "Valencia_2024"
+            assert output_dir == tmp_path / "viirs"
+            return [fetch_result]
+
+        def to_dataset(self, result):
+            assert result is fetch_result
+            return _FakeDataset({"flood_fraction": np.ones((4, 4), dtype=np.float32)})
+
+    monkeypatch.setattr("atlantis.utils.setup.get_missing_assets", lambda: [])
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+    monkeypatch.setattr("atlantis.cli._plot_viirs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("atlantis.cli._harmonise_viirs", lambda *args, **kwargs: None)
+
+    result = runner.invoke(
+        cli,
+        [
+            "demo",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Valencia_2024" in result.stdout
+    assert "Demo complete!" in result.stdout
+    assert "Saved:" not in result.stdout
+    assert "Wrote 1 files" not in result.stdout
+
+
 # ── Unit tests for helper functions ──────────────────────────────────────────
 
 
@@ -584,7 +719,7 @@ class TestPlotViirs:
     def test_calls_plot_classified_for_flood_extent(self, tmp_path, monkeypatch):
         calls: list[dict] = []
 
-        def _capture(da, *, title, output_path):
+        def _capture(da, *, title, output_path, announce=True):
             calls.append({"da": da, "title": title, "path": output_path})
 
         monkeypatch.setattr("atlantis.cli.plot_classified", _capture)
@@ -599,7 +734,7 @@ class TestPlotViirs:
     def test_calls_plot_raw_when_no_flood(self, tmp_path, monkeypatch):
         calls: list[dict] = []
 
-        def _capture(da, *, title, output_path):
+        def _capture(da, *, title, output_path, announce=True):
             calls.append({"da": da, "title": title, "path": output_path})
 
         monkeypatch.setattr("atlantis.cli.plot_raw", _capture)
@@ -694,7 +829,7 @@ def test_fetch_with_plot_saves_png(monkeypatch, tmp_path):
     plot_calls: list = []
     monkeypatch.setattr(
         "atlantis.cli.plot_classified",
-        lambda da, *, title, output_path: plot_calls.append(output_path),
+        lambda da, *, title, output_path, announce=True: plot_calls.append(output_path),
     )
 
     result = runner.invoke(
@@ -755,7 +890,7 @@ def test_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
     plot_calls: list = []
     monkeypatch.setattr(
         "atlantis.cli.plot_classified",
-        lambda da, *, title, output_path: plot_calls.append(output_path),
+        lambda da, *, title, output_path, announce=True: plot_calls.append(output_path),
     )
 
     result = runner.invoke(
@@ -935,7 +1070,7 @@ def test_fetch_kurosiwo_with_harmonise_and_harmonise_only(monkeypatch, tmp_path)
     plot_calls: list = []
     monkeypatch.setattr(
         "atlantis.cli.plot_classified",
-        lambda da, *, title, output_path: plot_calls.append(output_path),
+        lambda da, *, title, output_path, announce=True: plot_calls.append(output_path),
     )
 
     write_calls: list = []

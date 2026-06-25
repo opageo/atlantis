@@ -10,6 +10,8 @@ ML-ready archive of satellite-derived flood inundation observations
 (ECMWF Code for Earth 2026).
 
 > **Getting started?** Read [src/README.md](src/README.md) for the current architecture guide, working VIIRS/KuroSiwo extraction commands, pipeline overview, module layout, and extension points.
+>
+> **New to Atlantis or avoiding manual GDAL setup?** Use the onboarding guide in [docs/pixi-setup.md](docs/pixi-setup.md).
 
 [![Python versions][python-badge]][python-url]
 [![Ruff][ruff-badge]][ruff-url]
@@ -24,14 +26,9 @@ ML-ready archive of satellite-derived flood inundation observations
 
 ## Quick Start
 
+### Developer workflow (uv, recommended for contributors)
+
 Three commands to go from clone to VIIRS flood data:
-
-```bash
-make setup   # install deps + restore data assets
-make demo    # run the Valencia 2024 flood example
-```
-
-Or equivalently:
 
 ```bash
 uv sync --extra geo
@@ -39,14 +36,45 @@ uv run atlantis setup
 uv run atlantis demo
 ```
 
+Or with `make` wrappers:
+
+```bash
+make setup   # install deps + restore data assets
+make demo    # run the Valencia 2024 flood example
+```
+
+### New user onboarding (pixi, no manual GDAL build)
+
+[Pixi](https://pixi.sh) installs **all** dependencies — including GDAL with
+HDF4 support — in a single command. This is the easiest path for newcomers
+and non-developers who want a working environment quickly:
+
+```bash
+pixi install        # resolve & install everything from conda-forge
+pixi run setup      # bootstrap credentials & data assets
+pixi run demo       # run the Valencia 2024 flood example
+```
+
+See [docs/pixi-setup.md](docs/pixi-setup.md) for the full guide.
+
 > **Architecture and sensor guides?** See [docs/README.md](docs/README.md)
 > for the data-source documentation index and shared design notes.
 
 ## Installation
 
+Developer setup (primary contributor workflow):
+
 ```bash
 uv sync
 ```
+
+New user onboarding alternative (includes GDAL + HDF4 out of the box):
+
+```bash
+pixi install
+```
+
+See [docs/pixi-setup.md](docs/pixi-setup.md) for a complete newcomer guide.
 
 ## Credentials & data access
 
@@ -56,6 +84,8 @@ guided through all of it:
 
 ```bash
 uv run python scripts/setup.py
+# or, inside the pixi environment
+pixi run setup
 ```
 
 See [docs/setup.md](docs/setup.md) for a full description of each credential
@@ -105,6 +135,8 @@ To install notebook dependencies:
 
 ```bash
 uv sync --extra notebooks
+# or use the pixi notebooks environment
+pixi shell -e notebooks
 ```
 
 See [`notebooks/README.md`](notebooks/README.md) for details.

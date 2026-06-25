@@ -80,3 +80,7 @@ uv run python scripts/setup.py --check-only
 
 For MODIS with HDF4 support, see [docs/gdal-install.md](gdal-install.md) for
 instructions on building GDAL from source.
+
+> **Using pixi?** If you installed via `pixi install`, GDAL with HDF4 is
+> already included — no manual build needed. Run `pixi run verify-gdal` to
+> confirm. See [pixi-setup.md](pixi-setup.md) for details.
