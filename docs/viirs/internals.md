@@ -83,7 +83,7 @@ Call chain for a single date:
 
 ## Stage 3 — Mosaic
 
-VIIRS flood products are pre-tiled into ~10°×10° grid cells called **AOIs** (Areas of Interest).
+VIIRS flood products are pre-tiled into ~15°×15° grid cells called **AOIs** (Areas of Interest).
 If a bounding box straddles a tile boundary, `search()` returns multiple tiles for the same date
 which must be merged before clipping.
 
@@ -181,7 +181,7 @@ into one continuous flood layer plus two binary masks:
 
 | Layer             | Rule                                            | Meaning                                                                    |
 | ----------------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
-| `flood_fraction`  | `101 <= pixel <= 200 ? (pixel - 100) / 100 : 0` | Flooded-water fraction in `[0.0, 1.0]`; written as uint8 percent `[0,100]` |
+| `flood_fraction`  | `101 <= pixel <= 200 ? (pixel - 100) / 100 : ({0,1,30} -> NaN, else 0)` | Flooded-water fraction in `[0.0, 1.0]`; valid dry observations are `0`, fill/cloud are written as `nodata=255` |
 | `quality_mask`    | `pixel ∉ {0,1,30}`                              | 1 = valid clear-sky observation (0 = fill or cloud cover)                  |
 | `permanent_water` | `pixel == 99`                                   | 1 = NOAA NormalWater reference (permanent / open reference water)          |
 
@@ -189,6 +189,8 @@ The authoritative legend lives in the band tag `WaterDetection#TypeDescription`
 inside each NOAA GeoTIFF. Per that tag, code `99 = NormalWater` is the reference-water
 class and is the basis of `permanent_water`. Codes `17` (Vegetation) and `20` (Snow/ice)
 are valid observations — they receive `quality=1` and contribute `0` to `flood_fraction`.
+Fill (`0`, `1`) and cloud (`30`) pixels remain missing through classification and are only encoded
+as `255` when Atlantis writes the classified GeoTIFF.
 
 There is no thresholding step inside `_classify_pixels()` in the current pipeline. If you
 need a binary flood mask, apply a downstream threshold to `flood_fraction`.
