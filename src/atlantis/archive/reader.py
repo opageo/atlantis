@@ -134,7 +134,7 @@ class ArchiveReader:
             raise FileNotFoundError(f"{label} datacube not found: {store}")
         for consolidated in (True, False):
             try:
-                return xr.open_zarr(store, group=source_id, consolidated=consolidated)
+                return xr.open_zarr(store, group=source_id, consolidated=consolidated, decode_coords="all")
             except (FileNotFoundError, KeyError):
                 break
             except Exception:

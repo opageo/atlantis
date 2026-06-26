@@ -126,6 +126,14 @@ class TestArchiveReader:
         # uint8 50 decodes via scale_factor 0.01 -> 0.5
         np.testing.assert_allclose(float(ds["flood_fraction"].mean()), 0.5, atol=1e-6)
 
+    def test_read_raw_resolves_crs(self, tmp_path, event, simple_dataset):
+        import rioxarray  # noqa: F401  (registers the .rio accessor)
+
+        ArchiveWriter(tmp_path).write_raw(simple_dataset, event, "viirs")
+        ds = ArchiveReader(tmp_path).read_raw("test_event", "viirs")
+        assert ds.rio.crs is not None
+        assert ds.rio.crs.to_epsg() == 4326
+
     def test_read_raw_multiple_dates(self, tmp_path, event):
         writer = ArchiveWriter(tmp_path)
         writer.write_raw(aligned_dataset(0.3), event, "viirs", time=date(2020, 1, 1))

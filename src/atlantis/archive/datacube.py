@@ -41,6 +41,21 @@ def date_to_int(value: date | datetime | np.datetime64, epoch: str) -> int:
     return int((d - base) / np.timedelta64(1, "D"))
 
 
+def _crs_grid_mapping_attrs() -> dict[str, Any]:
+    """CF grid-mapping attributes for the canonical CRS.
+
+    Produces the attribute set ``pyproj`` / ``rioxarray`` understand so the
+    ``grid_mapping="crs"`` reference on each data variable resolves to a real
+    CRS (e.g. ``ds.rio.crs`` after ``open_zarr(..., decode_coords="all")``).
+    """
+    from pyproj import CRS
+
+    attrs: dict[str, Any] = dict(CRS.from_user_input(grid.GLOBAL_CRS).to_cf())
+    # GDAL / rioxarray also read the WKT from ``spatial_ref``.
+    attrs["spatial_ref"] = attrs.get("crs_wkt", "")
+    return attrs
+
+
 def open_root(store: Any, mode: str = "a") -> zarr.Group:
     """Open (or create) the root group of a datacube store."""
     return zarr.open_group(store, mode=mode)
@@ -88,6 +103,11 @@ def ensure_source_group(
 
     t = group.create_array(name="time", shape=(0,), chunks=(512,), dtype="int64", dimension_names=("time",))
     t.attrs.update({"standard_name": "time", "units": time_units, "calendar": "proleptic_gregorian"})
+
+    # Real CF grid-mapping variable so ``grid_mapping="crs"`` resolves to a CRS.
+    crs = group.create_array(name="crs", shape=(), dtype="int64")
+    crs[...] = 0
+    crs.attrs.update(_crs_grid_mapping_attrs())
 
     _ensure_data_arrays(group, var_names, chunk=chunk, shard=shard, scale_factor=scale_factor)
     group.attrs.update({"crs": grid.GLOBAL_CRS, "atlantis_events": {}})

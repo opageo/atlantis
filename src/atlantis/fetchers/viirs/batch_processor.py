@@ -219,3 +219,69 @@ def process_granule(task: dict) -> TaskResult:
         # Linux glibc doesn't always release malloc fragments back to the OS;
         # an explicit gc.collect() between tasks keeps worker RSS flat.
         gc.collect()
+
+
+def harmonise_granule_payload(task: dict) -> dict:
+    """Download + classify + harmonise a granule, returning the result in-memory.
+
+    A *produce-only* sibling of :func:`process_granule`: it runs the identical
+    pipeline (download → classify → harmonise → scale to uint8 [0, 100]) but,
+    instead of writing a COG to S3, returns the harmonised array plus its
+    global-grid coordinates. This enables a **parallel-produce / serial-write**
+    pattern for the consolidated Zarr datacube: Dask workers run the expensive
+    per-granule work concurrently, while a single coordinator region-writes the
+    payloads into the cube — so cube writes stay lock-free (no two workers touch
+    shared Zarr metadata or the same chunk).
+
+    Args:
+        task: Task dict (``task_id``, ``source_uri``, ``dest_key``, ``date``,
+            ``aoi_id``) as produced by ``inventory.to_tasks``.
+
+    Returns:
+        Dict with ``task_id``, ``date``, ``aoi_id``, ``dest_key``, ``scaled``
+        (uint8 [0, 100] / 255 nodata), and ``y`` / ``x`` global-grid pixel
+        centres for the harmonised AOI window.
+    """
+    import xarray as xr
+
+    src_path: Path | None = None
+    try:
+        src_path = _download_to_tempfile(task["source_uri"])
+
+        with rasterio.open(src_path) as src:
+            data = src.read(1)
+            transform = src.transform
+            crs = src.crs.to_string() if src.crs else "EPSG:4326"
+
+        flood_fraction = classify_viirs_flood_fraction(data)
+        del data
+
+        da = _flood_fraction_dataarray(flood_fraction, transform, crs)
+        ds = xr.Dataset({"flood_fraction": da})
+        del flood_fraction, da
+
+        harmoniser = Harmoniser(HarmoniseConfig())
+        ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="flood_fraction")
+        del ds
+
+        harm_da = ds_harm["flood_fraction"]
+        arr = harm_da.values
+        scaled = np.where(
+            np.isnan(arr),
+            np.uint8(HARMONISED_NODATA),
+            np.round(arr * 100).clip(0, 100).astype(np.uint8),
+        ).astype(np.uint8)
+
+        return {
+            "task_id": task["task_id"],
+            "date": task["date"],
+            "aoi_id": task["aoi_id"],
+            "dest_key": task["dest_key"],
+            "scaled": scaled,
+            "y": np.asarray(harm_da["y"].values, dtype="float64"),
+            "x": np.asarray(harm_da["x"].values, dtype="float64"),
+        }
+    finally:
+        if src_path is not None:
+            src_path.unlink(missing_ok=True)
+        gc.collect()
