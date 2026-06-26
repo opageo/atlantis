@@ -1684,7 +1684,7 @@ def archive(
     with make_progress() as progress:
         task = progress.add_task("[cyan]Archiving[/cyan]", total=len(items))
         for src, ds, d, _ in items:
-            writer.write(ds, flood_event, src, time=d or start, ensure_masks=ensure_masks)
+            writer.write(ds, src, time=d or start, ensure_masks=ensure_masks, event=flood_event)
             progress.advance(task)
 
     ok(f"Archived {len(items)} raster(s) from {len(sources)} source(s) into datacube at {root}")

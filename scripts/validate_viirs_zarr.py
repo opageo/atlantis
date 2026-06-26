@@ -89,28 +89,14 @@ def _produce_payloads(tasks: list[dict], workers: int, memory_limit: str) -> tup
     return payloads, failures
 
 
-def _write_datacube(payloads: list[dict], archive_root: str, limit: int):
+def _write_datacube(payloads: list[dict], archive_root: str):
     """Region-write every payload into the consolidated datacube (serial)."""
     import xarray as xr
 
     from atlantis.archive._store import store_for
     from atlantis.archive.writer import ArchiveWriter
     from atlantis.config import ArchiveConfig
-    from atlantis.models.event import FloodEvent
 
-    west = float(min(p["x"].min() for p in payloads))
-    east = float(max(p["x"].max() for p in payloads))
-    south = float(min(p["y"].min() for p in payloads))
-    north = float(max(p["y"].max() for p in payloads))
-    dates = sorted({_to_date(p["date"]) for p in payloads})
-
-    event = FloodEvent(
-        event_id=f"viirs_2020_first{limit}",
-        bbox=(west, south, east, north),
-        start_date=dates[0],
-        end_date=dates[-1],
-        sources=["viirs"],
-    )
     cfg = ArchiveConfig(archive_root=archive_root)
     writer = ArchiveWriter(archive_root, cfg)
     for p in payloads:
@@ -118,7 +104,7 @@ def _write_datacube(payloads: list[dict], archive_root: str, limit: int):
             {"flood_fraction": (("y", "x"), p["scaled"])},
             coords={"y": p["y"], "x": p["x"]},
         )
-        writer.write(ds, event, "viirs", time=_to_date(p["date"]))
+        writer.write(ds, "viirs", time=_to_date(p["date"]))
     return store_for(archive_root, cfg.store, cfg.storage_options)
 
 
@@ -248,7 +234,7 @@ def main() -> None:
     if not payloads:
         raise SystemExit("No payloads produced — aborting.")
 
-    store = _write_datacube(payloads, args.archive, args.limit)
+    store = _write_datacube(payloads, args.archive)
     print(f"Datacube written: {store}")
 
     _validate(payloads, store, compare_cogs=not args.no_compare_cogs)

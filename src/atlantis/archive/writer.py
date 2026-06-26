@@ -85,57 +85,63 @@ class ArchiveWriter:
     def write(
         self,
         dataset: "xr.Dataset",
-        event: FloodEvent,
         source_id: str,
         *,
         time: date | None = None,
         ensure_masks: bool = False,
+        event: FloodEvent | None = None,
     ) -> Any:
         """Write harmonised data into the consolidated datacube.
 
         The AOI is region-written into the per-source group on the global grid,
         with inner chunks of ``config.chunk_size`` packed into ``config.shard_size``
-        Zarr v3 shards (fine-grained random-tile reads with few large cloud
-        objects, and efficient large-window analysis reads). Only the channels
-        present in the input are stored; the harmoniser emits ``flood_fraction``,
-        ``quality_mask`` and ``permanent_water``. Pass ``ensure_masks=True`` to
-        synthesise the masks for a flood-fraction-only input.
+        Zarr v3 shards. Only the channels present in the input are stored; pass
+        ``ensure_masks=True`` to synthesise ``quality_mask`` / ``permanent_water``
+        for a flood-fraction-only input.
 
-        Writes mutate shared metadata (time-axis resize, provenance registry,
+        The daily pipeline writes label-free: provenance is recorded as bounded
+        group attributes (``source_id``, ``last_updated``). Passing an optional
+        ``event`` additionally registers a named **bookmark** (bbox + dates) under
+        the ``atlantis_events`` group attr — for case studies / benchmarks only;
+        omit it for routine daily ingestion so the schema does not grow.
+
+        Writes mutate shared metadata (time-axis resize, provenance,
         consolidation) and must be driven by a single coordinator.
 
         Args:
             dataset: Harmonised xarray Dataset (``y``/``x`` aligned to the grid).
-            event: Flood event metadata (provenance + reader lookup).
             source_id: Data source identifier / group name.
-            time: Date for a 2-D (timeless) dataset. Defaults to
-                ``event.start_date``. Ignored if the dataset already has ``time``.
+            time: Date for a 2-D (timeless) dataset. Required for a 2-D input
+                unless ``event`` (whose ``start_date`` is then used) is given.
+                Ignored if the dataset already has a ``time`` dimension.
             ensure_masks: Generate ``quality_mask`` / ``permanent_water`` if absent.
+            event: Optional named event to register as a bookmark.
 
         Returns:
             The datacube store location (local :class:`~pathlib.Path` or
             :class:`zarr.storage.FsspecStore`).
 
         Raises:
-            ValueError: If the dataset is empty or not grid-aligned.
+            ValueError: If the dataset is empty, not grid-aligned, or 2-D without
+                a ``time`` / ``event``.
         """
         if ensure_masks:
             dataset = self._ensure_masks(dataset)
-        return self._write(dataset, event, source_id, time)
+        return self._write(dataset, source_id, time, event)
 
     # ── Internal write pipeline ────────────────────────────────────────────
 
     def _write(
         self,
         dataset: "xr.Dataset",
-        event: FloodEvent,
         source_id: str,
         time: date | None,
+        event: FloodEvent | None,
     ) -> Any:
         if not dataset.data_vars:
             raise ValueError("Dataset is empty")
 
-        ds = self._ensure_time_dim(dataset, event, time)
+        ds = self._ensure_time_dim(dataset, time, event)
         y_dim = _find_dim(ds, _Y_DIMS)
         x_dim = _find_dim(ds, _X_DIMS)
         if y_dim is None or x_dim is None:
@@ -168,7 +174,9 @@ class ArchiveWriter:
                 arr = _encode_uint8(np.asarray(ds[var].isel(time=ti).values))
                 datacube.write_region(data_arrs[var], time_idx, window, arr)
 
-        self._record_event(group, event, window, times)
+        self._record_provenance(group, source_id)
+        if event is not None:
+            self._record_bookmark(group, event, times)
         datacube.consolidate(store)
         return store
 
@@ -183,11 +191,16 @@ class ArchiveWriter:
             ds = ds.assign(permanent_water=normaliser.generate_permanent_water_mask(ds))
         return ds
 
-    def _ensure_time_dim(self, dataset: "xr.Dataset", event: FloodEvent, time: date | None) -> "xr.Dataset":
+    def _ensure_time_dim(self, dataset: "xr.Dataset", time: date | None, event: FloodEvent | None) -> "xr.Dataset":
         """Return a dataset with a ``time`` dimension/coordinate (datetime64)."""
         if "time" in dataset.dims:
             return dataset
-        day = self._as_date(time) if time is not None else event.start_date
+        if time is not None:
+            day = self._as_date(time)
+        elif event is not None:
+            day = event.start_date
+        else:
+            raise ValueError("A 2-D dataset requires `time` (a date) or an `event`.")
         return dataset.expand_dims(time=[np.datetime64(day, "ns")])
 
     @staticmethod
@@ -200,22 +213,23 @@ class ArchiveWriter:
         return np.datetime64(value, "D").astype(object)
 
     @staticmethod
-    def _record_event(
-        group: Any,
-        event: FloodEvent,
-        window: "grid.IndexWindow",
-        times: list[date],
-    ) -> None:
-        """Record per-event provenance in the source group's attributes."""
+    def _record_provenance(group: Any, source_id: str) -> None:
+        """Record bounded provenance in the source group's attributes."""
+        group.attrs.update({"source_id": source_id, "last_updated": datetime.now(tz=timezone.utc).isoformat()})
+
+    @staticmethod
+    def _record_bookmark(group: Any, event: FloodEvent, times: list[date]) -> None:
+        """Register an optional named event bookmark (bbox + dates).
+
+        Stores only the AOI bbox and the set of dates, so the reader derives the
+        index window from the bbox via the canonical grid. Bounded by the number
+        of distinct named events — the daily pipeline never calls this.
+        """
         registry = dict(group.attrs.get("atlantis_events", {}))
         existing = registry.get(event.event_id, {})
         dates = sorted(set(existing.get("dates", [])) | {d.isoformat() for d in times})
         registry[event.event_id] = {
             "bbox": list(event.bbox),
-            "row_start": window.row_start,
-            "row_stop": window.row_stop,
-            "col_start": window.col_start,
-            "col_stop": window.col_stop,
             "dates": dates,
             "updated_at": datetime.now(tz=timezone.utc).isoformat(),
         }

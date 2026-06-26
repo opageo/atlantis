@@ -43,7 +43,7 @@ graph TD
 
     RG3 --> COORDS["🧭 coords<br/>time (int64) · y (f64) · x (f64) · crs"]
     RG3 --> VARS["🧱 data vars (uint8, fill=255)<br/>flood_fraction · quality_mask<br/>permanent_water · recurring_flood"]
-    RG3 --> ATTRS["🏷 group attrs<br/>crs · atlantis_events registry"]
+    RG3 --> ATTRS["🏷 group attrs<br/>crs · source_id · last_updated<br/>atlantis_events (optional bookmarks)"]
 ```
 
 ---
@@ -124,26 +124,39 @@ This is 4× smaller than float32 and CMF-comparable after CF decode.
 `bytes` + **`zstd`** (`level=0`, `checksum=false`) for every array (Zarr v3
 codec pipeline).
 
-### 3.4 Group attributes — provenance registry
+### 3.4 Group attributes — provenance & optional bookmarks
 
-Each group stores a convenience `crs` **string** attribute (distinct from the
-scalar `crs` grid-mapping *variable* in §3.1) and an `atlantis_events` dict keyed
-by `event_id`:
+Group attributes are **bounded** (fixed keys, never per-write growth):
+
+| Attribute | Purpose |
+| --- | --- |
+| `crs` | human-readable CRS string (`"EPSG:4326"`); distinct from the scalar `crs` grid-mapping *variable* in §3.1 |
+| `source_id` | the source this group holds |
+| `last_updated` | ISO timestamp of the most recent write |
+| `atlantis_events` | **optional** named-event bookmarks — empty `{}` for the daily archive |
+
+The **daily archive is label-free**: routine writes record only `source_id` /
+`last_updated` and leave `atlantis_events` empty. Access is by `(source, time,
+space)` — temporal selection on the `time` axis, spatial selection from a bbox
+mapped to an index window via `grid.bounds_to_window`. No registry is scanned.
+
+**Optional event bookmarks** are a convenience overlay for case studies /
+benchmarks, written *only* when an explicit `event` is passed to `write()`. They
+store just a bbox + dates (the reader derives the window from the bbox), so the
+schema is bounded by the number of distinct named events:
 
 ```jsonc
 "atlantis_events": {
-  "viirs_2020_first100": {
-    "bbox": [-179.99166, -59.99166, 179.99166, 74.99166],
-    "row_start": 4500, "row_stop": 5400,      // y window into global grid
-    "col_start": 13500, "col_stop": 14400,    // x window into global grid
-    "dates": ["2020-01-01"],
-    "updated_at": "2026-06-25T07:43:40+00:00"
+  "Valencia_2024": {
+    "bbox": [-1.5167, 38.7833, 0.5167, 40.0167],
+    "dates": ["2024-10-30", "2024-10-31"],
+    "updated_at": "2026-06-26T12:00:00+00:00"
   }
 }
 ```
 
-The reader resolves an event purely from this registry (no scan): window →
-`isel`, dates → time selection.
+`read(source, event="Valencia_2024")` resolves the bookmark (bbox → window,
+dates → time selection); the daily pipeline never writes here.
 
 ---
 
@@ -164,7 +177,7 @@ graph LR
 | Read unit (inner chunk) | `256²` tile (power-of-two, `/32`-friendly for U-Nets) |
 | Object unit (shard) | `2048²` shard = 64 inner tiles in one object |
 | Sparsity | only inner chunks overlapping an AOI materialise (within their shard) |
-| Write concurrency | **single coordinator** — `write()` resizes the time axis, updates the registry and consolidates; intra-timestep writes mosaic per `(source, date)`. Parallelism is across the *produce* step (e.g. Dask) and across dates. |
+| Write concurrency | **single coordinator** — `write()` resizes the time axis, records bounded provenance and consolidates; intra-timestep writes mosaic per `(source, date)`. Parallelism is across the *produce* step (e.g. Dask) and across dates. |
 
 Config knobs ([`ArchiveConfig`](../../src/atlantis/config.py#L101)):
 `store="datacube.zarr"`, `chunk_size=256`, `shard_size=2048`,
@@ -182,20 +195,21 @@ graph TD
     D --> E["ensure_time_index(t_int)<br/>append time slot + resize arrays (metadata only)"]
     E --> F["_encode_uint8()<br/>float [0,1] → uint8 [0,100], NaN→255"]
     F --> G["write_region(arr, time_idx, window)<br/>sparse region write — only touched chunks"]
-    G --> H["_record_event()<br/>update atlantis_events provenance"]
+    G --> H["_record_provenance()<br/>source_id · last_updated<br/>(+ optional event bookmark)"]
     H --> I["consolidate_metadata() (best-effort)"]
 
     A -. "ensure_masks=True" .-> P["_ensure_masks()<br/>generate quality + permanent_water<br/>if absent in the input"]
     P --> B
 ```
 
-- `write(dataset, event, source, *, time=None, ensure_masks=False)` → the
+- `write(dataset, source, *, time=None, ensure_masks=False, event=None)` → the
   consolidated cube. **Single-coordinator**: it mutates shared metadata
-  (time-axis resize, `atlantis_events`, consolidation). For parallel backfill,
+  (time-axis resize, bounded provenance, consolidation). For parallel backfill,
   run the expensive produce step in parallel (e.g. Dask) and funnel results to
   one writer — see `scripts/validate_viirs_zarr.py`.
 - `ensure_masks=True` synthesises `quality_mask` / `permanent_water` when the
   input lacks them (e.g. a single-band `flood_fraction` tif).
+- `event=…` (optional) registers a named bookmark; the daily pipeline omits it.
 
 ---
 
@@ -203,11 +217,14 @@ graph TD
 
 ```mermaid
 graph TD
-    R0["read(event_id, source_id, tiles?)"] --> R1["open_zarr(store, group=source,<br/>decode_coords='all')<br/>lazy, CF-decoded → float; crs resolved"]
-    R1 --> R2["lookup atlantis_events[event_id]<br/>→ window + dates"]
-    R2 --> R3["isel(y=window, x=window)<br/>+ time = recorded dates"]
+    R0["read(source_id, bbox?, start?, end?, tiles?, event?)"] --> R1["open_zarr(store, group=source,<br/>decode_coords='all')<br/>lazy, CF-decoded → float; crs resolved"]
+    R1 --> R2{event?}
+    R2 -- "event=…" --> RB["bookmark bbox → window<br/>+ recorded dates"]
+    R2 -- "daily" --> RS["bbox → grid.bounds_to_window<br/>(full grid if None)<br/>+ time = slice(start, end)"]
+    RB --> R3["isel(y, x) + time select"]
+    RS --> R3
     R3 --> R4{tiles given?}
-    R4 -- no --> R5["full event window (lazy xr.Dataset)"]
+    R4 -- no --> R5["selected window (lazy xr.Dataset)"]
     R4 -- yes --> R6["for each (row,col):<br/>slice 256² tile, NaN-pad edges,<br/>stack on new 'tile' dim"]
 ```
 
