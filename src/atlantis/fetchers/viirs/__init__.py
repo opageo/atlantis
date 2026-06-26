@@ -20,7 +20,12 @@ from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResu
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.fetchers.viirs.backend import get_backend, list_backends
 from atlantis.fetchers.viirs.dataset import processed_tile_to_dataset
-from atlantis.fetchers.viirs.processor import OutputPaths, ProcessTilesResult, ViirsRasterProcessor
+from atlantis.fetchers.viirs.processor import (
+    CLASSIFIED_FLOOD_NODATA,
+    OutputPaths,
+    ProcessTilesResult,
+    ViirsRasterProcessor,
+)
 from atlantis.fetchers.viirs.selection import flood_pixel_count, select_peak_window, subsample_around_peak
 from atlantis.fetchers.viirs.selection import is_better_peak_candidate as is_better_peak_candidate
 from atlantis.models.event import FloodEvent
@@ -631,9 +636,12 @@ class VIIRSFetcher(AbstractFloodFetcher):
                 path for name, path in files_by_name.items() if name.endswith("_permanent_water.tif")
             )
 
-            variables["flood_fraction"] = (
-                rxr.open_rasterio(obs_path).squeeze(drop=True).astype("float32") / 100.0
-            ).rename("flood_fraction")
+            flood_fraction = rxr.open_rasterio(obs_path).squeeze(drop=True).astype("float32")
+            nodata = flood_fraction.rio.nodata
+            if nodata is None:
+                nodata = CLASSIFIED_FLOOD_NODATA
+            flood_fraction = flood_fraction.where(flood_fraction != nodata) / 100.0
+            variables["flood_fraction"] = flood_fraction.rename("flood_fraction")
             variables["quality_mask"] = (
                 rxr.open_rasterio(quality_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
             )

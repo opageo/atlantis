@@ -119,6 +119,10 @@ def _pretty_source(source_id: str) -> str:
     return SOURCE_PRETTY_NAMES.get(source_id, source_id.upper())
 
 
+def _classified_layer_label(source_id: str) -> str:
+    return "flood fraction" if source_id == "viirs" else "flood extent"
+
+
 def _resolution_label(source_id: str) -> str:
     return SOURCE_RESOLUTION_LABELS.get(source_id, "native")
 
@@ -370,9 +374,10 @@ def _plot_source(
     pretty = _pretty_source(source_id)
     res = _resolution_label(source_id)
     if "flood_fraction" in best_ds:
+        layer_label = _classified_layer_label(source_id)
         plot_classified(
             best_ds["flood_fraction"],
-            title=f"{event_id}: {pretty} flood extent {date_label} ({res})",
+            title=f"{event_id}: {pretty} {layer_label} {date_label} ({res})",
             output_path=output_png_path,
             announce=announce,
         )
@@ -435,9 +440,10 @@ def _harmonise_source(
 
     png_harm_path = plot_dir / f"{event_id}_{date_label}_{source_id}_harmonised.png"
     if flood_var == "flood_fraction":
+        layer_label = _classified_layer_label(source_id)
         plot_classified(
             ds_harm[flood_var],
-            title=f"{event_id}: {pretty} harmonised flood extent {date_label} (1 arcmin)",
+            title=f"{event_id}: {pretty} harmonised {layer_label} {date_label} (1 arcmin)",
             output_path=png_harm_path,
             announce=announce,
         )
@@ -573,7 +579,7 @@ def fetch(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Classify pixels into flood-extent, quality-mask, and permanent-water"
+        help="Classify pixels into flood-fraction, quality-mask, and permanent-water"
         " layers instead of writing raw data. Default: on."
         " Use --no-classify to write raw integer pixel codes instead."
         " MODIS adds a recurring_flood layer when classified.",
@@ -1008,7 +1014,7 @@ def fetch_kurosiwo_viirs(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Classify VIIRS pixels into flood-extent, quality-mask, and permanent-water"
+        help="Classify VIIRS pixels into flood-fraction, quality-mask, and permanent-water"
         " layers instead of writing raw data. Default: on."
         " Use --no-classify to write raw integer pixel codes instead.",
     ),
@@ -1486,7 +1492,8 @@ def harmonise(
     """Harmonise fetched data (reproject + normalise) to target resolution.
 
     Reads processed GeoTIFFs from the fetcher output directory, reprojects
-    them to a uniform 1 arcmin grid, normalises flood extent values to 0-1,
+    them to a uniform 1 arcmin grid, preserving classified flood-fraction
+    values on the 0-1 scale,
     and writes the harmonised GeoTIFFs. Supports the ``viirs`` and ``modis``
     sources (file names follow the ``{event}_{date}_{source}_{layer}.tif``
     convention).

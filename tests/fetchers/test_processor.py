@@ -167,8 +167,9 @@ class TestViirsRasterProcessor:
         with rasterio.open(paths.permanent_water) as src:
             water = src.read(1)
 
-        # Flood fraction stored as uint8 percentage: codes 101->1, 160->60, 200->100; non-flood -> 0
-        expected_flood = np.array([[0, 0, 0, 0], [1, 60, 100, 0]], dtype=np.uint8)
+        # Flood fraction stored as uint8 percentage: codes 101->1, 160->60,
+        # 200->100; fill/cloud remain nodata=255.
+        expected_flood = np.array([[255, 0, 255, 0], [1, 60, 100, 0]], dtype=np.uint8)
         np.testing.assert_array_equal(flood, expected_flood)
 
         # Quality: fill(1) and cloud(30) → 0; others → 1
@@ -199,6 +200,35 @@ class TestViirsRasterProcessor:
         # On-disk: uint8 percentage (0–100); codes 101->1, 130->30, 160->60, 200->100
         expected = np.array([[1, 30, 60, 100]], dtype=np.uint8)
         np.testing.assert_array_equal(flood, expected)
+
+    def test_aggregate_tiles_skips_missing_observations(self):
+        """Cloud/fill dates should not dilute aggregated flood_fraction or masks."""
+        transform = rasterio.Affine(1, 0, 0, 0, -1, 1)
+        clear = ProcessedTile(
+            flood_fraction=np.array([[0.6]], dtype=np.float32),
+            quality_mask=np.array([[1]], dtype=np.uint8),
+            permanent_water=np.array([[1]], dtype=np.uint8),
+            transform=transform,
+            crs="EPSG:4326",
+            cloud_fraction=0.0,
+        )
+        cloudy = ProcessedTile(
+            flood_fraction=np.array([[np.nan]], dtype=np.float32),
+            quality_mask=np.array([[0]], dtype=np.uint8),
+            permanent_water=np.array([[0]], dtype=np.uint8),
+            transform=transform,
+            crs="EPSG:4326",
+            cloud_fraction=1.0,
+        )
+
+        result = ViirsRasterProcessor.aggregate_tiles([clear, cloudy])
+
+        assert result.flood_fraction is not None
+        assert result.quality_mask is not None
+        assert result.permanent_water is not None
+        assert result.flood_fraction[0, 0] == pytest.approx(0.6, rel=1e-6)
+        assert int(result.quality_mask[0, 0]) == 1
+        assert int(result.permanent_water[0, 0]) == 1
 
     def test_metadata_building(self, tmp_path):
         """Verify metadata fields populated correctly."""

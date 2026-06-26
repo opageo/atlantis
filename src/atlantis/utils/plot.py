@@ -46,7 +46,7 @@ def date_from_filename(filename: str) -> str:
     """Extract ``YYYY-MM-DD`` from a VIIRS filename.
 
     Works with any filename that embeds an 8-digit date token, e.g.
-    ``KuroSiwo_1111004_20170828_viirs_flood_extent.tif``.
+    ``KuroSiwo_1111004_20170828_viirs_flood_fraction.tif``.
 
     Returns ``"unknown"`` if no 8-digit sequence is found.
     """
@@ -80,7 +80,7 @@ def pixel_stats_raw(data: np.ndarray, name: str = "raw") -> None:
     print(f"  Flood pixels (101–200): {flood_px:,}")
 
 
-def pixel_stats_classified(data: np.ndarray, name: str = "flood_extent") -> int:
+def pixel_stats_classified(data: np.ndarray, name: str = "flood_fraction") -> int:
     """Print stats for a classified flood array; return the number of flooded pixels."""
     vals = data.ravel()
     valid = vals[~np.isnan(vals)]

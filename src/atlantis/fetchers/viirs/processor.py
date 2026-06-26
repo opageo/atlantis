@@ -37,8 +37,26 @@ CLOUD_CODES = {30}
 PERMANENT_WATER_CODES = {99}
 SEASONAL_WATER_CODES = {20}
 OPEN_WATER_CODES = {99}
+CLASSIFIED_FLOOD_NODATA = 255
 
 _VSICURL_PREFIX = "/vsicurl/"
+
+
+def _decode_flood_fraction(data: np.ndarray) -> np.ndarray:
+    """Decode raw VIIRS codes into flood fraction while preserving missing data.
+
+    Flood codes 101–200 decode to continuous fractions in ``[0.01, 1.0]``.
+    Valid non-flood observations map to ``0.0``. Fill and cloud pixels remain
+    missing as ``NaN`` so temporal aggregation skips them instead of counting
+    them as dry observations.
+    """
+    missing = np.isin(data, list(FILL_CODES | CLOUD_CODES))
+    flood_mask = (data >= 101) & (data <= 200)
+
+    flood_fraction = np.full(data.shape, np.nan, dtype=np.float32)
+    flood_fraction[~missing] = 0.0
+    flood_fraction[flood_mask] = (data[flood_mask].astype(np.float32) - 100.0) / 100.0
+    return flood_fraction
 
 
 def _resolve_tile_path(item: TilePath) -> str:
@@ -64,7 +82,8 @@ class ProcessedTile:
         raw: Raw tile data.
         flood_fraction: Continuous flood fraction array (float32, 0.0–1.0).
             Derived from VIIRS water-fraction codes 101–200 as (code−100)/100.
-            Non-flood codes produce 0.0.
+            Valid non-flood observations produce 0.0; fill and cloud pixels are
+            preserved as NaN.
         quality_mask: Quality mask array (0=bad, 1=good).
         permanent_water: Permanent water mask array (0/1).
         transform: Affine transform for the processed data.
@@ -120,12 +139,7 @@ def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str
     cloud = np.isin(data, list(CLOUD_CODES))
     permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
 
-    flood_mask = (data >= 101) & (data <= 200)
-    flood_fraction = np.where(
-        flood_mask,
-        (data.astype(np.float32) - 100.0) / 100.0,
-        np.float32(0.0),
-    )
+    flood_fraction = _decode_flood_fraction(data)
 
     quality_mask = np.ones_like(data, dtype=np.uint8)
     quality_mask[fill | cloud] = 0
@@ -155,22 +169,18 @@ def classify_viirs_flood_fraction(data: np.ndarray) -> np.ndarray:
     ``quality_mask`` / ``permanent_water_mask`` allocations entirely
     (~40 MB saved per 4448×4448 granule).
 
-    VIIRS codes 101–200 encode water fraction as ``(code − 100) / 100``;
-    every other code (incl. fill / cloud / permanent water) maps to 0.0.
+    VIIRS codes 101–200 encode water fraction as ``(code − 100) / 100``.
+    Valid non-flood observations map to 0.0, while fill and cloud are preserved
+    as NaN so downstream averaging skips them.
 
     Args:
         data: Raw pixel values (uint8) from a single-band VIIRS tile.
 
     Returns:
-        ``float32`` array of flood fraction values in ``[0.0, 1.0]``,
-        same shape as *data*.
+        ``float32`` array of flood fraction values in ``[0.0, 1.0]`` with
+        NaN for fill/cloud pixels, same shape as *data*.
     """
-    flood_mask = (data >= 101) & (data <= 200)
-    return np.where(
-        flood_mask,
-        (data.astype(np.float32) - 100.0) / 100.0,
-        np.float32(0.0),
-    )
+    return _decode_flood_fraction(data)
 
 
 class ViirsRasterProcessor:
@@ -319,14 +329,9 @@ class ViirsRasterProcessor:
         cloud = np.isin(data, list(CLOUD_CODES))
         permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
 
-        # Continuous flood fraction: codes 101–200 encode water fraction as (code−100)/100.
-        # All other codes (including non-flood water classes) produce 0.0.
         flood_mask = (data >= 101) & (data <= 200)
-        flood_fraction = np.where(
-            flood_mask,
-            (data.astype(np.float32) - 100.0) / 100.0,
-            np.float32(0.0),
-        )
+        # Fill/cloud stay missing; other valid observations become 0.0.
+        flood_fraction = _decode_flood_fraction(data)
 
         # Quality mask: 1 = valid clear-sky observation, 0 = unusable (fill or cloud).
         # Pre-existing water types (permanent/seasonal/open) are valid observations —
@@ -409,9 +414,18 @@ class ViirsRasterProcessor:
                 dst.write(processed.raw, 1)
 
         if paths.flood_fraction is not None and processed.flood_fraction is not None:
-            # Store as uint8 percentage (0–100) to save space: 0 = no flood, 1–100 = fraction × 100.
-            pct = np.round(processed.flood_fraction * 100).astype(np.uint8)
-            with rasterio.open(paths.flood_fraction, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+            # Store as uint8 percentage (0–100); missing flood_fraction values
+            # (cloud/fill) round-trip as nodata=255.
+            pct = np.full(processed.flood_fraction.shape, CLASSIFIED_FLOOD_NODATA, dtype=np.uint8)
+            valid = ~np.isnan(processed.flood_fraction)
+            pct[valid] = np.round(processed.flood_fraction[valid] * 100).clip(0, 100).astype(np.uint8)
+            with rasterio.open(
+                paths.flood_fraction,
+                "w",
+                **base_meta,
+                dtype="uint8",
+                nodata=CLASSIFIED_FLOOD_NODATA,
+            ) as dst:
                 dst.write(pct, 1)
 
         if paths.quality_mask is not None and processed.quality_mask is not None:
@@ -483,19 +497,25 @@ class ViirsRasterProcessor:
             stack = np.stack(flood_arrays, axis=0)
             flood_fraction = np.nanmean(stack, axis=0).astype(np.float32)
 
-        # ── quality_mask: mode across time ──────────────────────────────
+        # ── quality_mask: any valid observation across time ─────────────
         quality_arrays = [t.quality_mask for t in tiles if t.quality_mask is not None]
         quality_mask: np.ndarray | None = None
         if quality_arrays:
             stack = np.stack(quality_arrays, axis=0).astype(np.uint8)
-            quality_mask = _mode_uint8(stack)
+            quality_mask = np.any(stack > 0, axis=0).astype(np.uint8)
 
-        # ── permanent_water: mode across time ───────────────────────────
+        # ── permanent_water: majority across valid observations only ────
         pw_arrays = [t.permanent_water for t in tiles if t.permanent_water is not None]
         permanent_water: np.ndarray | None = None
         if pw_arrays:
             stack = np.stack(pw_arrays, axis=0).astype(np.uint8)
-            permanent_water = _mode_uint8(stack)
+            if quality_arrays and len(quality_arrays) == len(pw_arrays):
+                valid_stack = np.stack(quality_arrays, axis=0).astype(bool)
+                valid_count = valid_stack.sum(axis=0)
+                pw_count = np.sum((stack > 0) & valid_stack, axis=0)
+                permanent_water = np.where(valid_count > 0, (pw_count / valid_count) > 0.5, 0).astype(np.uint8)
+            else:
+                permanent_water = _mode_uint8(stack)
 
         # ── raw: mode across time ───────────────────────────────────────
         raw_arrays = [t.raw for t in tiles if t.raw is not None]

@@ -716,7 +716,7 @@ class TestSelectBestResult:
 class TestPlotViirs:
     """Tests for ``_plot_viirs``."""
 
-    def test_calls_plot_classified_for_flood_extent(self, tmp_path, monkeypatch):
+    def test_calls_plot_classified_for_flood_fraction(self, tmp_path, monkeypatch):
         calls: list[dict] = []
 
         def _capture(da, *, title, output_path, announce=True):
@@ -727,7 +727,7 @@ class TestPlotViirs:
         out = tmp_path / "plot.png"
         _plot_viirs(ds, "Ev", "2020-07-22", output_png_path=out)
         assert len(calls) == 1
-        assert "flood extent" in calls[0]["title"]
+        assert "flood fraction" in calls[0]["title"]
         assert "375 m" in calls[0]["title"]
         assert calls[0]["path"] == out
 
