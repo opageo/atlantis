@@ -8,6 +8,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import rasterio
+import requests
 from rasterio.transform import from_origin
 
 from atlantis.fetchers.base import SearchResult
@@ -40,6 +41,15 @@ def _set_token(monkeypatch):
 def _bypass_hdf4_check(monkeypatch):
     # Skip the GDAL HDF4 driver presence check for unit tests.
     monkeypatch.setattr(LaadsHdf4Backend, "_verify_hdf4_driver", staticmethod(lambda: None))
+
+
+@pytest.fixture(autouse=True)
+def _reset_config_cache():
+    from atlantis.config import reload_config
+
+    reload_config()
+    yield
+    reload_config()
 
 
 def _make_event(
@@ -354,3 +364,78 @@ class TestFetchEmptySearch:
         with patch.object(MODISFetcher, "search", return_value=[]):
             results = f.fetch(_make_event(), tmp_path)
         assert results == []
+
+
+class TestLaadsDownloadRetry:
+    @staticmethod
+    def _http_error(status_code: int) -> requests.HTTPError:
+        response = requests.Response()
+        response.status_code = status_code
+        response.url = "https://example.test/file.hdf"
+        return requests.HTTPError(f"{status_code} error", response=response)
+
+    @staticmethod
+    def _laads_result() -> SearchResult:
+        return SearchResult(
+            source_id="modis",
+            item_id="modis:20201013:h17v07",
+            timestamp=datetime(2020, 10, 13, tzinfo=timezone.utc),
+            bbox=(0.0, 0.0, 1.0, 1.0),
+            url="https://example.test/MCDWD_L3.A2020287.h17v07.061.1234567890123.hdf",
+            properties={
+                "h": 17,
+                "v": 7,
+                "date": "20201013",
+                "filename": "MCDWD_L3.A2020287.h17v07.061.1234567890123.hdf",
+                "prod_timestamp": "1234567890123",
+                "backend": "laads_hdf4",
+                "composite": "F2",
+            },
+        )
+
+    def test_retries_transient_401_then_succeeds(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ATLANTIS_MAX_RETRIES", "2")
+        from atlantis.config import reload_config
+
+        reload_config()
+        f = MODISFetcher(backend="laads_hdf4", keep_processed=False, strategy="all")
+
+        with (
+            patch.object(MODISFetcher, "search", return_value=[self._laads_result()]),
+            patch(
+                "atlantis.fetchers.modis.download_file",
+                side_effect=[self._http_error(401), "dummy.hdf"],
+            ) as download_mock,
+            patch("atlantis.fetchers.modis.time_module.sleep") as sleep_mock,
+            patch.object(
+                ModisRasterProcessor,
+                "process_tiles",
+                return_value=_make_process_result(flood_count=1),
+            ),
+        ):
+            results = f.fetch(_make_event(start=date(2020, 10, 13)), tmp_path)
+
+        assert len(results) == 1
+        assert download_mock.call_count == 2
+        sleep_mock.assert_called_once()
+
+    def test_does_not_retry_non_retryable_status(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ATLANTIS_MAX_RETRIES", "3")
+        from atlantis.config import reload_config
+
+        reload_config()
+        f = MODISFetcher(backend="laads_hdf4", keep_processed=False, strategy="all")
+
+        with (
+            patch.object(MODISFetcher, "search", return_value=[self._laads_result()]),
+            patch(
+                "atlantis.fetchers.modis.download_file",
+                side_effect=self._http_error(404),
+            ) as download_mock,
+            patch("atlantis.fetchers.modis.time_module.sleep") as sleep_mock,
+        ):
+            with pytest.raises(requests.HTTPError):
+                f.fetch(_make_event(start=date(2020, 10, 13)), tmp_path)
+
+        assert download_mock.call_count == 1
+        sleep_mock.assert_not_called()
