@@ -55,21 +55,23 @@ def simple_dataset():
 
 
 class TestArchiveWriter:
-    def test_write_raw_creates_consolidated_cube(self, tmp_path, event, simple_dataset):
-        store = ArchiveWriter(tmp_path).write_raw(simple_dataset, event, "viirs")
-        # A single consolidated store (not a per-event store), grouped by source.
-        assert Path(store).name == "raw.zarr"
+    def test_write_creates_consolidated_sharded_cube(self, tmp_path, event, simple_dataset):
+        store = ArchiveWriter(tmp_path).write(simple_dataset, event, "viirs")
+        # A single consolidated store, grouped by source, on the global grid.
+        assert Path(store).name == "datacube.zarr"
         assert Path(store).exists()
         arr = _zarr_array(store, "viirs", "flood_fraction")
         assert arr.shape[1:] == (grid.GLOBAL_HEIGHT, grid.GLOBAL_WIDTH)
+        assert arr.chunks == (1, 256, 256)
+        assert arr.shards == (1, 2048, 2048)
 
-    def test_write_raw_empty_dataset_raises(self, tmp_path, event):
+    def test_write_empty_dataset_raises(self, tmp_path, event):
         import xarray as xr
 
         with pytest.raises(ValueError, match="Dataset is empty"):
-            ArchiveWriter(tmp_path).write_raw(xr.Dataset(), event, "viirs")
+            ArchiveWriter(tmp_path).write(xr.Dataset(), event, "viirs")
 
-    def test_write_raw_rejects_unaligned(self, tmp_path, event):
+    def test_write_rejects_unaligned(self, tmp_path, event):
         import xarray as xr
 
         y = np.linspace(40.0, 20.0, 50)
@@ -78,22 +80,21 @@ class TestArchiveWriter:
             "flood_fraction": xr.DataArray(np.zeros((50, 60), "float32"), dims=["y", "x"], coords={"y": y, "x": x})
         })
         with pytest.raises(ValueError, match="not aligned"):
-            ArchiveWriter(tmp_path).write_raw(ds, event, "viirs")
+            ArchiveWriter(tmp_path).write(ds, event, "viirs")
 
-    def test_raw_chunking_unsharded(self, tmp_path, event, simple_dataset):
-        store = ArchiveWriter(tmp_path).write_raw(simple_dataset, event, "viirs")
-        arr = _zarr_array(store, "viirs", "flood_fraction")
-        assert arr.chunks == (1, 1024, 1024)
-        assert arr.shards is None
-
-    def test_ml_ready_sharded_and_masked(self, tmp_path, event, simple_dataset):
+    def test_write_without_masks_stores_flood_only(self, tmp_path, event, simple_dataset):
         import zarr
 
-        store = ArchiveWriter(tmp_path).write_ml_ready(simple_dataset, event, "viirs")
-        assert Path(store).name == "ml-ready.zarr"
-        arr = _zarr_array(store, "viirs", "flood_fraction")
-        assert arr.chunks == (1, 256, 256)
-        assert arr.shards == (1, 2048, 2048)
+        store = ArchiveWriter(tmp_path).write(simple_dataset, event, "viirs")
+        group = zarr.open_group(store, mode="r")["viirs"]
+        assert "flood_fraction" in group
+        assert "quality_mask" not in group
+        assert "permanent_water" not in group
+
+    def test_write_ensure_masks_generates_channels(self, tmp_path, event, simple_dataset):
+        import zarr
+
+        store = ArchiveWriter(tmp_path).write(simple_dataset, event, "viirs", ensure_masks=True)
         group = zarr.open_group(store, mode="r")["viirs"]
         assert "quality_mask" in group
         assert "permanent_water" in group
@@ -106,53 +107,49 @@ class TestArchiveReader:
     def test_init(self, tmp_path):
         assert ArchiveReader(tmp_path).archive_root == str(tmp_path)
 
-    def test_read_raw_missing_store_raises(self, tmp_path):
-        with pytest.raises(FileNotFoundError, match="Raw datacube not found"):
-            ArchiveReader(tmp_path).read_raw("missing_event", "viirs")
+    def test_read_missing_store_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="Datacube not found"):
+            ArchiveReader(tmp_path).read("missing_event", "viirs")
 
-    def test_read_ml_ready_missing_store_raises(self, tmp_path):
-        with pytest.raises(FileNotFoundError, match="ML-ready datacube not found"):
-            ArchiveReader(tmp_path).read_ml_ready("missing_event", "viirs")
-
-    def test_read_raw_unknown_event_raises(self, tmp_path, event, simple_dataset):
-        ArchiveWriter(tmp_path).write_raw(simple_dataset, event, "viirs")
+    def test_read_unknown_event_raises(self, tmp_path, event, simple_dataset):
+        ArchiveWriter(tmp_path).write(simple_dataset, event, "viirs")
         with pytest.raises(KeyError):
-            ArchiveReader(tmp_path).read_raw("nope", "viirs")
+            ArchiveReader(tmp_path).read("nope", "viirs")
 
-    def test_read_raw_roundtrip_cf_decode(self, tmp_path, event):
-        ArchiveWriter(tmp_path).write_raw(aligned_dataset(0.5), event, "viirs", time=date(2020, 1, 1))
-        ds = ArchiveReader(tmp_path).read_raw("test_event", "viirs")
+    def test_read_roundtrip_cf_decode(self, tmp_path, event):
+        ArchiveWriter(tmp_path).write(aligned_dataset(0.5), event, "viirs", time=date(2020, 1, 1))
+        ds = ArchiveReader(tmp_path).read("test_event", "viirs")
         assert ds.sizes["y"] == _H and ds.sizes["x"] == _W
         # uint8 50 decodes via scale_factor 0.01 -> 0.5
         np.testing.assert_allclose(float(ds["flood_fraction"].mean()), 0.5, atol=1e-6)
 
-    def test_read_raw_resolves_crs(self, tmp_path, event, simple_dataset):
+    def test_read_resolves_crs(self, tmp_path, event, simple_dataset):
         import rioxarray  # noqa: F401  (registers the .rio accessor)
 
-        ArchiveWriter(tmp_path).write_raw(simple_dataset, event, "viirs")
-        ds = ArchiveReader(tmp_path).read_raw("test_event", "viirs")
+        ArchiveWriter(tmp_path).write(simple_dataset, event, "viirs")
+        ds = ArchiveReader(tmp_path).read("test_event", "viirs")
         assert ds.rio.crs is not None
         assert ds.rio.crs.to_epsg() == 4326
 
-    def test_read_raw_multiple_dates(self, tmp_path, event):
+    def test_read_multiple_dates(self, tmp_path, event):
         writer = ArchiveWriter(tmp_path)
-        writer.write_raw(aligned_dataset(0.3), event, "viirs", time=date(2020, 1, 1))
-        writer.write_raw(aligned_dataset(0.7), event, "viirs", time=date(2020, 1, 3))
-        ds = ArchiveReader(tmp_path).read_raw("test_event", "viirs")
+        writer.write(aligned_dataset(0.3), event, "viirs", time=date(2020, 1, 1))
+        writer.write(aligned_dataset(0.7), event, "viirs", time=date(2020, 1, 3))
+        ds = ArchiveReader(tmp_path).read("test_event", "viirs")
         assert ds.sizes["time"] == 2
 
     def test_sparse_unwritten_is_nodata(self, tmp_path, event, simple_dataset):
         import xarray as xr
 
-        store = ArchiveWriter(tmp_path).write_raw(simple_dataset, event, "viirs")
+        store = ArchiveWriter(tmp_path).write(simple_dataset, event, "viirs")
         full = xr.open_zarr(store, group="viirs", consolidated=True)
         # A pixel far outside the AOI window decodes to NaN (chunk never written).
         assert np.isnan(float(full["flood_fraction"].isel(time=0, y=0, x=0)))
 
     def test_list_events_and_sources(self, tmp_path, event, simple_dataset):
         writer = ArchiveWriter(tmp_path)
-        writer.write_raw(simple_dataset, event, "viirs")
-        writer.write_raw(simple_dataset, event, "gfm")
+        writer.write(simple_dataset, event, "viirs")
+        writer.write(simple_dataset, event, "gfm")
         reader = ArchiveReader(tmp_path)
         assert "test_event" in reader.list_events()
         assert reader.list_sources("test_event") == ["gfm", "viirs"]
@@ -162,10 +159,10 @@ class TestArchiveReader:
         assert reader.list_events() == []
         assert reader.list_sources("nonexistent") == []
 
-    def test_read_ml_ready_tile_selection(self, tmp_path, event):
-        cfg = ArchiveConfig(ml_tile_size=32, ml_shard_size=64)
-        ArchiveWriter(tmp_path, cfg).write_ml_ready(aligned_dataset(0.5, h=64, w=64), event, "viirs")
-        out = ArchiveReader(tmp_path, cfg).read_ml_ready("test_event", "viirs", tiles=[(0, 0), (1, 1)])
+    def test_read_tile_selection(self, tmp_path, event):
+        cfg = ArchiveConfig(chunk_size=32, shard_size=64)
+        ArchiveWriter(tmp_path, cfg).write(aligned_dataset(0.5, h=64, w=64), event, "viirs")
+        out = ArchiveReader(tmp_path, cfg).read("test_event", "viirs", tiles=[(0, 0), (1, 1)])
         assert out.sizes["tile"] == 2
         assert out.sizes["y"] == 32 and out.sizes["x"] == 32
 

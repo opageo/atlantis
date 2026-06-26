@@ -45,7 +45,8 @@ def _to_date(value) -> date:
         return value.date()
     if isinstance(value, date):
         return value
-    return pd.Timestamp(value).date()
+    ts = pd.Timestamp(value)
+    return date(int(ts.year), int(ts.month), int(ts.day))
 
 
 def _parse_args() -> argparse.Namespace:
@@ -117,8 +118,8 @@ def _write_datacube(payloads: list[dict], archive_root: str, limit: int):
             {"flood_fraction": (("y", "x"), p["scaled"])},
             coords={"y": p["y"], "x": p["x"]},
         )
-        writer.write_raw(ds, event, "viirs", time=_to_date(p["date"]))
-    return store_for(archive_root, cfg.raw_store, cfg.storage_options)
+        writer.write(ds, event, "viirs", time=_to_date(p["date"]))
+    return store_for(archive_root, cfg.store, cfg.storage_options)
 
 
 def _validate(payloads: list[dict], store, compare_cogs: bool) -> None:

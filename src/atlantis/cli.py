@@ -1597,20 +1597,22 @@ def archive(
         None, "--input", "-i", help="Harmonised data directory (default: ./data/<event>)"
     ),
     archive_root: str | None = typer.Option(None, "--archive", "-a", help="Archive root (local path or s3:// URI)"),
-    raw_only: bool = typer.Option(False, "--raw-only", help="Only write the analysis-ready cube (skip ML-ready)"),
+    ensure_masks: bool = typer.Option(
+        False, "--ensure-masks", help="Synthesise quality/permanent-water masks if absent in the input"
+    ),
 ) -> None:
     """Write harmonised GeoTIFFs into the consolidated Zarr datacube.
 
     Reads harmonised rasters from ``<input>/<source>/harmonised/*.tif`` and
-    region-writes each into the per-source group of the global 1-arcmin
-    datacube (analysis-ready ``raw`` and, unless ``--raw-only``, ``ml-ready``).
+    region-writes each into the per-source group of the consolidated global
+    1-arcmin datacube.
 
     Args:
         event: Flood event ID to archive.
         source: Data source (default: all sources found under the input dir).
         input_dir: Harmonised data directory (default: ``./data/<event>``).
         archive_root: Archive root — local path or ``s3://`` URI.
-        raw_only: Skip the ML-ready cube (write the analysis-ready cube only).
+        ensure_masks: Generate quality/permanent-water masks when the input lacks them.
     """
     import re
 
@@ -1678,15 +1680,12 @@ def archive(
     )
 
     writer = ArchiveWriter(root, config.archive)
-    info(f"Writing {'raw only' if raw_only else 'raw + ML-ready'} datacube ({len(items)} raster(s))")
+    info(f"Writing datacube ({len(items)} raster(s)){' + generated masks' if ensure_masks else ''}")
     with make_progress() as progress:
-        task = progress.add_task("[cyan]Archiving[/cyan]", total=len(items) * (1 if raw_only else 2))
+        task = progress.add_task("[cyan]Archiving[/cyan]", total=len(items))
         for src, ds, d, _ in items:
-            writer.write_raw(ds, flood_event, src, time=d or start)
+            writer.write(ds, flood_event, src, time=d or start, ensure_masks=ensure_masks)
             progress.advance(task)
-            if not raw_only:
-                writer.write_ml_ready(ds, flood_event, src, time=d or start)
-                progress.advance(task)
 
     ok(f"Archived {len(items)} raster(s) from {len(sources)} source(s) into datacube at {root}")
 

@@ -56,20 +56,18 @@ class TestArchiveConfig:
     def test_default_values(self):
         cfg = ArchiveConfig()
         assert cfg.archive_root == str(Path.home() / "atlantis-data")
-        assert cfg.raw_store == "raw.zarr"
-        assert cfg.ml_store == "ml-ready.zarr"
+        assert cfg.store == "datacube.zarr"
         assert cfg.checkpoint_dir == ".checkpoints"
-        assert cfg.raw_chunk_size == 1024
-        assert cfg.ml_tile_size == 256
-        assert cfg.ml_shard_size == 2048
+        assert cfg.chunk_size == 256
+        assert cfg.shard_size == 2048
         assert cfg.scale_factor == 0.01
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("ATLANTIS_ARCHIVE_ROOT", "s3://atlantis/cube")
-        monkeypatch.setenv("ATLANTIS_ML_TILE_SIZE", "128")
+        monkeypatch.setenv("ATLANTIS_CHUNK_SIZE", "128")
         cfg = ArchiveConfig()
         assert cfg.archive_root == "s3://atlantis/cube"
-        assert cfg.ml_tile_size == 128
+        assert cfg.chunk_size == 128
 
 
 class TestFetcherConfig:

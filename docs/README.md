@@ -14,6 +14,8 @@ design notes.
 
 ## Architecture and Design
 
+- [Zarr datacube spec](./archive/zarr-spec.md) - Consolidated Zarr archive
+  schema and data-flow diagrams (review brief for the ML team).
 - [KuroSiwo STAC design](./kurosiwo-stac-design.md)
 - [STAC architecture diagrams](./mermaid_stac_ks_labeled.md)
 - [Compact STAC mermaid diagram](./mermaid_stac_ks.md)

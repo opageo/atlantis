@@ -269,11 +269,10 @@ def test_archive_command(tmp_path):
             str(tmp_path / "data" / "Valencia_2024"),
             "--archive",
             str(archive_root),
-            "--raw-only",
         ],
     )
     assert result.exit_code == 0, result.stdout
-    assert (archive_root / "raw.zarr").exists()
+    assert (archive_root / "datacube.zarr").exists()
 
 
 def test_fetch_kurosiwo_viirs_command(monkeypatch, tmp_path):

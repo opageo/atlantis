@@ -42,12 +42,22 @@ class ArchiveReader:
 
     # ── Public API ─────────────────────────────────────────────────────────
 
-    def read_raw(self, event_id: str, source_id: str) -> "xr.Dataset":
-        """Read an event's analysis-ready slice from the datacube.
+    def read(
+        self,
+        event_id: str,
+        source_id: str,
+        *,
+        tiles: list[tuple[int, int]] | None = None,
+    ) -> "xr.Dataset":
+        """Read an event's slice from the datacube, optionally as discrete tiles.
 
         Args:
             event_id: Flood event identifier.
             source_id: Data source identifier (group).
+            tiles: Optional ``(row, col)`` tile indices within the event window.
+                Each selects a ``config.chunk_size`` square; results are stacked
+                along a new ``tile`` dimension (edge tiles padded with NaN).
+                ``None`` returns the full event window.
 
         Returns:
             Lazily-loaded xarray Dataset clipped to the event AOI and dates.
@@ -56,40 +66,14 @@ class ArchiveReader:
             FileNotFoundError: If the datacube or source group does not exist.
             KeyError: If the event is not present in the source group.
         """
-        ds = self._open_group(source_id, "raw", "Raw")
-        return self._select_event(ds, event_id, source_id)
-
-    def read_ml_ready(
-        self,
-        event_id: str,
-        source_id: str,
-        tiles: list[tuple[int, int]] | None = None,
-    ) -> "xr.Dataset":
-        """Read an event's ML-ready slice, optionally as discrete tiles.
-
-        Args:
-            event_id: Flood event identifier.
-            source_id: Data source identifier (group).
-            tiles: Optional ``(row, col)`` tile indices within the event window.
-                Each selects a ``ml_tile_size`` square; results are stacked along
-                a new ``tile`` dimension (edge tiles padded with NaN). ``None``
-                returns the full event window.
-
-        Returns:
-            Lazily-loaded xarray Dataset.
-
-        Raises:
-            FileNotFoundError: If the datacube or source group does not exist.
-            KeyError: If the event is not present in the source group.
-        """
         import xarray as xr
 
-        ds = self._open_group(source_id, "ml", "ML-ready")
+        ds = self._open_group(source_id)
         window = self._select_event(ds, event_id, source_id)
         if tiles is None:
             return window
 
-        tile = self.config.ml_tile_size
+        tile = self.config.chunk_size
         blocks: list[xr.Dataset] = []
         for i, (row, col) in enumerate(tiles):
             y0, x0 = row * tile, col * tile
@@ -104,34 +88,31 @@ class ArchiveReader:
         return xr.concat(blocks, dim="tile")
 
     def list_events(self) -> list[str]:
-        """List all event IDs recorded across the raw and ML datacubes."""
+        """List all event IDs recorded in the datacube."""
         events: set[str] = set()
-        for layer in ("raw", "ml"):
-            for source_id in self._group_names(layer):
-                events.update(self._group_attrs(source_id, layer).get("atlantis_events", {}))
+        for source_id in self._group_names():
+            events.update(self._group_attrs(source_id).get("atlantis_events", {}))
         return sorted(events)
 
     def list_sources(self, event_id: str) -> list[str]:
-        """List source IDs that contain *event_id* in either datacube layer."""
+        """List source IDs that contain *event_id*."""
         sources: set[str] = set()
-        for layer in ("raw", "ml"):
-            for source_id in self._group_names(layer):
-                if event_id in self._group_attrs(source_id, layer).get("atlantis_events", {}):
-                    sources.add(source_id)
+        for source_id in self._group_names():
+            if event_id in self._group_attrs(source_id).get("atlantis_events", {}):
+                sources.add(source_id)
         return sorted(sources)
 
     # ── Internal helpers ───────────────────────────────────────────────────
 
-    def _store(self, layer: str):
-        name = self.config.raw_store if layer == "raw" else self.config.ml_store
-        return store_for(self.archive_root, name, self.storage_options)
+    def _store(self):
+        return store_for(self.archive_root, self.config.store, self.storage_options)
 
-    def _open_group(self, source_id: str, layer: str, label: str) -> "xr.Dataset":
+    def _open_group(self, source_id: str) -> "xr.Dataset":
         import xarray as xr
 
-        store = self._store(layer)
+        store = self._store()
         if isinstance(store, Path) and not store.exists():
-            raise FileNotFoundError(f"{label} datacube not found: {store}")
+            raise FileNotFoundError(f"Datacube not found: {store}")
         for consolidated in (True, False):
             try:
                 return xr.open_zarr(store, group=source_id, consolidated=consolidated, decode_coords="all")
@@ -139,7 +120,7 @@ class ArchiveReader:
                 break
             except Exception:
                 continue
-        raise FileNotFoundError(f"{label} source group '{source_id}' not found in {store}")
+        raise FileNotFoundError(f"Source group '{source_id}' not found in {store}")
 
     def _select_event(self, ds: "xr.Dataset", event_id: str, source_id: str) -> "xr.Dataset":
         registry = ds.attrs.get("atlantis_events", {})
@@ -156,10 +137,10 @@ class ArchiveReader:
             sub = sub.isel(time=np.flatnonzero(present))
         return sub
 
-    def _group_names(self, layer: str) -> list[str]:
+    def _group_names(self) -> list[str]:
         import zarr
 
-        store = self._store(layer)
+        store = self._store()
         if isinstance(store, Path) and not store.exists():
             return []
         try:
@@ -168,10 +149,10 @@ class ArchiveReader:
         except Exception:
             return []
 
-    def _group_attrs(self, source_id: str, layer: str) -> dict:
+    def _group_attrs(self, source_id: str) -> dict:
         import zarr
 
-        store = self._store(layer)
+        store = self._store()
         try:
             root = zarr.open_group(store, mode="r")
             return dict(root[source_id].attrs)

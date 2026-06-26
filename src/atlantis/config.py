@@ -101,25 +101,24 @@ class HarmoniseConfig(BaseSettings):
 class ArchiveConfig(BaseSettings):
     """Configuration for the consolidated Zarr datacube archive.
 
-    The archive is a single Zarr store per layer with one group per source,
+    The archive is a single sharded Zarr store with one group per source,
     co-registered on the canonical global 1-arcmin grid. It lives locally or on
     S3 (``ATLANTIS_ARCHIVE_ROOT=s3://bucket/prefix``).
 
     Attributes:
         archive_root: Root location for archive storage (local path or ``s3://`` URI).
         storage_options: fsspec options for remote roots (credentials, ``anon``, ...).
-        raw_store: Name of the analysis-ready datacube store (global grid).
-        ml_store: Name of the ML-ready datacube store (tiled + sharded).
+        store: Name of the consolidated datacube store under the archive root.
         checkpoint_dir: Subdirectory for checkpoint markers.
-        raw_chunk_size: Spatial chunk size (pixels) for the analysis-ready cube.
-        ml_tile_size: Spatial chunk size (pixels) for ML tiles — the data-loader
-            read granularity. 256 is power-of-two and ``/32``-friendly for U-Nets.
-        ml_shard_size: Spatial shard size (pixels) for the ML cube — the S3 object
-            granularity. Must be a multiple of ``ml_tile_size``.
+        chunk_size: Spatial inner-chunk size (pixels) — the data-loader read
+            granularity. 256 is power-of-two and ``/32``-friendly for U-Nets and
+            still efficient for large-window analysis reads.
+        shard_size: Spatial shard size (pixels) — the storage-object granularity;
+            must be a multiple of ``chunk_size``. One shard bundles many inner
+            chunks into a single (cloud) object.
         scale_factor: CF ``scale_factor`` for ``flood_fraction`` so the uint8
             ``[0, 100]`` storage decodes to float ``[0, 1]`` (CMF-comparable).
         time_epoch: CF epoch (``YYYY-MM-DD``) for the integer ``time`` axis.
-        default_chunk_size: Deprecated alias retained for compatibility.
     """
 
     model_config = SettingsConfigDict(
@@ -131,15 +130,12 @@ class ArchiveConfig(BaseSettings):
 
     archive_root: str = Field(default_factory=lambda: str(Path.home() / "atlantis-data"))
     storage_options: dict[str, Any] = Field(default_factory=dict)
-    raw_store: str = "raw.zarr"
-    ml_store: str = "ml-ready.zarr"
+    store: str = "datacube.zarr"
     checkpoint_dir: str = ".checkpoints"
-    raw_chunk_size: int = 1024
-    ml_tile_size: int = 256
-    ml_shard_size: int = 2048
+    chunk_size: int = 256
+    shard_size: int = 2048
     scale_factor: float = 0.01
     time_epoch: str = "2020-01-01"
-    default_chunk_size: int = 224
 
 
 class FetcherConfig(BaseSettings):

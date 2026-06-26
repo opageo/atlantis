@@ -1,11 +1,11 @@
 """Archive writer for the consolidated Zarr flood datacube.
 
-Harmonised rasters from every source are written into a single Zarr store per
-layer (analysis-ready ``raw`` and ``ml-ready``), with one **group per source**
-co-registered on the canonical global 1-arcmin grid. Each ``(source, date)``
-AOI is placed by an integer region write, so the global grid stays sparse
-(only touched chunks materialise) and parallel writes to disjoint dates/regions
-never collide. Local and S3 roots are both supported.
+Harmonised rasters from every source are written into a single sharded Zarr
+store, with one **group per source** co-registered on the canonical global
+1-arcmin grid. Each ``(source, date)`` AOI is placed by an integer region write,
+so the global grid stays sparse (only touched chunks materialise). Writes mutate
+shared metadata (time axis, provenance registry) and must be driven by a single
+coordinator. Local and S3 roots are both supported.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import numpy as np
 
 from atlantis.archive import datacube, grid
 from atlantis.archive._store import store_for
-from atlantis.config import ArchiveConfig, HarmoniseConfig
+from atlantis.config import ArchiveConfig
 from atlantis.harmoniser.normaliser import Normaliser
 from atlantis.models.event import FloodEvent
 
@@ -77,24 +77,32 @@ class ArchiveWriter:
 
     # ── Store helpers ──────────────────────────────────────────────────────
 
-    def _store(self, layer: str):
-        name = self.config.raw_store if layer == "raw" else self.config.ml_store
-        return store_for(self.archive_root, name, self.storage_options)
+    def _store(self):
+        return store_for(self.archive_root, self.config.store, self.storage_options)
 
     # ── Public API ─────────────────────────────────────────────────────────
 
-    def write_raw(
+    def write(
         self,
         dataset: "xr.Dataset",
         event: FloodEvent,
         source_id: str,
+        *,
         time: date | None = None,
+        ensure_masks: bool = False,
     ) -> Any:
-        """Write harmonised data into the analysis-ready datacube.
+        """Write harmonised data into the consolidated datacube.
 
-        The dataset's AOI is region-written into the per-source group on the
-        global grid (spatial chunks of ``config.raw_chunk_size``, unsharded so
-        parallel backfills stay chunk-disjoint and lock-free).
+        The AOI is region-written into the per-source group on the global grid,
+        with inner chunks of ``config.chunk_size`` packed into ``config.shard_size``
+        Zarr v3 shards (fine-grained random-tile reads with few large cloud
+        objects, and efficient large-window analysis reads). Only the channels
+        present in the input are stored; the harmoniser emits ``flood_fraction``,
+        ``quality_mask`` and ``permanent_water``. Pass ``ensure_masks=True`` to
+        synthesise the masks for a flood-fraction-only input.
+
+        Writes mutate shared metadata (time-axis resize, provenance registry,
+        consolidation) and must be driven by a single coordinator.
 
         Args:
             dataset: Harmonised xarray Dataset (``y``/``x`` aligned to the grid).
@@ -102,6 +110,7 @@ class ArchiveWriter:
             source_id: Data source identifier / group name.
             time: Date for a 2-D (timeless) dataset. Defaults to
                 ``event.start_date``. Ignored if the dataset already has ``time``.
+            ensure_masks: Generate ``quality_mask`` / ``permanent_water`` if absent.
 
         Returns:
             The datacube store location (local :class:`~pathlib.Path` or
@@ -110,36 +119,9 @@ class ArchiveWriter:
         Raises:
             ValueError: If the dataset is empty or not grid-aligned.
         """
-        return self._write(dataset, event, source_id, time, layer="raw")
-
-    def write_ml_ready(
-        self,
-        dataset: "xr.Dataset",
-        event: FloodEvent,
-        source_id: str,
-        harmonise_config: HarmoniseConfig | None = None,
-        time: date | None = None,
-    ) -> Any:
-        """Write normalised, masked data into the ML-ready datacube.
-
-        Spatial chunks equal ``config.ml_tile_size`` (the data-loader read
-        granularity) packed into ``config.ml_shard_size`` Zarr v3 shards (the
-        S3 object granularity) — fine-grained random tile reads with few large
-        objects. Because shards bundle many inner chunks into one object, the
-        ML cube is written by a single coordinator (not parallel workers).
-
-        Args:
-            dataset: Harmonised xarray Dataset.
-            event: Flood event metadata.
-            source_id: Data source identifier / group name.
-            harmonise_config: Optional harmonisation config (reserved).
-            time: Date for a 2-D dataset (defaults to ``event.start_date``).
-
-        Returns:
-            The ML datacube store location.
-        """
-        prepared = self._prepare_ml(dataset)
-        return self._write(prepared, event, source_id, time, layer="ml")
+        if ensure_masks:
+            dataset = self._ensure_masks(dataset)
+        return self._write(dataset, event, source_id, time)
 
     # ── Internal write pipeline ────────────────────────────────────────────
 
@@ -149,7 +131,6 @@ class ArchiveWriter:
         event: FloodEvent,
         source_id: str,
         time: date | None,
-        layer: str,
     ) -> Any:
         if not dataset.data_vars:
             raise ValueError("Dataset is empty")
@@ -166,19 +147,14 @@ class ArchiveWriter:
         window = grid.coords_to_window(ds[y_dim].values, ds[x_dim].values)
         var_names = [v for v in _CUBE_VARS if v in ds.data_vars] or list(ds.data_vars)
 
-        store = self._store(layer)
-        if layer == "raw":
-            chunk, shard = self.config.raw_chunk_size, None
-        else:
-            chunk, shard = self.config.ml_tile_size, self.config.ml_shard_size
-
+        store = self._store()
         root = datacube.open_root(store, mode="a")
         group = datacube.ensure_source_group(
             root,
             source_id,
             var_names,
-            chunk=chunk,
-            shard=shard,
+            chunk=self.config.chunk_size,
+            shard=self.config.shard_size,
             scale_factor=self.config.scale_factor,
             time_units=datacube.epoch_units(self.config.time_epoch),
         )
@@ -196,12 +172,10 @@ class ArchiveWriter:
         datacube.consolidate(store)
         return store
 
-    def _prepare_ml(self, dataset: "xr.Dataset") -> "xr.Dataset":
-        """Normalise the flood variable and ensure quality / permanent-water masks."""
+    def _ensure_masks(self, dataset: "xr.Dataset") -> "xr.Dataset":
+        """Ensure ``quality_mask`` / ``permanent_water`` channels exist (generate if absent)."""
         normaliser = Normaliser()
         ds = dataset
-        if "flood_fraction" in ds.data_vars:
-            ds = normaliser.normalise(ds, variable="flood_fraction")
         if "quality_mask" not in ds.data_vars:
             base = "flood_fraction" if "flood_fraction" in ds.data_vars else list(ds.data_vars)[0]
             ds = ds.assign(quality_mask=normaliser.generate_quality_mask(ds, variable=base))
