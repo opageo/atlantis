@@ -169,8 +169,9 @@ class ProcessedTile:
             literal cloud cover.
         raw: Original uint8 codes when ``--no-classify`` is used.
         flood_fraction: Binary float32 mask ``(class == 3).astype(float32)``.
-            Drives the harmoniser ``average`` resampling to a true % flooded
-            at coarser resolution.
+            Pixels coded as ``255`` are stored as ``NaN`` so downstream
+            averaging ignores insufficient data instead of treating it as dry
+            land.
         quality_mask: ``(class != 255).astype(uint8)`` — 1 = valid
             observation, 0 = insufficient data (composite-specific: always
             HAND-masked and terrain-shadow-masked; cloud / cloud-shadow
@@ -499,6 +500,7 @@ class ModisRasterProcessor:
 
     def _classify_pixels(self, data: np.ndarray, transform: rasterio.Affine, crs: str) -> ProcessedTile:
         """Decode MCDWD codes 0/1/2/3/255 into VIIRS-parity layers."""
+        valid = data != INSUFFICIENT_DATA_CODE
         flood_mask = data == UNUSUAL_FLOOD_CODE
         recurring_flood = (data == RECURRING_FLOOD_CODE).astype(np.uint8)
         permanent_water = (data == SURFACE_WATER_CODE).astype(np.uint8)
@@ -507,11 +509,11 @@ class ModisRasterProcessor:
         # HAND-masked terrain and terrain-shadow pixels for every composite, plus
         # cloud-shadow for F1C. F2/F3 do NOT remove clouds, so a pixel can be 255
         # purely from "insufficient observations" rather than cloud cover.
-        quality_mask = (data != INSUFFICIENT_DATA_CODE).astype(np.uint8)
+        quality_mask = valid.astype(np.uint8)
 
         flood_fraction = flood_mask.astype(np.float32)
+        flood_fraction[~valid] = np.nan
 
-        valid = data != INSUFFICIENT_DATA_CODE
         cloud_fraction = float(1.0 - valid.sum() / valid.size) if valid.size else 0.0
 
         logger.debug(
@@ -552,7 +554,9 @@ class ModisRasterProcessor:
 
         if paths.flood_fraction is not None and processed.flood_fraction is not None:
             # Store as uint8 percent (0–100) with nodata=255 to mirror VIIRS.
-            pct = np.round(processed.flood_fraction * 100).astype(np.uint8)
+            pct = np.full(processed.flood_fraction.shape, INSUFFICIENT_DATA_CODE, dtype=np.uint8)
+            valid = np.isfinite(processed.flood_fraction)
+            pct[valid] = np.round(np.clip(processed.flood_fraction[valid], 0.0, 1.0) * 100).astype(np.uint8)
             with rasterio.open(paths.flood_fraction, "w", **base_meta, dtype="uint8", nodata=255) as dst:
                 dst.write(pct, 1)
 

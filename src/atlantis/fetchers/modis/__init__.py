@@ -38,6 +38,7 @@ from atlantis.fetchers.modis.backend import (
 from atlantis.fetchers.modis.dataset import processed_tile_to_dataset
 from atlantis.fetchers.modis.processor import (
     COMPOSITE_TO_HDF_LAYER,
+    INSUFFICIENT_DATA_CODE,
     ModisRasterProcessor,
     OutputPaths,
     ProcessTilesResult,
@@ -727,9 +728,12 @@ class MODISFetcher(AbstractFloodFetcher):
                 None,
             )
 
-            variables["flood_fraction"] = (
-                rxr.open_rasterio(ff_path).squeeze(drop=True).astype("float32") / 100.0
-            ).rename("flood_fraction")
+            flood_fraction = rxr.open_rasterio(ff_path).squeeze(drop=True).astype("float32")
+            nodata = flood_fraction.rio.nodata
+            if nodata is None:
+                nodata = INSUFFICIENT_DATA_CODE
+            flood_fraction = flood_fraction.where(flood_fraction != nodata) / 100.0
+            variables["flood_fraction"] = flood_fraction.rename("flood_fraction")
             variables["quality_mask"] = (
                 rxr.open_rasterio(qm_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
             )

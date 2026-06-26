@@ -11,7 +11,7 @@ import rasterio
 import requests
 from rasterio.transform import from_origin
 
-from atlantis.fetchers.base import SearchResult
+from atlantis.fetchers.base import FetchResult, SearchResult
 from atlantis.fetchers.modis import (
     MODISFetcher,
     _normalise_backend,
@@ -364,6 +364,61 @@ class TestFetchEmptySearch:
         with patch.object(MODISFetcher, "search", return_value=[]):
             results = f.fetch(_make_event(), tmp_path)
         assert results == []
+
+
+class TestToDataset:
+    def test_stored_flood_nodata_round_trips_to_nan(self, tmp_path):
+        fetcher = MODISFetcher(classify=True)
+
+        flood = np.array([[100, 255], [0, 255]], dtype=np.uint8)
+        quality = np.array([[1, 0], [1, 0]], dtype=np.uint8)
+        permanent_water = np.array([[0, 0], [1, 0]], dtype=np.uint8)
+        recurring = np.array([[0, 0], [0, 0]], dtype=np.uint8)
+
+        def _write_layer(path, data, *, nodata):
+            with rasterio.open(
+                path,
+                "w",
+                driver="GTiff",
+                height=2,
+                width=2,
+                count=1,
+                dtype="uint8",
+                crs="EPSG:4326",
+                transform=from_origin(20.0, 31.0, 0.5, 0.5),
+                nodata=nodata,
+            ) as dst:
+                dst.write(data, 1)
+
+        ff_path = tmp_path / "test_flood_fraction.tif"
+        qm_path = tmp_path / "test_quality_mask.tif"
+        pw_path = tmp_path / "test_permanent_water.tif"
+        rf_path = tmp_path / "test_recurring_flood.tif"
+
+        _write_layer(ff_path, flood, nodata=255)
+        _write_layer(qm_path, quality, nodata=0)
+        _write_layer(pw_path, permanent_water, nodata=0)
+        _write_layer(rf_path, recurring, nodata=0)
+
+        result = FetchResult(
+            event_id="test_event",
+            source_id="modis",
+            files=[ff_path, qm_path, pw_path, rf_path],
+            metadata=TileMetadata(
+                event_id="test_event",
+                source_id="modis",
+                fetch_timestamp=datetime(2020, 7, 22, tzinfo=timezone.utc),
+                bbox=(20.0, 30.0, 21.0, 31.0),
+            ),
+        )
+
+        dataset = fetcher.to_dataset(result)
+
+        flood_fraction = dataset["flood_fraction"].values
+        assert flood_fraction[0, 0] == pytest.approx(1.0, rel=1e-6)
+        assert flood_fraction[1, 0] == pytest.approx(0.0, rel=1e-6)
+        assert np.isnan(flood_fraction[0, 1])
+        assert np.isnan(flood_fraction[1, 1])
 
 
 class TestLaadsDownloadRetry:

@@ -197,6 +197,15 @@ class TestModisRasterProcessor:
         # quality_mask: HAND-masked / cloud (255) drops to 0; everything else 1.
         # Two 255 pixels at (3,0) and (3,1) → 14 valid pixels.
         assert int(proc.quality_mask.sum()) == 14
+        assert np.isnan(proc.flood_fraction[3, 0])
+        assert np.isnan(proc.flood_fraction[3, 1])
+
+        with rasterio.open(result.paths.flood_fraction) as ds:
+            encoded = ds.read(1)
+            assert ds.nodata == INSUFFICIENT_DATA_CODE
+            assert encoded[0, 3] == 100
+            assert encoded[3, 0] == INSUFFICIENT_DATA_CODE
+            assert encoded[3, 1] == INSUFFICIENT_DATA_CODE
 
     def test_hand_masked_pixels_drop_from_quality(self, tmp_path):
         geom = box(-1.0, -1.0, 1.0, 1.0)
@@ -211,6 +220,7 @@ class TestModisRasterProcessor:
         assert result is not None
         assert int(result.processed.quality_mask.sum()) == 0
         assert int((result.processed.flood_fraction > 0).sum()) == 0
+        assert np.isnan(result.processed.flood_fraction).all()
 
     def test_aggregate_tiles_mean_and_mode(self):
         # Two tiles with shared transform and three pixels each.
