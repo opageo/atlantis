@@ -10,6 +10,7 @@ coordinator. Local and S3 roots are both supported.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -129,6 +130,35 @@ class ArchiveWriter:
             dataset = self._ensure_masks(dataset)
         return self._write(dataset, source_id, time, event)
 
+    def session(
+        self,
+        source_id: str,
+        var_names: Sequence[str] = ("flood_fraction",),
+    ) -> _WriteSession:
+        """Open a streaming write session over a single source group.
+
+        Opens the store/group and acquires the resize handles **once**, then lets
+        the caller stream many :meth:`_WriteSession.write` calls without
+        re-opening or consolidating per call. Provenance is recorded and the
+        store consolidated **once** on :meth:`_WriteSession.close` — use it as a
+        context manager.
+
+        This is the path the resume-safe cube batch uses: per-call consolidation
+        would dominate S3 runtime, so it is deferred to the end of the run.
+        Label-free only (no event bookmarks); like :meth:`write`, a session must
+        be driven by a single coordinator.
+
+        Args:
+            source_id: Data source identifier / group name.
+            var_names: Data variables the session will write (held in the group's
+                canonical order). Channels absent from an individual ``write``
+                input are skipped.
+
+        Returns:
+            A :class:`_WriteSession` bound to this writer.
+        """
+        return _WriteSession(self, source_id, list(var_names))
+
     # ── Internal write pipeline ────────────────────────────────────────────
 
     def _write(
@@ -142,17 +172,25 @@ class ArchiveWriter:
             raise ValueError("Dataset is empty")
 
         ds = self._ensure_time_dim(dataset, time, event)
-        y_dim = _find_dim(ds, _Y_DIMS)
-        x_dim = _find_dim(ds, _X_DIMS)
-        if y_dim is None or x_dim is None:
-            raise ValueError(
-                f"Dataset must have recognisable spatial dimensions "
-                f"(y: {_Y_DIMS}, x: {_X_DIMS}). Found dims: {list(ds.dims)}"
-            )
-
-        window = grid.coords_to_window(ds[y_dim].values, ds[x_dim].values)
         var_names = [v for v in _CUBE_VARS if v in ds.data_vars] or list(ds.data_vars)
+        store, group, time_arr, data_arrs = self._open_group_handles(source_id, var_names)
 
+        times = self._write_regions(ds, var_names, time_arr, data_arrs)
+
+        self._record_provenance(group, source_id)
+        if event is not None:
+            self._record_bookmark(group, event, times)
+        datacube.consolidate(store)
+        return store
+
+    def _open_group_handles(self, source_id: str, var_names: list[str]):
+        """Open the store, ensure the source group, and return write handles.
+
+        Returns ``(store, group, time_arr, data_arrs)``. The array handles must be
+        held for the lifetime of the writes — ``group[name]`` yields a fresh
+        handle each call, so a resize on one would not be seen by the next (see
+        :mod:`atlantis.archive.datacube`).
+        """
         store = self._store()
         root = datacube.open_root(store, mode="a")
         group = datacube.ensure_source_group(
@@ -164,21 +202,40 @@ class ArchiveWriter:
             scale_factor=self.config.scale_factor,
             time_units=datacube.epoch_units(self.config.time_epoch),
         )
-
-        times = [self._as_date(t) for t in ds["time"].values]
         time_arr, data_arrs = datacube.get_handles(group, var_names)
+        return store, group, time_arr, data_arrs
+
+    def _write_regions(
+        self,
+        ds: "xr.Dataset",
+        var_names: list[str],
+        time_arr: Any,
+        data_arrs: dict[str, Any],
+    ) -> list[date]:
+        """Region-write every ``(time, var)`` slice of ``ds`` into held handles.
+
+        Returns the list of dates written. Does **not** consolidate or record
+        provenance — callers do that once after a batch of region writes.
+        """
+        y_dim = _find_dim(ds, _Y_DIMS)
+        x_dim = _find_dim(ds, _X_DIMS)
+        if y_dim is None or x_dim is None:
+            raise ValueError(
+                f"Dataset must have recognisable spatial dimensions "
+                f"(y: {_Y_DIMS}, x: {_X_DIMS}). Found dims: {list(ds.dims)}"
+            )
+
+        window = grid.coords_to_window(ds[y_dim].values, ds[x_dim].values)
+        times = [self._as_date(t) for t in ds["time"].values]
         for ti, day in enumerate(times):
             t_int = datacube.date_to_int(day, self.config.time_epoch)
             time_idx = datacube.ensure_time_index(time_arr, data_arrs, t_int)
             for var in var_names:
+                if var not in ds.data_vars:
+                    continue
                 arr = _encode_uint8(np.asarray(ds[var].isel(time=ti).values))
                 datacube.write_region(data_arrs[var], time_idx, window, arr)
-
-        self._record_provenance(group, source_id)
-        if event is not None:
-            self._record_bookmark(group, event, times)
-        datacube.consolidate(store)
-        return store
+        return times
 
     def _ensure_masks(self, dataset: "xr.Dataset") -> "xr.Dataset":
         """Ensure ``quality_mask`` / ``permanent_water`` channels exist (generate if absent)."""
@@ -275,3 +332,44 @@ class ArchiveWriter:
         """
         checkpoint_path = Path(self.archive_root) / ".checkpoints" / event.event_id / f"{source_id}_{stage}.done"
         return checkpoint_path.exists()
+
+
+class _WriteSession:
+    """A held-open streaming write session over one datacube source group.
+
+    Created via :meth:`ArchiveWriter.session`. Holds the store and the resize
+    handles so many slices can be region-written cheaply, then records provenance
+    and consolidates **once** on :meth:`close`. Intended for label-free batch
+    ingestion (e.g. the resume-safe cube batch), where per-call consolidation
+    would dominate S3 runtime.
+    """
+
+    def __init__(self, writer: ArchiveWriter, source_id: str, var_names: list[str]) -> None:
+        self._writer = writer
+        self._source_id = source_id
+        self._var_names = var_names
+        self._store, self._group, self._time_arr, self._data_arrs = writer._open_group_handles(source_id, var_names)
+        self._closed = False
+
+    def write(self, dataset: "xr.Dataset", *, time: date | None = None) -> list[date]:
+        """Region-write one dataset (2-D with ``time=`` or 3-D) into the cube.
+
+        Returns the dates written. Does not consolidate — deferred to :meth:`close`.
+        """
+        ds = self._writer._ensure_time_dim(dataset, time, None)
+        return self._writer._write_regions(ds, self._var_names, self._time_arr, self._data_arrs)
+
+    def close(self) -> Any:
+        """Record provenance and consolidate the store once. Idempotent."""
+        if not self._closed:
+            self._writer._record_provenance(self._group, self._source_id)
+            datacube.consolidate(self._store)
+            self._closed = True
+        return self._store
+
+    def __enter__(self) -> _WriteSession:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        self.close()
+        return False

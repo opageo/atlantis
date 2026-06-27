@@ -2230,6 +2230,7 @@ def batch_viirs(
         VM2: atlantis batch viirs run --partition 24464:48928 --db-path tracker_vm2.db
     """
     from atlantis.batch import BatchConfig, run_batch
+    from atlantis.batch.tracker import get_pending, init_db, stats
     from atlantis.fetchers.viirs.batch_processor import process_granule
     from atlantis.fetchers.viirs.inventory import load_inventory, slice_partition, to_tasks
     from atlantis.utils.setup import AWS_PROFILES
@@ -2256,6 +2257,22 @@ def batch_viirs(
         f"  [bold]{len(tasks)}[/bold] granules to process" + (f"  (partition {partition})" if partition else "")
     )
 
+    # ── Resume status ─────────────────────────────────────────────────────
+    # The engine logs this via loguru, which is not shown on the CLI, so a
+    # fully-completed tracker would otherwise look like a silent exit. Surface
+    # it on the console and stop early with an actionable hint.
+    init_db(db_path)
+    pending = get_pending(db_path, {t["task_id"] for t in tasks})
+    already_done = len(tasks) - len(pending)
+    if already_done:
+        info(f"{already_done} of {len(tasks)} already marked DONE in '{db_path}' (resume) — {len(pending)} pending.")
+    if not pending:
+        warn(
+            f"Nothing to do — all {len(tasks)} tasks are already DONE in '{db_path}'. "
+            "Use a different --db-path (or delete this one) to reprocess."
+        )
+        raise typer.Exit(code=0)
+
     cfg = BatchConfig(
         db_path=db_path,
         workers_min=workers_min,
@@ -2268,6 +2285,151 @@ def batch_viirs(
 
     # ── Run ───────────────────────────────────────────────────────────────
     run_batch(tasks, process_fn=process_granule, cfg=cfg)
+    final = stats(db_path)
+    ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {final.get('total', 0)} → {output}")
+
+
+# ── VIIRS cube subcommand (resume-safe Zarr datacube build) ───────────────────
+
+viirs_cube_app = typer.Typer(help="Build the VIIRS 1-arcmin Zarr datacube (resume-safe, streaming).")
+viirs_batch_app.add_typer(viirs_cube_app, name="cube")
+
+_VIIRS_CATALOGUE = "s3://atlantis/assets/viirs/jpss/2020/catalogue.parquet"
+
+
+@viirs_cube_app.command("run")
+def batch_viirs_cube(
+    inventory: str = typer.Option(
+        _VIIRS_CATALOGUE,
+        "--inventory",
+        help="Path or S3 URI to the VIIRS JPSS catalogue Parquet file.",
+    ),
+    archive: str = typer.Option(
+        "s3://atlantis/zarr/viirs_2020_cube",
+        "--archive",
+        "-a",
+        help="Datacube root — a local directory or an s3:// URI.",
+    ),
+    partition: str | None = typer.Option(
+        None,
+        "--partition",
+        help="Row slice of the catalogue to process, e.g. '0:1000'. None = full catalogue.",
+    ),
+    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+    memory_limit: str = typer.Option("6GB", "--memory-limit", help="Memory cap per worker."),
+    dashboard_port: int = typer.Option(8787, "--dashboard-port", help="Dask dashboard port."),
+    db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
+    retries: int = typer.Option(3, "--retries", help="Dask retry count per granule."),
+    log_every: int = typer.Option(100, "--log-every", help="Log a progress line every N completions."),
+) -> None:
+    """Build the VIIRS datacube from the catalogue — resume-safe and streaming.
+
+    Dask harmonises granules in parallel while a single coordinator streams each
+    result into the consolidated Zarr cube (bounded memory — no giant in-RAM
+    accumulation). Every finished granule is recorded in --db-path, so the run
+    can be interrupted and resumed (already-DONE tasks are skipped on re-run).
+
+    Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
+
+        tmux new -s cube
+        atlantis batch viirs cube run --partition 0:1000
+
+    Check progress at any time — even after a disconnect — with::
+
+        atlantis batch viirs cube status --partition 0:1000
+    """
+    from atlantis.archive.cube_batch import run_viirs_cube_batch
+    from atlantis.batch import BatchConfig
+    from atlantis.fetchers.viirs.inventory import load_inventory, slice_partition, to_tasks
+    from atlantis.utils.setup import AWS_PROFILES
+
+    command_header("batch viirs cube", subtitle=archive)
+
+    # ── Resolve S3 endpoint for the cube store (local roots need none) ────
+    storage_options = None
+    if archive.startswith("s3://"):
+        ecmwf_profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+        if ecmwf_profile is None or not ecmwf_profile.endpoint_url:
+            fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+            raise typer.Exit(code=1)
+        storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
+
+    # ── Load & slice catalogue ────────────────────────────────────────────
+    info(f"Loading catalogue from {inventory} …")
+    df = slice_partition(load_inventory(inventory), partition)
+    tasks = to_tasks(df)
+    console.print(
+        f"  [bold]{len(tasks)}[/bold] granules → {archive}" + (f"  (partition {partition})" if partition else "")
+    )
+    console.print(f"  [bold]tracker:[/bold] {db_path}")
+    warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
+
+    cfg = BatchConfig(
+        db_path=db_path,
+        workers_min=workers_min,
+        workers_max=workers_max,
+        memory_limit_per_worker=memory_limit,
+        dashboard_port=dashboard_port,
+        retries=retries,
+        log_every=log_every,
+    )
+
+    # ── Run ───────────────────────────────────────────────────────────────
+    final = run_viirs_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
+
+
+@viirs_cube_app.command("status")
+def batch_viirs_cube_status(
+    db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
+    inventory: str = typer.Option(
+        _VIIRS_CATALOGUE,
+        "--inventory",
+        help="Catalogue used to compute the expected total.",
+    ),
+    partition: str | None = typer.Option(None, "--partition", help="Row slice the run used, if any."),
+) -> None:
+    """Report cube-build completion from the tracker — works offline / after a disconnect.
+
+    Reads only the local --db-path (plus the catalogue, to compute the expected
+    total), so it is safe to run while a build is in progress or after the
+    coordinator has exited.
+    """
+    from atlantis.batch.tracker import get_pending, init_db, stats
+    from atlantis.fetchers.viirs.inventory import load_inventory, slice_partition, to_tasks
+
+    command_header("batch viirs cube status", subtitle=str(db_path))
+    init_db(db_path)
+    s = stats(db_path)
+    done = s.get("DONE", 0)
+    failed = s.get("FAILED", 0)
+
+    total: int
+    remaining: int | None
+    try:
+        df = slice_partition(load_inventory(inventory), partition)
+        tasks = to_tasks(df)
+        total = len(tasks)
+        remaining = len(get_pending(db_path, {t["task_id"] for t in tasks}))
+    except Exception as exc:  # noqa: BLE001 - catalogue may be unreachable offline
+        warn(f"Could not load catalogue ({exc}); showing tracker counts only.")
+        total = done + failed
+        remaining = None
+
+    pct = f"{100 * done / total:.1f}%" if total else "—"
+    rows = [
+        ["Total (catalogue)", str(total)],
+        ["DONE", str(done)],
+        ["FAILED (retried on resume)", str(failed)],
+        ["Remaining", "—" if remaining is None else str(remaining)],
+        ["Complete", pct],
+    ]
+    console.print(summary_table("VIIRS cube — build status", ["Metric", "Count"], rows))
+    if remaining == 0 and failed == 0 and total:
+        ok("All tasks complete.")
+    elif remaining:
+        info(f"{remaining} task(s) remaining — re-run `batch viirs cube run` to resume.")
 
 
 if __name__ == "__main__":
