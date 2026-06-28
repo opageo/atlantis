@@ -90,9 +90,9 @@ class TestArchiveWriter:
 
         y = np.linspace(40.0, 20.0, 50)
         x = np.linspace(10.0, 30.0, 60)
-        ds = xr.Dataset({
-            "flood_fraction": xr.DataArray(np.zeros((50, 60), "float32"), dims=["y", "x"], coords={"y": y, "x": x})
-        })
+        ds = xr.Dataset(
+            {"flood_fraction": xr.DataArray(np.zeros((50, 60), "float32"), dims=["y", "x"], coords={"y": y, "x": x})}
+        )
         with pytest.raises(ValueError, match="not aligned"):
             ArchiveWriter(tmp_path).write(ds, "viirs", time=date(2020, 1, 1))
 

@@ -1164,13 +1164,15 @@ def fetch_kurosiwo_viirs(
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
 
-            summary_rows.append([
-                event.event_id,
-                "[green]✓ ok[/green]",
-                str(written) if written else ("mem" if has_in_memory else "0"),
-                peak_label,
-                harmonised_label,
-            ])
+            summary_rows.append(
+                [
+                    event.event_id,
+                    "[green]✓ ok[/green]",
+                    str(written) if written else ("mem" if has_in_memory else "0"),
+                    peak_label,
+                    harmonised_label,
+                ]
+            )
             progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
@@ -1400,13 +1402,15 @@ def fetch_kurosiwo_modis(
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
 
-            summary_rows.append([
-                event.event_id,
-                "[green]✓ ok[/green]",
-                str(written) if written else ("mem" if has_in_memory else "0"),
-                peak_label,
-                harmonised_label,
-            ])
+            summary_rows.append(
+                [
+                    event.event_id,
+                    "[green]✓ ok[/green]",
+                    str(written) if written else ("mem" if has_in_memory else "0"),
+                    peak_label,
+                    harmonised_label,
+                ]
+            )
             progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
@@ -1901,11 +1905,13 @@ def demo(
 
     output_files = [path for result in fetch_results for path in result.files]
     if harmonise:
-        output_files.extend([
-            png_path,
-            harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
-            plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
-        ])
+        output_files.extend(
+            [
+                png_path,
+                harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
+                plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
+            ]
+        )
     else:
         output_files.append(png_path)
     console.print(_ft(str(out), output_files))
