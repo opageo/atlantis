@@ -1164,15 +1164,13 @@ def fetch_kurosiwo_viirs(
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
 
-            summary_rows.append(
-                [
-                    event.event_id,
-                    "[green]✓ ok[/green]",
-                    str(written) if written else ("mem" if has_in_memory else "0"),
-                    peak_label,
-                    harmonised_label,
-                ]
-            )
+            summary_rows.append([
+                event.event_id,
+                "[green]✓ ok[/green]",
+                str(written) if written else ("mem" if has_in_memory else "0"),
+                peak_label,
+                harmonised_label,
+            ])
             progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
@@ -1402,15 +1400,13 @@ def fetch_kurosiwo_modis(
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
 
-            summary_rows.append(
-                [
-                    event.event_id,
-                    "[green]✓ ok[/green]",
-                    str(written) if written else ("mem" if has_in_memory else "0"),
-                    peak_label,
-                    harmonised_label,
-                ]
-            )
+            summary_rows.append([
+                event.event_id,
+                "[green]✓ ok[/green]",
+                str(written) if written else ("mem" if has_in_memory else "0"),
+                peak_label,
+                harmonised_label,
+            ])
             progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
@@ -1905,13 +1901,11 @@ def demo(
 
     output_files = [path for result in fetch_results for path in result.files]
     if harmonise:
-        output_files.extend(
-            [
-                png_path,
-                harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
-                plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
-            ]
-        )
+        output_files.extend([
+            png_path,
+            harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
+            plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
+        ])
     else:
         output_files.append(png_path)
     console.print(_ft(str(out), output_files))
@@ -2436,6 +2430,191 @@ def batch_viirs_cube_status(
         ok("All tasks complete.")
     elif remaining:
         info(f"{remaining} task(s) remaining — re-run `batch viirs cube run` to resume.")
+
+
+# ── STAC subcommand ───────────────────────────────────────────────────────────
+
+stac_app = typer.Typer(help="STAC catalog over the consolidated Zarr datacube.")
+cli.add_typer(stac_app, name="stac")
+
+
+@stac_app.command("build")
+def stac_build(
+    archive: str | None = typer.Option(None, "--archive", "-a", help="Datacube root (local dir or s3:// URI)."),
+    output: str | None = typer.Option(None, "--output", "-o", help="Catalog destination (local dir or s3:// URI)."),
+    source: list[str] | None = typer.Option(None, "--source", "-s", help="Limit to these source groups (repeatable)."),
+    no_compute_bbox: bool = typer.Option(
+        False, "--no-compute-bbox", help="Use the source extent for every item instead of per-date populated extents."
+    ),
+) -> None:
+    """Build a static STAC catalog over the datacube and write it to --output.
+
+    One collection per source group, one item per populated date. Collections and
+    items carry the datacube extension and a Zarr asset (xarray-assets
+    ``open_kwargs``) so they can be opened directly with xpystac/xarray.
+    """
+    from atlantis.stac import BuildProgress, build_datacube_catalog, write_catalog
+
+    config = get_config()
+    archive = archive or config.archive.archive_root
+    output = output or config.stac.catalog_root
+    stac_config = config.stac.model_copy(update={"compute_item_bbox": not no_compute_bbox})
+    storage_options = config.archive.storage_options or None
+
+    command_header("stac build", subtitle=str(archive))
+    info("Building catalog from the datacube …")
+
+    tasks: dict[str, int] = {}
+    with make_progress() as bar:
+
+        def on_sources(sources: list[str]) -> None:
+            if sources:
+                info(f"Discovered {len(sources)} source(s): {', '.join(sources)}")
+
+        def on_source_start(src: str) -> None:
+            tasks[src] = bar.add_task(f"{src} · reading + scanning…", total=None)
+
+        def on_source_total(src: str, total: int) -> None:
+            bar.update(tasks[src], total=total, description=f"{src} · building items")
+
+        def on_item(src: str) -> None:
+            bar.advance(tasks[src])
+
+        def on_source_done(src: str, total: int) -> None:
+            task_id = tasks.get(src)
+            if task_id is None:
+                return
+            if total:
+                bar.update(task_id, total=total, completed=total, description=f"{src} · {total} item(s)")
+            else:
+                bar.update(task_id, total=1, completed=1, description=f"{src} · skipped (empty)")
+
+        catalog = build_datacube_catalog(
+            archive,
+            sources=source or None,
+            storage_options=storage_options,
+            archive_config=config.archive,
+            stac_config=stac_config,
+            progress=BuildProgress(
+                on_sources=on_sources,
+                on_source_start=on_source_start,
+                on_source_total=on_source_total,
+                on_item=on_item,
+                on_source_done=on_source_done,
+            ),
+        )
+
+    children = list(catalog.get_children())
+    if not children:
+        warn("No populated source groups found in the datacube — nothing to build.")
+        raise typer.Exit(code=0)
+
+    n_items = sum(1 for _ in catalog.get_items(recursive=True))
+    with step_status(f"Writing catalog → {output} …"):
+        dest = write_catalog(catalog, output, storage_options=storage_options)
+    rows = [[c.id, str(sum(1 for _ in c.get_items()))] for c in children]
+    console.print(summary_table("STAC collections", ["Collection", "Items"], rows))
+    ok(f"Catalog written → {dest}  ({len(children)} collection(s), {n_items} item(s))")
+
+
+@stac_app.command("validate")
+def stac_validate(
+    catalog: str = typer.Argument(..., help="Path or URL to the catalog root (dir or catalog.json)."),
+) -> None:
+    """Validate a STAC catalog (structure + JSON schema when jsonschema is available)."""
+    import pystac
+
+    command_header("stac validate", subtitle=catalog)
+    href = catalog if catalog.rstrip("/").endswith(".json") else catalog.rstrip("/") + "/catalog.json"
+    try:
+        cat = pystac.Catalog.from_file(href)
+    except Exception as exc:  # noqa: BLE001 - surface a clean CLI error
+        fail(f"Could not open catalog at {href}: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    n_children = sum(1 for _ in cat.get_children())
+    n_items = sum(1 for _ in cat.get_items(recursive=True))
+    info(f"{n_children} collection(s), {n_items} item(s).")
+    try:
+        validated = cat.validate_all()
+        ok(f"Valid — {validated} object(s) passed JSON-schema validation.")
+    except Exception as exc:  # noqa: BLE001 - jsonschema optional / schema fetch may fail
+        fail(f"Validation failed: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@stac_app.command("export-geoparquet")
+def stac_export_geoparquet(
+    catalog: str = typer.Argument(..., help="Path or URL to the catalog root (dir or catalog.json)."),
+    output: str = typer.Option(..., "--output", "-o", help="Destination .parquet path (local or s3://)."),
+) -> None:
+    """Export all catalog items to a stac-geoparquet index (serverless search at scale)."""
+    import pystac
+
+    from atlantis.stac.geoparquet import export_items_to_geoparquet
+
+    command_header("stac export-geoparquet", subtitle=output)
+    href = catalog if catalog.rstrip("/").endswith(".json") else catalog.rstrip("/") + "/catalog.json"
+    cat = pystac.Catalog.from_file(href)
+    items = list(cat.get_items(recursive=True))
+    if not items:
+        warn("Catalog has no items — nothing to export.")
+        raise typer.Exit(code=0)
+    dest = export_items_to_geoparquet(items, output)
+    ok(f"Exported {len(items)} item(s) → {dest}")
+
+
+# ── Viz subcommand ────────────────────────────────────────────────────────────
+
+viz_app = typer.Typer(help="Local visualization server for the Zarr datacube.")
+cli.add_typer(viz_app, name="viz")
+
+
+@viz_app.command("serve")
+def viz_serve(
+    source: str = typer.Argument(..., help="Source group to visualize (e.g. 'viirs')."),
+    archive: str | None = typer.Option(None, "--archive", "-a", help="Datacube root (local dir or s3:// URI)."),
+    stac: str | None = typer.Option(
+        None, "--stac", help="Discover via a STAC catalog/collection root instead of reading the archive directly."
+    ),
+    var: str | None = typer.Option(None, "--var", help="Data variable to render."),
+    bbox: str | None = typer.Option(None, "--bbox", help="AOI 'west south east north' (degrees)."),
+    start: str | None = typer.Option(None, "--start", help="Inclusive start date (YYYY-MM-DD)."),
+    end: str | None = typer.Option(None, "--end", help="Inclusive end date (YYYY-MM-DD)."),
+    basemap: bool = typer.Option(False, "--basemap", help="Overlay a web-tile basemap (requires geoviews)."),
+    port: int | None = typer.Option(None, "--port", help="Local server port."),
+    host: str | None = typer.Option(None, "--host", help="Bind address."),
+    no_show: bool = typer.Option(False, "--no-show", help="Do not auto-open a browser tab."),
+) -> None:
+    """Serve an interactive hvplot/panel dashboard of the datacube (with a time slider)."""
+    from atlantis.viz import serve_dashboard
+
+    config = get_config()
+    archive = archive or config.archive.archive_root
+    var = var or config.viz.variable
+    bbox_t = _parse_bbox(bbox) if bbox else None
+    port = port or config.viz.port
+    host = host or config.viz.host
+
+    command_header("viz serve", subtitle=f"{source} @ {stac or archive}")
+    info(f"Serving dashboard on http://{host}:{port}  (Ctrl-C to stop) …")
+    serve_dashboard(
+        source,
+        archive_root=archive,
+        stac=stac,
+        var=var,
+        bbox=bbox_t,
+        start=start,
+        end=end,
+        basemap=basemap or config.viz.basemap,
+        cmap=config.viz.cmap,
+        rasterize=config.viz.rasterize,
+        frame_width=config.viz.frame_width,
+        storage_options=config.archive.storage_options or None,
+        host=host,
+        port=port,
+        show=not no_show,
+    )
 
 
 if __name__ == "__main__":

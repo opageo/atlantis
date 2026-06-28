@@ -52,6 +52,20 @@ batch = [
   "bokeh>=3.0",                 # enables the Dask dashboard at :8787
   "rio-cogeo>=5.0",             # `rio cogeo validate` for verification
 ]
+stac = [
+  "atlantis[geo]",              # pystac, pystac-client, xarray, zarr
+  "stac-geoparquet>=0.6",       # serverless columnar item index (scale path)
+  "xpystac>=0.1",               # open a STAC Item/Asset/Collection as xarray (Zarr)
+]
+viz = [
+  "atlantis[geo]",              # xarray/zarr datacube reads
+  "hvplot>=0.10",               # xarray .hvplot interface (time slider)
+  "holoviews>=1.18",            # backing element model
+  "panel>=1.4",                 # local dashboard server (`panel serve`)
+  "datashader>=0.16",           # server-side rasterisation of large grids
+  "geoviews>=1.11",             # optional basemap / coastlines
+  "bokeh>=3.0",                 # hvplot rendering backend
+]
 notebooks = [
   "atlantis[geo,ml]",
   "earthkit-data",
@@ -77,6 +91,9 @@ dev = [
   "ipykernel>=7.3.0",
   "nbstripout>=0.9.1",
   "ripgrep>=15.1.0",
+  "atlantis[geo]",
+  "atlantis[viz]",
+  "atlantis[stac]"
 ]
 
 [[tool.uv.index]]
