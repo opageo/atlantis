@@ -184,6 +184,10 @@ issues, the LANCE retention window, empty listings, or tile mismatches.
 | `backup_base_url` | `str`  | `nrt4` mirror     | LANCE-only: secondary host used as fallback on connection error                                            |
 | `timeout`         | `int`  | `300`             | HTTP request timeout (seconds)                                                                             |
 
+Atlantis does not auto-select a MODIS composite from cloudiness or event
+timing. The chosen `composite` is fixed for the whole fetch, and defaults to
+`F2` unless you override it.
+
 ## Output layers (with `--classify` / `classify=True`)
 
 | Variable          | MODIS class                 | Disk encoding                     |

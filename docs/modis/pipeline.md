@@ -61,6 +61,20 @@ flowchart TD
     PNG --> DONE_HARM
 ```
 
+## Composite selection
+
+Atlantis does not auto-select a MODIS composite per event or per date. The
+chosen composite is fixed for the whole fetch run:
+
+- `--modis-composite F1` → use the 1-day flood layer
+- `--modis-composite F1C` → use the 1-day cloud-shadow-screened flood layer
+- `--modis-composite F2` → use the 2-day flood layer
+- `--modis-composite F3` → use the 3-day flood layer
+
+If you do not pass `--modis-composite`, Atlantis defaults to `F2`. That choice
+comes from the CLI and fetcher configuration, not from any automatic event-aware
+logic in the MODIS pipeline.
+
 ## Backend × strategy summary
 
 | Backend         | Coverage                                  | Streaming | When to use                               |

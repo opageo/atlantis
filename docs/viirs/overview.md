@@ -15,14 +15,14 @@ The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the
 | Code    | Meaning                                           |
 | ------- | ------------------------------------------------- |
 | 1       | Fill / No data (nodata sentinel)                  |
-| 17      | Permanent water                                   |
-| 20      | Seasonal water                                    |
+| 17      | Vegetation                                        |
+| 20      | Snow / ice                                        |
 | 30      | Cloud cover                                       |
-| 99      | Open water                                        |
+| 99      | Permanent water (NOAA NormalWater reference)      |
 | 101–200 | **Flood water** — water fraction % = `code − 100` |
 | ≥160    | High-confidence flood (≥60% water fraction)       |
 
-> **Note:** The ATBD netCDF format uses different codes (e.g. 16=bare land, 17=vegetation). The GeoTIFF distribution simplifies these — land pixels are omitted, and codes 17/20/99 carry water-related meanings instead.
+> **Note:** The authoritative legend is embedded in each NOAA GeoTIFF as the band tag `WaterDetection#TypeDescription`. The table above mirrors that tag for the classes Atlantis decodes; additional classes (16=Bareland, 27=River/lake ice, 38=mixed snow/ice/water, 50=Shadow) are present in the source data but currently pass through as `0` flood fraction with no dedicated layer.
 
 By default Atlantis decodes raw VIIRS codes into a continuous `flood_fraction` layer plus `quality_mask` and `permanent_water` masks. Pass `--no-classify` to write raw integer pixel codes instead.
 
@@ -208,7 +208,7 @@ Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
 - **Bucket / region** — `arn:aws:s3:::noaa-jpss` in `us-east-1`. Browse at [noaa-jpss.s3.amazonaws.com](https://noaa-jpss.s3.amazonaws.com/index.html).
 - **Atlantis path** — `JPSS_Blended_Products/VFM_1day_GLB/TIF/<YYYY>/<MM>/<DD>/`.
 - **Tile naming** — `VIIRS-Flood-1day-GLB<AOI>_v2r0_blend_s<start>_e<end>_c<created>.tif` (e.g. `GLB001`…`GLB145`). The `blend` token indicates blended Suomi-NPP + NOAA-20 observations.
-- **AOI grid** — 136 land-covering 10°×10° tiles defined by the VFM algorithm (see `src/atlantis/fetchers/viirs/data/viirs_aois.geojson`). On a typical day ~145 tile files are present (some AOIs split at the antimeridian).
+- **AOI grid** — 136 land-covering 15°×15° tiles defined by the VFM algorithm (see `src/atlantis/fetchers/viirs/data/viirs_aois.geojson`). On a typical day ~145 tile files are present (some AOIs split at the antimeridian).
 - **Spatial / temporal** — 375 m, EPSG:4326, uint8 pixel codes 0–200, daily global.
 - **Other VFM variants on the same bucket** — `VFM_5day_GLB/` (5-day composite), `VIIRS-ABI-Flood-Day/`, `VIIRS-ABI-Flood-Day-TIF/`, `VIIRS-ABI-Flood-Day-Shapefiles/` (VIIRS+GOES-ABI joint daytime product). Atlantis currently consumes only `VFM_1day_GLB/TIF/`.
 - **License** — open NOAA data (NODD terms of use; attribution requested).
@@ -220,7 +220,7 @@ Set via `--viirs-backend` or the environment variable `ATLANTIS_VIIRS_BACKEND`.
 - **Source of truth** — Hosted by the same group that authored the VFM algorithm (Sanmei Li, Donglian Sun et al., George Mason University). This was the original public distribution point before the NOAA NODD migration.
 - **Atlantis path** — `https://jpssflood.gmu.edu/downloads/pub/<YYYYMMDD>/tif/`.
 - **Tile naming** — files matching `_005day_<AOI>.tif` or `_005day_<AOI>.tif.zip` (the `005day` token is the **5-day max-water-fraction composite**, used to suppress cloud and shadow contamination across the compositing window).
-- **AOI grid** — same 136 10°×10° AOI scheme as `noaa_s3`.
+- **AOI grid** — same 136 15°×15° AOI scheme as `noaa_s3`.
 - **Streaming** — _not supported_. `.zip`-packaged tiles and a plain HTML directory listing require the `--no-stream` (download-and-extract) path.
 - **Coverage** — the GMU site does not advertise its index; Atlantis does not declare published years and falls back to per-date probing. Reachability is best-effort: the host may be intermittently offline (it was unreachable at the time of writing).
 - **When to use it** — historical 5-day composites, or as a fallback for the years currently missing from NOAA S3 (see below). For modern operational use, prefer `noaa_s3`.
@@ -435,7 +435,7 @@ columns 10748–10919 of the global grid.
 ## Tips
 
 - **Multiple dates** — The date range is inclusive: `--start-date 2024-10-27 --end-date 2024-10-31` fetches five daily composites.
-- **Large regions** — VIIRS tiles cover ~10°×10°. Large bboxes automatically trigger multi-tile mosaicing.
+- **Large regions** — VIIRS tiles cover ~15°×15°. Large bboxes automatically trigger multi-tile mosaicing.
 - **Cloud contamination** — Always check the quality mask. VIIRS is an optical sensor and cloud cover masks flood signal.
 - **Re-run without re-fetching** — With `--no-stream`, raw tiles are cached in `raw/` and reused on subsequent runs.
 - **Batch KuroSiwo runs** — Use `--no-keep-processed` to save ~100 MB of intermediate files per event.

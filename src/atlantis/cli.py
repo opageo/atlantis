@@ -119,6 +119,10 @@ def _pretty_source(source_id: str) -> str:
     return SOURCE_PRETTY_NAMES.get(source_id, source_id.upper())
 
 
+def _classified_layer_label(source_id: str) -> str:
+    return "flood fraction" if source_id == "viirs" else "flood extent"
+
+
 def _resolution_label(source_id: str) -> str:
     return SOURCE_RESOLUTION_LABELS.get(source_id, "native")
 
@@ -370,9 +374,10 @@ def _plot_source(
     pretty = _pretty_source(source_id)
     res = _resolution_label(source_id)
     if "flood_fraction" in best_ds:
+        layer_label = _classified_layer_label(source_id)
         plot_classified(
             best_ds["flood_fraction"],
-            title=f"{event_id}: {pretty} flood extent {date_label} ({res})",
+            title=f"{event_id}: {pretty} {layer_label} {date_label} ({res})",
             output_path=output_png_path,
             announce=announce,
         )
@@ -435,9 +440,10 @@ def _harmonise_source(
 
     png_harm_path = plot_dir / f"{event_id}_{date_label}_{source_id}_harmonised.png"
     if flood_var == "flood_fraction":
+        layer_label = _classified_layer_label(source_id)
         plot_classified(
             ds_harm[flood_var],
-            title=f"{event_id}: {pretty} harmonised flood extent {date_label} (1 arcmin)",
+            title=f"{event_id}: {pretty} harmonised {layer_label} {date_label} (1 arcmin)",
             output_path=png_harm_path,
             announce=announce,
         )
@@ -504,7 +510,7 @@ def _harmonise_gfm(
     harm_dir,
     plot_dir,
 ):
-    """Harmonise GFM data and save GeoTIFF (harm_dir) + PNG (plot_dir)."""
+    """Harmonise GFM data and save GeoTIFF + PNG preview."""
     from atlantis.harmoniser import Harmoniser
 
     harm_dir.mkdir(parents=True, exist_ok=True)
@@ -573,7 +579,7 @@ def fetch(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Classify pixels into flood-extent, quality-mask, and permanent-water"
+        help="Classify pixels into flood-fraction, quality-mask, and permanent-water"
         " layers instead of writing raw data. Default: on."
         " Use --no-classify to write raw integer pixel codes instead."
         " MODIS adds a recurring_flood layer when classified.",
@@ -792,14 +798,10 @@ def fetch(
                 continue
 
             step_names = _fetch_step_names(src)
-            if src == "gfm":
-                # GFM is always harmonised, regardless of --harmonise flag
+            if plot:
+                step_names.append("Plot outputs")
+            if harmonise:
                 step_names.append("Harmonise outputs")
-            else:
-                if plot:
-                    step_names.append("Plot outputs")
-                if harmonise:
-                    step_names.append("Harmonise outputs")
 
             with task_checklist(step_names, verbose=_VERBOSE_OUTPUT) as checklist:
                 try:
@@ -848,24 +850,40 @@ def fetch(
                     info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
 
                 # ── Optional plot + harmonise (GFM) ───────────────────────────
-                # GFM is already on the canonical 1-arcmin grid; harmonise only
-                # re-encodes float32 [0,1] → uint8 [0,100]. Always ON so output
-                # is directly stackable with VIIRS/MODIS harmonised.
-                if src == "gfm":
+                # GFM is already on the canonical 1-arcmin grid. Harmonisation
+                # therefore re-encodes `flood_fraction` to uint8 percentages on
+                # the same grid, while `--plot` can still save a non-harmonised
+                # PNG preview when harmonisation is not requested. Flag semantics
+                # match VIIRS/MODIS: nothing extra is written unless requested.
+                if src == "gfm" and (plot or harmonise):
                     png_dir = plot_dir or (output_dir / src / "plots")
                     harm_dir = output_dir / src / "harmonised"
-                    with checklist.step("Harmonise outputs"):
-                        for result in fetch_results:
-                            ds = fetcher.to_dataset(result)
-                            date_label = result.date_token or "gfm"
-                            _harmonise_gfm(
-                                ds,
-                                event,
-                                date_label,
-                                harm_dir=harm_dir,
-                                plot_dir=png_dir,
-                            )
-                    checklist.complete("Harmonise outputs", detail=f"{len(fetch_results)} date(s)")
+                    if harmonise:
+                        with checklist.step("Harmonise outputs"):
+                            for result in fetch_results:
+                                ds = fetcher.to_dataset(result)
+                                date_label = result.date_token or "gfm"
+                                _harmonise_gfm(
+                                    ds,
+                                    event,
+                                    date_label,
+                                    harm_dir=harm_dir,
+                                    plot_dir=png_dir,
+                                )
+                        checklist.complete("Harmonise outputs", detail=f"{len(fetch_results)} date(s)")
+                    else:
+                        with checklist.step("Plot outputs"):
+                            for result in fetch_results:
+                                ds = fetcher.to_dataset(result)
+                                date_label = result.date_token or "gfm"
+                                png_out = png_dir / f"{event}_{date_label}_gfm.png"
+                                _plot_gfm(
+                                    ds,
+                                    event,
+                                    date_label,
+                                    output_png_path=png_out,
+                                )
+                        checklist.complete("Plot outputs", detail=f"{len(fetch_results)} date(s)")
 
                 # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────────
                 if src in ("viirs", "modis") and (plot or harmonise):
@@ -996,7 +1014,7 @@ def fetch_kurosiwo_viirs(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Classify VIIRS pixels into flood-extent, quality-mask, and permanent-water"
+        help="Classify VIIRS pixels into flood-fraction, quality-mask, and permanent-water"
         " layers instead of writing raw data. Default: on."
         " Use --no-classify to write raw integer pixel codes instead.",
     ),
@@ -1474,7 +1492,8 @@ def harmonise(
     """Harmonise fetched data (reproject + normalise) to target resolution.
 
     Reads processed GeoTIFFs from the fetcher output directory, reprojects
-    them to a uniform 1 arcmin grid, normalises flood extent values to 0-1,
+    them to a uniform 1 arcmin grid, preserving classified flood-fraction
+    values on the 0-1 scale,
     and writes the harmonised GeoTIFFs. Supports the ``viirs`` and ``modis``
     sources (file names follow the ``{event}_{date}_{source}_{layer}.tif``
     convention).
