@@ -7,6 +7,7 @@ load (native CRS) → coarsen (max-pool) → reproject (EPSG:4326) → accumulat
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,7 +35,33 @@ from atlantis.models.event import FloodEvent
 if TYPE_CHECKING:
     import xarray as xr
 
-__all__ = ["GFMFetcher"]
+__all__ = ["GFMFetcher", "GfmSearchDiagnostics"]
+
+
+@dataclass
+class GfmSearchDiagnostics:
+    """Structured explanation of why a GFM search returned a given result set.
+
+    Populated by :meth:`GFMFetcher.search` and exposed via
+    :attr:`GFMFetcher.last_diagnostics` so the CLI (or any other caller)
+    can surface actionable guidance when a fetch yields zero results.
+    """
+
+    api_url: str
+    items_found: int = 0
+    dates_found: int = 0
+    network_failure: bool = False
+    last_network_error: str | None = None
+
+    @property
+    def network_unreachable(self) -> bool:
+        """True when the STAC search failed due to a network/connection error."""
+        return self.network_failure
+
+    @property
+    def no_items_found(self) -> bool:
+        """True when the STAC search succeeded but returned no items."""
+        return not self.network_failure and self.items_found == 0
 
 
 @register_fetcher("gfm")
@@ -104,6 +131,7 @@ class GFMFetcher(AbstractFloodFetcher):
         self.strategy = strategy
         self.keep_processed = keep_processed
         self._backend = GfmStacBackend(api_url=self.api_url)
+        self.last_diagnostics: GfmSearchDiagnostics | None = None
 
         if peak_days_before < 0:
             raise ValueError(f"peak_days_before must be non-negative, got {peak_days_before}")
@@ -122,13 +150,31 @@ class GFMFetcher(AbstractFloodFetcher):
     def search(self, event: FloodEvent) -> list[SearchResult]:
         """Search for GFM data for the given flood event.
 
+        Populates :attr:`last_diagnostics` describing STAC item counts,
+        date coverage, and any network errors so callers can explain why
+        an empty result set was returned.
+
         Args:
             event: The flood event to search for.
 
         Returns:
             List of search results (one per STAC item).
         """
-        items = self._backend.search(event)
+        diagnostics = GfmSearchDiagnostics(api_url=self.api_url)
+        self.last_diagnostics = diagnostics
+
+        try:
+            items = self._backend.search(event)
+        except Exception as exc:  # noqa: BLE001
+            diagnostics.network_failure = True
+            diagnostics.last_network_error = str(exc)
+            logger.warning("GFM STAC search failed: {}", exc)
+            return []
+
+        diagnostics.items_found = len(items)
+        date_groups = self._backend.group_items_by_date(items)
+        diagnostics.dates_found = len(date_groups)
+
         results: list[SearchResult] = []
 
         for item in items:
@@ -166,7 +212,7 @@ class GFMFetcher(AbstractFloodFetcher):
         Returns:
             List of fetch results.
         """
-        items = self._backend.search(event)
+        items = self._backend.search(event)  # diagnostics already set by search() when called first
         if not items:
             logger.warning("No GFM items found for event {}", event.event_id)
             return []

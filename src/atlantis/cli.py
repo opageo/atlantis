@@ -170,8 +170,8 @@ def _report_viirs_fetch_writes(fetch_results: list[FetchResult], *, keep_process
 def _report_empty_fetch(source_id: str, fetcher) -> None:
     """Explain why a fetcher returned no results, using diagnostics when available.
 
-    Generic fetchers fall back to the previous one-line message; VIIRS and MODIS
-    expose structured diagnostics via ``fetcher.last_diagnostics`` and we
+    Generic fetchers fall back to the previous one-line message; VIIRS, MODIS
+    and GFM expose structured diagnostics via ``fetcher.last_diagnostics`` and we
     translate them into actionable guidance here.
     """
     diagnostics = getattr(fetcher, "last_diagnostics", None)
@@ -181,6 +181,10 @@ def _report_empty_fetch(source_id: str, fetcher) -> None:
 
     if source_id == "modis":
         _report_empty_modis_fetch(diagnostics)
+        return
+
+    if source_id == "gfm":
+        _report_empty_gfm_fetch(diagnostics)
         return
 
     warn("No files were fetched.")
@@ -328,6 +332,31 @@ def _report_empty_modis_fetch(diagnostics) -> None:
     warn(
         f"Reason: backend '{diagnostics.backend}' produced no processable tiles "
         f"({diagnostics.result_count} search results across {diagnostics.dates_probed} date(s))."
+    )
+
+
+def _report_empty_gfm_fetch(diagnostics) -> None:
+    """Translate ``GfmSearchDiagnostics`` into actionable CLI guidance."""
+    warn("No files were fetched.")
+
+    if diagnostics.network_unreachable:
+        warn(f"Reason: GFM STAC endpoint '{diagnostics.api_url}' is unreachable.")
+        if diagnostics.last_network_error:
+            info(f"Last network error: {diagnostics.last_network_error}")
+        info("Hint: check your network connection or retry shortly. The EODC STAC API is at https://stac.eodc.eu/")
+        return
+
+    if diagnostics.no_items_found:
+        warn("Reason: the STAC search returned no items for this bbox and date range.")
+        info(
+            "Hint: GFM coverage depends on Sentinel-1 acquisition scheduling. "
+            "Try widening --start-date/--end-date by a few days, or verify the bbox is correct."
+        )
+        return
+
+    warn(
+        f"Reason: STAC search returned {diagnostics.items_found} item(s) across "
+        f"{diagnostics.dates_found} date(s) but none produced processable output."
     )
 
 
