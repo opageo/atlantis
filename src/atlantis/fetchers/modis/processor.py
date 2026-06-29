@@ -181,6 +181,11 @@ class ProcessedTile:
     permanent_water: np.ndarray | None = None
     recurring_flood: np.ndarray | None = None
 
+    @property
+    def is_classified(self) -> bool:
+        """True when derived layers are present rather than the raw band."""
+        return self.raw is None
+
 
 @dataclass(frozen=True)
 class OutputPaths:

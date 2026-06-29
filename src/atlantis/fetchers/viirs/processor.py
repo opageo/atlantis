@@ -77,6 +77,11 @@ class ProcessedTile:
     quality_mask: np.ndarray | None = None
     permanent_water: np.ndarray | None = None
 
+    @property
+    def is_classified(self) -> bool:
+        """True when derived layers are present rather than the raw band."""
+        return self.raw is None
+
 
 @dataclass(frozen=True)
 class OutputPaths:
