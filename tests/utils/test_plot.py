@@ -72,7 +72,7 @@ class TestLegendPatches:
         patches = legend_patches()
         labels = [p.get_label() for p in patches]
         assert "160: Flood (codes 101–200, rep. 160)" in labels
-        assert "17: Permanent water" in labels
+        assert "17: No flood / land" in labels
 
     def test_all_patches_are_patch_objects(self):
         from matplotlib.patches import Patch

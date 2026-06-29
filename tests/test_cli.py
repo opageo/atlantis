@@ -42,6 +42,18 @@ class _FakeDataArray:
     def max(self):
         return self._arr.max()
 
+    def where(self, cond, other):
+        return _FakeDataArray(np.where(cond.values, self._arr, other))
+
+    def __lt__(self, other):
+        return _FakeDataArray(self._arr < other)
+
+    def __gt__(self, other):
+        return _FakeDataArray(self._arr > other)
+
+    def __or__(self, other):
+        return _FakeDataArray(self._arr | other.values)
+
 
 class _FakeDataset:
     """Minimal stand-in for ``xr.DataArray`` / dict-like Dataset.
@@ -734,7 +746,7 @@ class TestPlotViirs:
     def test_calls_plot_raw_when_no_flood(self, tmp_path, monkeypatch):
         calls: list[dict] = []
 
-        def _capture(da, *, title, output_path, announce=True):
+        def _capture(da, *, title, output_path, announce=True, **kwargs):
             calls.append({"da": da, "title": title, "path": output_path})
 
         monkeypatch.setattr("atlantis.cli.plot_raw", _capture)
