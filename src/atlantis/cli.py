@@ -31,6 +31,10 @@ from atlantis.utils.kurosiwo import (  # noqa: E402
     write_kurosiwo_metadata_csv,
 )
 from atlantis.utils.plot import (  # noqa: E402
+    GFM_ENSEMBLE_FLOOD_EXTENT_CODES,
+    GFM_REFERENCE_WATER_MASK_CODES,
+    MODIS_RAW_CODES,
+    VIIRS_RAW_CODES,
     date_from_filename,
     pixel_stats_classified,
     pixel_stats_raw,
@@ -411,18 +415,40 @@ def _plot_source(
             announce=announce,
         )
     elif "ensemble_flood_extent" in best_ds:
-        # GFM native / raw mode — plot the flood code band as raw uint8
+        # GFM native / raw mode — plot each native band with its own legend.
         plot_raw(
             best_ds["ensemble_flood_extent"],
             title=f"{event_id}: {pretty} ensemble_flood_extent {date_label} ({res})",
             output_path=output_png_path,
+            codes=GFM_ENSEMBLE_FLOOD_EXTENT_CODES,
+            legend_title="GFM ensemble_flood_extent codes",
             announce=announce,
         )
+        if "reference_water_mask" in best_ds:
+            mask_png = output_png_path.parent / output_png_path.name.replace(".png", "_reference_water_mask.png")
+            plot_raw(
+                best_ds["reference_water_mask"],
+                title=f"{event_id}: {pretty} reference_water_mask {date_label} ({res})",
+                output_path=mask_png,
+                codes=GFM_REFERENCE_WATER_MASK_CODES,
+                legend_title="GFM reference_water_mask codes",
+                announce=announce,
+            )
     else:
+        # Raw composite: pick the legend matching the source's pixel codes.
+        codes = MODIS_RAW_CODES if source_id == "modis" else VIIRS_RAW_CODES
+        legend_title = "MODIS MCDWD codes" if source_id == "modis" else "VIIRS pixel codes"
+        raw = best_ds["raw"]
+        if source_id != "modis":
+            # Collapse the continuous flood range (101–200) onto the single
+            # representative code 160 so the categorical legend matches the render.
+            raw = raw.where((raw < 101) | (raw > 200), 160)
         plot_raw(
-            best_ds["raw"],
+            raw,
             title=f"{event_id}: {pretty} raw composite {date_label} ({res})",
             output_path=output_png_path,
+            codes=codes,
+            legend_title=legend_title,
             announce=announce,
         )
 
@@ -573,14 +599,28 @@ def _harmonise_gfm(
         )
         return ds_harm
 
-    # Native mode — reproject each band with NN, write as uint8 codes
+    # Native mode — reproject each band with NN, write as uint8 codes + plot bands
     ds_harm = h.reprojector.reproject(ds)
+    band_legends = {
+        "ensemble_flood_extent": (GFM_ENSEMBLE_FLOOD_EXTENT_CODES, "GFM ensemble_flood_extent codes"),
+        "reference_water_mask": (GFM_REFERENCE_WATER_MASK_CODES, "GFM reference_water_mask codes"),
+    }
     for var in ("ensemble_flood_extent", "reference_water_mask"):
         if var not in ds_harm:
             continue
         tif_path = harm_dir / f"{event_id}_{date_label}_gfm_{var}_harmonised.tif"
         write_harmonised_raster(ds_harm[var], tif_path)
         console.print(f"  Harmonised → {tif_path.name}")
+        codes, legend_title = band_legends[var]
+        png_harm_path = plot_dir / f"{event_id}_{date_label}_gfm_{var}_harmonised.png"
+        plot_raw(
+            ds_harm[var],
+            title=f"{event_id}: GFM harmonised {var} {date_label} (1 arcmin)",
+            output_path=png_harm_path,
+            codes=codes,
+            legend_title=legend_title,
+        )
+
     return ds_harm
 
 
