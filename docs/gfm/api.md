@@ -27,6 +27,9 @@ print(ds.data_vars)
 print(float(ds["flood_fraction"].max()))
 ```
 
+This example opts into `strategy="aggregate"` explicitly. `GFMFetcher()`
+itself defaults to `strategy="peak"`, matching the CLI.
+
 ## Native / raw mode
 
 Pass `classify=False` to emit the native SAR band codes without any derivation:
@@ -108,8 +111,11 @@ ds_harm = harmoniser.harmonise(ds, source_id="gfm")
 write_harmonised_raster(ds_harm["flood_fraction"], Path("harmonised/gfm_output.tif"))
 ```
 
-The processor already snaps GFM results to the canonical global grid. The
-harmoniser writes the usual uint8 percentage raster for downstream analysis.
+The processor already snaps fetched GFM results to the canonical global grid.
+At the default settings, harmonisation mainly re-encodes `flood_fraction` into
+the usual uint8 percentage raster for downstream analysis. The written
+harmonised GeoTIFF contains the flood layer only; `quality_mask` and
+`permanent_water` remain available in the in-memory dataset.
 
 ## Dataset variables
 
@@ -118,11 +124,11 @@ the `classify` flag.
 
 **Classified mode** (`classify=True`, default):
 
-| Variable          | Dtype     | Meaning                                                 |
-| ----------------- | --------- | ------------------------------------------------------- |
-| `flood_fraction`  | `float32` | Fraction of valid observations classified as flood      |
-| `quality_mask`    | `uint8`   | `1` where at least one valid observation exists         |
-| `permanent_water` | `uint8`   | `1` where permanent water exceeds 50% of valid coverage |
+| Variable          | Dtype     | Meaning                                                                           |
+| ----------------- | --------- | --------------------------------------------------------------------------------- |
+| `flood_fraction`  | `float32` | Fraction of valid observed coverage classified as flood                           |
+| `quality_mask`    | `uint8`   | Valid-observation coverage mask: `1` where any valid observation exists           |
+| `permanent_water` | `uint8`   | Derived mask: `1` where `reference_water_mask == 2` exceeds 50% of valid coverage |
 
 **Native / raw mode** (`classify=False`):
 
@@ -133,23 +139,29 @@ the `classify` flag.
 
 ## GFMFetcher parameters
 
-| Parameter          | Type         | Default              | Description                                                                          |
-| ------------------ | ------------ | -------------------- | ------------------------------------------------------------------------------------ | -------------------------- |
-| `api_url`          | `str         | None`                | EODC STAC endpoint                                                                   | Override the STAC API root |
-| `coarsen_factor`   | `int`        | `4`                  | Max-pool factor before reprojection (classified mode only)                           |
-| `resampling`       | `Resampling` | `Resampling.average` | Reprojection resampling method (classified mode only)                                |
-| `classify`         | `bool`       | `True`               | `True` = derive flood_fraction / quality / permanent_water; `False` = emit raw codes |
-| `strategy`         | `str`        | `"peak"`             | One of `peak`, `aggregate`, or `all`                                                 |
-| `keep_processed`   | `bool`       | `True`               | Write intermediate processed GeoTIFFs                                                |
-| `peak_days_before` | `int`        | `0`                  | Window filter before the peak date                                                   |
-| `peak_days_after`  | `int`        | `0`                  | Window filter after the peak date                                                    |
-| `max_observations` | `int`        | `0`                  | Cap the number of returned dates after windowing                                     |
-| `peak_priority`    | `str`        | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`                                       |
+| Parameter          | Type            | Default              | Description                                                                          |
+| ------------------ | --------------- | -------------------- | ------------------------------------------------------------------------------------ |
+| `api_url`          | `Optional[str]` | `None`               | Override the default EODC STAC endpoint                                              |
+| `coarsen_factor`   | `int`           | `4`                  | Max-pool factor before reprojection (classified mode only)                           |
+| `resampling`       | `Resampling`    | `Resampling.average` | Reprojection resampling method (classified mode only)                                |
+| `classify`         | `bool`          | `True`               | `True` = derive flood_fraction / quality / permanent_water; `False` = emit raw codes |
+| `strategy`         | `str`           | `"peak"`             | One of `peak`, `aggregate`, or `all`                                                 |
+| `keep_processed`   | `bool`          | `True`               | Write processed GeoTIFFs to `processed/`                                             |
+| `peak_days_before` | `int`           | `0`                  | Window filter before the peak date                                                   |
+| `peak_days_after`  | `int`           | `0`                  | Window filter after the peak date                                                    |
+| `max_observations` | `int`           | `0`                  | Cap the number of returned dates after windowing                                     |
+| `peak_priority`    | `str`           | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`                                       |
 
 ## Notes
 
 - GFM has no download-versus-stream option like VIIRS or MODIS. It always
   loads Cloud-Optimised GeoTIFF assets via STAC discovery and `odc.stac`.
+- Atlantis currently loads only `ensemble_flood_extent` and
+  `reference_water_mask` from the upstream GFM collection.
+- Upstream `advisory_flags`, `exclusion_mask`, and likelihood assets are not
+  currently folded into `quality_mask`. In Atlantis, `quality_mask` means
+  valid-observation coverage from the two loaded source layers, not a broader
+  confidence or exclusion flag.
 - For implementation details behind `search()`, `fetch()`, and `to_dataset()`, see
   [internals.md](internals.md) and the code in
   [src/atlantis/fetchers/gfm/**init**.py](../../src/atlantis/fetchers/gfm/__init__.py).

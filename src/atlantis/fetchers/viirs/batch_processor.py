@@ -175,11 +175,9 @@ def process_granule(task: dict) -> TaskResult:
         # ── Step 4: scale float32 [0,1] → uint8 [0,100], NaN → 255 ──────
         harm_da = ds_harm["flood_fraction"]
         arr = harm_da.values
-        scaled = np.where(
-            np.isnan(arr),
-            np.uint8(HARMONISED_NODATA),
-            np.round(arr * 100).clip(0, 100).astype(np.uint8),
-        )
+        scaled = np.full(arr.shape, HARMONISED_NODATA, dtype=np.uint8)
+        valid = ~np.isnan(arr)
+        scaled[valid] = np.round(arr[valid] * 100).clip(0, 100).astype(np.uint8)
 
         harm_transform = harm_da.rio.transform()
         harm_crs = harm_da.rio.crs

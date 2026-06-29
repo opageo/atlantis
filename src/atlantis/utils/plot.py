@@ -29,11 +29,11 @@ if TYPE_CHECKING:
 
 VIIRS_RAW_CODES: dict[int, tuple[str, str]] = {
     1: ("Fill / No data", "#000000"),
-    17: ("No flood / land", "#d4c5a9"),
-    20: ("Seasonal water", "#17becf"),
+    17: ("Vegetation", "#2ca02c"),
+    20: ("Snow / ice", "#17becf"),
     30: ("Cloud", "#cccccc"),
-    99: ("Open water", "#4682B4"),
-    160: ("Flood (codes 101–200, rep. 160)", "#FF0000"),
+    99: ("Permanent water", "#1f77b4"),
+    160: ("Flood (codes 101–200, ≥60% frac)", "#FF0000"),
 }
 
 # GFM native ensemble_flood_extent band codes
@@ -70,7 +70,7 @@ def date_from_filename(filename: str) -> str:
     """Extract ``YYYY-MM-DD`` from a VIIRS filename.
 
     Works with any filename that embeds an 8-digit date token, e.g.
-    ``KuroSiwo_1111004_20170828_viirs_flood_extent.tif``.
+    ``KuroSiwo_1111004_20170828_viirs_flood_fraction.tif``.
 
     Returns ``"unknown"`` if no 8-digit sequence is found.
     """
@@ -104,7 +104,7 @@ def pixel_stats_raw(data: np.ndarray, name: str = "raw") -> None:
     print(f"  Flood pixels (101–200): {flood_px:,}")
 
 
-def pixel_stats_classified(data: np.ndarray, name: str = "flood_extent") -> int:
+def pixel_stats_classified(data: np.ndarray, name: str = "flood_fraction") -> int:
     """Print stats for a classified flood array; return the number of flooded pixels."""
     vals = data.ravel()
     valid = vals[~np.isnan(vals)]

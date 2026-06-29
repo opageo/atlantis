@@ -85,10 +85,10 @@ from matplotlib.patches import Patch
 
 viirs_codes = {
     1:   ("Fill / No data",   "#000000"),
-    17:  ("No flood / land",  "#d4c5a9"),
-    20:  ("Seasonal water",   "#17becf"),
+    17:  ("Vegetation",       "#2ca02c"),
+    20:  ("Snow / ice",       "#17becf"),
     30:  ("Cloud",            "#cccccc"),
-    99:  ("Open water",       "#4682B4"),
+    99:  ("Permanent water",  "#1f77b4"),
     130: ("Flood (30% frac)", "#ffeb3b"),
     160: ("Flood (60% frac)", "#FF9800"),
     200: ("Flood (100%)",     "#FF0000"),

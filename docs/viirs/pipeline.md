@@ -25,7 +25,7 @@ flowchart TD
     SAMPLE --> STRATEGY
 
     STRATEGY -->|peak| PEAK["Pick peak flood date"]
-    STRATEGY -->|aggregate| AGG["Aggregate (mean/mode)"]
+    STRATEGY -->|aggregate| AGG["Aggregate (mean + mask-aware reduction)"]
     STRATEGY -->|all| ALL["Keep all dates"]
 
     PEAK --> KEEP_PROC{--keep-processed?}
@@ -113,8 +113,8 @@ All `N` dates are stacked into a `(N, H, W)` array per layer and reduced
 | Layer             | Reduction                 | Rationale                                   |
 | :---------------- | :------------------------ | :------------------------------------------ |
 | `flood_fraction`  | `np.nanmean(stack, 0)`    | Continuous variable → arithmetic mean       |
-| `quality_mask`    | mode (uint8) along axis 0 | Categorical 0/1 → most-frequent value       |
-| `permanent_water` | mode (uint8) along axis 0 | Categorical 0/1 → most-frequent value       |
+| `quality_mask`    | `np.any(stack > 0, 0)`    | Output should stay valid if any date was a clear-sky observation |
+| `permanent_water` | majority over valid dates | Ignore fill/cloud dates when reducing the reference-water mask |
 | `raw`             | mode (uint8) along axis 0 | Categorical VFM codes → most-frequent value |
 | `cloud_fraction`  | scalar `np.mean`          | Per-tile metadata, not a pixel array        |
 
@@ -123,6 +123,12 @@ Important properties:
 - **`nanmean`** for `flood_fraction` means cloud/no-data pixels (NaN at
   this stage, encoded as `255` only at write-time) are **skipped per-pixel** —
   a pixel that was clear on 3 of 5 dates averages those 3 dates only.
+- **`quality_mask`** is intentionally optimistic in aggregate mode: if a pixel
+  had at least one valid clear-sky observation in the stack, the aggregate mask
+  stays `1`.
+- **`permanent_water`** is reduced only across dates where `quality_mask == 1`;
+  ties resolve to `0`, so the aggregate output requires a strict majority of
+  valid observations to mark a pixel as reference water.
 - **Mode** for the categorical layers is computed by
   `_mode_uint8`: a per-pixel `np.bincount` over the time axis, with
   ties broken by the **lowest value** (`argmax` returns the first index).

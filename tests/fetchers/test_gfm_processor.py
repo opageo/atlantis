@@ -1,11 +1,13 @@
 """Tests for the GFM raster processor."""
 
 import numpy as np
+import xarray as xr
 from rasterio.transform import from_bounds
 
 from atlantis.fetchers.gfm.processor import (
     GFM_FLOOD,
     GFM_NODATA,
+    GFM_PERMANENT_WATER,
     GfmProcessedTile,
     GfmRasterProcessor,
     _masked_max,
@@ -111,6 +113,52 @@ class TestGfmProcessorClassify:
         assert tile.permanent_water[0, 1] == 0  # 4/10 < 0.5
         assert tile.permanent_water[1, 0] == 1  # 8/10 > 0.5
         assert tile.permanent_water[1, 1] == 0  # 2/10 < 0.5
+
+
+class TestGfmProcessorNativeMasks:
+    """Lock down discrete GFM code handling before reprojection."""
+
+    def test_build_native_masks_uses_discrete_codes(self):
+        flood_native = xr.DataArray(
+            np.array(
+                [
+                    [1, 0, GFM_NODATA],
+                    [1, GFM_NODATA, 0],
+                ],
+                dtype=np.uint8,
+            ),
+            dims=("y", "x"),
+        )
+        perm_native = xr.DataArray(
+            np.array(
+                [
+                    [0, GFM_PERMANENT_WATER, GFM_NODATA],
+                    [GFM_PERMANENT_WATER, 1, 0],
+                ],
+                dtype=np.uint8,
+            ),
+            dims=("y", "x"),
+        )
+
+        flood_mask, perm_mask, valid_mask = GfmRasterProcessor._build_native_masks(flood_native, perm_native)
+
+        np.testing.assert_array_equal(flood_mask.values, np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
+        np.testing.assert_array_equal(perm_mask.values, np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
+        np.testing.assert_array_equal(valid_mask.values, np.array([[1.0, 1.0, 0.0], [1.0, 1.0, 1.0]], dtype=np.float32))
+
+    def test_canonical_grid_snaps_bbox_outward(self):
+        proc = GfmRasterProcessor(bbox=(10.003, 20.002, 10.031, 20.029))
+
+        west, south, east, north = proc._snapped_bounds
+
+        assert west <= 10.003
+        assert south <= 20.002
+        assert east >= 10.031
+        assert north >= 20.029
+        np.testing.assert_allclose((west + 180.0) * 60.0, round((west + 180.0) * 60.0), atol=1e-9)
+        np.testing.assert_allclose((east + 180.0) * 60.0, round((east + 180.0) * 60.0), atol=1e-9)
+        np.testing.assert_allclose((90.0 - north) * 60.0, round((90.0 - north) * 60.0), atol=1e-9)
+        np.testing.assert_allclose((90.0 - south) * 60.0, round((90.0 - south) * 60.0), atol=1e-9)
 
 
 class TestGfmProcessorWriteOutputs:

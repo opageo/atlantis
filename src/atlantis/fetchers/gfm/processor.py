@@ -312,16 +312,10 @@ class GfmRasterProcessor:
                 xx["reference_water_mask"].coarsen(y=self.coarsen_factor, x=self.coarsen_factor, boundary="trim").max()  # ty:ignore[unresolved-attribute]
             )
 
-            # Build per-item binary masks at native (coarsened) resolution where codes
-            # are still discrete. Resampling.average destroys discrete codes (e.g.
-            # averaging {0, 1} -> 0.5, so `== GFM_FLOOD` is no longer reliable), so
-            # the masks MUST be computed before reprojection. After reproject(average),
-            # each mask becomes the fractional coverage of that class within the
-            # output pixel, which is exactly what we want to accumulate.
-            flood_mask_native = (flood_native == GFM_FLOOD).astype("float32")
-            perm_mask_native = (perm_native == GFM_PERMANENT_WATER).astype("float32")
-            # An observation contributes to "valid" if either band has a non-nodata code.
-            valid_mask_native = ((flood_native != GFM_NODATA) | (perm_native != GFM_NODATA)).astype("float32")
+            flood_mask_native, perm_mask_native, valid_mask_native = self._build_native_masks(
+                flood_native,
+                perm_native,
+            )
 
             masks = xr.Dataset(
                 {
@@ -477,6 +471,23 @@ class GfmRasterProcessor:
             paths = self._write_outputs(processed, event_id, date_token, output_dir)
 
         return GfmProcessResult(processed=processed, paths=paths, metadata=metadata)
+
+    @staticmethod
+    def _build_native_masks(
+        flood_native: "xr.DataArray",
+        perm_native: "xr.DataArray",
+    ) -> tuple["xr.DataArray", "xr.DataArray", "xr.DataArray"]:
+        """Build float32 flood, permanent-water, and validity masks.
+
+        The discrete GFM source codes must be converted to binary masks before
+        average reprojection. Once raster averaging runs, class codes are no
+        longer recoverable.
+        """
+        flood_mask_native = (flood_native == GFM_FLOOD).astype("float32")
+        perm_mask_native = (perm_native == GFM_PERMANENT_WATER).astype("float32")
+        # An observation contributes to "valid" if either band has a non-nodata code.
+        valid_mask_native = ((flood_native != GFM_NODATA) | (perm_native != GFM_NODATA)).astype("float32")
+        return flood_mask_native, perm_mask_native, valid_mask_native
 
     def _reproject_to_canonical_grid(self, masks: "xr.Dataset") -> "xr.Dataset":
         """Reproject a native-CRS mask dataset onto the pre-computed canonical grid.

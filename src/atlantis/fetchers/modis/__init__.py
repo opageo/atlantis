@@ -13,6 +13,7 @@ Both require ``EARTHDATA_TOKEN``; see :mod:`atlantis.fetchers.modis.backend`.
 
 from __future__ import annotations
 
+import time as time_module
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
@@ -37,6 +38,7 @@ from atlantis.fetchers.modis.backend import (
 from atlantis.fetchers.modis.dataset import processed_tile_to_dataset
 from atlantis.fetchers.modis.processor import (
     COMPOSITE_TO_HDF_LAYER,
+    INSUFFICIENT_DATA_CODE,
     ModisRasterProcessor,
     OutputPaths,
     ProcessTilesResult,
@@ -197,6 +199,7 @@ class MODISFetcher(AbstractFloodFetcher):
             self.backend = get_backend(self.backend_name)
 
         self.timeout = timeout or fc.timeout
+        self.max_retries = fc.max_retries
         self.classify = classify
         self.stream = stream
         self.strategy = strategy
@@ -231,6 +234,77 @@ class MODISFetcher(AbstractFloodFetcher):
         start = datetime.combine(event.start_date, time.min, tzinfo=timezone.utc)
         end = datetime.combine(event.end_date, time.min, tzinfo=timezone.utc)
         return _date_range(start, end)
+
+    @staticmethod
+    def _download_status_code(exc: requests.RequestException) -> int | None:
+        """Return HTTP status code for request exceptions when available."""
+        if isinstance(exc, requests.HTTPError) and exc.response is not None:
+            return exc.response.status_code
+        return None
+
+    @classmethod
+    def _is_retryable_download_error(cls, exc: requests.RequestException) -> bool:
+        """Return True when a download error is likely transient."""
+        if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+            return True
+
+        status_code = cls._download_status_code(exc)
+        if status_code is None:
+            return False
+
+        # Include 401 because LAADS occasionally returns transient auth failures.
+        return status_code in {401, 408, 429, 500, 502, 503, 504}
+
+    def _download_with_retry(
+        self,
+        url: str,
+        output_path: Path,
+        headers: dict[str, str],
+        *,
+        filename: str,
+    ) -> None:
+        """Download one file with bounded retry/backoff and explicit logs."""
+        max_attempts = max(1, self.max_retries + 1)
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                download_file(url, output_path=output_path, headers=headers)
+                if attempt > 1:
+                    logger.info(
+                        "MODIS download recovered for {} on attempt {}/{}",
+                        filename,
+                        attempt,
+                        max_attempts,
+                    )
+                return
+            except HtmlResponseError:
+                # EULA/auth HTML responses are not transient request failures.
+                raise
+            except requests.RequestException as exc:
+                status_code = self._download_status_code(exc)
+                retryable = self._is_retryable_download_error(exc)
+                if attempt >= max_attempts or not retryable:
+                    logger.error(
+                        "MODIS download failed for {} after {}/{} attempt(s) (status={}): {}",
+                        filename,
+                        attempt,
+                        max_attempts,
+                        status_code if status_code is not None else "n/a",
+                        exc,
+                    )
+                    raise
+
+                delay_seconds = min(0.25 * (2 ** (attempt - 1)), 1.0)
+                logger.warning(
+                    "MODIS download retry {}/{} for {} in {:.2f}s (status={}): {}",
+                    attempt + 1,
+                    max_attempts,
+                    filename,
+                    delay_seconds,
+                    status_code if status_code is not None else "n/a",
+                    exc,
+                )
+                time_module.sleep(delay_seconds)
 
     def _intersecting_tiles(self, event: FloodEvent) -> list[tuple[int, int]]:
         return modis_tiles_for_bbox(event.bbox)
@@ -436,7 +510,12 @@ class MODISFetcher(AbstractFloodFetcher):
                     filename = r.properties["filename"]
                     download_path = raw_dir / filename
                     try:
-                        download_file(r.url, output_path=download_path, headers=headers)
+                        self._download_with_retry(
+                            r.url,
+                            output_path=download_path,
+                            headers=headers,
+                            filename=filename,
+                        )
                     except HtmlResponseError as exc:
                         logger.error(
                             "MODIS download blocked by EULA / auth redirect for {} → {}\n"
@@ -649,9 +728,12 @@ class MODISFetcher(AbstractFloodFetcher):
                 None,
             )
 
-            variables["flood_fraction"] = (
-                rxr.open_rasterio(ff_path).squeeze(drop=True).astype("float32") / 100.0
-            ).rename("flood_fraction")
+            flood_fraction = rxr.open_rasterio(ff_path).squeeze(drop=True).astype("float32")
+            nodata = flood_fraction.rio.nodata
+            if nodata is None:
+                nodata = INSUFFICIENT_DATA_CODE
+            flood_fraction = flood_fraction.where(flood_fraction != nodata) / 100.0
+            variables["flood_fraction"] = flood_fraction.rename("flood_fraction")
             variables["quality_mask"] = (
                 rxr.open_rasterio(qm_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
             )

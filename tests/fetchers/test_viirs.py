@@ -584,6 +584,44 @@ class TestVIIRSToDataset:
         assert dataset.attrs["source_id"] == "viirs"
         assert dataset.attrs["event_id"] == "test_event"
 
+    def test_to_dataset_maps_flood_nodata_to_nan(self, tmp_path):
+        """Stored flood nodata=255 should round-trip back to NaN."""
+        fetcher = VIIRSFetcher(classify=True)
+
+        fe = np.array([[60, 255], [0, 255]], dtype=np.uint8)
+        qm = np.array([[1, 0], [1, 0]], dtype=np.uint8)
+        pw = np.array([[0, 0], [1, 0]], dtype=np.uint8)
+
+        fe_path = tmp_path / "test_flood_fraction.tif"
+        qm_path = tmp_path / "test_quality_mask.tif"
+        pw_path = tmp_path / "test_permanent_water.tif"
+
+        for path, data in [(fe_path, fe), (qm_path, qm), (pw_path, pw)]:
+            _write_tile(path, 20.0, 30.0, 21.0, 31.0, data)
+
+        from atlantis.fetchers.base import FetchResult
+        from atlantis.models.metadata import TileMetadata
+
+        result = FetchResult(
+            event_id="test_event",
+            source_id="viirs",
+            files=[fe_path, qm_path, pw_path],
+            metadata=TileMetadata(
+                event_id="test_event",
+                source_id="viirs",
+                fetch_timestamp=datetime(2020, 7, 22, tzinfo=timezone.utc),
+                bbox=(20.0, 30.0, 21.0, 31.0),
+            ),
+        )
+
+        dataset = fetcher.to_dataset(result)
+
+        flood = dataset["flood_fraction"].values
+        assert flood[0, 0] == pytest.approx(0.6, rel=1e-6)
+        assert flood[1, 0] == pytest.approx(0.0, rel=1e-6)
+        assert np.isnan(flood[0, 1])
+        assert np.isnan(flood[1, 1])
+
 
 # ── Existing tests (preserved) ───────────────────────────────────────────────
 
@@ -649,7 +687,9 @@ def test_fetch_and_to_dataset(tmp_path, monkeypatch):
     )
 
     tile1_data = np.full((10, 10), 170, dtype=np.uint8)
-    tile2_data = np.full((10, 10), 17, dtype=np.uint8)
+    # Code 99 ("NormalWater") is the embedded NOAA legend's permanent-water class;
+    # bottom half overwritten with cloud (30).
+    tile2_data = np.full((10, 10), 99, dtype=np.uint8)
     tile2_data[5:, :] = 30
 
     tile1_tif = tmp_path / "tile_077.tif"
@@ -706,11 +746,13 @@ def test_fetch_and_to_dataset(tmp_path, monkeypatch):
     assert dataset["quality_mask"].dtype == np.uint8
     assert dataset["permanent_water"].dtype == np.uint8
     assert float(dataset["flood_fraction"].sum()) > 0
+    cloud_slice = dataset["flood_fraction"].isel(x=slice(10, 20), y=slice(5, 10)).values
+    assert np.isnan(cloud_slice).all()
     # Cloud pixels (code 30) → quality=0; flood pixels (170) → quality=1
     assert int(dataset["quality_mask"].min()) == 0
     assert int(dataset["quality_mask"].max()) == 1
     assert int(dataset["permanent_water"].max()) == 1
-    # Permanent water pixels (code 17) are valid observations → quality=1, not 0
+    # Permanent water pixels (code 99) are valid observations → quality=1, not 0
     perm_water_mask = dataset["permanent_water"].values.astype(bool)
     assert (dataset["quality_mask"].values[perm_water_mask] == 1).all(), (
         "permanent water pixels should have quality=1 (valid observation)"
@@ -783,8 +825,9 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
 
     # Tile 077: all flood
     tile1_data = np.full((10, 10), 170, dtype=np.uint8)
-    # Tile 078: top half = permanent water, bottom half = cloud
-    tile2_data = np.full((10, 10), 17, dtype=np.uint8)
+    # Tile 078: top half = permanent water (code 99, "NormalWater" per embedded
+    # NOAA TIFF legend), bottom half = cloud (30).
+    tile2_data = np.full((10, 10), 99, dtype=np.uint8)
     tile2_data[5:, :] = 30
 
     tile1_tif = tmp_path / "077.tif"
@@ -901,21 +944,26 @@ def test_search_same_results_across_backends(tmp_path, monkeypatch):
     assert gmu_dataset["permanent_water"].dtype == np.uint8
 
     # Same pixel values — the raster arrays are byte-identical
-    for var in ("flood_fraction", "quality_mask", "permanent_water"):
-        assert (noaa_dataset[var].values == gmu_dataset[var].values).all(), f"{var} values differ between backends"
+    np.testing.assert_allclose(
+        noaa_dataset["flood_fraction"].values,
+        gmu_dataset["flood_fraction"].values,
+        equal_nan=True,
+    )
+    for var in ("quality_mask", "permanent_water"):
+        np.testing.assert_array_equal(noaa_dataset[var].values, gmu_dataset[var].values)
 
     # Semantic correctness: left half (077) is all flood, right half (078) is mixed
     # Columns 0-9 = tile 077 (flood code 170 → flood_fraction = 0.70, 100 pixels)
     assert abs(float(noaa_dataset["flood_fraction"].isel(x=slice(0, 10)).sum()) - 70.0) < 1e-3, (
         "left tile should be all flood"
     )
-    # Columns 10-19 tile 078 rows 0-4 = permanent water (17 → flood_fraction = 0.0)
+    # Columns 10-19 tile 078 rows 0-4 = permanent water (99 → flood_fraction = 0.0)
     assert float(noaa_dataset["flood_fraction"].isel(x=slice(10, 20), y=slice(0, 5)).sum()) == 0.0
-    # Columns 10-19 tile 078 rows 5-9 = cloud (30 → flood_fraction = 0.0)
-    assert float(noaa_dataset["flood_fraction"].isel(x=slice(10, 20), y=slice(5, 10)).sum()) == 0.0
+    # Columns 10-19 tile 078 rows 5-9 = cloud (30 → flood_fraction = NaN)
+    assert np.isnan(noaa_dataset["flood_fraction"].isel(x=slice(10, 20), y=slice(5, 10)).values).all()
 
     # Quality mask: 1 = valid clear-sky observation, 0 = fill or cloud only.
-    # Permanent water (17) is a valid sensor observation → quality=1.
+    # Permanent water (99) is a valid sensor observation → quality=1.
     assert int(noaa_dataset["quality_mask"].isel(x=slice(0, 10)).sum()) == 100  # flood → valid
     assert int(noaa_dataset["quality_mask"].isel(x=slice(10, 20), y=slice(0, 5)).sum()) == 50  # perm water → valid
     assert int(noaa_dataset["quality_mask"].isel(x=slice(10, 20), y=slice(5, 10)).sum()) == 0  # cloud → invalid
