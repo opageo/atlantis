@@ -18,7 +18,7 @@ version = "0.1.1"
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 authors = ["Stylianos Lagaras", "Ioannis Kalfas"]
 channels = ["conda-forge"]
-platforms = ["linux-64", "osx-arm64"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
 
 # ============================================================================
 # Default dependencies: runtime + geo extras + GDAL/HDF4 binary stack
