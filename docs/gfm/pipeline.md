@@ -76,12 +76,12 @@ uv run atlantis harmonise \
 
 ### Output control
 
-| Flag                  | Default      | Effect                                                                                                                                          |
-| --------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--harmonise`         | **on** (GFM) | Re-encodes float32 [0,1] → uint8 [0,100] (no resampling — GFM is already 1-arcmin). Always enabled by default for GFM.                          |
-| `--no-keep-processed` | off          | Write only the harmonised output (no intermediate ~80 m files)                                                                                  |
-| `--plot`              | off          | Save a PNG of each result date                                                                                                                  |
-| `--strategy`          | `peak`       | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). Same default across all sources. |
+| Flag                  | Default | Effect                                                                                                                                                                                         |
+| --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--harmonise`         | off     | Re-encodes float32 [0,1] → uint8 [0,100] (classified mode, no resampling — GFM is already 1-arcmin); or NN-reprojects uint8 codes (native mode). Use `--no-classify` to emit native SAR bands. |
+| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate ~80 m files)                                                                                                                                 |
+| `--plot`              | off     | Save a PNG of each result date                                                                                                                                                                 |
+| `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). Same default across all sources.                                                |
 
 ### Processing
 
@@ -105,21 +105,40 @@ footprint. Multiple items can cover the same date and bbox.
 
 ### Step-by-step
 
+**Classified mode** (`--classify`, default)
+
 ```text
-STAC search → group by date → per-item loop → classify → accumulate → harmonise
+STAC search → group by date → per-item loop → coarsen → accumulate → derive products
                                     │
                     load (native CRS, ~20 m, odc.stac)
                     coarsen (max-pool × coarsen_factor)
                     compute binary masks (flood, perm, valid)
-                    reproject to canonical 1-arcmin EPSG:4326
+                    reproject to canonical 1-arcmin EPSG:4326 (average)
                     │
                 (flood_count, perm_water_count, valid_count) ← accumulate
                     │
-                    classify:
+                    derive:
                         flood_fraction  = flood_count / valid_count    [0, 1], NaN where unobserved
                         quality_mask    = (valid_count > 0).uint8      {0, 1}
                         permanent_water = (perm_ratio > 0.5).uint8     {0, 1}
 ```
+
+**Native / raw mode** (`--no-classify`)
+
+```text
+STAC search → group by date → per-item loop → NN-reproject codes → max-pool across items
+                                    │
+                    load (native CRS, ~20 m, odc.stac)
+                    reproject raw uint8 codes to canonical 1-arcmin grid (nearest-neighbour)
+                    │
+                    masked-max accumulation across items:
+                        ensemble_flood_extent  = max(valid codes) over items, nodata=255
+                        reference_water_mask   = max(valid codes) over items, nodata=255
+```
+
+In native mode no coarsening or binary-mask step is performed. Codes are
+preserved exactly; the `--gfm-coarsen-factor` and `--gfm-resampling` flags are
+ignored.
 
 #### Why binary masks before reprojection?
 
@@ -167,6 +186,8 @@ $$
 $$
 
 (NaN pixels — where no valid observation exists — are excluded from the count.)
+In native / raw mode the same count uses `ensemble_flood_extent(i,j) == 1`
+as the flood indicator instead.
 
 Pick:
 
@@ -182,6 +203,8 @@ The output filename carries only the single winning date token, e.g.
 
 All dates are stacked and reduced element-wise:
 
+**Classified mode:**
+
 | Layer             | Reduction                                   | Rationale                             |
 | :---------------- | :------------------------------------------ | :------------------------------------ |
 | `flood_fraction`  | `np.nanmean(stack, axis=0)`                 | Continuous variable → arithmetic mean |
@@ -191,6 +214,13 @@ All dates are stacked and reduced element-wise:
 
 `nanmean` means pixels that were unobserved (NaN) on some dates are averaged
 over the dates that _did_ observe them — no bias toward missing data.
+
+**Native / raw mode:**
+
+| Layer                   | Reduction           | Rationale                             |
+| :---------------------- | :------------------ | :------------------------------------ |
+| `ensemble_flood_extent` | masked-max of codes | Valid code always beats nodata (255)  |
+| `reference_water_mask`  | masked-max of codes | Highest valid class wins across dates |
 
 The output `date_token` spans the full range:
 `{first_date}_{last_date}`, e.g. `20241030_20241101`. For a single date the
@@ -209,19 +239,27 @@ harmonised GeoTIFF + PNG.
   <event_id>/
     gfm/
       processed/    # absent with --no-keep-processed
+        # Classified mode:
         <event_id>_<YYYYMMDD>_gfm_flood_fraction.tif    # float32, nodata=-9999
         <event_id>_<YYYYMMDD>_gfm_quality_mask.tif      # uint8, nodata=255
         <event_id>_<YYYYMMDD>_gfm_permanent_water.tif   # uint8, nodata=255
+        # Native / raw mode (--no-classify):
+        <event_id>_<YYYYMMDD>_gfm_ensemble_flood_extent.tif   # uint8, nodata=255
+        <event_id>_<YYYYMMDD>_gfm_reference_water_mask.tif    # uint8, nodata=255
       plots/        # with --plot
         <event_id>_<date_token>_gfm.png
         <event_id>_<date_token>_gfm_harmonised.png      # with --harmonise
       harmonised/   # with --harmonise
+        # Classified mode:
         <event_id>_<date_token>_gfm_harmonised.tif
+        # Native / raw mode:
+        <event_id>_<date_token>_gfm_ensemble_flood_extent_harmonised.tif
+        <event_id>_<date_token>_gfm_reference_water_mask_harmonised.tif
 ```
 
 ## Output format
 
-### Processed outputs (~80 m, native UTM → EPSG:4326)
+### Processed outputs — classified mode (~80 m equivalent, EPSG:4326)
 
 | File                    | Dtype   | Nodata  | Values                                         |
 | ----------------------- | ------- | ------- | ---------------------------------------------- |
@@ -229,9 +267,14 @@ harmonised GeoTIFF + PNG.
 | `*_quality_mask.tif`    | uint8   | 255     | 1 = valid observation, 0 = no data             |
 | `*_permanent_water.tif` | uint8   | 255     | 1 = permanent water, 0 = not                   |
 
-- **CRS**: EPSG:4326 (WGS84)
-- **Compression**: LZW
-- Resolution varies with native GSD and `--gfm-coarsen-factor`
+### Processed outputs — native / raw mode (canonical 1-arcmin, EPSG:4326)
+
+| File                          | Dtype | Nodata | Values                                                 |
+| ----------------------------- | ----- | ------ | ------------------------------------------------------ |
+| `*_ensemble_flood_extent.tif` | uint8 | 255    | 0 = dry, 1 = flood, 255 = nodata                       |
+| `*_reference_water_mask.tif`  | uint8 | 255    | 0 = land, 1 = water, 2 = permanent water, 255 = nodata |
+
+All processed outputs use **CRS**: EPSG:4326 (WGS84), **Compression**: LZW.
 
 ### Harmonised output (1 arcmin)
 

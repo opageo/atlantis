@@ -27,8 +27,17 @@ print(ds.data_vars)
 print(float(ds["flood_fraction"].max()))
 ```
 
-`GFMFetcher()` defaults to `strategy="aggregate"` in Python. The CLI exposes
-the same strategies but defaults to `peak`.
+## Native / raw mode
+
+Pass `classify=False` to emit the native SAR band codes without any derivation:
+
+```python
+fetcher = GFMFetcher(classify=False)
+results = fetcher.fetch(event, Path("data/Valencia_2024/gfm"))
+
+ds = fetcher.to_dataset(results[0])
+print(list(ds.data_vars))  # ['ensemble_flood_extent', 'reference_water_mask']
+```
 
 ## Search before fetch
 
@@ -104,7 +113,10 @@ harmoniser writes the usual uint8 percentage raster for downstream analysis.
 
 ## Dataset variables
 
-`GFMFetcher.to_dataset()` returns an `xarray.Dataset` with these variables:
+`GFMFetcher.to_dataset()` returns an `xarray.Dataset` whose variables depend on
+the `classify` flag.
+
+**Classified mode** (`classify=True`, default):
 
 | Variable          | Dtype     | Meaning                                                 |
 | ----------------- | --------- | ------------------------------------------------------- |
@@ -112,25 +124,31 @@ harmoniser writes the usual uint8 percentage raster for downstream analysis.
 | `quality_mask`    | `uint8`   | `1` where at least one valid observation exists         |
 | `permanent_water` | `uint8`   | `1` where permanent water exceeds 50% of valid coverage |
 
+**Native / raw mode** (`classify=False`):
+
+| Variable                | Dtype   | Meaning                                                                   |
+| ----------------------- | ------- | ------------------------------------------------------------------------- |
+| `ensemble_flood_extent` | `uint8` | Raw flood code: 0=dry, 1=flood, 255=nodata                                |
+| `reference_water_mask`  | `uint8` | Raw water code: 0=land, 1=water (seasonal), 2=permanent water, 255=nodata |
+
 ## GFMFetcher parameters
 
-| Parameter          | Type         | Default              | Description                                      |
-| ------------------ | ------------ | -------------------- | ------------------------------------------------ | -------------------------- |
-| `api_url`          | `str         | None`                | EODC STAC endpoint                               | Override the STAC API root |
-| `coarsen_factor`   | `int`        | `4`                  | Max-pool factor before reprojection              |
-| `resampling`       | `Resampling` | `Resampling.average` | Reprojection resampling method                   |
-| `strategy`         | `str`        | `"aggregate"`        | One of `peak`, `aggregate`, or `all`             |
-| `keep_processed`   | `bool`       | `True`               | Write intermediate processed GeoTIFFs            |
-| `peak_days_before` | `int`        | `0`                  | Window filter before the peak date               |
-| `peak_days_after`  | `int`        | `0`                  | Window filter after the peak date                |
-| `max_observations` | `int`        | `0`                  | Cap the number of returned dates after windowing |
-| `peak_priority`    | `str`        | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`   |
+| Parameter          | Type         | Default              | Description                                                                          |
+| ------------------ | ------------ | -------------------- | ------------------------------------------------------------------------------------ | -------------------------- |
+| `api_url`          | `str         | None`                | EODC STAC endpoint                                                                   | Override the STAC API root |
+| `coarsen_factor`   | `int`        | `4`                  | Max-pool factor before reprojection (classified mode only)                           |
+| `resampling`       | `Resampling` | `Resampling.average` | Reprojection resampling method (classified mode only)                                |
+| `classify`         | `bool`       | `True`               | `True` = derive flood_fraction / quality / permanent_water; `False` = emit raw codes |
+| `strategy`         | `str`        | `"peak"`             | One of `peak`, `aggregate`, or `all`                                                 |
+| `keep_processed`   | `bool`       | `True`               | Write intermediate processed GeoTIFFs                                                |
+| `peak_days_before` | `int`        | `0`                  | Window filter before the peak date                                                   |
+| `peak_days_after`  | `int`        | `0`                  | Window filter after the peak date                                                    |
+| `max_observations` | `int`        | `0`                  | Cap the number of returned dates after windowing                                     |
+| `peak_priority`    | `str`        | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`                                       |
 
 ## Notes
 
-- GFM has no separate raw-mode toggle today. The public Python surface always
-  returns the classified layers documented above.
-- GFM also has no download-versus-stream option like VIIRS or MODIS. It always
+- GFM has no download-versus-stream option like VIIRS or MODIS. It always
   loads Cloud-Optimised GeoTIFF assets via STAC discovery and `odc.stac`.
 - For implementation details behind `search()`, `fetch()`, and `to_dataset()`, see
   [internals.md](internals.md) and the code in
