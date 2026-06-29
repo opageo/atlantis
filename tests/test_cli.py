@@ -1216,8 +1216,8 @@ def test_gfm_warns_on_no_stream():
         assert "GFM always streams" in result.output
 
 
-def test_gfm_warns_on_no_classify():
-    """GFM should warn when --no-classify is passed."""
+def test_gfm_native_mode_info_on_no_classify():
+    """GFM should print a native-mode info message when --no-classify is passed."""
     from unittest.mock import patch
 
     with patch("atlantis.cli.get_fetcher") as mock_get:
@@ -1242,11 +1242,11 @@ def test_gfm_warns_on_no_classify():
                 "--no-classify",
             ],
         )
-        assert "GFM always produces classified layers" in result.output
+        assert "native mode" in result.output
 
 
-def test_gfm_harmonise_always_enabled():
-    """GFM should emit info that harmonise is enabled by default when not explicitly passed."""
+def test_gfm_harmonise_info_on_classify():
+    """GFM (classified) should emit the harmonise hint when --harmonise is not passed."""
     from unittest.mock import patch
 
     with patch("atlantis.cli.get_fetcher") as mock_get:
@@ -1270,4 +1270,4 @@ def test_gfm_harmonise_always_enabled():
                 "2024-01-02",
             ],
         )
-        assert "harmonised output enabled by default" in result.output
+        assert "--harmonise" in result.output

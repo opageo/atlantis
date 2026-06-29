@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from rasterio.transform import from_origin
 
-from atlantis.fetchers.gfm.processor import GfmProcessedTile
+from atlantis.fetchers.gfm.processor import GFM_FLOOD, GFM_NODATA, GfmProcessedTile
 from atlantis.fetchers.gfm.selection import (
     _parse_yyyymmdd,
     flood_pixel_count,
@@ -45,6 +45,26 @@ class TestFloodPixelCount:
         tile = _make_flood_tile(3)
         tile.flood_fraction[3, 3] = np.nan
         assert flood_pixel_count(tile) == 3
+
+    # Native / raw mode fallback
+    def test_native_mode_counts_flood_code(self):
+        """flood_pixel_count falls back to ensemble_flood_extent == GFM_FLOOD."""
+        transform = from_origin(0.0, 1.0, 1.0, -1.0)
+        efe = np.array([[GFM_FLOOD, 0, GFM_NODATA], [0, GFM_FLOOD, GFM_FLOOD]], dtype=np.uint8)
+        tile = GfmProcessedTile(
+            ensemble_flood_extent=efe,
+            reference_water_mask=np.zeros((2, 3), dtype=np.uint8),
+            transform=transform,
+            crs="EPSG:4326",
+            shape=(2, 3),
+        )
+        assert flood_pixel_count(tile) == 3  # three pixels with code 1 (and not nodata)
+
+    def test_native_mode_empty_returns_zero(self):
+        """Returns 0 when no bands are populated."""
+        transform = from_origin(0.0, 1.0, 1.0, -1.0)
+        tile = GfmProcessedTile(transform=transform, crs="EPSG:4326", shape=(2, 2))
+        assert flood_pixel_count(tile) == 0
 
 
 class TestIsBetterPeakCandidate:

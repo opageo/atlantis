@@ -448,3 +448,96 @@ class TestGFMFetcherToDataset:
 
         with pytest.raises(ValueError, match="neither in-memory dataset nor files"):
             fetcher.to_dataset(result)
+
+
+# ── Native / raw-mode dataset tests ──────────────────────────────────────────
+
+
+class TestGfmNativeDataset:
+    """Tests for processed_tile_to_dataset in native / raw mode."""
+
+    def _make_native_tile(self, shape=(5, 5)) -> GfmProcessedTile:
+        from rasterio.transform import from_bounds
+
+        from atlantis.fetchers.gfm.processor import GFM_FLOOD, GFM_NODATA
+
+        h, w = shape
+        transform = from_bounds(0.0, 0.0, 1.0, 1.0, w, h)
+        rng = np.random.default_rng(0)
+        efe = rng.choice([0, GFM_FLOOD, GFM_NODATA], size=(h, w)).astype(np.uint8)
+        rwm = rng.choice([0, 1, 2, GFM_NODATA], size=(h, w)).astype(np.uint8)
+        return GfmProcessedTile(
+            ensemble_flood_extent=efe,
+            reference_water_mask=rwm,
+            transform=transform,
+            crs="EPSG:4326",
+            shape=shape,
+            cloud_fraction=0.1,
+        )
+
+    def test_native_dataset_has_correct_variables(self):
+        from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
+
+        tile = self._make_native_tile()
+        ds = processed_tile_to_dataset(tile, event_id="test", source_id="gfm")
+        assert "ensemble_flood_extent" in ds.data_vars
+        assert "reference_water_mask" in ds.data_vars
+        assert "flood_fraction" not in ds.data_vars
+        assert "quality_mask" not in ds.data_vars
+
+    def test_native_dataset_dtypes(self):
+        from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
+
+        tile = self._make_native_tile()
+        ds = processed_tile_to_dataset(tile, event_id="test", source_id="gfm")
+        assert ds["ensemble_flood_extent"].dtype == np.uint8
+        assert ds["reference_water_mask"].dtype == np.uint8
+
+    def test_classified_dataset_has_flood_fraction(self):
+        from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
+
+        tile = _make_processed_tile()
+        ds = processed_tile_to_dataset(tile, event_id="test", source_id="gfm")
+        assert "flood_fraction" in ds.data_vars
+        assert "quality_mask" in ds.data_vars
+        assert "permanent_water" in ds.data_vars
+        assert "ensemble_flood_extent" not in ds.data_vars
+
+
+class TestGFMFetcherClassifyParam:
+    """Tests that the classify param is wired through the fetcher correctly."""
+
+    def test_default_classify_true(self):
+        fetcher = GFMFetcher()
+        assert fetcher.classify is True
+
+    def test_classify_false_stored(self):
+        fetcher = GFMFetcher(classify=False)
+        assert fetcher.classify is False
+
+    def test_permanent_water_available_reflects_classify(self):
+        """permanent_water_mask_available should match the classify flag."""
+        from rasterio.transform import from_bounds
+
+        from atlantis.fetchers.gfm.processor import GFM_FLOOD
+
+        # Build a native tile directly and go through _build_fetch_result
+        t = from_bounds(0, 0, 1, 1, 5, 5)
+        native_tile = GfmProcessedTile(
+            ensemble_flood_extent=np.full((5, 5), GFM_FLOOD, dtype=np.uint8),
+            reference_water_mask=np.zeros((5, 5), dtype=np.uint8),
+            transform=t,
+            crs="EPSG:4326",
+            shape=(5, 5),
+        )
+        from datetime import date
+
+        event = FloodEvent(
+            event_id="test",
+            bbox=(0.0, 0.0, 1.0, 1.0),
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 1),
+        )
+        fetcher = GFMFetcher(classify=False)
+        result = fetcher._build_fetch_result(native_tile, event, "20240101")
+        assert result.metadata.permanent_water_mask_available is False

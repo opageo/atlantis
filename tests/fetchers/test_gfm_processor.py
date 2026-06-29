@@ -4,8 +4,11 @@ import numpy as np
 from rasterio.transform import from_bounds
 
 from atlantis.fetchers.gfm.processor import (
+    GFM_FLOOD,
+    GFM_NODATA,
     GfmProcessedTile,
     GfmRasterProcessor,
+    _masked_max,
 )
 
 
@@ -195,3 +198,124 @@ class TestGfmProcessorAggregation:
 
         result = GfmRasterProcessor.aggregate_tiles([tile1, tile2])
         np.testing.assert_array_equal(result.quality_mask, np.ones((2, 2), dtype=np.uint8))
+
+
+# ── Native / raw-mode tests ───────────────────────────────────────────────────
+
+
+class TestMaskedMax:
+    """Tests for the _masked_max utility."""
+
+    def test_both_valid_returns_max(self):
+        a = np.array([0, 1, 0], dtype=np.uint8)
+        b = np.array([1, 0, 0], dtype=np.uint8)
+        result = _masked_max(a, b, nodata=255)
+        np.testing.assert_array_equal(result, [1, 1, 0])
+
+    def test_one_nodata_uses_other(self):
+        a = np.array([255, 1, 255], dtype=np.uint8)
+        b = np.array([0, 255, 1], dtype=np.uint8)
+        result = _masked_max(a, b, nodata=255)
+        np.testing.assert_array_equal(result, [0, 1, 1])
+
+    def test_both_nodata_stays_nodata(self):
+        a = np.array([255, 255], dtype=np.uint8)
+        b = np.array([255, 255], dtype=np.uint8)
+        result = _masked_max(a, b, nodata=255)
+        np.testing.assert_array_equal(result, [255, 255])
+
+    def test_output_dtype_is_uint8(self):
+        a = np.array([0, 1], dtype=np.uint8)
+        b = np.array([1, 0], dtype=np.uint8)
+        assert _masked_max(a, b, nodata=255).dtype == np.uint8
+
+
+class TestBuildNativeTile:
+    """Tests for GfmRasterProcessor._build_native_tile."""
+
+    def _make_proc(self):
+        return GfmRasterProcessor(bbox=(0.0, 0.0, 1.0, 1.0))
+
+    def test_fields_populated(self):
+        proc = self._make_proc()
+        efe = np.array([[GFM_FLOOD, 0], [0, GFM_NODATA]], dtype=np.uint8)
+        rwm = np.array([[0, 0], [2, GFM_NODATA]], dtype=np.uint8)
+        tile = proc._build_native_tile(efe, rwm)
+        np.testing.assert_array_equal(tile.ensemble_flood_extent, efe)
+        np.testing.assert_array_equal(tile.reference_water_mask, rwm)
+        assert tile.flood_fraction is None
+        assert tile.quality_mask is None
+        assert tile.permanent_water is None
+
+    def test_cloud_fraction_proportional_to_nodata(self):
+        proc = self._make_proc()
+        efe = np.array([[GFM_NODATA, GFM_FLOOD], [GFM_FLOOD, GFM_FLOOD]], dtype=np.uint8)
+        rwm = np.zeros_like(efe)
+        tile = proc._build_native_tile(efe, rwm)
+        # 1 out of 4 pixels is nodata → cloud_fraction = 0.25
+        assert abs(tile.cloud_fraction - 0.25) < 1e-6
+
+
+class TestAggregateNativeTiles:
+    """Tests for aggregate_tiles in native mode."""
+
+    def _make_native_tile(self, efe_vals, rwm_vals):
+        t = from_bounds(0, 0, 1, 1, 2, 2)
+        return GfmProcessedTile(
+            ensemble_flood_extent=np.array(efe_vals, dtype=np.uint8).reshape(2, 2),
+            reference_water_mask=np.array(rwm_vals, dtype=np.uint8).reshape(2, 2),
+            transform=t,
+            crs="EPSG:4326",
+            shape=(2, 2),
+            cloud_fraction=0.0,
+        )
+
+    def test_single_tile_returned_unchanged(self):
+        tile = self._make_native_tile([0, 1, 0, 255], [0, 0, 2, 255])
+        result = GfmRasterProcessor.aggregate_tiles([tile])
+        assert result is tile
+
+    def test_max_pool_across_dates(self):
+        tile1 = self._make_native_tile([0, 255, 0, 1], [0, 255, 0, 2])
+        tile2 = self._make_native_tile([1, 0, 255, 0], [2, 0, 255, 0])
+        result = GfmRasterProcessor.aggregate_tiles([tile1, tile2])
+        expected_efe = np.array([[1, 0], [0, 1]], dtype=np.uint8)
+        expected_rwm = np.array([[2, 0], [0, 2]], dtype=np.uint8)
+        np.testing.assert_array_equal(result.ensemble_flood_extent, expected_efe)
+        np.testing.assert_array_equal(result.reference_water_mask, expected_rwm)
+
+    def test_both_nodata_stays_nodata(self):
+        tile1 = self._make_native_tile([255, 255, 255, 255], [255, 255, 255, 255])
+        tile2 = self._make_native_tile([255, 255, 255, 255], [255, 255, 255, 255])
+        result = GfmRasterProcessor.aggregate_tiles([tile1, tile2])
+        np.testing.assert_array_equal(result.ensemble_flood_extent, 255)
+
+
+class TestWriteOutputsNative:
+    """Tests for _write_outputs in native mode."""
+
+    def test_writes_native_band_files(self, tmp_path):
+        t = from_bounds(10, 20, 11, 21, 4, 4)
+        tile = GfmProcessedTile(
+            ensemble_flood_extent=np.array(
+                [[0, 1, 0, 255], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 255]], dtype=np.uint8
+            ),
+            reference_water_mask=np.array([[0, 0, 2, 0], [0, 1, 0, 0], [2, 0, 0, 0], [0, 0, 0, 255]], dtype=np.uint8),
+            transform=t,
+            crs="EPSG:4326",
+            shape=(4, 4),
+            cloud_fraction=0.1,
+        )
+        proc = GfmRasterProcessor(bbox=(10, 20, 11, 21))
+        paths = proc._write_outputs(tile, "evt", "20240101", tmp_path)
+
+        assert paths.ensemble_flood_extent is not None and paths.ensemble_flood_extent.exists()
+        assert paths.reference_water_mask is not None and paths.reference_water_mask.exists()
+        assert paths.flood_fraction is None
+        assert paths.quality_mask is None
+
+        import rasterio
+
+        with rasterio.open(str(paths.ensemble_flood_extent)) as ds:
+            assert ds.nodata == GFM_NODATA
+            assert ds.dtypes[0] == "uint8"

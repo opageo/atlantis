@@ -50,6 +50,9 @@ class GFMFetcher(AbstractFloodFetcher):
         api_url: STAC API endpoint.
         coarsen_factor: Spatial coarsening before reprojection.
         resampling: Resampling method for reprojection.
+        classify: When True (default), derive flood_fraction / quality_mask /
+            permanent_water.  When False, emit the native band codes
+            ensemble_flood_extent and reference_water_mask.
         strategy: Date selection strategy ("peak", "aggregate", "all"). Default: "peak".
         keep_processed: Whether to write intermediate GeoTIFFs.
     """
@@ -61,6 +64,7 @@ class GFMFetcher(AbstractFloodFetcher):
         api_url: str | None = None,
         coarsen_factor: int = DEFAULT_COARSEN_FACTOR,
         resampling: Resampling = Resampling.average,
+        classify: bool = True,
         strategy: str = "peak",
         keep_processed: bool = True,
         peak_days_before: int = 0,
@@ -73,7 +77,14 @@ class GFMFetcher(AbstractFloodFetcher):
         Args:
             api_url: Optional STAC API URL. Defaults to EODC endpoint.
             coarsen_factor: Coarsen factor for SAR data (default 4).
+                Ignored when *classify* is False.
             resampling: Resampling method for reprojection.
+                Ignored when *classify* is False (nearest-neighbour used instead).
+            classify: When True (default), derive flood_fraction / quality_mask /
+                permanent_water from per-pixel accumulator counts. When False,
+                emit the native ``ensemble_flood_extent`` and
+                ``reference_water_mask`` band codes as-is, reprojected to the
+                canonical 1-arcmin grid with nearest-neighbour.
             strategy: Date selection strategy: "peak", "aggregate", or "all".
             keep_processed: Whether to write intermediate processed files.
             peak_days_before: Days before the computed peak to include when
@@ -89,6 +100,7 @@ class GFMFetcher(AbstractFloodFetcher):
         self.api_url = api_url or DEFAULT_GFM_STAC_URL
         self.coarsen_factor = coarsen_factor
         self.resampling = resampling
+        self.classify = classify
         self.strategy = strategy
         self.keep_processed = keep_processed
         self._backend = GfmStacBackend(api_url=self.api_url)
@@ -177,6 +189,7 @@ class GFMFetcher(AbstractFloodFetcher):
             bbox=event.bbox,
             coarsen_factor=self.coarsen_factor,
             resampling=self.resampling,
+            classify=self.classify,
         )
 
         date_results: list[tuple[str, GfmProcessedTile]] = []
@@ -351,7 +364,7 @@ class GFMFetcher(AbstractFloodFetcher):
             resolution=0.0,
             bbox=event.bbox,
             cloud_fraction=tile.cloud_fraction,
-            permanent_water_mask_available=True,
+            permanent_water_mask_available=self.classify,
         )
 
         return FetchResult(
@@ -370,7 +383,9 @@ class GFMFetcher(AbstractFloodFetcher):
             result: The fetch result to convert.
 
         Returns:
-            xarray Dataset with flood_fraction, quality_mask, permanent_water.
+            xarray Dataset with flood_fraction / quality_mask / permanent_water
+            (classified mode) or ensemble_flood_extent / reference_water_mask
+            (native mode).
         """
         if result.dataset is not None:
             return result.dataset
@@ -379,8 +394,12 @@ class GFMFetcher(AbstractFloodFetcher):
         if result.files:
             import rioxarray as rxr
 
-            # Assume first file is the flood_fraction
-            ds = rxr.open_rasterio(result.files[0]).squeeze(drop=True).to_dataset(name="flood_fraction")
+            # Read first file; name by its stem suffix to preserve band identity
+            first = result.files[0]
+            # Infer variable name from filename suffix (e.g. *_flood_fraction.tif)
+            stem = first.stem
+            var_name = stem.split("_gfm_")[-1] if "_gfm_" in stem else "band"
+            ds = rxr.open_rasterio(first).squeeze(drop=True).to_dataset(name=var_name)
             return ds
 
         raise ValueError("FetchResult has neither in-memory dataset nor files")

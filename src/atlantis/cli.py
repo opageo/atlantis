@@ -123,6 +123,11 @@ def _resolution_label(source_id: str) -> str:
     return SOURCE_RESOLUTION_LABELS.get(source_id, "native")
 
 
+def _ds_is_classified(ds) -> bool:
+    """True when a fetched dataset holds derived layers (vs native bands)."""
+    return "flood_fraction" in ds
+
+
 def _date_label(result: FetchResult) -> str:
     """Human-readable date label for a fetch result."""
     if result.date_token:
@@ -341,7 +346,7 @@ def _select_best_result(
     for result in fetch_results:
         ds = fetcher.to_dataset(result)
         date_label = _date_label(result)
-        if "flood_fraction" in ds:
+        if _ds_is_classified(ds):
             flooded = pixel_stats_classified(ds["flood_fraction"].values, name=date_label)
             if flooded > best_flood_count:
                 best_flood_count = flooded
@@ -369,10 +374,18 @@ def _plot_source(
     """Save a PNG visualisation of the peak-flood date for any source."""
     pretty = _pretty_source(source_id)
     res = _resolution_label(source_id)
-    if "flood_fraction" in best_ds:
+    if _ds_is_classified(best_ds):
         plot_classified(
             best_ds["flood_fraction"],
             title=f"{event_id}: {pretty} flood extent {date_label} ({res})",
+            output_path=output_png_path,
+            announce=announce,
+        )
+    elif "ensemble_flood_extent" in best_ds:
+        # GFM native / raw mode — plot the flood code band as raw uint8
+        plot_raw(
+            best_ds["ensemble_flood_extent"],
+            title=f"{event_id}: {pretty} ensemble_flood_extent {date_label} ({res})",
             output_path=output_png_path,
             announce=announce,
         )
@@ -504,24 +517,41 @@ def _harmonise_gfm(
     harm_dir,
     plot_dir,
 ):
-    """Harmonise GFM data and save GeoTIFF (harm_dir) + PNG (plot_dir)."""
+    """Harmonise GFM data and save GeoTIFF (harm_dir) + optional PNG (plot_dir).
+
+    Works for both classified mode (flood_fraction variable) and native / raw
+    mode (ensemble_flood_extent + reference_water_mask variables).  In native
+    mode the bands are NN-reprojected to 1-arcmin and written as-is (uint8
+    codes); no fraction derivation is performed.
+    """
     from atlantis.harmoniser import Harmoniser
 
     harm_dir.mkdir(parents=True, exist_ok=True)
     plot_dir.mkdir(parents=True, exist_ok=True)
     h = Harmoniser()
-    ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
 
-    tif_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.tif"
-    write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
-    console.print(f"  Harmonised → {tif_path.name}")
+    if _ds_is_classified(ds):
+        # Classified mode
+        ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
+        tif_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.tif"
+        write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
+        console.print(f"  Harmonised → {tif_path.name}")
+        png_harm_path = plot_dir / f"{event_id}_{date_label}_gfm_harmonised.png"
+        plot_classified(
+            ds_harm["flood_fraction"],
+            title=f"{event_id}: GFM harmonised flood extent {date_label} (1 arcmin)",
+            output_path=png_harm_path,
+        )
+        return ds_harm
 
-    png_harm_path = plot_dir / f"{event_id}_{date_label}_gfm_harmonised.png"
-    plot_classified(
-        ds_harm["flood_fraction"],
-        title=f"{event_id}: GFM harmonised flood extent {date_label} (1 arcmin)",
-        output_path=png_harm_path,
-    )
+    # Native mode — reproject each band with NN, write as uint8 codes
+    ds_harm = h.reprojector.reproject(ds)
+    for var in ("ensemble_flood_extent", "reference_water_mask"):
+        if var not in ds_harm:
+            continue
+        tif_path = harm_dir / f"{event_id}_{date_label}_gfm_{var}_harmonised.tif"
+        write_harmonised_raster(ds_harm[var], tif_path)
+        console.print(f"  Harmonised → {tif_path.name}")
     return ds_harm
 
 
@@ -711,13 +741,17 @@ def fetch(
     if "gfm" in sources:
         if not stream:
             info("GFM always streams via STAC/COG; --no-stream is ignored.")
-        if not classify:
+        if classify:
+            if not harmonise:
+                info(
+                    "GFM (classified): --harmonise re-encodes float32 flood_fraction → uint8 %"
+                    " for cross-source stacking."
+                )
+        else:
             info(
-                "GFM always produces classified layers (flood_fraction, quality_mask,"
-                " permanent_water); --no-classify is ignored."
+                "GFM native mode: outputs ensemble_flood_extent and reference_water_mask"
+                " as-is (nearest-neighbour 1-arcmin)."
             )
-        if not harmonise:
-            info("GFM: harmonised output enabled by default (re-encodes float32→uint8 for cross-source stacking).")
 
     flood_event: FloodEvent | None = None
     if bbox or start_date or end_date:
@@ -779,6 +813,7 @@ def fetch(
                 fetcher_kwargs = {
                     "coarsen_factor": gfm_coarsen_factor,
                     "resampling": gfm_resampling_enum,
+                    "classify": classify,
                     "strategy": strategy,
                     "keep_processed": keep_processed,
                     "peak_days_before": effective_days_before,
@@ -793,8 +828,10 @@ def fetch(
 
             step_names = _fetch_step_names(src)
             if src == "gfm":
-                # GFM is always harmonised, regardless of --harmonise flag
-                step_names.append("Harmonise outputs")
+                if plot:
+                    step_names.append("Plot outputs")
+                if harmonise:
+                    step_names.append("Harmonise outputs")
             else:
                 if plot:
                     step_names.append("Plot outputs")
@@ -848,24 +885,40 @@ def fetch(
                     info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
 
                 # ── Optional plot + harmonise (GFM) ───────────────────────────
-                # GFM is already on the canonical 1-arcmin grid; harmonise only
-                # re-encodes float32 [0,1] → uint8 [0,100]. Always ON so output
-                # is directly stackable with VIIRS/MODIS harmonised.
-                if src == "gfm":
+                if src == "gfm" and (plot or harmonise):
                     png_dir = plot_dir or (output_dir / src / "plots")
                     harm_dir = output_dir / src / "harmonised"
-                    with checklist.step("Harmonise outputs"):
-                        for result in fetch_results:
-                            ds = fetcher.to_dataset(result)
-                            date_label = result.date_token or "gfm"
-                            _harmonise_gfm(
-                                ds,
+
+                    if strategy == "peak":
+                        best_result, best_date_label = _select_best_result(fetcher, fetch_results)
+                        best_ds = fetcher.to_dataset(best_result)
+                    else:
+                        best_result = fetch_results[0]
+                        best_date_label = best_result.date_token or "gfm"
+                        best_ds = fetcher.to_dataset(best_result)
+
+                    if plot:
+                        with checklist.step("Plot outputs"):
+                            png_out = png_dir / f"{event}_{best_date_label}_{src}.png"
+                            _plot_source(
+                                best_ds,
                                 event,
-                                date_label,
+                                best_date_label,
+                                source_id=src,
+                                output_png_path=png_out,
+                            )
+                        checklist.complete("Plot outputs", detail=best_date_label)
+
+                    if harmonise:
+                        with checklist.step("Harmonise outputs"):
+                            _harmonise_gfm(
+                                best_ds,
+                                event,
+                                best_date_label,
                                 harm_dir=harm_dir,
                                 plot_dir=png_dir,
                             )
-                    checklist.complete("Harmonise outputs", detail=f"{len(fetch_results)} date(s)")
+                        checklist.complete("Harmonise outputs", detail=best_date_label)
 
                 # ── Optional plot + harmonise (VIIRS / MODIS) ─────────────────
                 if src in ("viirs", "modis") and (plot or harmonise):
