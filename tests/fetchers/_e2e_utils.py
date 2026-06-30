@@ -23,8 +23,11 @@ Repeat similarly for VIIRS and GFM.
 
 from __future__ import annotations
 
+import hashlib
+import os
 from contextlib import contextmanager
 from typing import Iterator
+from urllib.parse import urlparse
 
 import boto3
 import numpy as np
@@ -41,6 +44,71 @@ MAX_E2E_MISMATCH_RATIO = 0.03
 MAX_E2E_MEAN_ABS_DIFF = 0.5
 MIN_E2E_ACTIVE_RECALL = 0.30
 MIN_E2E_OVERLAP_RATIO = 0.95
+STRICT_REFERENCE_BYTES_ENV = "ATLANTIS_E2E_STRICT_REFERENCE_BYTES"
+HASH_CHUNK_SIZE_BYTES = 1024 * 1024
+
+
+def _aws_session() -> boto3.Session:
+    return boto3.Session(profile_name="default")
+
+
+def strict_reference_bytes_enabled() -> bool:
+    """Return whether e2e runs should also require exact reference bytes."""
+    value = os.getenv(STRICT_REFERENCE_BYTES_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _path_uri(path: UPath) -> str:
+    try:
+        return path.as_uri()
+    except ValueError:
+        return path.as_posix()
+
+
+def _rasterio_locator(path: UPath) -> str:
+    uri = _path_uri(path)
+    return path.as_posix() if uri.startswith("file://") else uri
+
+
+def _sha256_and_size(path: UPath) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    total_bytes = 0
+    uri = _path_uri(path)
+    parsed = urlparse(uri)
+
+    if parsed.scheme == "s3":
+        response = _aws_session().client("s3").get_object(Bucket=parsed.netloc, Key=parsed.path.lstrip("/"))
+        body = response["Body"]
+        try:
+            while chunk := body.read(HASH_CHUNK_SIZE_BYTES):
+                total_bytes += len(chunk)
+                digest.update(chunk)
+        finally:
+            body.close()
+    else:
+        with path.open("rb") as handle:
+            while chunk := handle.read(HASH_CHUNK_SIZE_BYTES):
+                total_bytes += len(chunk)
+                digest.update(chunk)
+
+    return digest.hexdigest(), total_bytes
+
+
+def assert_reference_bytes_identical(produced: UPath, reference: UPath) -> None:
+    """Require exact artifact identity between a produced file and a reference object."""
+    produced_hash, produced_size = _sha256_and_size(produced)
+    reference_hash, reference_size = _sha256_and_size(reference)
+
+    assert produced_size == reference_size, (
+        "Exact reference size mismatch:\n"
+        f"  produced:  {_path_uri(produced)} ({produced_size} bytes)\n"
+        f"  reference: {_path_uri(reference)} ({reference_size} bytes)"
+    )
+    assert produced_hash == reference_hash, (
+        "Exact reference SHA256 mismatch:\n"
+        f"  produced:  {_path_uri(produced)} ({produced_hash})\n"
+        f"  reference: {_path_uri(reference)} ({reference_hash})"
+    )
 
 
 def run_pipeline(
@@ -113,16 +181,20 @@ def run_pipeline(
     return tifs
 
 
-def compare_rasters(produced: UPath, reference: UPath) -> None:
-    """Compare two GeoTIFFs on their shared grid with small drift tolerance.
+def compare_rasters(produced: UPath, reference: UPath, *, require_byte_identity: bool = False) -> None:
+    """Compare two GeoTIFFs on their shared grid.
 
     These e2e tests exercise live upstream sources plus canonical reference
     rasters stored on S3. Small differences can arise from source-side updates,
     edge-pixel nodata handling, or a one-pixel expansion to the snapped global
     grid. We therefore compare the overlapping aligned window rather than
-    requiring byte-for-byte identity across the full raster extent.
+    requiring byte-for-byte identity across the full raster extent by default.
+
+    When ``require_byte_identity`` is true, the helper additionally requires
+    exact artifact identity by comparing the full produced and reference files
+    by size and SHA256.
     """
-    with rasterio.open(produced.as_posix()) as src_p, rasterio.open(reference.as_uri()) as src_r:
+    with rasterio.open(_rasterio_locator(produced)) as src_p, rasterio.open(_rasterio_locator(reference)) as src_r:
         assert src_p.crs == src_r.crs, f"CRS mismatch: {src_p.crs} vs {src_r.crs}"
         assert src_p.count == src_r.count, f"Band-count mismatch: {src_p.count} vs {src_r.count}"
         assert src_p.dtypes == src_r.dtypes, f"Dtype mismatch: {src_p.dtypes} vs {src_r.dtypes}"
@@ -197,11 +269,14 @@ def compare_rasters(produced: UPath, reference: UPath) -> None:
             f"  reference: {reference}"
         )
 
+    if require_byte_identity:
+        assert_reference_bytes_identical(produced, reference)
+
 
 @contextmanager
 def s3_rasterio_env() -> Iterator[None]:
     """Context manager that configures rasterio to read from the atlantis S3 bucket."""
-    boto3_session = boto3.Session(profile_name="default")
+    boto3_session = _aws_session()
     aws_s3_endpoint = boto3_session.client("s3").meta.endpoint_url.removeprefix("https://")
 
     with rasterio.Env(

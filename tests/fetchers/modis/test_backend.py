@@ -23,7 +23,7 @@ from atlantis.fetchers.modis.backend import (
     list_backends,
     parse_prod_timestamp,
 )
-from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env
+from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env, strict_reference_bytes_enabled
 
 
 @pytest.fixture
@@ -273,8 +273,10 @@ class TestRegistry:
 # Requires: EARTHDATA_TOKEN env var, network access to LAADS + AWS S3.
 # Run with:
 #   uv run python -m pytest tests/fetchers/modis/test_backend.py -v -k e2e
+#   ATLANTIS_E2E_STRICT_REFERENCE_BYTES=1 uv run python -m pytest tests/fetchers/modis/test_backend.py -v -k e2e
 
 S3_REFERENCE_BASE = "s3://atlantis/reference/Harvey_2017/modis/harmonised"
+STRICT_REFERENCE_BYTES = strict_reference_bytes_enabled()
 
 HARVEY_EVENT_ID = "Harvey_2017"
 HARVEY_BBOX = "-97.27 28.24 -95.54 29.80"
@@ -307,7 +309,7 @@ class TestModisHdf4E2E:
         self.tmp_path = tmp_path
 
     def test_all_strategy_matches_reference(self):
-        """Pipeline output with strategy=all matches S3 reference byte-for-byte."""
+        """Pipeline output matches the S3 reference rasters, optionally by exact bytes."""
         output_dir = UPath(self.tmp_path / "output")
         tifs = _run_modis_pipeline("all", output_dir)
 
@@ -325,4 +327,4 @@ class TestModisHdf4E2E:
                 assert produced is not None, (
                     f"Reference file {ref_tif.name} not found in produced outputs: {[t.name for t in tifs]}"
                 )
-                compare_rasters(produced, ref_tif)
+                compare_rasters(produced, ref_tif, require_byte_identity=STRICT_REFERENCE_BYTES)
