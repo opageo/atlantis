@@ -23,7 +23,6 @@ from loguru import logger
 from rasterio.enums import Resampling
 from rasterio.transform import Affine, from_bounds
 
-from atlantis.config import HarmoniseConfig
 from atlantis.harmoniser.reprojector import Reprojector
 from atlantis.models.metadata import TileMetadata
 
@@ -43,6 +42,12 @@ GFM_BANDS: list[str] = ["ensemble_flood_extent", "reference_water_mask"]
 #: Default coarsen factor (native ~20 m → ~80 m before reproject).
 DEFAULT_COARSEN_FACTOR: int = 4
 
+#: Nominal GFM ground sample distance (metres) — used to size the processed grid.
+GFM_NATIVE_GSD_M: float = 20.0
+
+#: Nominal metres per degree of latitude/longitude at the equator.
+_METERS_PER_DEGREE: float = 111_320.0
+
 #: STAC configuration for odc.stac.load — marks nodata = 255.
 GFM_STAC_CFG: dict = {
     "GFM": {
@@ -54,36 +59,86 @@ GFM_STAC_CFG: dict = {
 }
 
 
+def _masked_max(a: np.ndarray, b: np.ndarray, nodata: int) -> np.ndarray:
+    """Element-wise max of two uint8 arrays treating *nodata* as absent.
+
+    A valid code (anything other than *nodata*) always beats a nodata value.
+    When both pixels are valid the numeric maximum is returned.  When both
+    are nodata the result is nodata.
+
+    Args:
+        a: First uint8 array.
+        b: Second uint8 array.
+        nodata: Sentinel value marking missing / no-data pixels.
+
+    Returns:
+        uint8 array of the same shape as *a* / *b*.
+    """
+    a_valid = a != nodata
+    b_valid = b != nodata
+    result = np.full_like(a, nodata)
+    # Both valid → numeric max
+    both = a_valid & b_valid
+    result = np.where(both, np.maximum(a, b), result)
+    # Only a is valid → keep a
+    result = np.where(a_valid & ~b_valid, a, result)
+    # Only b is valid → keep b
+    result = np.where(~a_valid & b_valid, b, result)
+    return result.astype(np.uint8)
+
+
 @dataclass(frozen=True)
 class GfmProcessedTile:
     """Result from processing GFM items for a single date group.
 
-    Attributes:
+    Classified mode (``classify=True``, default):
         flood_fraction: Float32 array [0, 1] — fraction of observations with flood.
         quality_mask: Uint8 array (1=valid observation exists, 0=no data).
         permanent_water: Uint8 array (1=permanent water, 0=not).
+
+    Native / raw mode (``classify=False``):
+        ensemble_flood_extent: Uint8 array of raw codes (0=dry,1=flood,255=nodata),
+            max-pooled across items for the date group and reprojected to the
+            ~80 m processed grid with nearest-neighbour resampling.
+        reference_water_mask: Uint8 array of raw codes (0=land,1=water,2=perm,255=nodata),
+            same treatment.
+
+    Common fields:
         transform: Affine transform for the output grid.
         crs: Coordinate reference system string (e.g. "EPSG:4326").
         shape: (height, width) of the output arrays.
         cloud_fraction: Fraction of pixels with no data (proxy for coverage).
     """
 
-    flood_fraction: np.ndarray
-    quality_mask: np.ndarray
-    permanent_water: np.ndarray
     transform: "Affine"
     crs: str
     shape: tuple[int, int]
     cloud_fraction: float = 0.0
+    # Classified fields
+    flood_fraction: np.ndarray | None = None
+    quality_mask: np.ndarray | None = None
+    permanent_water: np.ndarray | None = None
+    # Native / raw fields
+    ensemble_flood_extent: np.ndarray | None = None
+    reference_water_mask: np.ndarray | None = None
+
+    @property
+    def is_classified(self) -> bool:
+        """True when derived layers are present rather than the native bands."""
+        return self.flood_fraction is not None
 
 
 @dataclass(frozen=True)
 class GfmOutputPaths:
     """File paths for written GFM processed outputs."""
 
+    # Classified paths
     flood_fraction: Path | None = None
     quality_mask: Path | None = None
     permanent_water: Path | None = None
+    # Native / raw paths
+    ensemble_flood_extent: Path | None = None
+    reference_water_mask: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -96,14 +151,21 @@ class GfmProcessResult:
 
 
 class GfmRasterProcessor:
-    """Processes GFM STAC items into flood fraction maps.
+    """Processes GFM STAC items into flood fraction or native-band maps.
 
-    Follows the ``extract_subdomain`` approach:
+    Classified mode (``classify=True``, default):
     1. Load each item in native CRS at native resolution.
-    2. Coarsen by a factor (max-pool to preserve flood codes).
-    3. Reproject to EPSG:4326 aligned to the canonical 1-arcmin global grid.
+    2. Build per-class 0/1 masks, then mean-pool by the coarsen factor
+       (fraction of sub-pixels per class; no categorical ranking).
+    3. Reproject to EPSG:4326 aligned to the ~80 m global grid.
     4. Accumulate per-pixel flood/valid/permanent-water counts.
     5. Derive flood_fraction, quality_mask, permanent_water.
+
+    Native / raw mode (``classify=False``):
+    1. Load each item in native CRS at native resolution.
+    2. Reproject raw codes to EPSG:4326 using nearest-neighbour (no coarsen-avg).
+    3. Max-pool codes across items for the same date group.
+    4. Emit ensemble_flood_extent and reference_water_mask as-is.
     """
 
     def __init__(
@@ -112,23 +174,38 @@ class GfmRasterProcessor:
         coarsen_factor: int = DEFAULT_COARSEN_FACTOR,
         resampling: Resampling = Resampling.average,
         reprojector: Reprojector | None = None,
+        classify: bool = True,
     ) -> None:
         """Initialize the GFM raster processor.
 
         Args:
             bbox: Bounding box as (west, south, east, north).
             coarsen_factor: Spatial coarsening factor before reprojection.
+                Ignored when *classify* is False.
             resampling: Resampling method for reprojection to EPSG:4326.
+                Ignored when *classify* is False (nearest-neighbour used instead).
             reprojector: Pre-configured Reprojector instance. If None, one is
-                created from default HarmoniseConfig (1-arcmin, snapped to
-                the canonical global grid).
+                created at the coarsen-applied native resolution (~80 m for
+                coarsen_factor=4), snapped to the global grid.
+            classify: When True (default), derive flood_fraction / quality_mask /
+                permanent_water from per-pixel counts. When False, emit the native
+                ensemble_flood_extent and reference_water_mask bands as-is,
+                reprojected with nearest-neighbour to the ~80 m processed grid.
+                The downstream ``--harmonise`` step resamples processed/ to the
+                canonical 1-arcmin grid (matching VIIRS/MODIS behaviour).
         """
         self.bbox = bbox
         self.coarsen_factor = coarsen_factor
         self.resampling = resampling
+        self.classify = classify
+        # GFM processed/ is written at the coarsen-applied native resolution
+        # (~80 m for coarsen_factor=4), expressed in degrees. The downstream
+        # --harmonise step resamples this to the canonical 1-arcmin grid, so GFM
+        # behaves like VIIRS/MODIS (source-res processed → 1-arcmin harmonised).
+        processed_resolution = (GFM_NATIVE_GSD_M * coarsen_factor) / _METERS_PER_DEGREE
         self.reprojector = reprojector or Reprojector(
             target_crs="EPSG:4326",
-            target_resolution=HarmoniseConfig().target_resolution,
+            target_resolution=processed_resolution,
             resampling_method=resampling.name,
             snap_to_global_grid=True,
         )
@@ -151,7 +228,13 @@ class GfmRasterProcessor:
         output_dir: Path | None = None,
         write_outputs: bool = True,
     ) -> GfmProcessResult | None:
-        """Process a list of STAC items into a single flood fraction map.
+        """Process a list of STAC items into a flood map.
+
+        In classified mode (``classify=True``, default), derives
+        ``flood_fraction`` / ``quality_mask`` / ``permanent_water`` from
+        per-pixel accumulator counts.  In native mode (``classify=False``),
+        reprojects raw band codes to the ~80 m processed grid using
+        nearest-neighbour and max-pools codes across items for the date group.
 
         Args:
             items: List of pystac Items to process.
@@ -163,16 +246,40 @@ class GfmRasterProcessor:
         Returns:
             GfmProcessResult or None if no valid data was found.
         """
+        if not items:
+            return None
+        if self.classify:
+            return self._process_items_classified(
+                items,
+                event_id=event_id,
+                date_token=date_token,
+                output_dir=output_dir,
+                write_outputs=write_outputs,
+            )
+        return self._process_items_native(
+            items,
+            event_id=event_id,
+            date_token=date_token,
+            output_dir=output_dir,
+            write_outputs=write_outputs,
+        )
+
+    def _process_items_classified(
+        self,
+        items: list,
+        *,
+        event_id: str = "",
+        date_token: str = "",
+        output_dir: Path | None = None,
+        write_outputs: bool = True,
+    ) -> GfmProcessResult | None:
+        """Classified processing path: coarsen → accumulate → derive products."""
         import odc.stac
         import pyproj
         import rioxarray  # noqa: F401
         import xarray as xr
         from shapely.geometry import box
 
-        if not items:
-            return None
-
-        # Determine native CRS and resolution from first item
         first_item = items[0]
         crs_src = pyproj.CRS.from_wkt(first_item.properties["proj:wkt2"])
         resolution = first_item.properties["gsd"]
@@ -210,17 +317,16 @@ class GfmRasterProcessor:
                 logger.warning("Failed to load item {} ({}): {}", idx, item.id, e)
                 continue
 
-            # Coarsen with max-pool (preserves highest code: flood > dry > outside)
-            flood_native = (
-                xx["ensemble_flood_extent"].coarsen(y=self.coarsen_factor, x=self.coarsen_factor, boundary="trim").max()  # ty:ignore[unresolved-attribute]
-            )
-            perm_native = (
-                xx["reference_water_mask"].coarsen(y=self.coarsen_factor, x=self.coarsen_factor, boundary="trim").max()  # ty:ignore[unresolved-attribute]
-            )
-
+            # Build per-class 0/1 masks at native resolution, then mean-pool to
+            # the coarsened grid. Mean-pooling a binary mask yields the fraction
+            # of sub-pixels in each class — the correct way to downsample nominal
+            # codes, and consistent with the average reproject that follows. A
+            # categorical max would rank codes by number (and let nodata=255 win
+            # every mixed block), which is meaningless for class labels.
             flood_mask_native, perm_mask_native, valid_mask_native = self._build_native_masks(
-                flood_native,
-                perm_native,
+                xx["ensemble_flood_extent"],
+                xx["reference_water_mask"],
+                self.coarsen_factor,
             )
 
             masks = xr.Dataset(
@@ -231,12 +337,12 @@ class GfmRasterProcessor:
                 }
             ).rio.write_crs(crs_src)
 
-            # Reproject each mask directly onto the canonical 1-arcmin global
+            # Reproject each mask directly onto the ~80 m global
             # grid (pre-computed snapped bounds/transform). This ensures all
             # items accumulate on the same aligned grid — no double
             # reprojection needed at harmonisation time.
             masks_ll = self._reproject_to_canonical_grid(masks)
-            del xx, flood_native, perm_native, flood_mask_native, perm_mask_native, valid_mask_native, masks
+            del xx, flood_mask_native, perm_mask_native, valid_mask_native, masks
 
             flood_frac = np.squeeze(masks_ll["flood"].fillna(0.0).values.astype("float32"))
             perm_frac = np.squeeze(masks_ll["perm"].fillna(0.0).values.astype("float32"))
@@ -284,29 +390,134 @@ class GfmRasterProcessor:
 
         return GfmProcessResult(processed=processed, paths=paths, metadata=metadata)
 
+    def _process_items_native(
+        self,
+        items: list,
+        *,
+        event_id: str = "",
+        date_token: str = "",
+        output_dir: Path | None = None,
+        write_outputs: bool = True,
+    ) -> GfmProcessResult | None:
+        """Native / raw processing path: NN-reproject codes and max-pool across items."""
+        import odc.stac
+        import pyproj
+        import rioxarray  # noqa: F401
+        from shapely.geometry import box
+
+        first_item = items[0]
+        crs_src = pyproj.CRS.from_wkt(first_item.properties["proj:wkt2"])
+        resolution = first_item.properties["gsd"]
+
+        west, south, east, north = self.bbox
+        aoi = box(west, south, east, north)
+
+        # Accumulators: masked-max of codes across items (nodata=255)
+        efe_accum: np.ndarray | None = None
+        rwm_accum: np.ndarray | None = None
+
+        logger.info(
+            "Processing {} GFM items in native mode (nearest-neighbour reproject, no coarsen)",
+            len(items),
+        )
+
+        for idx, item in enumerate(items):
+            try:
+                xx = odc.stac.load(
+                    [item],
+                    bbox=aoi.bounds,
+                    crs=crs_src,
+                    bands=GFM_BANDS,
+                    resolution=resolution,
+                    dtype="uint8",
+                    groupby="solar_day",
+                    chunks={},
+                )
+            except Exception as e:
+                logger.warning("Failed to load item {} ({}): {}", idx, item.id, e)
+                continue
+
+            # Reproject raw codes to the ~80 m processed grid with NN;
+            # codes are discrete so continuous resampling would corrupt them.
+            codes_ds = xr.Dataset(
+                {
+                    "ensemble_flood_extent": xx["ensemble_flood_extent"].squeeze(drop=True),
+                    "reference_water_mask": xx["reference_water_mask"].squeeze(drop=True),
+                }
+            ).rio.write_crs(crs_src)
+            codes_ll = self._reproject_codes_to_canonical_grid(codes_ds)
+
+            efe = np.squeeze(codes_ll["ensemble_flood_extent"].values).astype(np.uint8)
+            rwm = np.squeeze(codes_ll["reference_water_mask"].values).astype(np.uint8)
+            del xx, codes_ds, codes_ll
+
+            if efe_accum is None:
+                efe_accum = efe.copy()
+                rwm_accum = rwm.copy()
+            else:
+                # Masked max: valid code beats nodata; max of two valid codes wins.
+                efe_accum = _masked_max(efe_accum, efe, GFM_NODATA)
+                rwm_accum = _masked_max(rwm_accum, rwm, GFM_NODATA)
+
+            logger.debug("Item {}/{} processed (native)", idx + 1, len(items))
+
+        if efe_accum is None or rwm_accum is None:
+            logger.warning("No valid data found in {} items", len(items))
+            return None
+
+        processed = self._build_native_tile(efe_accum, rwm_accum)
+
+        metadata = TileMetadata(
+            event_id=event_id,
+            source_id="gfm",
+            fetch_timestamp=datetime.now(timezone.utc),
+            crs="EPSG:4326",
+            resolution=self.reprojector.target_resolution,
+            bbox=self._snapped_bounds,
+            cloud_fraction=processed.cloud_fraction,
+            permanent_water_mask_available=False,
+        )
+
+        paths: GfmOutputPaths | None = None
+        if write_outputs and output_dir is not None:
+            paths = self._write_outputs(processed, event_id, date_token, output_dir)
+
+        return GfmProcessResult(processed=processed, paths=paths, metadata=metadata)
+
     @staticmethod
     def _build_native_masks(
         flood_native: "xr.DataArray",
         perm_native: "xr.DataArray",
+        coarsen_factor: int = 1,
     ) -> tuple["xr.DataArray", "xr.DataArray", "xr.DataArray"]:
-        """Build float32 flood, permanent-water, and validity masks.
+        """Build float32 flood, permanent-water, and validity coverage masks.
 
-        The discrete GFM source codes must be converted to binary masks before
-        average reprojection. Once raster averaging runs, class codes are no
-        longer recoverable.
+        The discrete GFM source codes are nominal categories (flood / dry /
+        nodata; land / water / permanent / nodata), so they must not be pooled
+        by numeric rank. Each code is first turned into a 0/1 mask at native
+        resolution, then optionally **mean-pooled** by ``coarsen_factor`` —
+        yielding the *fraction* of sub-pixels in each coarsened cell that belong
+        to the class. Mean-pooling a 0/1 mask is the correct categorical
+        downsampling and is consistent with the ``average`` reprojection applied
+        afterwards; a categorical ``max`` would impose a meaningless code
+        ordering and let nodata (255) dominate any mixed block.
         """
-        flood_mask_native = (flood_native == GFM_FLOOD).astype("float32")
-        perm_mask_native = (perm_native == GFM_PERMANENT_WATER).astype("float32")
+        flood_mask = (flood_native == GFM_FLOOD).astype("float32")
+        perm_mask = (perm_native == GFM_PERMANENT_WATER).astype("float32")
         # An observation contributes to "valid" if either band has a non-nodata code.
-        valid_mask_native = ((flood_native != GFM_NODATA) | (perm_native != GFM_NODATA)).astype("float32")
-        return flood_mask_native, perm_mask_native, valid_mask_native
+        valid_mask = ((flood_native != GFM_NODATA) | (perm_native != GFM_NODATA)).astype("float32")
+        if coarsen_factor > 1:
+            flood_mask = flood_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+            perm_mask = perm_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+            valid_mask = valid_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+        return flood_mask, perm_mask, valid_mask
 
     def _reproject_to_canonical_grid(self, masks: "xr.Dataset") -> "xr.Dataset":
         """Reproject a native-CRS mask dataset onto the pre-computed canonical grid.
 
         Uses rioxarray's ``rio.reproject`` (which correctly handles source
         transforms from odc.stac-loaded data) but forces the destination grid
-        to the canonical 1-arcmin snapped bounds/transform.
+        to the ~80 m snapped bounds/transform.
 
         Args:
             masks: xarray Dataset with float32 binary-mask variables and a
@@ -324,6 +535,54 @@ class GfmRasterProcessor:
             resampling=self.resampling,
             shape=(self._dst_height, self._dst_width),
             transform=self._dst_transform,
+        )
+
+    def _reproject_codes_to_canonical_grid(self, codes: "xr.Dataset") -> "xr.Dataset":
+        """Reproject native uint8 code bands to the canonical grid using nearest-neighbour.
+
+        Nearest-neighbour preserves discrete pixel codes (0/1/2/255) without
+        introducing interpolated intermediate values.
+
+        Args:
+            codes: xarray Dataset with uint8 band variables and a CRS written
+                via rioxarray (``codes.rio.crs``).
+
+        Returns:
+            xarray Dataset on the canonical grid with the same variable names.
+        """
+        codes = codes.squeeze(drop=True)
+        return codes.rio.reproject(
+            "EPSG:4326",
+            nodata=GFM_NODATA,
+            resampling=Resampling.nearest,
+            shape=(self._dst_height, self._dst_width),
+            transform=self._dst_transform,
+        )
+
+    def _build_native_tile(
+        self,
+        efe: np.ndarray,
+        rwm: np.ndarray,
+    ) -> GfmProcessedTile:
+        """Build a GfmProcessedTile holding native band arrays.
+
+        Args:
+            efe: ensemble_flood_extent uint8 array on the canonical grid.
+            rwm: reference_water_mask uint8 array on the canonical grid.
+
+        Returns:
+            GfmProcessedTile with native fields populated.
+        """
+        total_pixels = efe.size
+        valid_pixels = int(np.sum(efe != GFM_NODATA))
+        cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0
+        return GfmProcessedTile(
+            ensemble_flood_extent=efe,
+            reference_water_mask=rwm,
+            transform=self._dst_transform,
+            crs="EPSG:4326",
+            shape=efe.shape,
+            cloud_fraction=cloud_fraction,
         )
 
     def _classify(
@@ -376,6 +635,20 @@ class GfmRasterProcessor:
             cloud_fraction=cloud_fraction,
         )
 
+    def write_processed(
+        self,
+        processed: GfmProcessedTile,
+        event_id: str,
+        date_token: str,
+        output_dir: Path,
+    ) -> GfmOutputPaths:
+        """Write processed arrays to GeoTIFF files (public wrapper).
+
+        Used by the fetcher to defer writing processed/ GeoTIFFs until after
+        peak-window filtering, so only surviving dates are persisted.
+        """
+        return self._write_outputs(processed, event_id, date_token, output_dir)
+
     def _write_outputs(
         self,
         processed: GfmProcessedTile,
@@ -383,7 +656,12 @@ class GfmRasterProcessor:
         date_token: str,
         output_dir: Path,
     ) -> GfmOutputPaths:
-        """Write processed arrays to GeoTIFF files."""
+        """Write processed arrays to GeoTIFF files.
+
+        Writes classified layers (flood_fraction, quality_mask, permanent_water)
+        or native bands (ensemble_flood_extent, reference_water_mask) depending
+        on which fields are populated in *processed*.
+        """
         processed_dir = output_dir / "processed"
         processed_dir.mkdir(parents=True, exist_ok=True)
 
@@ -405,7 +683,7 @@ class GfmRasterProcessor:
                 "crs": processed.crs,
                 "transform": processed.transform,
                 "nodata": nodata,
-                "compress": "LZW",  # TODO GFM check compression standard profile
+                "compress": "LZW",
             }
             with rasterio.open(str(path), "w", **profile) as dst:
                 write_data = arr.copy()
@@ -415,7 +693,19 @@ class GfmRasterProcessor:
                 dst.write(write_data, 1)
             return path
 
-        ff_path = _write_tif(processed.flood_fraction, "flood_fraction", "float32", -9999.0)
+        # Native / raw mode
+        if processed.ensemble_flood_extent is not None:
+            efe_path = _write_tif(processed.ensemble_flood_extent, "ensemble_flood_extent", "uint8", GFM_NODATA)
+            rwm_path = _write_tif(processed.reference_water_mask, "reference_water_mask", "uint8", GFM_NODATA)
+            return GfmOutputPaths(ensemble_flood_extent=efe_path, reference_water_mask=rwm_path)
+
+        # Classified mode — flood_fraction as uint8 percent (0–100) nodata 255,
+        # mirroring the VIIRS/MODIS convention (was float32 / -9999).
+        ff_src = np.squeeze(processed.flood_fraction)
+        ff_pct = np.full(ff_src.shape, GFM_NODATA, dtype=np.uint8)
+        ff_valid = np.isfinite(ff_src)
+        ff_pct[ff_valid] = np.round(np.clip(ff_src[ff_valid], 0.0, 1.0) * 100).astype(np.uint8)
+        ff_path = _write_tif(ff_pct, "flood_fraction", "uint8", GFM_NODATA)
         qm_path = _write_tif(processed.quality_mask, "quality_mask", "uint8", 255)
         pw_path = _write_tif(processed.permanent_water, "permanent_water", "uint8", 255)
 
@@ -429,13 +719,37 @@ class GfmRasterProcessor:
     def aggregate_tiles(tiles: list[GfmProcessedTile]) -> GfmProcessedTile | None:
         """Aggregate multiple date-group tiles into one (for aggregate strategy).
 
-        Uses mean for flood_fraction and OR for quality/permanent-water masks.
+        Classified mode: mean for flood_fraction, OR for quality, majority for
+        permanent_water.
+        Native mode: masked-max of raw codes across all dates.
         """
         if not tiles:
             return None
         if len(tiles) == 1:
             return tiles[0]
 
+        ref = tiles[0]
+
+        # ── Native / raw mode ─────────────────────────────────────────────────
+        if ref.ensemble_flood_extent is not None:
+            efe = ref.ensemble_flood_extent.copy()
+            rwm = ref.reference_water_mask.copy()
+            for t in tiles[1:]:
+                efe = _masked_max(efe, t.ensemble_flood_extent, GFM_NODATA)
+                rwm = _masked_max(rwm, t.reference_water_mask, GFM_NODATA)
+            total_pixels = efe.size
+            valid_pixels = int(np.sum(efe != GFM_NODATA))
+            cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0
+            return GfmProcessedTile(
+                ensemble_flood_extent=efe,
+                reference_water_mask=rwm,
+                transform=ref.transform,
+                crs=ref.crs,
+                shape=ref.shape,
+                cloud_fraction=cloud_fraction,
+            )
+
+        # ── Classified mode ────────────────────────────────────────────────────
         # Stack flood fractions and compute mean (ignoring NaN)
         ff_stack = np.stack([t.flood_fraction for t in tiles], axis=0)
         flood_fraction = np.nanmean(ff_stack, axis=0).astype(np.float32)
@@ -448,8 +762,6 @@ class GfmRasterProcessor:
         pw_stack = np.stack([t.permanent_water for t in tiles], axis=0)
         permanent_water = (np.mean(pw_stack, axis=0) > 0.5).astype(np.uint8)
 
-        # Use transform/shape from first tile (all should be same grid)
-        ref = tiles[0]
         total_pixels = flood_fraction.size
         valid_pixels = int(np.sum(quality_mask))
         cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0

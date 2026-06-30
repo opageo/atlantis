@@ -16,10 +16,10 @@ pipeline. For usage, see [overview.md](overview.md) and [api.md](api.md).
 │   Backend Layer     │    │   GfmRasterProcessor   │
 │                     │    │                        │
 │ • GfmStacBackend    │    │ • Load STAC items      │
-│   (EODC STAC)       │    │ • Coarsen native SAR   │
-│                     │    │ • Build binary masks   │
-│ Handles:            │    │ • Reproject + align    │
-│ • STAC search       │    │ • Accumulate counts    │
+│   (EODC STAC)       │    │ • Classified: coarsen, │
+│                     │    │   build masks, accum.  │
+│ Handles:            │    │ • Native: NN-reproject  │
+│ • STAC search       │    │   codes, max-pool      │
 │ • Item grouping     │    │ • Write GeoTIFFs       │
 └─────────────────────┘    └────────────────────────┘
 ```
@@ -47,9 +47,16 @@ validity masks, because that would change the meaning of `quality_mask` from
 ## Processing pipeline
 
 When you run `atlantis fetch --source gfm`, Atlantis executes a date-grouped
-SAR pipeline. The backend searches the EODC STAC API, groups items by
-acquisition date, and the raster processor turns each date group into aligned
-`flood_fraction`, `quality_mask`, and `permanent_water` layers.
+SAR pipeline. The processor supports two modes controlled by `classify`
+(default `True`):
+
+- **Classified mode** (`--classify`, default): builds 0/1 flood/perm/valid
+  masks, mean-pools them by the coarsen factor, reprojects with average
+  resampling, accumulates counts, and derives `flood_fraction` /
+  `quality_mask` / `permanent_water`.
+- **Native / raw mode** (`--no-classify`): NN-reprojects discrete pixel codes
+  directly to the canonical grid and max-pools codes across items for each date;
+  emits `ensemble_flood_extent` and `reference_water_mask` as-is.
 
 ### End-to-end flow
 
@@ -65,13 +72,13 @@ flowchart TD
     B --> C
     subgraph C["2. Process date group - GfmRasterProcessor.process_items()"]
         C1["odc.stac.load in native CRS"]
-        C2["Max-pool by coarsen factor"]
-        C3["Build flood, perm, valid masks"]
+        C2["Build 0/1 flood, perm, valid masks"]
+        C3["Mean-pool by coarsen factor"]
         C1 --> C2 --> C3
     end
     C --> D
     subgraph D["3. Reproject and accumulate"]
-        D1["Reproject to canonical 1-arcmin EPSG:4326 grid"]
+        D1["Reproject to canonical ~80 m EPSG:4326 grid"]
         D2["Accumulate flood_count, perm_water_count, valid_count"]
         D1 --> D2
     end
@@ -97,12 +104,13 @@ Call chain for a single request:
   `GfmStacBackend.search()`.
 - `GFMFetcher.fetch()` in `__init__.py` groups items by date via
   `GfmStacBackend.group_items_by_date()` and instantiates `GfmRasterProcessor`.
-- `GfmRasterProcessor.process_items()` in `processor.py` performs load,
-  coarsen, reprojection, accumulation, and optional file writing.
+- `GfmRasterProcessor.process_items()` in `processor.py` dispatches to
+  `_process_items_classified()` (default) or `_process_items_native()` based on
+  the `classify` flag.
 - `GFMFetcher._apply_peak_window()` and `_apply_strategy()` in `__init__.py`
   select the final date set and build `FetchResult` objects.
 - `processed_tile_to_dataset()` in `dataset.py` converts `GfmProcessedTile`
-  into a georeferenced `xarray.Dataset`.
+  into a georeferenced `xarray.Dataset` with either classified or native variables.
 
 ## Stage 1 - Search and grouping
 
@@ -119,30 +127,41 @@ The search step converts the event bbox into a Shapely polygon, queries the
 STAC collection, and returns one `SearchResult` per item. Grouping is date-only:
 all items with the same `YYYYMMDD` token are processed together.
 
-## Stage 2 - Native load and coarsen
+## Stage 2 - Native load and coarsen (classified mode)
 
 The processor loads each STAC item in its native projected CRS and native
 ground sampling distance using `odc.stac.load()`. The first item provides the
 source CRS and GSD used for the group. This is still upstream source space,
-not Atlantis' canonical 1-arcmin grid.
+not Atlantis' ~80 m processed grid yet.
 
-### Why coarsen first?
+### Why mean-pool the masks?
 
-Sentinel-1 SAR is noisy at native resolution. `GfmRasterProcessor` applies a
-max-pool coarsen step before reprojection:
+Sentinel-1 SAR is noisy at native resolution. In classified mode,
+`GfmRasterProcessor` builds the per-class 0/1 masks at native resolution and
+**mean-pools** them before reprojection:
 
 ```python
-flood_native = xx["ensemble_flood_extent"].coarsen(...).max()
-perm_native = xx["reference_water_mask"].coarsen(...).max()
+flood_mask = (xx["ensemble_flood_extent"] == GFM_FLOOD).coarsen(...).mean()
+perm_mask = (xx["reference_water_mask"] == GFM_PERMANENT_WATER).coarsen(...).mean()
 ```
 
-That preserves the flood signal while reducing speckle and runtime. The default
-factor is `4`, which turns native ~20 m pixels into an effective ~80 m grid.
+Each coarsened cell holds the _fraction_ of sub-pixels in the class — the
+correct way to downsample nominal codes, and consistent with the `average`
+reproject that follows. A categorical `max` on the raw codes would rank them by
+number and, because nodata = 255 is the largest, let a single nodata sub-pixel
+erase flood in its block. The default factor is `4`, turning native ~20 m
+pixels into an effective ~80 m grid while suppressing speckle.
 
-## Stage 3 - Binary masks before reprojection
+In **native / raw mode** no mask/mean step is performed. Each item's
+raw uint8 codes are NN-reprojected directly to the ~80 m processed grid and
+accumulated via masked-max (`_masked_max()`). `--gfm-coarsen-factor` still sets
+that grid's spacing; the downstream `--harmonise` step resamples to 1-arcmin.
+
+## Stage 3 - Binary masks before reprojection (classified mode only)
 
 GFM uses discrete codes, so classification happens before reprojection. The
-processor builds three float32 masks on the coarsened native grid:
+processor builds three float32 masks at native resolution, then mean-pools them
+by the coarsen factor:
 
 | Mask    | Rule                            |
 | ------- | ------------------------------- |
@@ -150,23 +169,25 @@ processor builds three float32 masks on the coarsened native grid:
 | `perm`  | `reference_water_mask == 2`     |
 | `valid` | Either source band is not `255` |
 
-This avoids averaging discrete class codes directly. After reprojection with
-`average`, each mask becomes a coverage fraction on the output grid.
+Mean-pooling the 0/1 masks (rather than `max`-pooling the nominal codes) keeps
+discrete classes meaningful and avoids nodata dominating mixed blocks. After
+reprojection with `average`, each mask becomes a coverage fraction on the
+output grid.
 
 The important implication is that none of the public Atlantis outputs is a
 direct rename of an upstream GFM asset. All three are derived products built
 from those binary masks.
 
-## Stage 4 - Canonical-grid reprojection and accumulation
+## Stage 4 - Canonical-grid reprojection and accumulation (classified mode only)
 
-The processor pre-computes a snapped 1-arcmin destination grid for the event
+The processor pre-computes a snapped ~80 m destination grid for the event
 bbox using `Reprojector._snap_bounds_to_global_grid()`. Every item is then
 reprojected onto exactly that grid.
 
 ```mermaid
 flowchart LR
-    A["Native UTM item"] --> B["Coarsen"]
-    B --> C["Binary masks"]
+    A["Native UTM item"] --> B["Binary masks"]
+    B --> C["Mean-pool by factor"]
     C --> D["Reproject to snapped global grid"]
     D --> E["Accumulate per-pixel counts"]
 ```
@@ -179,7 +200,7 @@ The three count arrays are:
 
 Each item contributes a fractional amount in `[0, 1]` to those accumulators.
 
-## Stage 5 - Classification
+## Stage 5 - Classification (classified mode only)
 
 `GfmRasterProcessor._classify()` converts the accumulated counts into the final
 public layers:
@@ -228,7 +249,8 @@ the affine transform and writes both CRS and transform via `rioxarray`.
 
 The result is the in-memory payload returned through `FetchResult.dataset`.
 When `keep_processed=True`, the written `processed/` GeoTIFFs are already on
-the same canonical 1-arcmin grid as the in-memory dataset.
+the same ~80 m grid as the in-memory dataset. The `--harmonise` step is what
+resamples them down to the canonical 1-arcmin grid.
 
 ## Edge cases
 
@@ -240,6 +262,8 @@ the same canonical 1-arcmin grid as the in-memory dataset.
 | Tied peak flood counts                    | The earliest date wins                                   |
 | Non-date tokens enter peak-window helpers | They are excluded by `_parse_yyyymmdd()`                 |
 | Aggregate strategy on a single date       | `aggregate_tiles()` returns that tile unchanged          |
+| `--no-classify` with `--plot`             | Plots `ensemble_flood_extent` codes as a raw raster      |
+| `--no-classify` with `--harmonise`        | NN-reprojects codes to 1-arcmin; no flood % derivation   |
 
 ## Test anchors
 

@@ -27,13 +27,37 @@ if TYPE_CHECKING:
 
 # ── VIIRS pixel code legend ──────────────────────────────────────────────────
 
-VIIRS_CODES: dict[int, tuple[str, str]] = {
+VIIRS_RAW_CODES: dict[int, tuple[str, str]] = {
     1: ("Fill / No data", "#000000"),
     17: ("Vegetation", "#2ca02c"),
     20: ("Snow / ice", "#17becf"),
     30: ("Cloud", "#cccccc"),
     99: ("Permanent water", "#1f77b4"),
-    160: ("Flood (≥60% frac)", "#FF0000"),
+    160: ("Flood (codes 101–200, ≥60% frac)", "#FF0000"),
+}
+
+# GFM native ensemble_flood_extent band codes
+GFM_ENSEMBLE_FLOOD_EXTENT_CODES: dict[int, tuple[str, str]] = {
+    0: ("Dry", "#d4c5a9"),
+    1: ("Flood", "#FF4444"),
+    255: ("No data", "#000000"),
+}
+
+# GFM native reference_water_mask band codes
+GFM_REFERENCE_WATER_MASK_CODES: dict[int, tuple[str, str]] = {
+    0: ("Land", "#d4c5a9"),
+    1: ("Water", "#1f77b4"),
+    2: ("Permanent water", "#08306b"),
+    255: ("No data", "#000000"),
+}
+
+# MODIS MCDWD raw band pixel codes
+MODIS_RAW_CODES: dict[int, tuple[str, str]] = {
+    0: ("No water", "#d4c5a9"),
+    1: ("Surface water", "#1f77b4"),
+    2: ("Recurring flood", "#FFA500"),
+    3: ("Unusual flood", "#FF0000"),
+    255: ("Insufficient data", "#000000"),
 }
 
 _DATE_RE = re.compile(r"(\d{4})(\d{2})(\d{2})")
@@ -72,7 +96,7 @@ def pixel_stats_raw(data: np.ndarray, name: str = "raw") -> None:
     print("  Top pixel codes:")
     for i in order[:8]:
         pct = 100 * counts[i] / len(vals_nonzero)
-        label = VIIRS_CODES.get(int(unique[i]), ("unknown",))[0]
+        label = VIIRS_RAW_CODES.get(int(unique[i]), ("unknown",))[0]
         code = int(unique[i])
         extra = " (flood)" if 101 <= code <= 200 else ""
         print(f"    {code:3d}  ({label}){extra}: {counts[i]:6,} px  ({pct:.1f}%)")
@@ -99,23 +123,48 @@ def pixel_stats_classified(data: np.ndarray, name: str = "flood_fraction") -> in
 # ── Legend ───────────────────────────────────────────────────────────────────
 
 
-def legend_patches() -> list[Patch]:
-    """Return a list of ``matplotlib.patches.Patch`` objects for the VIIRS legend."""
+def legend_patches(codes: "dict[int, tuple[str, str]] | None" = None) -> list[Patch]:
+    """Return a list of ``matplotlib.patches.Patch`` objects for the given pixel-code legend.
+
+    Args:
+        codes: Mapping of ``{pixel_code: (label, hex_colour)}``.  Defaults to
+            :data:`VIIRS_RAW_CODES` when *None*.
+    """
     from matplotlib.patches import Patch
 
+    if codes is None:
+        codes = VIIRS_RAW_CODES
     return [
         Patch(facecolor=color, edgecolor="black", linewidth=0.5, label=f"{code}: {label}")
-        for code, (label, color) in VIIRS_CODES.items()
+        for code, (label, color) in codes.items()
     ]
 
 
 # ── Plot functions ────────────────────────────────────────────────────────────
 
 
-def plot_raw(da: "xr.DataArray", title: str, output_path: Path, *, announce: bool = True) -> None:  # type: ignore[name-defined]  # noqa: F821
-    """Render a raw VIIRS raster with the pixel-code legend as a side panel."""
+def plot_raw(
+    da: "xr.DataArray",
+    title: str,
+    output_path: Path,
+    *,
+    codes: "dict[int, tuple[str, str]] | None" = None,
+    legend_title: str = "VIIRS pixel codes",
+    announce: bool = True,
+) -> None:  # type: ignore[name-defined]  # noqa: F821
+    """Render a raw raster with a pixel-code legend as a side panel.
+
+    Args:
+        da: The DataArray to plot.
+        title: Figure title.
+        output_path: Where to save the PNG.
+        codes: Pixel-code legend mapping.  Defaults to :data:`VIIRS_RAW_CODES`.
+        legend_title: Title for the legend panel.
+        announce: Whether to print the output path.
+    """
     import matplotlib.pyplot as plt
 
+    legend_codes = codes if codes is not None else VIIRS_RAW_CODES
     fig, (ax, ax_leg) = plt.subplots(
         1,
         2,
@@ -123,15 +172,30 @@ def plot_raw(da: "xr.DataArray", title: str, output_path: Path, *, announce: boo
         gridspec_kw={"width_ratios": [3, 1]},
         constrained_layout=True,
     )
-    da.plot(ax=ax, cmap="turbo", add_colorbar=True, cbar_kwargs={"label": "Pixel code", "shrink": 0.8})
+    if codes is not None:
+        # Discrete categorical render: map each pixel code to its exact legend
+        # colour so what's drawn matches the legend (avoids a continuous colormap
+        # spreading sparse codes like 0/1/255 across the full gradient).
+        from matplotlib.colors import BoundaryNorm, ListedColormap
+
+        sorted_codes = sorted(legend_codes)
+        colours = [legend_codes[c][1] for c in sorted_codes]
+        bounds = [sorted_codes[0] - 0.5]
+        bounds += [(sorted_codes[i] + sorted_codes[i + 1]) / 2 for i in range(len(sorted_codes) - 1)]
+        bounds += [sorted_codes[-1] + 0.5]
+        cmap = ListedColormap(colours)
+        norm = BoundaryNorm(bounds, cmap.N)
+        da.plot(ax=ax, cmap=cmap, norm=norm, add_colorbar=False)
+    else:
+        da.plot(ax=ax, cmap="turbo", add_colorbar=True, cbar_kwargs={"label": "Pixel code", "shrink": 0.8})
     ax.set_title(title, fontsize=11, fontweight="bold")
     ax.set_xlabel("Longitude (°)")
     ax.set_ylabel("Latitude (°)")
     ax_leg.legend(
-        handles=legend_patches(),
+        handles=legend_patches(codes),
         loc="center",
         fontsize=9,
-        title="VIIRS pixel codes",
+        title=legend_title,
         title_fontsize=10,
         frameon=True,
         edgecolor="gray",

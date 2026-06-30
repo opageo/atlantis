@@ -177,7 +177,9 @@ demo-gfm = """atlantis --verbose fetch \
   --output ./data/Valencia_2024"""
 test = "pytest -n auto tests/"
 lint = "ruff check ."
+lint-fix = "ruff check . --fix"
 format = "ruff format ."
+format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
 verify-gdal = """python -c "from osgeo import gdal; assert gdal.GetDriverByName('HDF4'), 'HDF4 driver missing'; print('GDAL', gdal.__version__, '— HDF4 driver: OK')" """
 

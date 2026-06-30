@@ -191,6 +191,11 @@ class ProcessedTile:
     permanent_water: np.ndarray | None = None
     recurring_flood: np.ndarray | None = None
 
+    @property
+    def is_classified(self) -> bool:
+        """True when derived layers are present rather than the raw band."""
+        return self.raw is None
+
 
 @dataclass(frozen=True)
 class OutputPaths:
@@ -535,6 +540,14 @@ class ModisRasterProcessor:
         )
 
     # ── Output writing ──────────────────────────────────────────────────
+
+    def write_processed(self, processed: ProcessedTile, paths: OutputPaths) -> None:
+        """Write processed-tile layers to ``paths`` (public wrapper for callers).
+
+        Used by the fetcher to defer writing processed/ GeoTIFFs until after
+        peak-window filtering, so only surviving dates are persisted.
+        """
+        self._write_outputs(processed, paths)
 
     def _write_outputs(self, processed: ProcessedTile, paths: OutputPaths) -> None:
         ref_shape = processed.raw.shape if processed.raw is not None else processed.flood_fraction.shape

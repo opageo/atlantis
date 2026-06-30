@@ -22,13 +22,9 @@ from Sentinel-1A and Sentinel-1B. Two key bands are provided per acquisition:
 | `ensemble_flood_extent` | Flood classification: 0 = dry, 1 = flood, 255 = nodata                                 |
 | `reference_water_mask`  | Water type: 0 = land, 1 = water (seasonal/observed), 2 = permanent water, 255 = nodata |
 
-Atlantis currently loads only those two upstream assets. The EODC STAC
-collection publishes additional GFM layers as well, but Atlantis does not yet
-expose arbitrary asset selection or a raw passthrough mode for GFM.
-
 Native product resolution is **~20 m** in the STAC COGs. Atlantis coarsens to
-an effective ~80 m intermediate grid (default `--gfm-coarsen-factor 4`) before
-reprojecting onto its canonical 1-arcmin EPSG:4326 output grid.
+~80 m (default `--gfm-coarsen-factor 4`) before reprojection to reduce SAR
+speckle and artefacts.
 
 Data is accessed via the **EODC STAC API** (`https://stac.eodc.eu/api/v1`,
 collection `GFM`) using Cloud-Optimised GeoTIFFs — no separate download step
@@ -59,26 +55,20 @@ GFM, VIIRS, and MODIS share the same Atlantis pipeline surface — identical
 
 Key differences:
 
-| Aspect                         | VIIRS / MODIS                                                                 | GFM                                                                                                                        |
-| ------------------------------ | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **Source assets loaded**       | Native (375 m / 250 m, EPSG:4326)                                             | Native ~20 m projected COGs from EODC STAC (`ensemble_flood_extent`, `reference_water_mask`)                               |
-| **Atlantis processed grid**    | Native resolution/grid unless harmonised                                      | Canonical 1-arcmin EPSG:4326 during fetch                                                                                  |
-| **`--harmonise` effect**       | Reprojects to 1-arcmin + encodes uint8 %                                      | Re-encodes processed `flood_fraction` float32 [0,1] → uint8 [0,100] on the **same** grid at default settings               |
-| **Raw mode (`--no-classify`)** | Available — writes raw integer pixel codes                                    | Not available — Atlantis always derives `flood_fraction`, `quality_mask`, and `permanent_water` from the two source assets |
-| **Stream / download toggle**   | `--stream` / `--no-stream`                                                    | Always streamed via `odc.stac`; the shared `--no-stream` flag does not change GFM behavior                                 |
-| **Setup requirement**          | VIIRS needs `uv run python scripts/setup.py` for the AOI grid                 | None — data accessed directly via the EODC STAC API                                                                        |
-| **Python default `strategy`**  | `"peak"`                                                                      | `"peak"`                                                                                                                   |
-| **Dataset variables**          | `flood_fraction` (float32), `quality_mask` (uint8), `permanent_water` (uint8) | Same names, same dtypes                                                                                                    |
-| **Harmonised output**          | uint8 [0–100], nodata=255, canonical 1-arcmin grid                            | Same format — stackable with VIIRS / MODIS without resampling                                                              |
+| Aspect                         | VIIRS / MODIS                                                                 | GFM                                                                                                                                                                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Fetched resolution**         | Native (375 m / 250 m, EPSG:4326)                                             | Native ~20 m (Sentinel-1), processed to **~80 m EPSG:4326** (coarsen ×4)                                                                                                                                                    |
+| **`--harmonise` effect**       | Reprojects to 1-arcmin + encodes uint8 %                                      | Same pattern: reprojects the ~80 m processed output to 1-arcmin. Classified: `average`-resample `flood_fraction` (uint8 %). Native: NN-resample uint8 codes. **Off by default in the CLI (use `--harmonise`).**             |
+| **Raw mode (`--no-classify`)** | Available — writes raw integer pixel codes                                    | Available — writes `ensemble_flood_extent` (0=dry,1=flood,255=nodata) and `reference_water_mask` (0=land,1=water,2=perm,255=nodata) on the ~80 m processed grid (nearest-neighbour); `--harmonise` downsamples to 1-arcmin. |
+| **Stream / download toggle**   | `--stream` / `--no-stream`                                                    | Always streamed via `odc.stac` (`--no-stream` is ignored with a warning)                                                                                                                                                    |
+| **Setup requirement**          | VIIRS needs `uv run python scripts/setup.py` for the AOI grid                 | None — data accessed directly via the EODC STAC API                                                                                                                                                                         |
+| **Python default `strategy`**  | `"peak"`                                                                      | `"peak"`                                                                                                                                                                                                                    |
+| **Dataset variables**          | `flood_fraction` (float32), `quality_mask` (uint8), `permanent_water` (uint8) | Classified: `flood_fraction` (float32), `quality_mask` (uint8), `permanent_water` (uint8). Native: `ensemble_flood_extent` (uint8), `reference_water_mask` (uint8).                                                         |
+| **Harmonised output**          | uint8 [0–100], nodata=255, canonical 1-arcmin grid                            | Classified: same format — stackable with VIIRS / MODIS without resampling. Native: uint8 codes, 1-arcmin, nodata=255.                                                                                                       |
 
-Atlantis fetches native GFM source COGs, but the written `processed/` outputs
-are already on the canonical 1-arcmin grid. The harmonised TIFF is therefore a
-re-encoded flood layer, not a second spatial reprojection under default
-settings.
-
-Because both GFM `processed/` output and the harmonised GeoTIFF sit on that
-canonical grid, GFM and VIIRS harmonised outputs over the same AOI are
-**directly stackable** without any further resampling.
+Once `--harmonise` resamples GFM `processed/` output to the canonical 1-arcmin
+grid, GFM, VIIRS, and MODIS harmonised outputs over the same AOI are **directly
+stackable** without any further resampling.
 
 ## Demo script
 
@@ -93,7 +83,7 @@ uv run python scripts/gfm_demo.py arbitrary \
 # KuroSiwo event — bbox and dates resolved from the catalogue
 uv run python scripts/gfm_demo.py kurosiwo --ks-case KuroSiwo_470
 
-# With harmonisation (re-encode to uint8 %, same grid)
+# With harmonisation (resample ~80 m → canonical 1-arcmin)
 uv run python scripts/gfm_demo.py arbitrary \
     --event-id Valencia_2024 \
     --bbox "-1.5 38.8 0.5 40.0" \
@@ -103,8 +93,8 @@ uv run python scripts/gfm_demo.py arbitrary \
 ```
 
 The demo script mirrors `scripts/viirs_demo.py` in structure, but omits
-VIIRS-specific flags (`--classify`, `--stream`, `--flood-threshold`) that
-don't apply to GFM. A banner at runtime explains the 1-arcmin output.
+VIIRS-specific flags (`--stream`, `--flood-threshold`) that don't apply to GFM.
+A banner at runtime explains the 1-arcmin output.
 
 ## Quick start
 
@@ -119,19 +109,21 @@ uv run atlantis fetch \
   --no-keep-processed
 ```
 
-This queries the EODC STAC API, processes Sentinel-1 tiles, and writes the
-final harmonised 1-arcmin GeoTIFF (in `harmonised/`). `--harmonise` is needed
-if you want that re-encoded uint8 output; without it, Atlantis writes only the
-processed canonical-grid layers unless `--no-keep-processed` is also set:
+This queries the EODC STAC API, processes Sentinel-1 tiles, and writes a
+1-arcmin harmonised GeoTIFF (re-encodes float32 → uint8 %). Add `--plot` to
+also save a PNG. Use `--no-classify` instead to emit the native SAR band codes
+(`ensemble_flood_extent`, `reference_water_mask`) without any derivation:
 
-```
-harmonised/
-  Valencia_2024_20241031_gfm_harmonised.tif    # uint8, 1 arcmin, flood % [0–100], nodata=255
-plots/
-  Valencia_2024_20241031_gfm_harmonised.png
+```bash
+# Native / raw mode — emit discrete codes, no flood_fraction derivation
+uv run atlantis fetch \
+  --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" \
+  --start-date 2024-10-29 --end-date 2024-11-04 \
+  --no-classify --no-keep-processed
 ```
 
-Typical folder layout:
+Typical folder layout (classified mode with `--harmonise`):
 
 ```
 <output>/
@@ -140,6 +132,7 @@ Typical folder layout:
       processed/
       plots/
       harmonised/
+        <event_id>_<date_token>_gfm_harmonised.tif    # uint8, 1 arcmin, flood % [0–100]
 ```
 
 ## Data source
@@ -152,31 +145,7 @@ Typical folder layout:
 | Sensor            | Sentinel-1A / Sentinel-1B (C-band SAR)                               |
 | Native resolution | ~20 m                                                                |
 | Temporal cadence  | ~6-day revisit per sensor; joint coverage improves effective revisit |
-| Atlantis uses     | `ensemble_flood_extent`, `reference_water_mask`                      |
-
-## Upstream asset availability
-
-EODC advertises additional GFM assets beyond the two Atlantis currently loads,
-including:
-
-- `ensemble_water_extent`
-- `ensemble_likelihood`
-- `exclusion_mask`
-- `advisory_flags`
-- `dlr_flood_extent`, `dlr_likelihood`
-- `tuw_flood_extent`, `tuw_likelihood`
-- `list_flood_extent`, `list_likelihood`
-
-Atlantis intentionally keeps its public outputs tied to the two discrete source
-layers above. `quality_mask` means "at least one valid observation exists"
-after combining `ensemble_flood_extent` and `reference_water_mask`; it is not a
-proxy for `advisory_flags`, `exclusion_mask`, or any likelihood product.
-Those upstream assets remain candidates for future auxiliary outputs, but they
-do not currently alter `flood_fraction`, `quality_mask`, or
-`permanent_water` semantics.
-
-Atlantis does not yet provide a `--gfm-bands` selector or a raw-output mode
-for those assets.
+| Bands used        | `ensemble_flood_extent`, `reference_water_mask`                      |
 
 ## Tips
 
@@ -190,9 +159,8 @@ for those assets.
   Widen `--start-date`/`--end-date` by a few days around the event peak to
   maximise the chance of capturing at least one acquisition.
 - **No-keep-processed** — Use `--no-keep-processed` to skip writing the
-  processed canonical-grid GeoTIFFs (`flood_fraction`, `quality_mask`,
-  `permanent_water`) and save disk space. The harmonised flood output is still
-  produced from in-memory data.
+  intermediate ~80 m GeoTIFFs and save disk space. The harmonised output is
+  still produced from in-memory data.
 - **Multi-source overlay** — Because both GFM and VIIRS harmonised outputs
   snap to the same 1-arcmin global grid, array-based cross-product analysis
   requires no resampling.

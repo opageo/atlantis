@@ -74,6 +74,9 @@ class HarmoniseConfig(BaseSettings):
         "permanent_water": "mode",
         "recurring_flood": "mode",
         "raw": "nearest",
+        # GFM native code bands — preserve discrete codes (no averaging).
+        "ensemble_flood_extent": "nearest",
+        "reference_water_mask": "nearest",
     }
     normalise_range: tuple[float, float] = (0.0, 1.0)
     snap_to_global_grid: bool = True

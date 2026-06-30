@@ -11,14 +11,16 @@ Atlantis has a strong domain model, fetcher registry, and three fully operationa
 ### Implemented today
 
 - `VIIRSFetcher` can search, download, mosaic, clip, and write GeoTIFF outputs from the NOAA S3 or GMU JPSS Flood archive.
-- `GFMFetcher` can search, stream, coarsen, reproject, and write GeoTIFF outputs from the EODC STAC API (Sentinel-1 SAR).
+- `GFMFetcher` can search, stream, coarsen, reproject, and write GeoTIFF outputs from the EODC STAC API (Sentinel-1 SAR). Supports `--classify` (flood_fraction / quality_mask / permanent_water) and `--no-classify` (native ensemble_flood_extent / reference_water_mask bands).
 - `MODISFetcher` can search, download/stream, mosaic, clip, and write GeoTIFF outputs from NASA LANCE (NRT) or LAADS (archive) backends.
 - `atlantis fetch` works for explicit bbox/date extraction across all three sources (VIIRS, GFM, MODIS).
 - `atlantis fetch-kurosiwo-viirs` and `atlantis fetch-kurosiwo-modis` work directly from the KuroSiwo catalogue or from a precomputed metadata CSV.
 - `atlantis build-kurosiwo-metadata` derives the metadata CSV from the catalogue without using the notebook.
 - `atlantis harmonise` reprojects and normalises fetched data to a uniform 1 arcmin grid.
 - `atlantis setup` bootstraps required data assets and credentials.
-- `atlantis demo` runs a self-contained Valencia 2024 example end to end.
+- `atlantis demo` (VIIRS), `atlantis demo-modis`, and `atlantis demo-gfm` each run a self-contained Valencia 2024 example end to end.
+- All three fetchers expose `last_diagnostics` (`SearchDiagnostics` / `ModisSearchDiagnostics` / `GfmSearchDiagnostics`) so the CLI can surface actionable hints when a fetch returns no results.
+- `atlantis batch viirs run` processes VIIRS granules in bulk using Dask, writing 1-arcmin COGs to S3.
 - `download_file()` is implemented and reuses existing files.
 - KuroSiwo metadata can be converted into `FloodEvent` objects through `utils.kurosiwo`.
 - Harmoniser (Reprojector + Normaliser) is fully operational and used by the `--harmonise` CLI flag.
@@ -104,26 +106,38 @@ src/atlantis/
 │   ├── base.py            # AbstractFloodFetcher ABC + SearchResult / FetchResult
 │   ├── registry.py        # @register_fetcher decorator + global registry
 │   ├── rfm.py             # RFMFetcher — planned / Phase C stub
+│   ├── _dataset.py        # Shared dataset utility helpers
 │   ├── gfm/
-│   │   ├── __init__.py    # GFMFetcher — implemented
+│   │   ├── __init__.py    # GFMFetcher + GfmSearchDiagnostics — implemented
 │   │   ├── backend.py     # GfmStacBackend (EODC STAC API)
 │   │   ├── processor.py   # GfmRasterProcessor (coarsen → reproject → accumulate)
 │   │   ├── dataset.py     # GFM tile → xarray Dataset conversion
-│   │   └── selection.py   # Peak-window filtering and subsampling
+│   │   ├── selection.py   # Peak-window filtering and subsampling
+│   │   └── README.md      # Module guide
 │   ├── modis/
-│   │   ├── __init__.py    # MODISFetcher — implemented
+│   │   ├── __init__.py    # MODISFetcher + ModisSearchDiagnostics — implemented
 │   │   ├── backend.py     # LanceGeotiffBackend, LaadsHdf4Backend
 │   │   ├── processor.py   # ModisRasterProcessor (mosaic, clip, classify)
 │   │   ├── dataset.py     # MODIS tile → xarray Dataset conversion
-│   │   └── selection.py   # Peak-window filtering and subsampling
+│   │   ├── selection.py   # Peak-window filtering and subsampling
+│   │   └── README.md      # Module guide
 │   └── viirs/
-│       ├── __init__.py    # VIIRSFetcher — implemented
+│       ├── __init__.py    # VIIRSFetcher + SearchDiagnostics — implemented
 │       ├── backend.py     # Backend classes (NoaaS3Backend, GmuLegacyBackend)
 │       ├── processor.py   # Raster processing (ViirsRasterProcessor)
 │       ├── dataset.py     # VIIRS tile → xarray Dataset conversion
 │       ├── selection.py   # Peak-window filtering and subsampling
+│       ├── inventory.py   # VIIRS JPSS batch catalogue loader + task builder
+│       ├── batch_processor.py  # Per-granule Dask batch processing function
+│       ├── README.md      # Module guide
 │       └── data/
 │           └── viirs_aois.geojson  # Packaged VIIRS AOI tile grid
+│
+├── batch/
+│   ├── __init__.py        # BatchConfig, TaskResult, run_batch — Dask batch engine
+│   ├── config.py          # BatchConfig (Pydantic settings: workers, S3 paths, etc.)
+│   ├── orchestrator.py    # Dask LocalCluster run loop (submit → drain → checkpoint)
+│   └── tracker.py         # SQLite progress tracker (init_db, mark_done, mark_failed)
 │
 ├── harmoniser/
 │   ├── __init__.py        # Harmoniser orchestrator + write_harmonised_raster
@@ -453,9 +467,18 @@ Key GFM-specific options:
 
 ### 6.3 GFM Output Semantics
 
+With `--classify` (default):
+
 - `*_gfm_flood_fraction.tif` — flood probability in [0, 1]
 - `*_gfm_quality_mask.tif` — pixel validity mask
 - `*_gfm_permanent_water.tif` — permanent water body mask
+
+With `--no-classify` (native/raw mode — emits SAR band codes as-is):
+
+- `*_gfm_ensemble_flood_extent.tif` — uint8 flood code (0=dry, 1=flood, 255=nodata)
+- `*_gfm_reference_water_mask.tif` — uint8 water code (0=land, 1=water, 2=permanent, 255=nodata)
+
+In native mode, reprojection uses nearest-neighbour; the coarsen step is skipped.
 
 ---
 
@@ -567,14 +590,14 @@ Key harmoniser settings:
 
 ### 8.3 `fetchers/`
 
-| Fetcher        | Data                            | Backend                            | Status      |
-| -------------- | ------------------------------- | ---------------------------------- | ----------- |
-| `GFMFetcher`   | SAR flood maps (Sentinel-1)     | STAC/EODC                          | implemented |
-| `VIIRSFetcher` | Archived VIIRS flood composites | NOAA S3 / GMU JPSS Flood archive   | implemented |
-| `MODISFetcher` | MCDWD flood detection (~250 m)  | NASA LANCE (NRT) / LAADS (archive) | implemented |
-| `RFMFetcher`   | Modelled flood extent           | Phase C                            | stub        |
+| Fetcher        | Data                            | Backend                            | Diagnostics class        | Status      |
+| -------------- | ------------------------------- | ---------------------------------- | ------------------------ | ----------- |
+| `GFMFetcher`   | SAR flood maps (Sentinel-1)     | STAC/EODC                          | `GfmSearchDiagnostics`   | implemented |
+| `VIIRSFetcher` | Archived VIIRS flood composites | NOAA S3 / GMU JPSS Flood archive   | `SearchDiagnostics`      | implemented |
+| `MODISFetcher` | MCDWD flood detection (~250 m)  | NASA LANCE (NRT) / LAADS (archive) | `ModisSearchDiagnostics` | implemented |
+| `RFMFetcher`   | Modelled flood extent           | Phase C                            | —                        | stub        |
 
-All three implemented fetchers share a consistent interface: `search()`, `fetch()`, and `to_dataset()`. They support peak-window filtering (`--peak-days-before/after`, `--max-observations`, `--peak-priority`) and three strategies (`peak`, `aggregate`, `all`).
+All three implemented fetchers share a consistent interface: `search()`, `fetch()`, and `to_dataset()`. They support peak-window filtering (`--peak-days-before/after`, `--max-observations`, `--peak-priority`) and three strategies (`peak`, `aggregate`, `all`). Each populates `fetcher.last_diagnostics` after `search()` so the CLI can emit actionable guidance on empty fetches.
 
 **Important pipeline difference:** GFM reprojects to the 1-arcmin grid _during_ fetch (the native ~20 m SAR data is too large to write at full resolution). VIIRS and MODIS fetch at native resolution (375 m / ~250 m) and harmonise to 1 arcmin only when explicitly requested via `--harmonise` or `atlantis harmonise`.
 
@@ -622,11 +645,14 @@ Validation is still planned. The API surface exists (`checker.py`, `ml_loader.py
 | `atlantis fetch-kurosiwo-modis --metadata ...`                                       | Fetch MODIS for KuroSiwo cases from metadata CSV           | implemented |
 | `atlantis harmonise --event E --source S`                                            | Reproject → normalise fetched data to 1 arcmin             | implemented |
 | `atlantis setup`                                                                     | Bootstrap assets and credentials                           | implemented |
-| `atlantis demo`                                                                      | Run the Valencia 2024 end-to-end example                   | implemented |
+| `atlantis demo`                                                                      | Valencia 2024 end-to-end example (VIIRS)                   | implemented |
+| `atlantis demo-modis`                                                                | Valencia 2024 end-to-end example (MODIS)                   | implemented |
+| `atlantis demo-gfm`                                                                  | Valencia 2024 end-to-end example (GFM)                     | implemented |
 | `atlantis list-sources`                                                              | Print registered fetchers and descriptions                 | implemented |
+| `atlantis list-events`                                                               | List events present in the cache/archive                   | implemented |
+| `atlantis batch viirs run`                                                           | Bulk-process VIIRS granules → 1-arcmin COGs on S3 (Dask)   | implemented |
 | `atlantis archive --event E`                                                         | Write raw + ml-ready Zarr archives                         | planned     |
 | `atlantis validate --event E`                                                        | Run archive and ML validation checks                       | planned     |
-| `atlantis list-events`                                                               | List events present in the archive                         | planned     |
 
 ---
 

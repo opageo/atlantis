@@ -3,7 +3,7 @@
 import numpy as np
 
 from atlantis.utils.plot import (
-    VIIRS_CODES,
+    VIIRS_RAW_CODES,
     date_from_filename,
     legend_patches,
     pixel_stats_classified,
@@ -66,12 +66,12 @@ class TestPixelStatsClassified:
 class TestLegendPatches:
     def test_returns_correct_number_of_patches(self):
         patches = legend_patches()
-        assert len(patches) == len(VIIRS_CODES)
+        assert len(patches) == len(VIIRS_RAW_CODES)
 
     def test_patches_have_correct_labels(self):
         patches = legend_patches()
         labels = [p.get_label() for p in patches]
-        assert "160: Flood (≥60% frac)" in labels
+        assert "160: Flood (codes 101–200, ≥60% frac)" in labels
         assert "99: Permanent water" in labels
         assert "17: Vegetation" in labels
 
@@ -86,10 +86,10 @@ class TestLegendPatches:
 class TestViirsCodes:
     def test_expected_codes_present(self):
         expected_codes = {1, 17, 20, 30, 99, 160}
-        assert set(VIIRS_CODES.keys()) == expected_codes
+        assert set(VIIRS_RAW_CODES.keys()) == expected_codes
 
     def test_code_values_are_tuples(self):
-        for code, (label, color) in VIIRS_CODES.items():
+        for code, (label, color) in VIIRS_RAW_CODES.items():
             assert isinstance(code, int)
             assert isinstance(label, str)
             assert isinstance(color, str)

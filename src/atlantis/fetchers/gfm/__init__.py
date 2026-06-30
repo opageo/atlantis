@@ -7,6 +7,7 @@ load (native CRS) → coarsen (max-pool) → reproject (EPSG:4326) → accumulat
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,7 +35,33 @@ from atlantis.models.event import FloodEvent
 if TYPE_CHECKING:
     import xarray as xr
 
-__all__ = ["GFMFetcher"]
+__all__ = ["GFMFetcher", "GfmSearchDiagnostics"]
+
+
+@dataclass
+class GfmSearchDiagnostics:
+    """Structured explanation of why a GFM search returned a given result set.
+
+    Populated by :meth:`GFMFetcher.search` and exposed via
+    :attr:`GFMFetcher.last_diagnostics` so the CLI (or any other caller)
+    can surface actionable guidance when a fetch yields zero results.
+    """
+
+    api_url: str
+    items_found: int = 0
+    dates_found: int = 0
+    network_failure: bool = False
+    last_network_error: str | None = None
+
+    @property
+    def network_unreachable(self) -> bool:
+        """True when the STAC search failed due to a network/connection error."""
+        return self.network_failure
+
+    @property
+    def no_items_found(self) -> bool:
+        """True when the STAC search succeeded but returned no items."""
+        return not self.network_failure and self.items_found == 0
 
 
 @register_fetcher("gfm")
@@ -50,6 +77,9 @@ class GFMFetcher(AbstractFloodFetcher):
         api_url: STAC API endpoint.
         coarsen_factor: Spatial coarsening before reprojection.
         resampling: Resampling method for reprojection.
+        classify: When True (default), derive flood_fraction / quality_mask /
+            permanent_water.  When False, emit the native band codes
+            ensemble_flood_extent and reference_water_mask.
         strategy: Date selection strategy ("peak", "aggregate", "all"). Default: "peak".
         keep_processed: Whether to write intermediate GeoTIFFs.
     """
@@ -61,6 +91,7 @@ class GFMFetcher(AbstractFloodFetcher):
         api_url: str | None = None,
         coarsen_factor: int = DEFAULT_COARSEN_FACTOR,
         resampling: Resampling = Resampling.average,
+        classify: bool = True,
         strategy: str = "peak",
         keep_processed: bool = True,
         peak_days_before: int = 0,
@@ -73,7 +104,14 @@ class GFMFetcher(AbstractFloodFetcher):
         Args:
             api_url: Optional STAC API URL. Defaults to EODC endpoint.
             coarsen_factor: Coarsen factor for SAR data (default 4).
+                Ignored when *classify* is False.
             resampling: Resampling method for reprojection.
+                Ignored when *classify* is False (nearest-neighbour used instead).
+            classify: When True (default), derive flood_fraction / quality_mask /
+                permanent_water from per-pixel accumulator counts. When False,
+                emit the native ``ensemble_flood_extent`` and
+                ``reference_water_mask`` band codes as-is, reprojected to the
+                canonical 1-arcmin grid with nearest-neighbour.
             strategy: Date selection strategy: "peak", "aggregate", or "all".
             keep_processed: Whether to write intermediate processed files.
             peak_days_before: Days before the computed peak to include when
@@ -89,9 +127,11 @@ class GFMFetcher(AbstractFloodFetcher):
         self.api_url = api_url or DEFAULT_GFM_STAC_URL
         self.coarsen_factor = coarsen_factor
         self.resampling = resampling
+        self.classify = classify
         self.strategy = strategy
         self.keep_processed = keep_processed
         self._backend = GfmStacBackend(api_url=self.api_url)
+        self.last_diagnostics: GfmSearchDiagnostics | None = None
 
         if peak_days_before < 0:
             raise ValueError(f"peak_days_before must be non-negative, got {peak_days_before}")
@@ -110,13 +150,31 @@ class GFMFetcher(AbstractFloodFetcher):
     def search(self, event: FloodEvent) -> list[SearchResult]:
         """Search for GFM data for the given flood event.
 
+        Populates :attr:`last_diagnostics` describing STAC item counts,
+        date coverage, and any network errors so callers can explain why
+        an empty result set was returned.
+
         Args:
             event: The flood event to search for.
 
         Returns:
             List of search results (one per STAC item).
         """
-        items = self._backend.search(event)
+        diagnostics = GfmSearchDiagnostics(api_url=self.api_url)
+        self.last_diagnostics = diagnostics
+
+        try:
+            items = self._backend.search(event)
+        except Exception as exc:  # noqa: BLE001
+            diagnostics.network_failure = True
+            diagnostics.last_network_error = str(exc)
+            logger.warning("GFM STAC search failed: {}", exc)
+            return []
+
+        diagnostics.items_found = len(items)
+        date_groups = self._backend.group_items_by_date(items)
+        diagnostics.dates_found = len(date_groups)
+
         results: list[SearchResult] = []
 
         for item in items:
@@ -154,7 +212,7 @@ class GFMFetcher(AbstractFloodFetcher):
         Returns:
             List of fetch results.
         """
-        items = self._backend.search(event)
+        items = self._backend.search(event)  # diagnostics already set by search() when called first
         if not items:
             logger.warning("No GFM items found for event {}", event.event_id)
             return []
@@ -177,6 +235,7 @@ class GFMFetcher(AbstractFloodFetcher):
             bbox=event.bbox,
             coarsen_factor=self.coarsen_factor,
             resampling=self.resampling,
+            classify=self.classify,
         )
 
         date_results: list[tuple[str, GfmProcessedTile]] = []
@@ -185,8 +244,8 @@ class GFMFetcher(AbstractFloodFetcher):
                 date_items,
                 event_id=event.event_id,
                 date_token=date_token,
-                output_dir=output_dir if self.keep_processed else None,
-                write_outputs=self.keep_processed,
+                output_dir=None,
+                write_outputs=False,
             )
             if result is not None:
                 date_results.append((date_token, result.processed))
@@ -198,6 +257,12 @@ class GFMFetcher(AbstractFloodFetcher):
         date_results = self._apply_peak_window(date_results)
         if not date_results:
             return []
+
+        # Write processed/ only for surviving dates (after peak-window filter),
+        # mirroring VIIRS/MODIS — avoids persisting pre-filter dates to disk.
+        if self.keep_processed:
+            for date_token, tile in date_results:
+                processor.write_processed(tile, event.event_id, date_token, output_dir)
 
         # Apply strategy
         return self._apply_strategy(date_results, event, output_dir)
@@ -351,7 +416,7 @@ class GFMFetcher(AbstractFloodFetcher):
             resolution=0.0,
             bbox=event.bbox,
             cloud_fraction=tile.cloud_fraction,
-            permanent_water_mask_available=True,
+            permanent_water_mask_available=self.classify,
         )
 
         return FetchResult(
@@ -370,7 +435,9 @@ class GFMFetcher(AbstractFloodFetcher):
             result: The fetch result to convert.
 
         Returns:
-            xarray Dataset with flood_fraction, quality_mask, permanent_water.
+            xarray Dataset with flood_fraction / quality_mask / permanent_water
+            (classified mode) or ensemble_flood_extent / reference_water_mask
+            (native mode).
         """
         if result.dataset is not None:
             return result.dataset
@@ -379,8 +446,12 @@ class GFMFetcher(AbstractFloodFetcher):
         if result.files:
             import rioxarray as rxr
 
-            # Assume first file is the flood_fraction
-            ds = rxr.open_rasterio(result.files[0]).squeeze(drop=True).to_dataset(name="flood_fraction")
+            # Read first file; name by its stem suffix to preserve band identity
+            first = result.files[0]
+            # Infer variable name from filename suffix (e.g. *_flood_fraction.tif)
+            stem = first.stem
+            var_name = stem.split("_gfm_")[-1] if "_gfm_" in stem else "band"
+            ds = rxr.open_rasterio(first).squeeze(drop=True).to_dataset(name=var_name)
             return ds
 
         raise ValueError("FetchResult has neither in-memory dataset nor files")
