@@ -526,6 +526,10 @@ class VIIRSFetcher(AbstractFloodFetcher):
                         flood_fraction=processed_dir / f"{base_name}_flood_fraction.tif",
                         quality_mask=processed_dir / f"{base_name}_quality_mask.tif",
                         permanent_water=processed_dir / f"{base_name}_permanent_water.tif",
+                        extra={
+                            name: processed_dir / f"{base_name}_{name}.tif"
+                            for name in proc_result.processed.extra_layers
+                        },
                     )
                 else:
                     paths = OutputPaths(raw=processed_dir / f"{base_name}_raw.tif")
@@ -648,6 +652,23 @@ class VIIRSFetcher(AbstractFloodFetcher):
             variables["permanent_water"] = (
                 rxr.open_rasterio(permanent_water_path).squeeze(drop=True).astype("uint8").rename("permanent_water")
             )
+
+            # Extra derived layers (e.g. cloud_mask, shadow): match by the
+            # registry's derived layer names so new layers load without edits.
+            from atlantis.fetchers.viirs.layers import registry
+
+            core = {"flood_fraction", "quality_mask", "permanent_water"}
+            for spec in registry.list_derived():
+                if spec.name in core:
+                    continue
+                extra_path = next(
+                    (path for name, path in files_by_name.items() if name.endswith(f"_{spec.name}.tif")),
+                    None,
+                )
+                if extra_path is not None:
+                    variables[spec.name] = (
+                        rxr.open_rasterio(extra_path).squeeze(drop=True).astype(spec.dtype).rename(spec.name)
+                    )
 
         dataset = xr.Dataset(variables)
         dataset.attrs["source_id"] = self.source_id

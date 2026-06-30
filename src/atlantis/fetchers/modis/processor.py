@@ -29,6 +29,19 @@ from rasterio.merge import merge
 from rasterio.transform import from_bounds
 from shapely.geometry.base import BaseGeometry
 
+# Pixel-code constants and the layer registry live in ``layers.py`` (the single
+# source of truth). They are re-exported here so existing
+# ``from ...modis.processor import INSUFFICIENT_DATA_CODE`` imports keep working.
+from atlantis.fetchers.modis.layers import (  # noqa: F401 — re-exported for backwards compatibility
+    INSUFFICIENT_DATA_CODE,
+    NO_WATER_CODE,
+    RECURRING_FLOOD_CODE,
+    SELECTED_COMPOSITE,
+    SURFACE_WATER_CODE,
+    UNUSUAL_FLOOD_CODE,
+    registry,
+)
+from atlantis.layers import DerivationContext
 from atlantis.models.metadata import TileMetadata
 
 if TYPE_CHECKING:
@@ -37,13 +50,6 @@ if TYPE_CHECKING:
 
 # Type alias: a tile location can be a local file path or a /vsicurl/ URL.
 TilePath = Union[Path, str]
-
-#: MCDWD pixel codes (Release 1.1, Dec 2025).
-NO_WATER_CODE = 0
-SURFACE_WATER_CODE = 1
-RECURRING_FLOOD_CODE = 2
-UNUSUAL_FLOOD_CODE = 3
-INSUFFICIENT_DATA_CODE = 255
 
 #: Native MCDWD raster size (one tile is 4800×4800 at 0.002083333° = 1/480°).
 MODIS_TILE_PIXELS = 4800
@@ -504,26 +510,24 @@ class ModisRasterProcessor:
         )
 
     def _classify_pixels(self, data: np.ndarray, transform: rasterio.Affine, crs: str) -> ProcessedTile:
-        """Decode MCDWD codes 0/1/2/3/255 into VIIRS-parity layers."""
+        """Decode MCDWD codes 0/1/2/3/255 into VIIRS-parity layers.
+
+        Delegates the per-layer maths to the MODIS layer registry so the
+        derivation logic lives in one declarative place
+        (:mod:`atlantis.fetchers.modis.derived`).
+        """
+        ctx = DerivationContext(arrays={SELECTED_COMPOSITE: data})
         valid = data != INSUFFICIENT_DATA_CODE
-        flood_mask = data == UNUSUAL_FLOOD_CODE
-        recurring_flood = (data == RECURRING_FLOOD_CODE).astype(np.uint8)
-        permanent_water = (data == SURFACE_WATER_CODE).astype(np.uint8)
-        # quality_mask: 1 = valid observation, 0 = insufficient data (catch-all).
-        # Per the embedded LANCE TIFF description, the 255 sentinel covers (at least)
-        # HAND-masked terrain and terrain-shadow pixels for every composite, plus
-        # cloud-shadow for F1C. F2/F3 do NOT remove clouds, so a pixel can be 255
-        # purely from "insufficient observations" rather than cloud cover.
-        quality_mask = valid.astype(np.uint8)
-
-        flood_fraction = flood_mask.astype(np.float32)
-        flood_fraction[~valid] = np.nan
-
         cloud_fraction = float(1.0 - valid.sum() / valid.size) if valid.size else 0.0
+
+        flood_fraction = registry.get_derived("flood_fraction").derive(ctx)
+        quality_mask = registry.get_derived("quality_mask").derive(ctx)
+        permanent_water = registry.get_derived("permanent_water").derive(ctx)
+        recurring_flood = registry.get_derived("recurring_flood").derive(ctx)
 
         logger.debug(
             "Classification: {} flood, {} recurring, {} permanent-water, {} insufficient (255 fraction {:.1f}%)",
-            int(flood_mask.sum()),
+            int(np.nansum(flood_fraction)),
             int(recurring_flood.sum()),
             int(permanent_water.sum()),
             int((~valid).sum()),

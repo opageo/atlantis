@@ -6,7 +6,7 @@ that were previously mixed into the VIIRSFetcher.fetch() method.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
@@ -19,6 +19,21 @@ from rasterio.mask import mask
 from rasterio.merge import merge
 from shapely.geometry.base import BaseGeometry
 
+# Code constants and the layer registry live in ``layers.py`` (the single source
+# of truth). Re-exported here so existing
+# ``from ...viirs.processor import FILL_CODES`` style imports keep working.
+from atlantis.fetchers.viirs.layers import (  # noqa: F401 — re-exported for backwards compatibility
+    CLASSIFIED_FLOOD_NODATA,
+    CLOUD_CODES,
+    FILL_CODES,
+    FLOOD_MIN_CODE,
+    OPEN_WATER_CODES,
+    PERMANENT_WATER_CODES,
+    SEASONAL_WATER_CODES,
+    SELECTED_BAND,
+    registry,
+)
+from atlantis.layers import DerivationContext
 from atlantis.models.metadata import TileMetadata
 
 if TYPE_CHECKING:
@@ -28,35 +43,21 @@ if TYPE_CHECKING:
 # Type alias: a tile location can be a local file path or a /vsicurl/ URL
 TilePath = Union[Path, str]
 
-FLOOD_MIN_CODE = 160  #: conservative default: ≥60% water fraction
-FILL_CODES = {0, 1}
-CLOUD_CODES = {30}
-# Code 99 ("NormalWater" per the embedded NOAA TIFF metadata tag
-# ``WaterDetection#TypeDescription``) is the VIIRS reference-water class — what
-# Atlantis exposes as ``permanent_water``. Code 17 is Vegetation, not water.
-PERMANENT_WATER_CODES = {99}
-SEASONAL_WATER_CODES = {20}
-OPEN_WATER_CODES = {99}
-CLASSIFIED_FLOOD_NODATA = 255
-
 _VSICURL_PREFIX = "/vsicurl/"
+
+#: Derived layers carried as named ``ProcessedTile`` fields; everything else a
+#: source registers goes through ``ProcessedTile.extra_layers``.
+_CORE_DERIVED = ("flood_fraction", "quality_mask", "permanent_water")
 
 
 def _decode_flood_fraction(data: np.ndarray) -> np.ndarray:
     """Decode raw VIIRS codes into flood fraction while preserving missing data.
 
-    Flood codes 101–200 decode to continuous fractions in ``[0.01, 1.0]``.
-    Valid non-flood observations map to ``0.0``. Fill and cloud pixels remain
-    missing as ``NaN`` so temporal aggregation skips them instead of counting
-    them as dry observations.
+    Thin wrapper delegating to the registered ``flood_fraction`` derivation so
+    the decode lives in exactly one place
+    (:mod:`atlantis.fetchers.viirs.derived`).
     """
-    missing = np.isin(data, list(FILL_CODES | CLOUD_CODES))
-    flood_mask = (data >= 101) & (data <= 200)
-
-    flood_fraction = np.full(data.shape, np.nan, dtype=np.float32)
-    flood_fraction[~missing] = 0.0
-    flood_fraction[flood_mask] = (data[flood_mask].astype(np.float32) - 100.0) / 100.0
-    return flood_fraction
+    return registry.get_derived("flood_fraction").derive(DerivationContext(arrays={SELECTED_BAND: data}))
 
 
 def _resolve_tile_path(item: TilePath) -> str:
@@ -98,6 +99,8 @@ class ProcessedTile:
     flood_fraction: np.ndarray | None = None
     quality_mask: np.ndarray | None = None
     permanent_water: np.ndarray | None = None
+    #: Additional derived layers (e.g. cloud_mask, shadow) keyed by layer name.
+    extra_layers: dict[str, np.ndarray] = field(default_factory=dict)
 
     @property
     def is_classified(self) -> bool:
@@ -113,6 +116,8 @@ class OutputPaths:
     flood_fraction: Path | None = None
     quality_mask: Path | None = None
     permanent_water: Path | None = None
+    #: Output paths for extra derived layers, keyed by layer name.
+    extra: dict[str, Path] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -140,26 +145,21 @@ def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str
         fields (``quality_mask``, ``permanent_water``) are set but callers
         that only need ``flood_fraction`` may discard them.
     """
+    ctx = DerivationContext(arrays={SELECTED_BAND: data})
+    derived = {spec.name: spec.derive(ctx) for spec in registry.list_derived()}
+    extra = {name: arr for name, arr in derived.items() if name not in _CORE_DERIVED}
+
     fill = np.isin(data, list(FILL_CODES))
     cloud = np.isin(data, list(CLOUD_CODES))
-    permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
-
-    flood_fraction = _decode_flood_fraction(data)
-
-    quality_mask = np.ones_like(data, dtype=np.uint8)
-    quality_mask[fill | cloud] = 0
-
-    permanent_water_mask = np.zeros_like(data, dtype=np.uint8)
-    permanent_water_mask[permanent_water] = 1
-
     valid = ~fill
     n_valid = int(valid.sum())
     cloud_fraction = float(cloud[valid].sum() / n_valid) if n_valid else 0.0
 
     return ProcessedTile(
-        flood_fraction=flood_fraction,
-        quality_mask=quality_mask,
-        permanent_water=permanent_water_mask,
+        flood_fraction=derived["flood_fraction"],
+        quality_mask=derived["quality_mask"],
+        permanent_water=derived["permanent_water"],
+        extra_layers=extra,
         transform=transform,
         crs=crs,
         cloud_fraction=cloud_fraction,
@@ -257,6 +257,7 @@ class ViirsRasterProcessor:
                 flood_fraction=output_dir / f"{base_name}_flood_fraction.tif",
                 quality_mask=output_dir / f"{base_name}_quality_mask.tif",
                 permanent_water=output_dir / f"{base_name}_permanent_water.tif",
+                extra={name: output_dir / f"{base_name}_{name}.tif" for name in processed.extra_layers},
             )
         else:
             paths = OutputPaths(raw=output_dir / f"{base_name}_raw.tif")
@@ -329,58 +330,31 @@ class ViirsRasterProcessor:
             )
 
     def _classify_pixels(self, data: np.ndarray, transform: rasterio.Affine, crs: str) -> ProcessedTile:
-        """Classify pixel values — delegates to module-level :func:`classify_viirs_pixels`."""
-        fill = np.isin(data, list(FILL_CODES))
-        cloud = np.isin(data, list(CLOUD_CODES))
-        permanent_water = np.isin(data, list(PERMANENT_WATER_CODES))
+        """Classify pixel values — delegates to module-level :func:`classify_viirs_pixels`.
 
-        flood_mask = (data >= 101) & (data <= 200)
-        # Fill/cloud stay missing; other valid observations become 0.0.
-        flood_fraction = _decode_flood_fraction(data)
-
-        # Quality mask: 1 = valid clear-sky observation, 0 = unusable (fill or cloud).
-        # Pre-existing water types (permanent/seasonal/open) are valid observations —
-        # exclude them via the permanent_water mask, not here.
-        quality_mask = np.ones_like(data, dtype=np.uint8)
-        quality_mask[fill | cloud] = 0
-
-        permanent_water_mask = np.zeros_like(data, dtype=np.uint8)
-        permanent_water_mask[permanent_water] = 1
-
-        # Cloud fraction over non-fill pixels only (fill pixels are not real observations).
-        valid = ~fill
-        n_valid = int(valid.sum())
-        cloud_fraction = float(cloud[valid].sum() / n_valid) if n_valid else 0.0
+        The per-layer maths lives in the VIIRS layer registry
+        (:mod:`atlantis.fetchers.viirs.derived`), so this is a thin wrapper that
+        also emits a debug summary of the classification mix.
+        """
+        processed = classify_viirs_pixels(data, transform, crs)
 
         n_total = int(data.size)
-        n_fill = int(fill.sum())
-        n_flood = int(flood_mask.sum())
-        n_cloud = int(cloud.sum())
-        n_perm_water = int(permanent_water.sum())
+        n_fill = int(np.isin(data, list(FILL_CODES)).sum())
+        n_flood = int(((data >= 101) & (data <= 200)).sum())
+        n_cloud = int(np.isin(data, list(CLOUD_CODES)).sum())
+        n_perm_water = int(np.isin(data, list(PERMANENT_WATER_CODES)).sum())
         n_clear = n_total - n_fill - n_cloud - n_flood - n_perm_water
-        fill_pct = n_fill / n_total * 100 if n_total else 0.0
-        flood_pct = n_flood / n_total * 100 if n_total else 0.0
-        cloud_pct = n_cloud / n_total * 100 if n_total else 0.0
-        perm_water_pct = n_perm_water / n_total * 100 if n_total else 0.0
-        clear_pct = n_clear / n_total * 100 if n_total else 0.0
-        logger.debug(
-            "Classification: flood {:.1f}%, cloud {:.1f}%, permanent-water"
-            " {:.1f}%, clear {:.1f}%, fill/no-data {:.1f}%",
-            flood_pct,
-            cloud_pct,
-            perm_water_pct,
-            clear_pct,
-            fill_pct,
-        )
-
-        return ProcessedTile(
-            flood_fraction=flood_fraction,
-            quality_mask=quality_mask,
-            permanent_water=permanent_water_mask,
-            transform=transform,
-            crs=crs,
-            cloud_fraction=cloud_fraction,
-        )
+        if n_total:
+            logger.debug(
+                "Classification: flood {:.1f}%, cloud {:.1f}%, permanent-water"
+                " {:.1f}%, clear {:.1f}%, fill/no-data {:.1f}%",
+                n_flood / n_total * 100,
+                n_cloud / n_total * 100,
+                n_perm_water / n_total * 100,
+                n_clear / n_total * 100,
+                n_fill / n_total * 100,
+            )
+        return processed
 
     def write_processed(self, result: "ProcessTilesResult") -> None:
         """Persist a :class:`ProcessTilesResult` to disk.
@@ -440,6 +414,17 @@ class ViirsRasterProcessor:
         if paths.permanent_water is not None and processed.permanent_water is not None:
             with rasterio.open(paths.permanent_water, "w", **base_meta, dtype="uint8", nodata=0) as dst:
                 dst.write(processed.permanent_water, 1)
+
+        # Extra derived layers (e.g. cloud_mask, shadow): written generically
+        # using each layer's registered dtype / nodata.
+        for name, array in processed.extra_layers.items():
+            path = paths.extra.get(name)
+            if path is None:
+                continue
+            spec = registry.get_derived(name)
+            nodata = 0 if spec.nodata is None else spec.nodata
+            with rasterio.open(path, "w", **base_meta, dtype=spec.dtype, nodata=nodata) as dst:
+                dst.write(array.astype(spec.dtype), 1)
 
     def _build_metadata(self, event_id: str, processed: ProcessedTile, width: int, height: int) -> TileMetadata:
         """Build TileMetadata from processed tile.
@@ -532,11 +517,20 @@ class ViirsRasterProcessor:
         # ── cloud_fraction: mean ────────────────────────────────────────
         cloud_fraction = float(np.mean([t.cloud_fraction for t in tiles]))
 
+        # ── extra derived layers: per-pixel mode across time ────────────
+        extra_layers: dict[str, np.ndarray] = {}
+        extra_names = {name for t in tiles for name in t.extra_layers}
+        for name in extra_names:
+            arrays = [t.extra_layers[name] for t in tiles if name in t.extra_layers]
+            stack = np.stack(arrays, axis=0).astype(np.uint8)
+            extra_layers[name] = _mode_uint8(stack)
+
         return ProcessedTile(
             raw=raw,
             flood_fraction=flood_fraction,
             quality_mask=quality_mask,
             permanent_water=permanent_water,
+            extra_layers=extra_layers,
             transform=ref.transform,
             crs=ref.crs,
             cloud_fraction=cloud_fraction,
