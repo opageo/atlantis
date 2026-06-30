@@ -1,327 +1,342 @@
 # Atlantis CLI Examples
 
-A tour of `atlantis` CLI workflows across real flood events. Each example is
-self-contained and can be copy-pasted after `make setup`.
+A structured tour of the `atlantis fetch` CLI across its three flood-observation
+sources — **VIIRS**, **MODIS**, and **GFM** — focused on the most important
+pipeline options (`--classify/--no-classify`, `--stream/--no-stream`,
+`--harmonise`, `--strategy`, and the source-specific backend/composite flags).
 
-Every case is shown in **two equivalent forms**:
-
-1. **Generic CLI** (`atlantis fetch`) — the user supplies a bounding box and
-   a date range. This is the default workflow and works for any flood event,
-   anywhere. No prior knowledge of KuroSiwo (or any catalogue) is required.
-2. **KuroSiwo helper** (`atlantis fetch-kurosiwo-viirs`) — convenience
-   wrapper that auto-resolves bbox + dates from the bundled KuroSiwo
-   catalogue when you already know the case ID.
-
-The bounding boxes and dates used in the generic examples below happen to be
-derived from
-[`data/metadata/kurosiwo_metadata_v1.csv`](data/metadata/kurosiwo_metadata_v1.csv)
-so the two forms produce the same outputs — but the generic form would work
-identically for any AOI/time window you choose. For background on the
-KuroSiwo dataset itself, see
-[`notebooks/drafts/kurosiwo_eda.ipynb`](notebooks/drafts/kurosiwo_eda.ipynb).
+All commands use **pixi**. The same flags work for any AOI and date window; the
+examples reuse the **Valencia 2024** flood (a Mediterranean DANA flash flood) as
+a common AOI so you can compare sources and options side by side.
 
 ## Contents
 
 - [Prerequisites](#prerequisites)
-- [Common flags](#common-flags)
-- [Case 1 — Valencia, Spain (October 2024)](#case-1--valencia-spain-october-2024)
-- [Case 2 — Hurricane Harvey, Texas, USA (August 2017)](#case-2--hurricane-harvey-texas-usa-august-2017)
-- [Case 3 — South Asian Monsoon, Bihar / Nepal (September 2019)](#case-3--south-asian-monsoon-bihar--nepal-september-2019)
-- [Case 4 — Typhoon Vamco, Luzon, Philippines (November 2020)](#case-4--typhoon-vamco-luzon-philippines-november-2020)
-- [Case 5 — West Africa floods, Ghana / Togo / Benin (October 2020)](#case-5--west-africa-floods-ghana--togo--benin-october-2020)
-- [Batch KuroSiwo runs](#batch-kurosiwo-runs)
+- [How to run](#how-to-run)
+- [Common flags (all sources)](#common-flags-all-sources)
+- [VIIRS examples](#viirs-examples)
+- [MODIS examples](#modis-examples)
+- [GFM examples](#gfm-examples)
+- [Fetch all sources at once](#fetch-all-sources-at-once)
+- [Predefined pixi tasks](#predefined-pixi-tasks)
+- [Output structure](#output-structure)
+- [More flood events](#more-flood-events)
 - [VIIRS availability notes](#viirs-availability-notes)
 
 ## Prerequisites
 
 ```bash
-make setup   # install deps + restore data assets (VIIRS AOI grid, KuroSiwo catalogue)
+pixi install        # create the env (geo stack + GDAL/HDF4)
+pixi run setup      # restore data assets (VIIRS AOI grid, KuroSiwo catalogue)
 ```
 
-Or, equivalently:
+- **VIIRS** streams public NOAA S3 tiles — no credentials needed.
+- **GFM** reads Sentinel-1 COGs from the EODC STAC API — no credentials needed.
+- **MODIS** needs a NASA Earthdata token in a `.env` file at the repo root
+  (`EARTHDATA_TOKEN=...`, auto-loaded by the CLI). The `laads_hdf4` backend also
+  requires a one-time LAADS license approval on your Earthdata account.
+
+Quick smoke test (Valencia 2024, VIIRS):
 
 ```bash
-uv sync --extra geo
-uv run atlantis setup
+pixi run demo
 ```
 
-A quick smoke test (Valencia 2024 with sensible defaults):
+## How to run
 
-```bash
-uv run atlantis demo   # equivalent to: make demo
+There are two equivalent ways to run any example:
+
+1. **Type the command** through pixi:
+
+   ```bash
+   pixi run atlantis fetch --event Valencia_2024 --source viirs \
+     --bbox "-1.5 38.8 0.5 40.0" \
+     --start-date 2024-10-29 --end-date 2024-11-04 \
+     --harmonise --plot
+   ```
+
+   Add the top-level `--verbose` flag (before `fetch`) for debug logging:
+   `pixi run atlantis --verbose fetch ...`.
+
+2. **Run a predefined task** — see [Predefined pixi tasks](#predefined-pixi-tasks):
+
+   ```bash
+   pixi run demo          # VIIRS Valencia
+   pixi run demo-modis    # MODIS Valencia
+   pixi run demo-gfm      # GFM   Valencia
+   ```
+
+Throughout this guide the AOI/date flags are the Valencia 2024 window:
+
+```
+--bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04
 ```
 
-Each case below also has a one-liner `make` target. Run them all with
-`make examples` (KuroSiwo helper) or `make examples-bbox` (generic CLI),
-or individually:
+Swap them for any other AOI/time window (see [More flood events](#more-flood-events)).
 
-| Case                                  | Generic CLI (bbox + date)      | KuroSiwo helper                 |
-| ------------------------------------- | ------------------------------ | ------------------------------- |
-| Valencia 2024 (Spain)                 | `make demo`                    | — (Valencia is not in KuroSiwo) |
-| Hurricane Harvey (Texas, USA)         | `make example-harvey-bbox`     | `make example-harvey`           |
-| South Asian monsoon (Bihar/Nepal)     | `make example-bihar-bbox`      | `make example-bihar`            |
-| Typhoon Vamco (Luzon, Philippines)    | `make example-vamco-bbox`      | `make example-vamco`            |
-| West Africa floods (Ghana/Togo/Benin) | `make example-westafrica-bbox` | `make example-westafrica`       |
+## Common flags (all sources)
 
-## Common flags
+| Flag                                                            | Default            | What it does                                                                                                       |
+| --------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `--source`, `-s`                                                | `all`              | `viirs`, `modis`, `gfm`, or `all`.                                                                                 |
+| `--classify` / `--no-classify`                                  | `--classify`       | Derive flood-fraction / quality / permanent-water layers, **or** write the raw source codes.                       |
+| `--harmonise`                                                   | off                | Reproject the source-resolution `processed/` output to the canonical **1-arcmin** grid (stackable across sources). |
+| `--stream` / `--no-stream`                                      | `--stream`         | Stream tiles via `/vsicurl/`, or download them first. (GFM always streams; MODIS streaming needs `lance_geotiff`.) |
+| `--plot`                                                        | off                | Save a PNG per output date.                                                                                        |
+| `--keep-processed` / `--no-keep-processed`                      | `--keep-processed` | Keep the intermediate source-resolution GeoTIFFs, or write only the harmonised output.                             |
+| `--strategy`                                                    | `peak`             | `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (one output per date).                        |
+| `--peak-window-days` / `--max-observations` / `--peak-priority` | `0` / `0` / `post` | Filter the date stack to a ±N-day window around the peak and subsample it.                                         |
 
-These appear throughout the examples below — abridged from
-[`docs/viirs/overview.md`](docs/viirs/overview.md). For pixel-level details on what each
-`--strategy` actually does to the multi-date stack (mean vs. mode vs.
-per-date pass-through), see
-[`docs/viirs/pipeline.md`](docs/viirs/pipeline.md#strategies-in-detail-pixel-level).
+> **Resolutions:** VIIRS **375 m**, MODIS **250 m**, GFM **~80 m** in `processed/`;
+> all collapse to **1 arcmin** with `--harmonise`.
 
-- **`--strategy peak`** (default) — keep the date with the most flood pixels.
-- **`--strategy aggregate`** — temporal mean (continuous) / mode (categorical) composite over the window.
-- **`--strategy all`** — write one harmonised output per date (time-series).
-- **`--no-keep-processed`** — skip intermediate 375 m files; write only the harmonised output.
-- **`--harmonise`** — resample to 1 arcmin (~1.85 km) on a global grid. For GFM (classified) re-encodes float32→uint8 on the same grid; for GFM (native) NN-reprojects raw codes.
-- **`--plot`** — save a PNG of the peak-flood date.
-- **`--stream` / `--no-stream`** — stream tiles from NOAA S3 (default) or download to `raw/`. Ignored for GFM (always streams via STAC/COG).
-- **`--classify` / `--no-classify`** — write classified layers or raw codes. For GFM, `--no-classify` emits the native `ensemble_flood_extent` and `reference_water_mask` bands (no derivation).
-- **`--verbose`** — enable debug-level logging for fetch/harmonise internals.
+---
 
-## Case 1 — Valencia, Spain (October 2024)
+## VIIRS examples
 
-Mediterranean DANA flash flood. Used as the default smoke test (`atlantis demo`).
+Optical flood fraction from the NOAA VIIRS VFM product. Streams from public NOAA
+S3 by default; no credentials required.
+
+### 1. Quick start — peak date, classified + harmonised
 
 ```bash
-uv run atlantis --verbose fetch \
-  --event Valencia_2024 \
-  --source viirs \
-  --bbox "-1.5 38.8 0.5 40.0" \
-  --start-date 2024-10-29 \
-  --end-date 2024-11-04 \
-  --plot \
-  --harmonise \
+pixi run atlantis fetch --event Valencia_2024 --source viirs \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --strategy peak --plot --harmonise
+```
+
+### 2. Stream vs. download (`--stream` / `--no-stream`)
+
+```bash
+# Stream tiles directly (default — nothing written to raw/)
+pixi run atlantis fetch --event Valencia_2024 --source viirs \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --stream --harmonise
+
+# Download tiles to raw/ first (re-runs, offline inspection)
+pixi run atlantis fetch --event Valencia_2024 --source viirs \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --no-stream --harmonise
+```
+
+### 3. Classified vs. raw codes (`--classify` / `--no-classify`)
+
+```bash
+# Classified flood fraction (default)
+pixi run atlantis fetch --event Valencia_2024 --source viirs \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --classify --harmonise --plot
+
+# Raw VFM pixel codes (0–200), nearest-neighbour resampled when harmonised
+pixi run atlantis fetch --event Valencia_2024 --source viirs \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --no-classify --harmonise --plot
+```
+
+### 4. Strategies (`peak` / `aggregate` / `all`)
+
+```bash
+# Temporal mean/mode composite over the window
+pixi run atlantis fetch --event Valencia_2024 --source viirs \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --strategy aggregate --harmonise
+
+# One harmonised GeoTIFF per date, peak-centred and subsampled
+pixi run atlantis fetch --event Valencia_2024 --source viirs \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --harmonise
+```
+
+### 5. Backend for the 2021–2022 gap (`--viirs-backend gmu_legacy`)
+
+NOAA S3 covers 2012–2020 and 2023–2026. For events in the 2021–2022 gap, use the
+GMU legacy backend (download-only, intermittent host):
+
+```bash
+pixi run atlantis fetch --event Pakistan_2022 --source viirs \
+  --bbox "67.5 26 70 29.5" --start-date 2022-08-28 --end-date 2022-09-03 \
+  --viirs-backend gmu_legacy --no-stream --harmonise --plot
+```
+
+---
+
+## MODIS examples
+
+MODIS MCDWD water/flood composites. Two backends: `lance_geotiff` (streamable,
+~1-week NRT window) and `laads_hdf4` (download, full 2003+ archive). Requires
+`EARTHDATA_TOKEN`.
+
+### 1. Quick start — historical archive (`laads_hdf4`)
+
+```bash
+pixi run atlantis fetch --event Valencia_2024 --source modis \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --modis-backend laads_hdf4 --modis-composite F2 \
+  --strategy peak --plot --harmonise
+```
+
+### 2. Backends & streaming (`--modis-backend`, `--stream`)
+
+```bash
+# NRT streaming — recent events only (~1-week retention); use a recent window
+pixi run atlantis fetch --event Recent_Flood --source modis \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2026-06-24 --end-date 2026-06-28 \
+  --modis-backend lance_geotiff --stream --harmonise
+
+# Historical archive — downloads HDF4 (`--stream` is ignored)
+pixi run atlantis fetch --event Valencia_2024 --source modis \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --modis-backend laads_hdf4 --harmonise
+```
+
+### 3. Composite selection (`--modis-composite`)
+
+```bash
+# F1 (1-day), F1C (1-day cloud-shadow-screened), F2 (2-day, default), F3 (3-day)
+pixi run atlantis fetch --event Valencia_2024 --source modis \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --modis-backend laads_hdf4 --modis-composite F3 --harmonise
+```
+
+### 4. Classified vs. raw codes (`--classify` / `--no-classify`)
+
+```bash
+# Raw MCDWD codes: 0=no-water, 1=water, 2=recurring, 3=unusual flood, 255=insufficient
+pixi run atlantis fetch --event Valencia_2024 --source modis \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --modis-backend laads_hdf4 --no-classify --harmonise --plot
+```
+
+### 5. Time-series (`--strategy all`)
+
+```bash
+pixi run atlantis fetch --event Valencia_2024 --source modis \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --modis-backend laads_hdf4 --strategy all \
+  --peak-window-days 2 --max-observations 3 --harmonise
+```
+
+---
+
+## GFM examples
+
+Sentinel-1 SAR flood extent from the EODC Global Flood Monitor. Cloud-penetrating
+and **always streamed** via STAC/COG (no credentials; `--no-stream` is ignored).
+
+### 1. Quick start — classified + harmonised
+
+```bash
+pixi run atlantis fetch --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --strategy peak --plot --harmonise
+```
+
+### 2. Classified vs. native SAR codes (`--classify` / `--no-classify`)
+
+```bash
+# Classified flood fraction (default; ~80 m → 1 arcmin with --harmonise)
+pixi run atlantis fetch --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --classify --harmonise --plot
+
+# Native bands: ensemble_flood_extent + reference_water_mask (no derivation)
+pixi run atlantis fetch --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --no-classify --harmonise --plot
+```
+
+### 3. Resolution / speckle trade-off (`--gfm-coarsen-factor`)
+
+```bash
+# Keep more detail (~40 m): factor 2 — slower, noisier
+pixi run atlantis fetch --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --gfm-coarsen-factor 2 --harmonise
+
+# Smoother / faster (~160 m): factor 8
+pixi run atlantis fetch --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --gfm-coarsen-factor 8 --harmonise
+```
+
+### 4. Time-series (`--strategy all`)
+
+```bash
+pixi run atlantis fetch --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --strategy all --peak-window-days 2 --max-observations 3 --harmonise
+```
+
+---
+
+## Fetch all sources at once
+
+`--source all` runs VIIRS, MODIS, and GFM in one call (MODIS still needs its
+backend + token). Each source writes to its own subfolder under `--output`.
+
+```bash
+pixi run atlantis fetch --event Valencia_2024 --source all \
+  --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
+  --modis-backend laads_hdf4 --strategy peak --harmonise --plot \
   --output ./data/Valencia_2024
 ```
 
-**Example output:**
+## Predefined pixi tasks
+
+Ready-to-run tasks defined in [`pixi.toml`](pixi.toml):
+
+| Task                      | Equivalent to                                       |
+| ------------------------- | --------------------------------------------------- |
+| `pixi run demo`           | VIIRS, Valencia 2024 (peak-window, plot, harmonise) |
+| `pixi run demo-modis`     | MODIS (`laads_hdf4`), Valencia 2024                 |
+| `pixi run demo-gfm`       | GFM, Valencia 2024                                  |
+| `pixi run examples-viirs` | VIIRS across Harvey / Bihar / Vamco / West Africa   |
+| `pixi run examples-modis` | MODIS across the same four events                   |
+| `pixi run examples-gfm`   | GFM across five events (incl. Valencia)             |
+| `pixi run examples`       | Everything above                                    |
+
+## Output structure
+
+A classified run with `--harmonise --plot` writes, per source:
 
 ```
-Fetching data for event: Valencia_2024
-Sources: viirs
-Output: data/Valencia_2024
-
-Fetching from viirs...
-  2024-10-29  flood_fraction  flooded=12 847  valid=38 400  fraction=0.334
-  2024-10-30  flood_fraction  flooded= 9 211  valid=38 400  fraction=0.240
-  2024-10-31  flood_fraction  flooded= 5 034  valid=38 400  fraction=0.131
-  2024-11-01  flood_fraction  flooded= 1 872  valid=38 400  fraction=0.049
-  Wrote 4 files
-  Harmonised → Valencia_2024_2024-10-29_viirs_harmonised.tif
+<output>/<event_id>/<source>/
+  processed/    # source-resolution GeoTIFFs (omitted with --no-keep-processed)
+  plots/        # one PNG per date (with --plot), incl. *_harmonised.png
+  harmonised/   # 1-arcmin GeoTIFFs (with --harmonise)
 ```
 
-Generates:
+With `--no-classify`, `processed/` and `harmonised/` hold the raw code bands
+instead — e.g. GFM `*_ensemble_flood_extent.tif` / `*_reference_water_mask.tif`,
+or VIIRS/MODIS `*_raw.tif`.
 
-- `viirs/processed/` — 375 m classified GeoTIFFs for all dates
-- `viirs/plots/Valencia_2024_2024-10-29_viirs.png` — peak-date visualisation (375 m)
-- `viirs/plots/Valencia_2024_2024-10-29_viirs_harmonised.png` — harmonised visualisation (1 arcmin)
-- `viirs/harmonised/Valencia_2024_2024-10-29_viirs_harmonised.tif` — 1 arcmin GeoTIFF
+## More flood events
 
-## Case 2 — Hurricane Harvey, Texas, USA (August 2017)
+The AOI/date flags are the only thing that changes between events — swap them
+into any example above. Some KuroSiwo-derived AOIs:
 
-One of the largest KuroSiwo events: ~1,227 km² of flood extent across the
-Texas Gulf coast (Houston metropolitan area). A good stress test for
-multi-tile mosaicing.
+| Event                               | bbox `"W S E N"`            | Date window             |
+| ----------------------------------- | --------------------------- | ----------------------- |
+| Valencia 2024 (Spain)               | `-1.5 38.8 0.5 40.0`        | 2024-10-29 → 2024-11-04 |
+| Hurricane Harvey 2017 (USA)         | `-97.27 28.24 -95.54 29.80` | 2017-08-28 → 2017-08-31 |
+| Bihar / Nepal monsoon 2019          | `84.84 24.92 86.49 26.16`   | 2019-09-16 → 2019-09-20 |
+| Typhoon Vamco 2020 (Philippines)    | `121.14 16.72 122.25 18.45` | 2020-11-12 → 2020-11-14 |
+| West Africa 2020 (Ghana/Togo/Benin) | `-0.86 8.26 1.99 11.73`     | 2020-10-13 → 2020-10-15 |
 
-**Generic CLI** — bbox + date range, no catalogue needed (`make example-harvey-bbox`):
+For KuroSiwo cases you can auto-resolve bbox + dates with the VIIRS helper:
 
 ```bash
-uv run atlantis --verbose fetch \
-  --event Harvey_2017 \
-  --source viirs \
-  --bbox "-97.27 28.24 -95.54 29.80" \
-  --start-date 2017-08-28 --end-date 2017-08-31 \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/Harvey_2017
-```
-
-**KuroSiwo helper** — same event, bbox/dates auto-resolved from the
-catalogue (`make example-harvey`):
-
-```bash
-uv run atlantis --verbose fetch-kurosiwo-viirs \
-  --case KuroSiwo_1111004 \
-  --days-before 1 --days-after 1 \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/KuroSiwo_1111004
-```
-
-## Case 3 — South Asian Monsoon, Bihar / Nepal (September 2019)
-
-Ganges-basin monsoon flooding: ~1,115 km² of flood extent across
-northern India and southern Nepal. Demonstrates the `aggregate` strategy
-over a slightly wider window — useful when daily acquisitions are
-cloud-contaminated and a temporal composite is more informative.
-
-**Generic CLI** — bbox + date range with `--strategy aggregate`
-(`make example-bihar-bbox`):
-
-```bash
-uv run atlantis --verbose fetch \
-  --event Bihar_2019 \
-  --source viirs \
-  --bbox "84.84 24.92 86.49 26.16" \
-  --start-date 2019-09-16 --end-date 2019-09-20 \
-  --strategy aggregate \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/Bihar_2019
-```
-
-**KuroSiwo helper** (`make example-bihar`):
-
-```bash
-uv run atlantis --verbose fetch-kurosiwo-viirs \
-  --case KuroSiwo_1111007 \
-  --days-before 2 --days-after 2 \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/KuroSiwo_1111007
-```
-
-## Case 4 — Typhoon Vamco, Luzon, Philippines (November 2020)
-
-Tropical-cyclone driven flooding north of Manila: ~951 km² extent.
-
-**Generic CLI** — bbox + date range (`make example-vamco-bbox`):
-
-```bash
-uv run atlantis --verbose fetch \
-  --event Vamco_2020 \
-  --source viirs \
-  --bbox "121.14 16.72 122.25 18.45" \
-  --start-date 2020-11-12 --end-date 2020-11-14 \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/Vamco_2020
-```
-
-**KuroSiwo helper** (`make example-vamco`):
-
-```bash
-uv run atlantis --verbose fetch-kurosiwo-viirs \
-  --case KuroSiwo_1111011 \
-  --days-before 1 --days-after 1 \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/KuroSiwo_1111011
-```
-
-**Variant** — build a daily time-series with `--strategy all` over a wider window:
-
-```bash
-uv run atlantis --verbose fetch \
-  --event Vamco_2020_timeseries \
-  --source viirs \
-  --bbox "121.14 16.72 122.25 18.45" \
-  --start-date 2020-11-11 --end-date 2020-11-15 \
-  --strategy all \
-  --harmonise --no-keep-processed \
-  --output ./data/Vamco_2020_timeseries
-```
-
-This writes one harmonised GeoTIFF per date in `viirs/harmonised/` and a
-matching PNG per date in `viirs/plots/`, e.g.
-`Vamco_2020_timeseries_2020-11-13_viirs_harmonised.tif`.
-
-**Variant** — wide search window with a peak-centred filter and subsampling:
-
-```bash
-uv run atlantis --verbose fetch \
-  --event Vamco_2020_window \
-  --source viirs \
-  --bbox "121.14 16.72 122.25 18.45" \
-  --start-date 2020-11-07 --end-date 2020-11-19 \
-  --strategy all \
-  --peak-window-days 4 \
-  --max-observations 5 \
-  --peak-priority post \
-  --harmonise --no-keep-processed \
-  --output ./data/Vamco_2020_window
-```
-
-This searches 13 days, detects the peak flood date, filters to ±4 days around it,
-then returns up to 5 dates (peak + 4 nearest post-event days). See
-[`docs/viirs/overview.md#peak-window-filtering-and-subsampling`](docs/viirs/overview.md#peak-window-filtering-and-subsampling)
-for the full flag reference.
-
-## Case 5 — West Africa floods, Ghana / Togo / Benin (October 2020)
-
-Tropical/sub-Saharan flooding: ~420 km² extent. Used in
-[`docs/viirs/overview.md`](docs/viirs/overview.md) as the canonical KuroSiwo example.
-
-**Generic CLI** — bbox + date range (`make example-westafrica-bbox`):
-
-```bash
-uv run atlantis --verbose fetch \
-  --event WestAfrica_2020 \
-  --source viirs \
-  --bbox "-0.86 8.26 1.99 11.73" \
-  --start-date 2020-10-13 --end-date 2020-10-15 \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/WestAfrica_2020
-```
-
-**KuroSiwo helper** (`make example-westafrica`):
-
-```bash
-uv run atlantis --verbose fetch-kurosiwo-viirs \
-  --case KuroSiwo_470 \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/KuroSiwo_470
-```
-
-## Batch KuroSiwo runs
-
-Process the first N catalogue cases in one go (skipping intermediates to
-keep disk usage low):
-
-```bash
-uv run atlantis --verbose fetch-kurosiwo-viirs \
-  --catalogue assets/ks_catalogue.gpkg \
-  --limit 5 \
-  --no-keep-processed --harmonise \
-  --output ./data/kurosiwo_batch
-```
-
-For faster repeated runs, pre-build the metadata CSV once and reuse it:
-
-```bash
-uv run atlantis --verbose build-kurosiwo-metadata \
-  --catalogue assets/ks_catalogue.gpkg \
-  --output data/metadata/kurosiwo_metadata_v1.csv
-
-uv run atlantis --verbose fetch-kurosiwo-viirs \
-  --metadata data/metadata/kurosiwo_metadata_v1.csv \
-  --case KuroSiwo_1111011 \
-  --harmonise --no-keep-processed
+pixi run atlantis fetch-kurosiwo-viirs --case KuroSiwo_470 --harmonise --plot
 ```
 
 ## VIIRS availability notes
 
-The default `noaa_s3` backend publishes VFM tiles for **2012–2020 and
-2023–2026** (verified at time of writing). **2021 and 2022 are not
-published** on the public NOAA JPSS bucket. Some notable KuroSiwo events
-fall in this gap, e.g.:
+The default `noaa_s3` backend publishes VFM tiles for **2012–2020 and 2023–2026**.
+**2021 and 2022 are not published** on the public NOAA bucket. For events in that
+gap (e.g. Pakistan 2022), use `--viirs-backend gmu_legacy --no-stream` (the GMU
+host is intermittently offline — retry from a non-cloud network).
 
-- `KuroSiwo_1111009` — Pakistan, August–September 2022 (~9,300 km², the largest event in the catalogue)
-- `KuroSiwo_554`/`555`/`559`/`561`/`562`/`567` — various 2021–2022 events
-
-For those, use the GMU Legacy backend with `--viirs-backend gmu_legacy --no-stream`.
-The GMU host is intermittently offline — retry from a non-cloud network if
-connections time out.
-
-**Pakistan 2022 — GMU Legacy backend example:**
-
-```bash
-uv run atlantis --verbose fetch \
-  --event Pakistan_2022 \
-  --source viirs \
-  --bbox "67.5 26 70 29.5" \
-  --start-date 2022-08-28 --end-date 2022-09-03 \
-  --viirs-backend gmu_legacy --no-stream \
-  --plot --harmonise --no-keep-processed \
-  --output ./data/Pakistan_2022
-```
-
-See [`docs/viirs/overview.md#data-availability`](docs/viirs/overview.md#data-availability) for
-the full backend comparison.
+See [`docs/cli.md`](docs/cli.md) for the full flag reference and
+[`docs/viirs/overview.md#data-availability`](docs/viirs/overview.md#data-availability)
+for the backend comparison.

@@ -6,8 +6,9 @@ walkthroughs (Valencia, Harvey, Bihar, …) see
 see [viirs/overview.md](viirs/overview.md), [modis/overview.md](modis/overview.md),
 and [gfm/overview.md](gfm/overview.md).
 
-All commands are invoked through `uv run atlantis <command>` (or simply
-`atlantis <command>` inside an activated environment).
+All commands are invoked through `pixi run atlantis <command>` (or
+`uv run atlantis <command>`, or simply `atlantis <command>` inside an activated
+environment).
 
 ## Contents
 
@@ -37,7 +38,7 @@ These apply to every subcommand and must appear **before** the command name.
 | `--show-completion`    | —       | Print completion script (to copy or customise).       |
 | `--help`               | —       | Show top-level help and exit.                         |
 
-Example: `uv run atlantis --verbose fetch --event ...`
+Example: `pixi run atlantis --verbose fetch --event ...`
 
 ## Command summary
 
@@ -62,7 +63,7 @@ Bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue) and
 optionally prompt for missing credentials (e.g. `EARTHDATA_TOKEN`).
 
 ```bash
-uv run atlantis setup [OPTIONS]
+pixi run atlantis setup [OPTIONS]
 ```
 
 | Option              | Default | Description                                                                               |
@@ -81,7 +82,7 @@ Self-contained Valencia 2024 (Spain DANA) end-to-end VIIRS example.
 Convenient smoke test after `setup`.
 
 ```bash
-uv run atlantis demo [OPTIONS]
+pixi run atlantis demo [OPTIONS]
 ```
 
 | Option                       | Default              | Description                                         |
@@ -97,7 +98,7 @@ and a date window. Supports VIIRS, MODIS, GFM (and the planned RFM)
 through a single interface; use `--source` to pick one or `all`.
 
 ```bash
-uv run atlantis fetch [OPTIONS]
+pixi run atlantis fetch [OPTIONS]
 ```
 
 ### Event selection
@@ -156,10 +157,10 @@ for pixel-level semantics.
 
 ### GFM-specific
 
-| Option                 | Default   | Description                                                                        |
-| ---------------------- | --------- | ---------------------------------------------------------------------------------- |
-| `--gfm-coarsen-factor` | `4`       | Spatial coarsening factor applied before reprojection.                             |
-| `--gfm-resampling`     | `average` | Resampling method for reprojection to EPSG:4326 (any `rasterio.enums.Resampling`). |
+| Option                 | Default   | Description                                                                                                                  |
+| ---------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `--gfm-coarsen-factor` | `4`       | Mean-pool factor for the class masks (classified); also sets the ~80 m processed grid spacing (20 m × factor) in both modes. |
+| `--gfm-resampling`     | `average` | Resampling method for reprojection to EPSG:4326 (any `rasterio.enums.Resampling`).                                           |
 
 ## `fetch-kurosiwo-viirs`
 
@@ -168,7 +169,7 @@ range are auto-resolved from the bundled GeoPackage catalogue (or from a
 precomputed metadata CSV).
 
 ```bash
-uv run atlantis fetch-kurosiwo-viirs [OPTIONS]
+pixi run atlantis fetch-kurosiwo-viirs [OPTIONS]
 ```
 
 ### Case selection
@@ -203,7 +204,7 @@ collected and the process exits non-zero if any case raises.
 Same shape as `fetch-kurosiwo-viirs` but using the MODIS MCDWD product.
 
 ```bash
-uv run atlantis fetch-kurosiwo-modis [OPTIONS]
+pixi run atlantis fetch-kurosiwo-modis [OPTIONS]
 ```
 
 ### Case selection & search window
@@ -230,7 +231,7 @@ is faster to re-read than the full GeoPackage and is the recommended
 input for repeated `--metadata` runs.
 
 ```bash
-uv run atlantis build-kurosiwo-metadata [OPTIONS]
+pixi run atlantis build-kurosiwo-metadata [OPTIONS]
 ```
 
 | Option        | Default                                  | Description                           |
@@ -246,7 +247,7 @@ inputs (looks for files matching `{event}_*_{source}_flood_fraction.tif`
 or `{event}_*_{source}_raw.tif`).
 
 ```bash
-uv run atlantis harmonise [OPTIONS]
+pixi run atlantis harmonise [OPTIONS]
 ```
 
 | Option                | Required | Default                           | Description                                         |
@@ -269,7 +270,7 @@ files are found.
 > Placeholder — archive writing is not yet implemented.
 
 ```bash
-uv run atlantis archive [OPTIONS]
+pixi run atlantis archive [OPTIONS]
 ```
 
 | Option            | Default                 | Description                             |
@@ -284,7 +285,7 @@ uv run atlantis archive [OPTIONS]
 > Placeholder — archive validation is not yet implemented.
 
 ```bash
-uv run atlantis validate [OPTIONS]
+pixi run atlantis validate [OPTIONS]
 ```
 
 | Option            | Default                 | Description                                  |
@@ -299,7 +300,7 @@ uv run atlantis validate [OPTIONS]
 List all registered data sources (via the fetcher registry).
 
 ```bash
-uv run atlantis list-sources
+pixi run atlantis list-sources
 ```
 
 ## `list-events`
@@ -307,7 +308,7 @@ uv run atlantis list-sources
 > Placeholder — archive event listing is not yet implemented.
 
 ```bash
-uv run atlantis list-events [OPTIONS]
+pixi run atlantis list-events [OPTIONS]
 ```
 
 | Option            | Default                 | Description             |
@@ -322,7 +323,7 @@ Progress is persisted in a SQLite tracker DB so runs can be safely
 interrupted and resumed.
 
 ```bash
-uv run atlantis batch viirs run [OPTIONS]
+pixi run atlantis batch viirs run [OPTIONS]
 ```
 
 | Option             | Default                                                  | Description                                                   |
@@ -342,10 +343,10 @@ uv run atlantis batch viirs run [OPTIONS]
 
 ```bash
 # VM1
-uv run atlantis batch viirs run --partition 0:24464 --db-path tracker_vm1.db
+pixi run atlantis batch viirs run --partition 0:24464 --db-path tracker_vm1.db
 
 # VM2
-uv run atlantis batch viirs run --partition 24464:48928 --db-path tracker_vm2.db
+pixi run atlantis batch viirs run --partition 24464:48928 --db-path tracker_vm2.db
 ```
 
 Pre-flight checks: `--output` must start with `s3://atlantis/`, and the
