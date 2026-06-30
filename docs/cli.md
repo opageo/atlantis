@@ -24,6 +24,7 @@ environment).
 - [`archive`](#archive) _(placeholder)_
 - [`validate`](#validate) _(placeholder)_
 - [`list-sources`](#list-sources)
+- [`list-layers`](#list-layers)
 - [`list-events`](#list-events) _(placeholder)_
 - [`batch viirs run`](#batch-viirs-run)
 
@@ -54,6 +55,7 @@ Example: `pixi run atlantis --verbose fetch --event ...`
 | `archive`                 | Write harmonised data to Zarr (raw + ML-ready).                         | placeholder |
 | `validate`                | Validate archive integrity (optionally with ML smoke test).             | placeholder |
 | `list-sources`            | List all registered data sources.                                       | implemented |
+| `list-layers`             | List the native and derived layers available per source.                | implemented |
 | `list-events`             | List events in the archive.                                             | placeholder |
 | `batch viirs run`         | Batch-process the VIIRS JPSS catalogue → 1 arcmin COGs on S3 via Dask.  | implemented |
 
@@ -117,14 +119,14 @@ no catalogue lookup is implemented for the generic `fetch` command.
 
 ### Output controls (all sources)
 
-| Option                                 | Default                    | Description                                                                                                                                                                                                                                              |
-| -------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--classify/--no-classify`             | `--classify`               | Classify pixels into flood-fraction / quality-mask / permanent-water layers (MODIS adds recurring-flood). `--no-classify` writes raw integer codes. For GFM, `--no-classify` writes the native `ensemble_flood_extent` and `reference_water_mask` bands. |
-| `--stream/--no-stream`                 | `--stream`                 | Stream tiles via GDAL `/vsicurl/` vs. download to disk. MODIS: only valid with `--modis-backend lance_geotiff`. **Ignored for GFM** (always streams via STAC/COG).                                                                                       |
-| `--plot`                               | off                        | Save a PNG of the peak-flood date (VIIRS / MODIS / GFM).                                                                                                                                                                                                 |
-| `--plot-dir`                           | `<output>/<source>/plots/` | Directory for PNG output.                                                                                                                                                                                                                                |
-| `--harmonise`                          | off                        | Reproject the source-resolution `processed/` output (VIIRS 375 m, MODIS 250 m, GFM ~80 m) to the canonical 1-arcmin grid. Classified flood fractions use `average` resampling (uint8 %); native/raw code bands use nearest-neighbour.                    |
-| `--keep-processed/--no-keep-processed` | `--keep-processed`         | Write intermediate processed/ GeoTIFFs. `--no-keep-processed` saves disk.                                                                                                                                                                                |
+| Option                                 | Default                    | Description                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--classify/--no-classify`             | `--classify`               | Emit **derived** layers (`flood_fraction`, `quality_mask`, `permanent_water`; MODIS adds `recurring_flood`; VIIRS adds `cloud_mask` / `snow_ice` / `shadow`). `--no-classify` emits the **native** source layer untouched — the `raw` codes for VIIRS/MODIS, or the native `ensemble_flood_extent` + `reference_water_mask` bands for GFM. List every layer with `atlantis list-layers`. |
+| `--stream/--no-stream`                 | `--stream`                 | Stream tiles via GDAL `/vsicurl/` vs. download to disk. MODIS: only valid with `--modis-backend lance_geotiff`. **Ignored for GFM** (always streams via STAC/COG).                                                                                                                                                                                                                       |
+| `--plot`                               | off                        | Save a PNG of the peak-flood date (VIIRS / MODIS / GFM).                                                                                                                                                                                                                                                                                                                                 |
+| `--plot-dir`                           | `<output>/<source>/plots/` | Directory for PNG output.                                                                                                                                                                                                                                                                                                                                                                |
+| `--harmonise`                          | off                        | Reproject the source-resolution `processed/` output (VIIRS 375 m, MODIS 250 m, GFM ~80 m) to the canonical 1-arcmin grid. Classified flood fractions use `average` resampling (uint8 %); native/raw code bands use nearest-neighbour.                                                                                                                                                    |
+| `--keep-processed/--no-keep-processed` | `--keep-processed`         | Write intermediate processed/ GeoTIFFs. `--no-keep-processed` saves disk.                                                                                                                                                                                                                                                                                                                |
 
 ### Multi-date strategy (VIIRS / MODIS / GFM)
 
@@ -215,14 +217,14 @@ Same flags as `fetch-kurosiwo-viirs`: `--metadata`, `--catalogue`,
 
 ### MODIS-specific options
 
-| Option                                 | Default            | Description                                                          |
-| -------------------------------------- | ------------------ | -------------------------------------------------------------------- |
-| `--modis-backend`                      | `lance_geotiff`    | `lance_geotiff` (streamable, NRT) or `laads_hdf4` (download, 2003+). |
-| `--modis-composite`                    | `F2`               | `F1`, `F1C`, `F2`, `F3`.                                             |
-| `--classify/--no-classify`             | `--classify`       | Classify into flood / recurring / permanent / quality layers.        |
-| `--stream/--no-stream`                 | `--stream`         | Stream via `/vsicurl/` (only with `--modis-backend lance_geotiff`).  |
-| `--plot`, `--plot-dir`, `--harmonise`  | —                  | As in `fetch`.                                                       |
-| `--keep-processed/--no-keep-processed` | `--keep-processed` | Keep intermediate processed/ GeoTIFFs.                               |
+| Option                                 | Default            | Description                                                                                                                                               |
+| -------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--modis-backend`                      | `lance_geotiff`    | `lance_geotiff` (streamable, NRT) or `laads_hdf4` (download, 2003+).                                                                                      |
+| `--modis-composite`                    | `F2`               | `F1`, `F1C`, `F2`, `F3`.                                                                                                                                  |
+| `--classify/--no-classify`             | `--classify`       | Emit the MODIS **derived** layers (`flood_fraction`, `quality_mask`, `permanent_water`, `recurring_flood`) or the native `raw` composite codes untouched. |
+| `--stream/--no-stream`                 | `--stream`         | Stream via `/vsicurl/` (only with `--modis-backend lance_geotiff`).                                                                                       |
+| `--plot`, `--plot-dir`, `--harmonise`  | —                  | As in `fetch`.                                                                                                                                            |
+| `--keep-processed/--no-keep-processed` | `--keep-processed` | Keep intermediate processed/ GeoTIFFs.                                                                                                                    |
 
 ## `build-kurosiwo-metadata`
 
@@ -243,22 +245,23 @@ pixi run atlantis build-kurosiwo-metadata [OPTIONS]
 
 Standalone harmonisation step: reproject + normalise already-fetched
 processed GeoTIFFs to a uniform 1 arcmin grid. Supports VIIRS and MODIS
-inputs (looks for files matching `{event}_*_{source}_flood_fraction.tif`
-or `{event}_*_{source}_raw.tif`).
+inputs. The current file discovery path looks for the default classified
+output (`{event}_*_{source}_flood_fraction.tif`) or the native passthrough
+output (`{event}_*_{source}_raw.tif`).
 
 ```bash
 pixi run atlantis harmonise [OPTIONS]
 ```
 
-| Option                | Required | Default                           | Description                                         |
-| --------------------- | -------- | --------------------------------- | --------------------------------------------------- |
-| `--event`, `-e`       | yes      | —                                 | Flood event ID (used to match input filenames).     |
-| `--source`, `-s`      | yes      | —                                 | Data source ID (`viirs` or `modis`).                |
-| `--input`, `-i`       | no       | `<cache_dir>/raw/<event>/`        | Input directory with fetched/processed data.        |
-| `--output`, `-o`      | no       | `<cache_dir>/harmonised/<event>/` | Output directory for harmonised GeoTIFFs.           |
-| `--target-resolution` | no       | `0.01667` (1 arcmin)              | Target spatial resolution in degrees.               |
-| `--resampling`        | no       | `average`                         | Resampling method for `flood_fraction`.             |
-| `--dry-run`           | no       | off                               | Print what would be done without writing any files. |
+| Option                | Required | Default                           | Description                                                  |
+| --------------------- | -------- | --------------------------------- | ------------------------------------------------------------ |
+| `--event`, `-e`       | yes      | —                                 | Flood event ID (used to match input filenames).              |
+| `--source`, `-s`      | yes      | —                                 | Data source ID (`viirs` or `modis`).                         |
+| `--input`, `-i`       | no       | `<cache_dir>/raw/<event>/`        | Input directory with fetched/processed data.                 |
+| `--output`, `-o`      | no       | `<cache_dir>/harmonised/<event>/` | Output directory for harmonised GeoTIFFs.                    |
+| `--target-resolution` | no       | `0.01667` (1 arcmin)              | Target spatial resolution in degrees.                        |
+| `--resampling`        | no       | `average`                         | Resampling method for the classified `flood_fraction` layer. |
+| `--dry-run`           | no       | off                               | Print what would be done without writing any files.          |
 
 The command searches the standard `…/<source>/processed/` layout first,
 falling back to a broader `rglob` (including the KuroSiwo
@@ -302,6 +305,21 @@ List all registered data sources (via the fetcher registry).
 ```bash
 pixi run atlantis list-sources
 ```
+
+## `list-layers`
+
+List the registered native and derived layers for every source, or for a
+single source with `--source`. This is the quickest way to confirm what
+`--classify` and `--no-classify` will emit.
+
+```bash
+pixi run atlantis list-layers
+pixi run atlantis list-layers --source viirs
+```
+
+| Option           | Default | Description                           |
+| ---------------- | ------- | ------------------------------------- |
+| `--source`, `-s` | all     | Restrict the output to one source ID. |
 
 ## `list-events`
 

@@ -165,18 +165,24 @@ the same `rasterio.merge.merge()` call as the LANCE GeoTIFF inputs.
 
 ## Pixel classification
 
-The decoder mirrors the layer mapping in [overview.md](overview.md#suggested-layer-mapping):
+With `--classify` Atlantis computes the **derived** layers below; with
+`--no-classify` it passes the **native** `raw` composite through untouched. The
+per-layer maths is declared in `src/atlantis/fetchers/modis/derived.py` and
+registered on the MODIS layer registry (`modis/layers.py`), so
+`_classify_pixels()` just iterates that registry. Browse the full catalogue with
+`atlantis list-layers --source modis` or in [the layer reference](../layers.md):
 
-| Variable          | Rule                   | Meaning                                                                                                |
-| ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------ |
-| `flood_fraction`  | `(class == 3).float32` | Binary unusual-flood mask. Aggregates to true % at 1 arcmin via the harmoniser's `average` resampling. |
-| `recurring_flood` | `(class == 2).uint8`   | MODIS-only seasonal-flood mask (Release 1.1+).                                                         |
-| `permanent_water` | `(class == 1).uint8`   | Surface water from the rolling 5-year MOD44W mask.                                                     |
-| `quality_mask`    | `(class != 255).uint8` | 1 = valid clear-sky observation; 0 = insufficient data **or HAND-masked**.                             |
+| Variable (derived) | Rule                   | Meaning                                                                                                |
+| ------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| `flood_fraction`   | `(class == 3).float32` | Binary unusual-flood mask. Aggregates to true % at 1 arcmin via the harmoniser's `average` resampling. |
+| `recurring_flood`  | `(class == 2).uint8`   | MODIS-only seasonal-flood mask (Release 1.1+).                                                         |
+| `permanent_water`  | `(class == 1).uint8`   | Surface water from the rolling 5-year MOD44W mask.                                                     |
+| `quality_mask`     | `(class != 255).uint8` | 1 = valid clear-sky observation; 0 = insufficient data **or HAND-masked**.                             |
 
-Counts layers (`TotalCounts_*`, `ValidCounts*`, `WaterCounts*`) are
-ignored in v1 but available via `rasterio.open(hdf).subdatasets` for
-custom downstream pipelines.
+The eleven count layers (`TotalCounts_*`, `ValidCounts*`, `WaterCounts*`) are
+catalogued as **native** layers (see `atlantis list-layers --source modis`) but
+not loaded by the default pipeline; they remain available via
+`rasterio.open(hdf).subdatasets` for custom downstream pipelines.
 
 ## Aggregation
 

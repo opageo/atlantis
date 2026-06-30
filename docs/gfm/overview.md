@@ -30,6 +30,15 @@ Data is accessed via the **EODC STAC API** (`https://stac.eodc.eu/api/v1`,
 collection `GFM`) using Cloud-Optimised GeoTIFFs — no separate download step
 is required.
 
+### Native vs derived layers
+
+Atlantis exposes GFM as two kinds of layers (full catalogue: [layer reference](../layers.md), or run `atlantis list-layers --source gfm`):
+
+- **Native layers** — the two STAC assets above (`ensemble_flood_extent`, `reference_water_mask`), passed through untouched with `--no-classify`. The GFM STAC item also publishes assets Atlantis does **not** yet expose: `ensemble_water_extent`, `ensemble_likelihood`, `exclusion_mask`, `advisory_flags`, and the per-algorithm `dlr_*` / `tuw_*` / `list_*` bands.
+- **Derived layers** — computed by Atlantis with `--classify` (default) by accumulating per-class coverage across the SAR observations in a date group: `flood_fraction` (share of valid observations flagged flood), `quality_mask` (observation coverage), and `permanent_water` (majority `reference_water_mask == 2`).
+
+`flood_fraction` is therefore a **derived** layer — and, unlike VIIRS/MODIS, it is built from _observation counts_, not raw codes. Atlantis follows the EODC COG encoding `2 = permanent` for `reference_water_mask` (verified against a fetched source COG), which diverges from the public PDD Table 20.
+
 ## How Atlantis processes GFM
 
 ```mermaid

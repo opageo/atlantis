@@ -108,6 +108,8 @@ The GFM processing pipeline operates per-date and per-item. Each STAC item
 corresponds to a single Sentinel-1 acquisition over one Sentinel-2 tile
 footprint. Multiple items can cover the same date and bbox.
 
+> **Layers.** `--classify` (default) emits the **derived** layers `flood_fraction`, `quality_mask`, `permanent_water` (built from observation counts); `--no-classify` emits the **native** `ensemble_flood_extent` and `reference_water_mask` codes untouched. See [the layer reference](../layers.md) or `atlantis list-layers --source gfm`.
+
 ### Step-by-step
 
 **Classified mode** (`--classify`, default)

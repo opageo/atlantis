@@ -120,6 +120,11 @@ range-read streaming. `lance_geotiff` can do either.
 
 ## Output encoding
 
+`--classify` (default) emits the **derived** layers (`flood_fraction`,
+`quality_mask`, `permanent_water`, `recurring_flood`); `--no-classify` emits the
+**native** `raw` composite untouched. See the full catalogue in
+[the layer reference](../layers.md) or via `atlantis list-layers --source modis`.
+
 ```
 Raw HDF4/GeoTIFF (LAADS / LANCE)   uint8 codes 0/1/2/3/255   ~250 m
         │

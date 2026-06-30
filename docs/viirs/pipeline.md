@@ -66,14 +66,20 @@ _Note: `--harmonise` adds a final `harmonised/_\_harmonised.tif` output for any 
 ## Strategies in detail (pixel-level)
 
 After the per-date "Mosaic & clip" stage, every date in the requested
-window has produced a `ProcessedTile` with three (optionally four) raster
-layers, all on the **same 375 m grid** for the bbox:
+window has produced a `ProcessedTile`, all on the **same 375 m grid** for the
+bbox. The layers depend on the chosen **kind** (see [the layer reference](../layers.md)):
+
+**Derived layers** (`--classify`, default — computed by Atlantis):
 
 - `flood_fraction` — uint8, **0–100** (% of valid water within the
   classified pixel), `nodata=255` for cloud/no-data.
 - `quality_mask` — uint8, `0/1` (1 = pixel is good quality).
 - `permanent_water` — uint8, `0/1` (1 = pixel is permanent surface water).
-- `raw` (only with `--no-classify`) — uint8, original VFM codes 0–200.
+- `cloud_mask`, `snow_ice`, `shadow` — uint8, `0/1` masks for native codes 30, 20, 50.
+
+**Native layer** (`--no-classify` — fetched untouched):
+
+- `raw` — uint8, original VFM codes (1–200; source `_FillValue=1`).
 
 The strategy controls how those `N`-date stacks are reduced to the output
 written under `processed/` (and later `harmonised/`):
@@ -110,13 +116,14 @@ Implemented in [`ViirsRasterProcessor.aggregate_tiles`](../../src/atlantis/fetch
 All `N` dates are stacked into a `(N, H, W)` array per layer and reduced
 **element-wise**:
 
-| Layer             | Reduction                 | Rationale                                   |
-| :---------------- | :------------------------ | :------------------------------------------ |
-| `flood_fraction`  | `np.nanmean(stack, 0)`    | Continuous variable → arithmetic mean       |
-| `quality_mask`    | `np.any(stack > 0, 0)`    | Output should stay valid if any date was a clear-sky observation |
-| `permanent_water` | majority over valid dates | Ignore fill/cloud dates when reducing the reference-water mask |
-| `raw`             | mode (uint8) along axis 0 | Categorical VFM codes → most-frequent value |
-| `cloud_fraction`  | scalar `np.mean`          | Per-tile metadata, not a pixel array        |
+| Layer                                | Reduction                 | Rationale                                                        |
+| :----------------------------------- | :------------------------ | :--------------------------------------------------------------- |
+| `flood_fraction`                     | `np.nanmean(stack, 0)`    | Continuous variable → arithmetic mean                            |
+| `quality_mask`                       | `np.any(stack > 0, 0)`    | Output should stay valid if any date was a clear-sky observation |
+| `permanent_water`                    | majority over valid dates | Ignore fill/cloud dates when reducing the reference-water mask   |
+| `cloud_mask` / `snow_ice` / `shadow` | mode (uint8) along axis 0 | Categorical 0/1 derived masks → most-frequent value              |
+| `raw`                                | mode (uint8) along axis 0 | Categorical VFM codes → most-frequent value                      |
+| `cloud_fraction`                     | scalar `np.mean`          | Per-tile metadata, not a pixel array                             |
 
 Important properties:
 
