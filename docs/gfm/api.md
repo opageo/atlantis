@@ -99,7 +99,7 @@ fetcher = GFMFetcher(
 ```
 
 Use `coarsen_factor` to trade spatial detail for speed and speckle reduction.
-`resampling` is applied during reprojection onto the canonical 1-arcmin grid.
+`resampling` is applied during reprojection onto the ~80 m processed grid.
 
 ## Harmonisation
 
@@ -139,18 +139,18 @@ the `classify` flag.
 
 ## GFMFetcher parameters
 
-| Parameter          | Type            | Default              | Description                                                                          |
-| ------------------ | --------------- | -------------------- | ------------------------------------------------------------------------------------ |
-| `api_url`          | `Optional[str]` | `None`               | Override the default EODC STAC endpoint                                              |
-| `coarsen_factor`   | `int`           | `4`                  | Max-pool factor before reprojection (classified mode only)                           |
-| `resampling`       | `Resampling`    | `Resampling.average` | Reprojection resampling method (classified mode only)                                |
-| `classify`         | `bool`          | `True`               | `True` = derive flood_fraction / quality / permanent_water; `False` = emit raw codes |
-| `strategy`         | `str`           | `"peak"`             | One of `peak`, `aggregate`, or `all`                                                 |
-| `keep_processed`   | `bool`          | `True`               | Write processed GeoTIFFs to `processed/`                                             |
-| `peak_days_before` | `int`           | `0`                  | Window filter before the peak date                                                   |
-| `peak_days_after`  | `int`           | `0`                  | Window filter after the peak date                                                    |
-| `max_observations` | `int`           | `0`                  | Cap the number of returned dates after windowing                                     |
-| `peak_priority`    | `str`           | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`                                       |
+| Parameter          | Type            | Default              | Description                                                                                                            |
+| ------------------ | --------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `api_url`          | `Optional[str]` | `None`               | Override the default EODC STAC endpoint                                                                                |
+| `coarsen_factor`   | `int`           | `4`                  | Mean-pool factor for the class masks (classified); also sets the processed grid spacing (~20 m × factor) in both modes |
+| `resampling`       | `Resampling`    | `Resampling.average` | Reprojection resampling method (classified mode only)                                                                  |
+| `classify`         | `bool`          | `True`               | `True` = derive flood_fraction / quality / permanent_water; `False` = emit raw codes                                   |
+| `strategy`         | `str`           | `"peak"`             | One of `peak`, `aggregate`, or `all`                                                                                   |
+| `keep_processed`   | `bool`          | `True`               | Write processed GeoTIFFs to `processed/`                                                                               |
+| `peak_days_before` | `int`           | `0`                  | Window filter before the peak date                                                                                     |
+| `peak_days_after`  | `int`           | `0`                  | Window filter after the peak date                                                                                      |
+| `max_observations` | `int`           | `0`                  | Cap the number of returned dates after windowing                                                                       |
+| `peak_priority`    | `str`           | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`                                                                         |
 
 ## Notes
 

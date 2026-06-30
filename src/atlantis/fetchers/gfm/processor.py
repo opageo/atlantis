@@ -99,7 +99,7 @@ class GfmProcessedTile:
     Native / raw mode (``classify=False``):
         ensemble_flood_extent: Uint8 array of raw codes (0=dry,1=flood,255=nodata),
             max-pooled across items for the date group and reprojected to the
-            canonical 1-arcmin grid with nearest-neighbour resampling.
+            ~80 m processed grid with nearest-neighbour resampling.
         reference_water_mask: Uint8 array of raw codes (0=land,1=water,2=perm,255=nodata),
             same treatment.
 
@@ -155,8 +155,9 @@ class GfmRasterProcessor:
 
     Classified mode (``classify=True``, default):
     1. Load each item in native CRS at native resolution.
-    2. Coarsen by a factor (max-pool to preserve flood codes).
-    3. Reproject to EPSG:4326 aligned to the canonical 1-arcmin global grid.
+    2. Build per-class 0/1 masks, then mean-pool by the coarsen factor
+       (fraction of sub-pixels per class; no categorical ranking).
+    3. Reproject to EPSG:4326 aligned to the ~80 m global grid.
     4. Accumulate per-pixel flood/valid/permanent-water counts.
     5. Derive flood_fraction, quality_mask, permanent_water.
 
@@ -232,7 +233,7 @@ class GfmRasterProcessor:
         In classified mode (``classify=True``, default), derives
         ``flood_fraction`` / ``quality_mask`` / ``permanent_water`` from
         per-pixel accumulator counts.  In native mode (``classify=False``),
-        reprojects raw band codes to the canonical 1-arcmin grid using
+        reprojects raw band codes to the ~80 m processed grid using
         nearest-neighbour and max-pools codes across items for the date group.
 
         Args:
@@ -316,17 +317,16 @@ class GfmRasterProcessor:
                 logger.warning("Failed to load item {} ({}): {}", idx, item.id, e)
                 continue
 
-            # Coarsen with max-pool (preserves highest code: flood > dry > outside)
-            flood_native = (
-                xx["ensemble_flood_extent"].coarsen(y=self.coarsen_factor, x=self.coarsen_factor, boundary="trim").max()  # ty:ignore[unresolved-attribute]
-            )
-            perm_native = (
-                xx["reference_water_mask"].coarsen(y=self.coarsen_factor, x=self.coarsen_factor, boundary="trim").max()  # ty:ignore[unresolved-attribute]
-            )
-
+            # Build per-class 0/1 masks at native resolution, then mean-pool to
+            # the coarsened grid. Mean-pooling a binary mask yields the fraction
+            # of sub-pixels in each class — the correct way to downsample nominal
+            # codes, and consistent with the average reproject that follows. A
+            # categorical max would rank codes by number (and let nodata=255 win
+            # every mixed block), which is meaningless for class labels.
             flood_mask_native, perm_mask_native, valid_mask_native = self._build_native_masks(
-                flood_native,
-                perm_native,
+                xx["ensemble_flood_extent"],
+                xx["reference_water_mask"],
+                self.coarsen_factor,
             )
 
             masks = xr.Dataset(
@@ -337,12 +337,12 @@ class GfmRasterProcessor:
                 }
             ).rio.write_crs(crs_src)
 
-            # Reproject each mask directly onto the canonical 1-arcmin global
+            # Reproject each mask directly onto the ~80 m global
             # grid (pre-computed snapped bounds/transform). This ensures all
             # items accumulate on the same aligned grid — no double
             # reprojection needed at harmonisation time.
             masks_ll = self._reproject_to_canonical_grid(masks)
-            del xx, flood_native, perm_native, flood_mask_native, perm_mask_native, valid_mask_native, masks
+            del xx, flood_mask_native, perm_mask_native, valid_mask_native, masks
 
             flood_frac = np.squeeze(masks_ll["flood"].fillna(0.0).values.astype("float32"))
             perm_frac = np.squeeze(masks_ll["perm"].fillna(0.0).values.astype("float32"))
@@ -437,7 +437,7 @@ class GfmRasterProcessor:
                 logger.warning("Failed to load item {} ({}): {}", idx, item.id, e)
                 continue
 
-            # Reproject raw codes to the canonical 1-arcmin grid with NN;
+            # Reproject raw codes to the ~80 m processed grid with NN;
             # codes are discrete so continuous resampling would corrupt them.
             codes_ds = xr.Dataset(
                 {
@@ -488,25 +488,36 @@ class GfmRasterProcessor:
     def _build_native_masks(
         flood_native: "xr.DataArray",
         perm_native: "xr.DataArray",
+        coarsen_factor: int = 1,
     ) -> tuple["xr.DataArray", "xr.DataArray", "xr.DataArray"]:
-        """Build float32 flood, permanent-water, and validity masks.
+        """Build float32 flood, permanent-water, and validity coverage masks.
 
-        The discrete GFM source codes must be converted to binary masks before
-        average reprojection. Once raster averaging runs, class codes are no
-        longer recoverable.
+        The discrete GFM source codes are nominal categories (flood / dry /
+        nodata; land / water / permanent / nodata), so they must not be pooled
+        by numeric rank. Each code is first turned into a 0/1 mask at native
+        resolution, then optionally **mean-pooled** by ``coarsen_factor`` —
+        yielding the *fraction* of sub-pixels in each coarsened cell that belong
+        to the class. Mean-pooling a 0/1 mask is the correct categorical
+        downsampling and is consistent with the ``average`` reprojection applied
+        afterwards; a categorical ``max`` would impose a meaningless code
+        ordering and let nodata (255) dominate any mixed block.
         """
-        flood_mask_native = (flood_native == GFM_FLOOD).astype("float32")
-        perm_mask_native = (perm_native == GFM_PERMANENT_WATER).astype("float32")
+        flood_mask = (flood_native == GFM_FLOOD).astype("float32")
+        perm_mask = (perm_native == GFM_PERMANENT_WATER).astype("float32")
         # An observation contributes to "valid" if either band has a non-nodata code.
-        valid_mask_native = ((flood_native != GFM_NODATA) | (perm_native != GFM_NODATA)).astype("float32")
-        return flood_mask_native, perm_mask_native, valid_mask_native
+        valid_mask = ((flood_native != GFM_NODATA) | (perm_native != GFM_NODATA)).astype("float32")
+        if coarsen_factor > 1:
+            flood_mask = flood_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+            perm_mask = perm_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+            valid_mask = valid_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+        return flood_mask, perm_mask, valid_mask
 
     def _reproject_to_canonical_grid(self, masks: "xr.Dataset") -> "xr.Dataset":
         """Reproject a native-CRS mask dataset onto the pre-computed canonical grid.
 
         Uses rioxarray's ``rio.reproject`` (which correctly handles source
         transforms from odc.stac-loaded data) but forces the destination grid
-        to the canonical 1-arcmin snapped bounds/transform.
+        to the ~80 m snapped bounds/transform.
 
         Args:
             masks: xarray Dataset with float32 binary-mask variables and a

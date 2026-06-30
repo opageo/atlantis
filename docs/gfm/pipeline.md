@@ -8,28 +8,33 @@ source overview, see [overview.md](overview.md).
 
 ```mermaid
 flowchart TD
-  START["atlantis fetch --source gfm"] --> SEARCH["Search EODC STAC"]
+  START["atlantis fetch --source gfm"] --> SEARCH["Search EODC STAC<br/>(bbox × date range)"]
   SEARCH --> GROUP["Group items by date"]
-  GROUP --> STRATEGY{"--strategy?"}
+  GROUP --> PROCESS["Process every date in memory<br/>(→ ~80 m, classify or native codes)"]
+  PROCESS --> WINDOW{"--peak-window-days /<br/>--max-observations?"}
+  WINDOW -->|No window flags| STRATEGY{"--strategy?"}
+  WINDOW -->|Window set| FILTER["Filter to ±N days around peak<br/>+ subsample to M dates"]
+  FILTER --> STRATEGY
 
   STRATEGY -->|peak| PEAK["Pick date with max flood_pixel_count"]
-  STRATEGY -->|aggregate| AGG["Mean flood_fraction and combine masks"]
-  STRATEGY -->|all| ALL["Keep one result per date"]
+  STRATEGY -->|aggregate| AGG["Mean flood_fraction / masked-max codes"]
+  STRATEGY -->|all| ALL["Keep one result per surviving date"]
 
   PEAK --> KEEP{"--keep-processed?"}
   AGG --> KEEP
   ALL --> KEEP
 
-  KEEP -->|on| WRITE["Write processed/ GeoTIFFs"]
+  KEEP -->|"on (default)"| WRITE["Write surviving dates to processed/<br/>(~80 m, uint8, LZW)"]
   KEEP -->|off| MEMORY["Keep processed tiles in memory"]
 
   WRITE --> HARM{"--harmonise?"}
   MEMORY --> HARM
   HARM -->|No| DONE["Done"]
-  HARM -->|Yes| HARMONISE["Snap AOI to canonical 1-arcmin grid"]
-  HARMONISE --> PLOT{"--plot?"}
-  PLOT -->|Yes| PNG["Write harmonised TIFF + PNG"]
-  PLOT -->|No| TIFF["Write harmonised TIFF"]
+  HARM -->|Yes| HARMONISE["Reproject ~80 m → canonical 1-arcmin grid<br/>(average flood_fraction / NN codes)"]
+  HARMONISE --> HARM_WRITE["Write harmonised/ GeoTIFF<br/>uint8, nodata=255"]
+  HARM_WRITE --> PLOT{"--plot?"}
+  PLOT -->|Yes| PNG["Write plots/ PNG"]
+  PLOT -->|No| TIFF["Done"]
   PNG --> DONE
   TIFF --> DONE
 ```
@@ -76,12 +81,12 @@ uv run atlantis harmonise \
 
 ### Output control
 
-| Flag                  | Default | Effect                                                                                                                                                                                         |
-| --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--harmonise`         | off     | Re-encodes float32 [0,1] → uint8 [0,100] (classified mode, no resampling — GFM is already 1-arcmin); or NN-reprojects uint8 codes (native mode). Use `--no-classify` to emit native SAR bands. |
-| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate ~80 m files)                                                                                                                                 |
-| `--plot`              | off     | Save a PNG of each result date                                                                                                                                                                 |
-| `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). Same default across all sources.                                                |
+| Flag                  | Default | Effect                                                                                                                                                                                                                  |
+| --------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--harmonise`         | off     | Reproject the ~80 m processed output to the canonical 1-arcmin grid. Classified: `average`-resample `flood_fraction` (uint8 %). Native: NN-resample the uint8 code bands. Use `--no-classify` to emit native SAR bands. |
+| `--no-keep-processed` | off     | Write only the harmonised output (no intermediate ~80 m files)                                                                                                                                                          |
+| `--plot`              | off     | Save a PNG of each result date                                                                                                                                                                                          |
+| `--strategy`          | `peak`  | Multi-date reduction: `peak` (most-flooded date), `aggregate` (mean/mode composite), `all` (per-date outputs). Same default across all sources.                                                                         |
 
 ### Processing
 
@@ -111,9 +116,9 @@ footprint. Multiple items can cover the same date and bbox.
 STAC search → group by date → per-item loop → coarsen → accumulate → derive products
                                     │
                     load (native CRS, ~20 m, odc.stac)
-                    coarsen (max-pool × coarsen_factor)
-                    compute binary masks (flood, perm, valid)
-                    reproject to canonical 1-arcmin EPSG:4326 (average)
+                    build binary masks (flood, perm, valid) at native res
+                    mean-pool masks × coarsen_factor (→ per-class fractions)
+                    reproject to canonical ~80 m EPSG:4326 grid (average)
                     │
                 (flood_count, perm_water_count, valid_count) ← accumulate
                     │
@@ -129,46 +134,55 @@ STAC search → group by date → per-item loop → coarsen → accumulate → d
 STAC search → group by date → per-item loop → NN-reproject codes → max-pool across items
                                     │
                     load (native CRS, ~20 m, odc.stac)
-                    reproject raw uint8 codes to canonical 1-arcmin grid (nearest-neighbour)
+                    reproject raw uint8 codes to canonical ~80 m grid (nearest-neighbour)
                     │
                     masked-max accumulation across items:
                         ensemble_flood_extent  = max(valid codes) over items, nodata=255
                         reference_water_mask   = max(valid codes) over items, nodata=255
 ```
 
-In native mode no coarsening or binary-mask step is performed. Codes are
-preserved exactly; the `--gfm-coarsen-factor` and `--gfm-resampling` flags are
-ignored.
+In native mode no max-pool or binary-mask step is performed — codes are
+NN-reprojected straight onto the ~80 m grid and preserved exactly.
+`--gfm-coarsen-factor` still sets that grid's spacing (`20 m × factor`), but
+`--gfm-resampling` is ignored (native codes always use nearest-neighbour).
 
 #### Why binary masks before reprojection?
 
 `ensemble_flood_extent` has discrete codes (0 = dry, 1 = flood, 255 = nodata).
 Applying `Resampling.average` directly on these codes would produce fractional
 intermediates like 0.5 — which cannot be reliably thresholded back to 0 or 1.
-Instead, Atlantis converts to a float32 binary mask _first_ (at the coarsened
-native resolution where codes are still discrete), then reprojects with
-`average` resampling. After reprojection each pixel contains the _fraction of
-its area_ that was flooded — exactly what we want to accumulate across items.
+Instead, Atlantis converts to a float32 binary mask _first_ (at full native
+resolution, where codes are still discrete), then reprojects with `average`
+resampling. After reprojection each pixel contains the _fraction of its area_
+that was flooded — exactly what we want to accumulate across items.
 
-#### Why max-pool for coarsening?
+#### Why mean-pool the masks (not max-pool the codes)?
 
-The max-pool preserves the flood signal: if any sub-pixel in the coarsened
-neighbourhood is flooded (code 1), the coarsened result is 1. Alternatives
-like mean would dilute the signal and risk rounding flood pixels to 0 before
-the binary mask step.
+The GFM codes are **nominal categories**, so pooling them by numeric value is
+meaningless — and because nodata = 255 is the largest code, a categorical `max`
+would let a single nodata sub-pixel erase flood in its whole block. Instead
+Atlantis builds the 0/1 flood / perm / valid masks at native resolution and
+**mean-pools** them: each coarsened cell holds the _fraction_ of sub-pixels in
+that class. This is the correct way to downsample categorical data, and it is
+consistent with the `average` reprojection and count accumulation that follow.
 
-#### Reprojection to the canonical grid
+#### Reprojection: ~80 m processed grid, 1-arcmin at harmonise
 
 After computing the per-item binary masks in the native UTM CRS, Atlantis
-reprojects each mask directly onto the **canonical 1-arcmin global EPSG:4326
-grid** — the same grid used by ECMWF's `Globe_flood_area_*.grb` and VIIRS
-harmonised outputs. This means:
+reprojects each mask onto a **global EPSG:4326 grid at the coarsen-applied ~80 m
+spacing** — snapped outward to whole cells of that grid. This `processed/`
+output keeps GFM's full native detail (like VIIRS at 375 m or MODIS at 250 m).
 
-- The bbox is snapped outward to the nearest cell edge of the global grid.
+The optional `--harmonise` step then resamples that ~80 m output down to the
+**canonical 1-arcmin global grid** — the same grid used by ECMWF's
+`Globe_flood_area_*.grb` and the VIIRS/MODIS harmonised outputs. After
+harmonisation:
+
+- The bbox is snapped outward to the nearest cell edge of the 1-arcmin grid.
 - Every output pixel centre satisfies `(lon + 180) × 60 − 0.5 ∈ ℤ` and
   `(90 − lat) × 60 − 0.5 ∈ ℤ`.
-- GFM and VIIRS harmonised outputs over the same AOI are **stackable** without
-  any further resampling.
+- GFM, VIIRS, and MODIS harmonised outputs over the same AOI are **stackable**
+  without any further resampling.
 
 See [Canonical 1-arcmin global grid](../viirs/overview.md#canonical-1-arcmin-global-grid)
 for the full alignment specification.
@@ -240,7 +254,7 @@ harmonised GeoTIFF + PNG.
     gfm/
       processed/    # absent with --no-keep-processed
         # Classified mode:
-        <event_id>_<YYYYMMDD>_gfm_flood_fraction.tif    # float32, nodata=-9999
+        <event_id>_<YYYYMMDD>_gfm_flood_fraction.tif    # uint8 pct 0–100, nodata=255
         <event_id>_<YYYYMMDD>_gfm_quality_mask.tif      # uint8, nodata=255
         <event_id>_<YYYYMMDD>_gfm_permanent_water.tif   # uint8, nodata=255
         # Native / raw mode (--no-classify):
@@ -257,17 +271,47 @@ harmonised GeoTIFF + PNG.
         <event_id>_<date_token>_gfm_reference_water_mask_harmonised.tif
 ```
 
+## Data encoding at each stage
+
+```
+Source items (EODC STAC)      uint8   codes 0/1/255              ~20 m
+        │
+        ▼ classify (binary masks → mean-pool → average reproject)
+Processed (--classify)        uint8   flood pct 0–100            ~80 m, nodata=255
+                              uint8   quality 0/1                ~80 m, nodata=255
+                              uint8   perm. water 0/1            ~80 m, nodata=255
+        │
+        ▼ harmonise
+Harmonised                    uint8   flood pct 0–100            ~1 arcmin, nodata=255
+                                      (average resampled)
+
+
+Source items (EODC STAC)      uint8   codes 0/1/2/255            ~20 m
+        │
+        ▼ --no-classify (NN reproject codes)
+Processed                     uint8   ensemble_flood_extent      ~80 m, nodata=255
+                              uint8   reference_water_mask       ~80 m, nodata=255
+        │
+        ▼ harmonise
+Harmonised (raw)              uint8   same codes                 ~1 arcmin, nodata=255
+                                      (nearest resampled, codes preserved)
+```
+
+This mirrors the VIIRS (375 m) and MODIS (250 m) ladders: a source-resolution
+`processed/` output in uint8, then an optional resample to the shared canonical
+1-arcmin grid at harmonise time.
+
 ## Output format
 
-### Processed outputs — classified mode (~80 m equivalent, EPSG:4326)
+### Processed outputs — classified mode (~80 m, EPSG:4326)
 
-| File                    | Dtype   | Nodata  | Values                                         |
-| ----------------------- | ------- | ------- | ---------------------------------------------- |
-| `*_flood_fraction.tif`  | float32 | -9999.0 | [0, 1] — fraction of obs flooded; NaN → nodata |
-| `*_quality_mask.tif`    | uint8   | 255     | 1 = valid observation, 0 = no data             |
-| `*_permanent_water.tif` | uint8   | 255     | 1 = permanent water, 0 = not                   |
+| File                    | Dtype | Nodata | Values                                                     |
+| ----------------------- | ----- | ------ | ---------------------------------------------------------- |
+| `*_flood_fraction.tif`  | uint8 | 255    | 0–100 — % of obs flooded (`round(frac×100)`); 255 = no obs |
+| `*_quality_mask.tif`    | uint8 | 255    | 1 = valid observation, 0 = no data                         |
+| `*_permanent_water.tif` | uint8 | 255    | 1 = permanent water, 0 = not                               |
 
-### Processed outputs — native / raw mode (canonical 1-arcmin, EPSG:4326)
+### Processed outputs — native / raw mode (~80 m, EPSG:4326)
 
 | File                          | Dtype | Nodata | Values                                                 |
 | ----------------------------- | ----- | ------ | ------------------------------------------------------ |

@@ -5,6 +5,7 @@ import xarray as xr
 from rasterio.transform import from_bounds
 
 from atlantis.fetchers.gfm.processor import (
+    GFM_DRY,
     GFM_FLOOD,
     GFM_NODATA,
     GFM_PERMANENT_WATER,
@@ -145,6 +146,32 @@ class TestGfmProcessorNativeMasks:
         np.testing.assert_array_equal(flood_mask.values, np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
         np.testing.assert_array_equal(perm_mask.values, np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
         np.testing.assert_array_equal(valid_mask.values, np.array([[1.0, 1.0, 0.0], [1.0, 1.0, 1.0]], dtype=np.float32))
+
+    def test_mean_pool_preserves_flood_fraction_not_max_code(self):
+        """Coarsening must mean-pool 0/1 masks, not max-pool nominal codes.
+
+        A 2×2 block mixing flood (1) with nodata (255) must coarsen to the
+        *fraction* of flood sub-pixels — not be wiped out because nodata is the
+        numerically largest code (the old ``.max()`` behaviour).
+        """
+        flood_native = xr.DataArray(
+            np.array([[GFM_FLOOD, GFM_NODATA], [GFM_DRY, GFM_FLOOD]], dtype=np.uint8),
+            dims=("y", "x"),
+        )
+        perm_native = xr.DataArray(
+            np.array([[GFM_DRY, GFM_DRY], [GFM_PERMANENT_WATER, GFM_DRY]], dtype=np.uint8),
+            dims=("y", "x"),
+        )
+
+        flood_mask, perm_mask, valid_mask = GfmRasterProcessor._build_native_masks(
+            flood_native, perm_native, coarsen_factor=2
+        )
+
+        # 2 of 4 sub-pixels are flood, 1 of 4 is permanent water, all 4 valid
+        # (reference_water_mask is never nodata here).
+        np.testing.assert_allclose(flood_mask.values, np.array([[0.5]], dtype=np.float32))
+        np.testing.assert_allclose(perm_mask.values, np.array([[0.25]], dtype=np.float32))
+        np.testing.assert_allclose(valid_mask.values, np.array([[1.0]], dtype=np.float32))
 
     def test_canonical_grid_snaps_bbox_outward(self):
         proc = GfmRasterProcessor(bbox=(10.003, 20.002, 10.031, 20.029))

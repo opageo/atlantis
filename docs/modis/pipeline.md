@@ -10,7 +10,7 @@ flowchart TD
     AUTH -->|No| AUTH_FAIL["Empty fetch<br/>+ token hint"]
     AUTH -->|Yes| BACKEND{"--modis-backend?"}
 
-    BACKEND -->|lance_geotiff<br/>(default)| LANCE["JSON listing<br/>nrt3 → nrt4 fallback"]
+    BACKEND -->|"lance_geotiff<br/>(default)"| LANCE["JSON listing<br/>nrt3 → nrt4 fallback"]
     BACKEND -->|laads_hdf4| LAADS["HTML listing<br/>MCDWD_L3 ≤2025<br/>MCDWD_L3_NRT ≥2026"]
 
     LANCE --> WINDOW{"Within ~1-week<br/>retention window?"}
@@ -23,7 +23,7 @@ flowchart TD
         LF1{"--stream?"}
         LF2["/vsicurl/ + Bearer header"]
         LF3["Download .tif to raw/"]
-        LF1 -->|on (default)| LF2
+        LF1 -->|"on (default)"| LF2
         LF1 -->|--no-stream| LF3
     end
 
@@ -36,9 +36,13 @@ flowchart TD
     LANCE_FETCH --> MOSAIC
     LAADS_FETCH --> MOSAIC
 
-    MOSAIC["Mosaic + clip to bbox"] --> STRATEGY{"--strategy?"}
+    MOSAIC["Mosaic + clip to bbox<br/>(all dates, in memory)"] --> PWINDOW{"--peak-window-days /<br/>--max-observations?"}
 
-    STRATEGY -->|peak (default)| PEAK["argmax flood_pixel_count"]
+    PWINDOW -->|No window flags| STRATEGY{"--strategy?"}
+    PWINDOW -->|Window set| FILTER["Filter to ±N days around peak<br/>+ subsample to M dates"]
+    FILTER --> STRATEGY
+
+    STRATEGY -->|"peak (default)"| PEAK["argmax flood_pixel_count"]
     STRATEGY -->|aggregate| AGG["nanmean flood_fraction<br/>+ mode masks"]
     STRATEGY -->|all| ALL["Per-date FetchResults"]
 
@@ -46,7 +50,7 @@ flowchart TD
     AGG --> KEEP
     ALL --> KEEP
 
-    KEEP -->|on (default)| WRITE["Write processed/ GeoTIFFs<br/>(uint8, LZW)"]
+    KEEP -->|"on (default)"| WRITE["Write surviving dates to processed/<br/>(uint8, LZW)"]
     KEEP -->|--no-keep-processed| SKIP["Keep in memory only"]
 
     WRITE --> HARM{"--harmonise?"}

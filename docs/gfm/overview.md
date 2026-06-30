@@ -55,20 +55,20 @@ GFM, VIIRS, and MODIS share the same Atlantis pipeline surface — identical
 
 Key differences:
 
-| Aspect                         | VIIRS / MODIS                                                                 | GFM                                                                                                                                                                                         |
-| ------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Fetched resolution**         | Native (375 m / 250 m, EPSG:4326)                                             | **Already on the canonical 1-arcmin EPSG:4326 grid**                                                                                                                                        |
-| **`--harmonise` effect**       | Reprojects to 1-arcmin + encodes uint8 %                                      | Classified: re-encodes float32 [0,1] → uint8 [0,100] on the **same** grid (no resampling). Native: NN-reproject uint8 codes to 1-arcmin. **Off by default in the CLI (use `--harmonise`).** |
-| **Raw mode (`--no-classify`)** | Available — writes raw integer pixel codes                                    | Available — writes `ensemble_flood_extent` (0=dry,1=flood,255=nodata) and `reference_water_mask` (0=land,1=water,2=perm,255=nodata) on the canonical 1-arcmin grid (nearest-neighbour).     |
-| **Stream / download toggle**   | `--stream` / `--no-stream`                                                    | Always streamed via `odc.stac` (`--no-stream` is ignored with a warning)                                                                                                                    |
-| **Setup requirement**          | VIIRS needs `uv run python scripts/setup.py` for the AOI grid                 | None — data accessed directly via the EODC STAC API                                                                                                                                         |
-| **Python default `strategy`**  | `"peak"`                                                                      | `"peak"`                                                                                                                                                                                    |
-| **Dataset variables**          | `flood_fraction` (float32), `quality_mask` (uint8), `permanent_water` (uint8) | Classified: `flood_fraction` (float32), `quality_mask` (uint8), `permanent_water` (uint8). Native: `ensemble_flood_extent` (uint8), `reference_water_mask` (uint8).                         |
-| **Harmonised output**          | uint8 [0–100], nodata=255, canonical 1-arcmin grid                            | Classified: same format — stackable with VIIRS / MODIS without resampling. Native: uint8 codes, 1-arcmin, nodata=255.                                                                       |
+| Aspect                         | VIIRS / MODIS                                                                 | GFM                                                                                                                                                                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Fetched resolution**         | Native (375 m / 250 m, EPSG:4326)                                             | Native ~20 m (Sentinel-1), processed to **~80 m EPSG:4326** (coarsen ×4)                                                                                                                                                    |
+| **`--harmonise` effect**       | Reprojects to 1-arcmin + encodes uint8 %                                      | Same pattern: reprojects the ~80 m processed output to 1-arcmin. Classified: `average`-resample `flood_fraction` (uint8 %). Native: NN-resample uint8 codes. **Off by default in the CLI (use `--harmonise`).**             |
+| **Raw mode (`--no-classify`)** | Available — writes raw integer pixel codes                                    | Available — writes `ensemble_flood_extent` (0=dry,1=flood,255=nodata) and `reference_water_mask` (0=land,1=water,2=perm,255=nodata) on the ~80 m processed grid (nearest-neighbour); `--harmonise` downsamples to 1-arcmin. |
+| **Stream / download toggle**   | `--stream` / `--no-stream`                                                    | Always streamed via `odc.stac` (`--no-stream` is ignored with a warning)                                                                                                                                                    |
+| **Setup requirement**          | VIIRS needs `uv run python scripts/setup.py` for the AOI grid                 | None — data accessed directly via the EODC STAC API                                                                                                                                                                         |
+| **Python default `strategy`**  | `"peak"`                                                                      | `"peak"`                                                                                                                                                                                                                    |
+| **Dataset variables**          | `flood_fraction` (float32), `quality_mask` (uint8), `permanent_water` (uint8) | Classified: `flood_fraction` (float32), `quality_mask` (uint8), `permanent_water` (uint8). Native: `ensemble_flood_extent` (uint8), `reference_water_mask` (uint8).                                                         |
+| **Harmonised output**          | uint8 [0–100], nodata=255, canonical 1-arcmin grid                            | Classified: same format — stackable with VIIRS / MODIS without resampling. Native: uint8 codes, 1-arcmin, nodata=255.                                                                                                       |
 
-Because GFM `processed/` output is already on the canonical 1-arcmin grid,
-GFM and VIIRS harmonised outputs over the same AOI are **directly stackable**
-without any further resampling.
+Once `--harmonise` resamples GFM `processed/` output to the canonical 1-arcmin
+grid, GFM, VIIRS, and MODIS harmonised outputs over the same AOI are **directly
+stackable** without any further resampling.
 
 ## Demo script
 
@@ -83,7 +83,7 @@ uv run python scripts/gfm_demo.py arbitrary \
 # KuroSiwo event — bbox and dates resolved from the catalogue
 uv run python scripts/gfm_demo.py kurosiwo --ks-case KuroSiwo_470
 
-# With harmonisation (re-encode to uint8 %, same grid)
+# With harmonisation (resample ~80 m → canonical 1-arcmin)
 uv run python scripts/gfm_demo.py arbitrary \
     --event-id Valencia_2024 \
     --bbox "-1.5 38.8 0.5 40.0" \
