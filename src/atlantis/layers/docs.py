@@ -50,13 +50,13 @@ def _derived_table(layers: list[DerivedLayer]) -> list[str]:
 def render_source_markdown(registry: LayerRegistry) -> str:
     """Render one source's native and derived layer tables as Markdown."""
     lines = [f"## {registry.source_id}", ""]
-    lines.append("### Native layers")
+    lines.append(f"### Native layers ({registry.source_id})")
     lines.append("")
     lines.append("Layers the source physically provides (fetched untouched).")
     lines.append("")
     lines.extend(_native_table(registry.list_native()))
     lines.append("")
-    lines.append("### Derived layers")
+    lines.append(f"### Derived layers ({registry.source_id})")
     lines.append("")
     lines.append("Layers Atlantis computes from native inputs (not downloaded).")
     lines.append("")
