@@ -494,7 +494,7 @@ class MODISFetcher(AbstractFloodFetcher):
                         event.event_id,
                         date_token,
                         processed_dir,
-                        write_outputs=self.keep_processed,
+                        write_outputs=False,
                     )
             else:
                 tile_paths_local: list[Path | str] = []
@@ -537,7 +537,7 @@ class MODISFetcher(AbstractFloodFetcher):
                     event.event_id,
                     date_token,
                     processed_dir,
-                    write_outputs=self.keep_processed,
+                    write_outputs=False,
                 )
 
             if process_result is not None:
@@ -549,6 +549,12 @@ class MODISFetcher(AbstractFloodFetcher):
         all_processed = self._apply_peak_window(all_processed)
         if not all_processed:
             return []
+
+        # Write processed/ only for surviving dates (after peak-window filter),
+        # mirroring VIIRS — avoids persisting pre-filter dates to disk.
+        if self.keep_processed:
+            for _dt, proc_result in all_processed:
+                processor.write_processed(proc_result.processed, proc_result.paths)
 
         return self._dispatch_strategy(event.event_id, all_processed)
 

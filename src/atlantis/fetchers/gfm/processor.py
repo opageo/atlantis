@@ -23,7 +23,6 @@ from loguru import logger
 from rasterio.enums import Resampling
 from rasterio.transform import Affine, from_bounds
 
-from atlantis.config import HarmoniseConfig
 from atlantis.harmoniser.reprojector import Reprojector
 from atlantis.models.metadata import TileMetadata
 
@@ -42,6 +41,12 @@ GFM_BANDS: list[str] = ["ensemble_flood_extent", "reference_water_mask"]
 
 #: Default coarsen factor (native ~20 m → ~80 m before reproject).
 DEFAULT_COARSEN_FACTOR: int = 4
+
+#: Nominal GFM ground sample distance (metres) — used to size the processed grid.
+GFM_NATIVE_GSD_M: float = 20.0
+
+#: Nominal metres per degree of latitude/longitude at the equator.
+_METERS_PER_DEGREE: float = 111_320.0
 
 #: STAC configuration for odc.stac.load — marks nodata = 255.
 GFM_STAC_CFG: dict = {
@@ -179,20 +184,27 @@ class GfmRasterProcessor:
             resampling: Resampling method for reprojection to EPSG:4326.
                 Ignored when *classify* is False (nearest-neighbour used instead).
             reprojector: Pre-configured Reprojector instance. If None, one is
-                created from default HarmoniseConfig (1-arcmin, snapped to
-                the canonical global grid).
+                created at the coarsen-applied native resolution (~80 m for
+                coarsen_factor=4), snapped to the global grid.
             classify: When True (default), derive flood_fraction / quality_mask /
                 permanent_water from per-pixel counts. When False, emit the native
                 ensemble_flood_extent and reference_water_mask bands as-is,
-                reprojected with nearest-neighbour to the canonical 1-arcmin grid.
+                reprojected with nearest-neighbour to the ~80 m processed grid.
+                The downstream ``--harmonise`` step resamples processed/ to the
+                canonical 1-arcmin grid (matching VIIRS/MODIS behaviour).
         """
         self.bbox = bbox
         self.coarsen_factor = coarsen_factor
         self.resampling = resampling
         self.classify = classify
+        # GFM processed/ is written at the coarsen-applied native resolution
+        # (~80 m for coarsen_factor=4), expressed in degrees. The downstream
+        # --harmonise step resamples this to the canonical 1-arcmin grid, so GFM
+        # behaves like VIIRS/MODIS (source-res processed → 1-arcmin harmonised).
+        processed_resolution = (GFM_NATIVE_GSD_M * coarsen_factor) / _METERS_PER_DEGREE
         self.reprojector = reprojector or Reprojector(
             target_crs="EPSG:4326",
-            target_resolution=HarmoniseConfig().target_resolution,
+            target_resolution=processed_resolution,
             resampling_method=resampling.name,
             snap_to_global_grid=True,
         )
@@ -612,6 +624,20 @@ class GfmRasterProcessor:
             cloud_fraction=cloud_fraction,
         )
 
+    def write_processed(
+        self,
+        processed: GfmProcessedTile,
+        event_id: str,
+        date_token: str,
+        output_dir: Path,
+    ) -> GfmOutputPaths:
+        """Write processed arrays to GeoTIFF files (public wrapper).
+
+        Used by the fetcher to defer writing processed/ GeoTIFFs until after
+        peak-window filtering, so only surviving dates are persisted.
+        """
+        return self._write_outputs(processed, event_id, date_token, output_dir)
+
     def _write_outputs(
         self,
         processed: GfmProcessedTile,
@@ -662,8 +688,13 @@ class GfmRasterProcessor:
             rwm_path = _write_tif(processed.reference_water_mask, "reference_water_mask", "uint8", GFM_NODATA)
             return GfmOutputPaths(ensemble_flood_extent=efe_path, reference_water_mask=rwm_path)
 
-        # Classified mode
-        ff_path = _write_tif(processed.flood_fraction, "flood_fraction", "float32", -9999.0)
+        # Classified mode — flood_fraction as uint8 percent (0–100) nodata 255,
+        # mirroring the VIIRS/MODIS convention (was float32 / -9999).
+        ff_src = np.squeeze(processed.flood_fraction)
+        ff_pct = np.full(ff_src.shape, GFM_NODATA, dtype=np.uint8)
+        ff_valid = np.isfinite(ff_src)
+        ff_pct[ff_valid] = np.round(np.clip(ff_src[ff_valid], 0.0, 1.0) * 100).astype(np.uint8)
+        ff_path = _write_tif(ff_pct, "flood_fraction", "uint8", GFM_NODATA)
         qm_path = _write_tif(processed.quality_mask, "quality_mask", "uint8", 255)
         pw_path = _write_tif(processed.permanent_water, "permanent_water", "uint8", 255)
 

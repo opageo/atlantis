@@ -541,6 +541,14 @@ class ModisRasterProcessor:
 
     # ── Output writing ──────────────────────────────────────────────────
 
+    def write_processed(self, processed: ProcessedTile, paths: OutputPaths) -> None:
+        """Write processed-tile layers to ``paths`` (public wrapper for callers).
+
+        Used by the fetcher to defer writing processed/ GeoTIFFs until after
+        peak-window filtering, so only surviving dates are persisted.
+        """
+        self._write_outputs(processed, paths)
+
     def _write_outputs(self, processed: ProcessedTile, paths: OutputPaths) -> None:
         ref_shape = processed.raw.shape if processed.raw is not None else processed.flood_fraction.shape
         base_meta = {

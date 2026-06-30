@@ -244,8 +244,8 @@ class GFMFetcher(AbstractFloodFetcher):
                 date_items,
                 event_id=event.event_id,
                 date_token=date_token,
-                output_dir=output_dir if self.keep_processed else None,
-                write_outputs=self.keep_processed,
+                output_dir=None,
+                write_outputs=False,
             )
             if result is not None:
                 date_results.append((date_token, result.processed))
@@ -257,6 +257,12 @@ class GFMFetcher(AbstractFloodFetcher):
         date_results = self._apply_peak_window(date_results)
         if not date_results:
             return []
+
+        # Write processed/ only for surviving dates (after peak-window filter),
+        # mirroring VIIRS/MODIS — avoids persisting pre-filter dates to disk.
+        if self.keep_processed:
+            for date_token, tile in date_results:
+                processor.write_processed(tile, event.event_id, date_token, output_dir)
 
         # Apply strategy
         return self._apply_strategy(date_results, event, output_dir)
