@@ -11,6 +11,8 @@ from rasterio.enums import Resampling
 from rasterio.transform import from_bounds
 from rasterio.warp import reproject as rio_reproject
 
+from atlantis.layers import resampling_for
+
 if TYPE_CHECKING:
     import xarray as xr
     from pyproj import CRS
@@ -183,10 +185,15 @@ class Reprojector:
         )
 
         # ── 3. Reproject each data variable ───────────────────────────────
+        source_id = dataset.attrs.get("source_id")
         reprojected: dict[str, xr.DataArray] = {}
         for var_name in dataset.data_vars:
             da = dataset[var_name]
-            method = self.variable_resampling.get(var_name, self.resampling_method)
+            method = self.variable_resampling.get(var_name)
+            if method is None:
+                # Fall back to the resampling declared on the layer spec, so new
+                # layers resample correctly without a config entry.
+                method = resampling_for(var_name, source_id) or self.resampling_method
             resampling = _resolve_resampling(method)
 
             src_array = self._prepare_array(da)

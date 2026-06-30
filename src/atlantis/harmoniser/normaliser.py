@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from loguru import logger
 
+from atlantis.layers import is_known_layer
+
 if TYPE_CHECKING:
     import xarray as xr
 
@@ -78,8 +80,11 @@ class Normaliser:
         da = ds[variable]
 
         # ── Skip normalisation for already-binary masks ────────────────
-        if variable in self.config.skip_normalise_vars:
-            logger.debug("Skipping normalisation for '{}' (in skip list)", variable)
+        # Any registered layer (native code band or derived fraction/mask) is
+        # either a physical fraction or a discrete code that must not be
+        # min-max stretched, so registry membership extends the explicit set.
+        if variable in self.config.skip_normalise_vars or is_known_layer(variable, ds.attrs.get("source_id")):
+            logger.debug("Skipping normalisation for '{}' (known layer / skip list)", variable)
             ds.attrs["normalisation_skipped"] = variable
             return ds
 
