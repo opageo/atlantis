@@ -1437,3 +1437,86 @@ def test_gfm_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.stdout
     assert len(write_calls) == 1
     assert any(str(p).endswith("_gfm_harmonised.png") for p in plot_calls)
+
+
+# ── Native harmonise + error handling (#1, #2) ────────────────────────────────
+
+
+def test_harmonise_source_native_writes_raw_codes(tmp_path):
+    """#1: a native dataset (only ``raw``) harmonises without a flood_fraction.
+
+    Previously ``--no-classify --harmonise`` raised ``KeyError: 'flood_fraction'``.
+    The native branch must NN-reproject the raw codes to the 1-arcmin grid and
+    write them as-is (discrete uint8 codes preserved, no interpolation).
+    """
+    import rioxarray  # noqa: F401
+    import xarray as xr
+
+    from atlantis.cli import _harmonise_source
+
+    width = height = 60
+    res = 0.004
+    west, north = 20.0, 35.4
+    rng = np.random.default_rng(0)
+    # VIIRS pixel codes: fill(1), veg(17), cloud(30), permanent water(99), flood(160).
+    codes = rng.choice([1, 17, 30, 99, 160], size=(height, width)).astype(np.uint8)
+    ds = xr.Dataset(
+        {"raw": xr.DataArray(codes, dims=["y", "x"])},
+        coords={
+            "x": west + (np.arange(width) + 0.5) * res,
+            "y": north - (np.arange(height) + 0.5) * res,
+        },
+    )
+    ds.rio.write_crs("EPSG:4326", inplace=True)
+
+    harm_dir = tmp_path / "harm"
+    plot_dir = tmp_path / "png"
+
+    # Must not raise (regression for the missing flood_fraction KeyError).
+    _harmonise_source(
+        ds,
+        "evt",
+        "20240101",
+        source_id="viirs",
+        harm_dir=harm_dir,
+        plot_dir=plot_dir,
+        announce=False,
+    )
+
+    tif = harm_dir / "evt_20240101_viirs_harmonised.tif"
+    png = plot_dir / "evt_20240101_viirs_harmonised.png"
+    assert tif.exists()
+    assert png.exists()
+
+    import rasterio
+
+    with rasterio.open(str(tif)) as dsr:
+        assert dsr.dtypes[0] == "uint8"
+        values = set(np.unique(dsr.read(1)).tolist())
+    # Nearest-neighbour reprojection preserves the discrete codes — only the
+    # source codes plus the uncovered-border fill (0) and nodata (255) may
+    # appear. No averaged intermediates (e.g. 50, 130) are introduced.
+    assert values <= {0, 1, 17, 30, 99, 160, 255}
+    # At least one genuine flood/feature code survived the reprojection.
+    assert values & {1, 17, 30, 99, 160}
+
+
+def test_fetch_unknown_source_reports_unknown():
+    """#2: an unrecognised --source is reported as 'Unknown source', not a traceback."""
+    result = runner.invoke(cli, ["fetch", "--event", "X", "--source", "bogus"])
+    assert "Unknown source 'bogus'" in result.stdout
+
+
+def test_fetch_real_keyerror_not_mislabeled_as_unknown_source(monkeypatch):
+    """#2: a genuine downstream KeyError must surface, not be hidden as 'Unknown source'."""
+
+    class BoomFetcher:
+        def __init__(self, **kwargs):
+            raise KeyError("downstream boom")
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: BoomFetcher)
+
+    result = runner.invoke(cli, ["fetch", "--event", "X", "--source", "viirs"])
+
+    assert "Unknown source" not in result.stdout
+    assert isinstance(result.exception, KeyError)

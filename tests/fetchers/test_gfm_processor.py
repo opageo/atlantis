@@ -155,18 +155,25 @@ class TestGfmProcessorNativeMasks:
         assert south <= 20.002
         assert east >= 10.031
         assert north >= 20.029
-        np.testing.assert_allclose((west + 180.0) * 60.0, round((west + 180.0) * 60.0), atol=1e-9)
-        np.testing.assert_allclose((east + 180.0) * 60.0, round((east + 180.0) * 60.0), atol=1e-9)
-        np.testing.assert_allclose((90.0 - north) * 60.0, round((90.0 - north) * 60.0), atol=1e-9)
-        np.testing.assert_allclose((90.0 - south) * 60.0, round((90.0 - south) * 60.0), atol=1e-9)
+        # Snapped bounds align to the processor's own canonical grid (~80 m),
+        # anchored at lon0 = -180, lat0 = +90 with spacing target_resolution.
+        res = proc.reprojector.target_resolution
+        lon0 = proc.reprojector.global_grid_origin_lon
+        lat0 = proc.reprojector.global_grid_origin_lat
+        np.testing.assert_allclose((west - lon0) / res, round((west - lon0) / res), atol=1e-6)
+        np.testing.assert_allclose((east - lon0) / res, round((east - lon0) / res), atol=1e-6)
+        np.testing.assert_allclose((lat0 - north) / res, round((lat0 - north) / res), atol=1e-6)
+        np.testing.assert_allclose((lat0 - south) / res, round((lat0 - south) / res), atol=1e-6)
 
 
 class TestGfmProcessorWriteOutputs:
     """Test GeoTIFF writing."""
 
     def test_write_outputs(self, tmp_path):
+        rng = np.random.default_rng(0)
+        flood_fraction = rng.random((10, 10)).astype(np.float32)
         tile = GfmProcessedTile(
-            flood_fraction=np.random.rand(10, 10).astype(np.float32),
+            flood_fraction=flood_fraction,
             quality_mask=np.ones((10, 10), dtype=np.uint8),
             permanent_water=np.zeros((10, 10), dtype=np.uint8),
             transform=from_bounds(10, 20, 11, 21, 10, 10),
@@ -193,6 +200,12 @@ class TestGfmProcessorWriteOutputs:
             assert ds.count == 1
             data = ds.read(1)
             assert data.shape == (10, 10)
+            # flood_fraction is encoded as uint8 percent (0-100), nodata 255.
+            assert ds.dtypes[0] == "uint8"
+            assert ds.nodata == 255
+            expected = np.rint(np.clip(flood_fraction, 0.0, 1.0) * 100).astype(np.uint8)
+            np.testing.assert_array_equal(data, expected)
+            assert data.max() <= 100
 
 
 class TestGfmProcessorAggregation:

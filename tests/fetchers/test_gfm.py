@@ -401,6 +401,64 @@ class TestGFMFetcherFetch:
         assert "20240101" in date_tokens
         assert "20240102" in date_tokens
 
+    def test_keep_processed_writes_only_survivors(self, small_event, tmp_path):
+        """#4: processed/ is written only for dates surviving the peak window.
+
+        Two dates are processed in-memory; ``max_observations=1`` prunes to the
+        peak date before any processed GeoTIFF is persisted, so
+        ``write_processed`` must be invoked exactly once (mirrors VIIRS).
+        """
+        fetcher = GFMFetcher(strategy="all", keep_processed=True, max_observations=1)
+
+        from rasterio.transform import from_bounds
+
+        tile_low = GfmProcessedTile(
+            flood_fraction=np.zeros((10, 10), dtype=np.float32),
+            quality_mask=np.ones((10, 10), dtype=np.uint8),
+            permanent_water=np.zeros((10, 10), dtype=np.uint8),
+            transform=from_bounds(10, 20, 11, 21, 10, 10),
+            crs="EPSG:4326",
+            shape=(10, 10),
+        )
+        tile_high = GfmProcessedTile(
+            flood_fraction=np.full((10, 10), 0.8, dtype=np.float32),
+            quality_mask=np.ones((10, 10), dtype=np.uint8),
+            permanent_water=np.zeros((10, 10), dtype=np.uint8),
+            transform=from_bounds(10, 20, 11, 21, 10, 10),
+            crs="EPSG:4326",
+            shape=(10, 10),
+        )
+
+        items = [_make_mock_stac_item("item1"), _make_mock_stac_item("item2")]
+        date_groups = {"20240101": [items[0]], "20240102": [items[1]]}
+
+        mock_low = MagicMock()
+        mock_low.processed = tile_low
+        mock_high = MagicMock()
+        mock_high.processed = tile_high
+
+        def mock_process(items_arg, **kwargs):
+            return mock_low if kwargs.get("date_token") == "20240101" else mock_high
+
+        write_spy = MagicMock()
+        with (
+            patch.object(fetcher._backend, "search", return_value=items),
+            patch.object(fetcher._backend, "group_items_by_date", return_value=date_groups),
+            patch(
+                "atlantis.fetchers.gfm.GfmRasterProcessor.process_items",
+                side_effect=mock_process,
+            ),
+            patch(
+                "atlantis.fetchers.gfm.GfmRasterProcessor.write_processed",
+                write_spy,
+            ),
+        ):
+            fetcher.fetch(small_event, tmp_path)
+
+        # Only the surviving (peak) date is persisted to processed/.
+        assert write_spy.call_count == 1
+        assert write_spy.call_args.args[2] == "20240102"
+
 
 # ── ToDataset Tests ───────────────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -311,6 +311,37 @@ class TestFetchStrategyDispatch:
         assert len(results) == 2
         date_tokens = {r.date_token for r in results}
         assert date_tokens == {"20260601", "20260602"}
+
+    def test_keep_processed_writes_only_survivors(self, tmp_path, fake_search_results):
+        """#4: processed/ is written only for dates surviving the peak window.
+
+        Two dates are processed in-memory; ``max_observations=1`` prunes to the
+        peak date before any processed GeoTIFF is persisted, so
+        ``write_processed`` must be invoked exactly once (mirrors VIIRS).
+        """
+        f = MODISFetcher(
+            backend="lance_geotiff",
+            strategy="all",
+            keep_processed=True,
+            max_observations=1,
+            stream=True,
+        )
+        date1 = _make_process_result(flood_count=2)
+        date2 = _make_process_result(flood_count=10)  # peak — should survive
+
+        write_spy = patch.object(ModisRasterProcessor, "write_processed", MagicMock())
+        with (
+            patch.object(MODISFetcher, "search", return_value=fake_search_results),
+            patch.object(
+                ModisRasterProcessor,
+                "process_tiles",
+                side_effect=[date1, date2],
+            ),
+            write_spy as spy,
+        ):
+            f.fetch(_make_event(), tmp_path)
+
+        assert spy.call_count == 1
 
 
 class TestFetchStreamingEnv:
