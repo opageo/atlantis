@@ -348,6 +348,8 @@ class Reprojector:
         """Reproject a single variable array to the target grid."""
         import xarray as xr
 
+        from atlantis.harmoniser import discover_nodata
+
         # Determine output dtype
         if method_name in ("mode", "nearest") and np.issubdtype(src_array.dtype, np.integer):
             out_dtype = src_array.dtype
@@ -356,7 +358,24 @@ class Reprojector:
         else:
             out_dtype = np.float32
 
-        destination = np.full((dst_height, dst_width), np.nan, dtype=np.float64)
+        # Best-effort nodata discovery: explicit DataArray metadata first, then
+        # rioxarray's nodata, finally a dtype-based sentinel for integer rasters.
+        discovered_nodata = discover_nodata(src_da)
+        if discovered_nodata is not None:
+            src_nodata = discovered_nodata
+        elif np.issubdtype(out_dtype, np.integer) and np.issubdtype(src_array.dtype, np.integer):
+            src_nodata = float(np.iinfo(src_array.dtype).max)
+        else:
+            src_nodata = float("nan")
+        dst_nodata = src_nodata if np.issubdtype(out_dtype, np.integer) else float("nan")
+        destination_fill = np.nan if np.isnan(dst_nodata) else float(dst_nodata)
+        destination = np.full((dst_height, dst_width), destination_fill, dtype=np.float64)
+
+        reproject_kwargs: dict[str, float] = {}
+        if not np.isnan(src_nodata):
+            reproject_kwargs["src_nodata"] = float(src_nodata)
+        if not np.isnan(dst_nodata):
+            reproject_kwargs["dst_nodata"] = float(dst_nodata)
 
         rio_reproject(
             source=src_array.astype(np.float64),
@@ -366,19 +385,29 @@ class Reprojector:
             dst_transform=dst_transform,
             dst_crs=dst_crs,
             resampling=resampling,
+            **reproject_kwargs,
         )
 
-        # Mask NaN back to original nodata if integer
+        attrs = dict(src_da.attrs)
+
+        # Preserve integer nodata in uncovered destination cells.
         dst_data: np.ndarray
         if np.issubdtype(out_dtype, np.integer):
-            dst_data = np.nan_to_num(destination, nan=0).astype(out_dtype)
+            # ``dst_nodata`` is normally a real integer sentinel. A source can,
+            # however, declare a NaN ``_FillValue`` (propagated here as a NaN
+            # ``dst_nodata``); fall back to the dtype max so we never evaluate
+            # ``int(nan)``, which would raise.
+            nodata_int = int(dst_nodata) if not np.isnan(dst_nodata) else int(np.iinfo(out_dtype).max)
+            dst_data = np.where(np.isnan(destination), nodata_int, destination).astype(out_dtype)
+            attrs.setdefault("nodata", nodata_int)
+            attrs.setdefault("_FillValue", nodata_int)
         else:
             dst_data = destination.astype(out_dtype)
 
         return xr.DataArray(
             dst_data,
             dims=["y", "x"],
-            attrs=src_da.attrs,
+            attrs=attrs,
             name=src_da.name,
         )
 

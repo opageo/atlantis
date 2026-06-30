@@ -87,7 +87,7 @@ class TestReprojector:
         assert vals.max() <= 1.0
 
     def test_reproject_quality_mask_mode(self):
-        """Quality mask with mode resampling should stay binary."""
+        """Quality mask with mode resampling should stay binary + nodata."""
         ds = _make_test_dataset(width=50, height=50, res=0.004, dtype="uint8")
         ds["quality_mask"] = ds["flood_extent"].copy()
         ds["quality_mask"].values[:] = np.random.choice([0, 1], size=(50, 50), p=[0.2, 0.8])
@@ -97,7 +97,7 @@ class TestReprojector:
 
         if "quality_mask" in ds_out.data_vars:
             vals = ds_out["quality_mask"].values
-            assert set(np.unique(vals)).issubset({0, 1})
+            assert set(np.unique(vals)).issubset({0, 1, 255})
 
     def test_reproject_empty_dataset(self):
         """Empty dataset should return a copy."""
@@ -120,6 +120,52 @@ class TestReprojector:
         ds_fine = r_fine.reproject(ds)
 
         assert ds_coarse["flood_extent"].size < ds_fine["flood_extent"].size
+
+    def test_integer_nearest_preserves_nodata_on_snapped_border(self):
+        """Uncovered destination cells must remain nodata for integer rasters.
+
+        Regression guard for native-code harmonisation: snapped AOI bounds can
+        extend slightly beyond source coverage; those border pixels must not be
+        cast to valid code ``0``.
+        """
+        import rioxarray  # noqa: F401
+        import xarray as xr
+
+        width, height, res = 4, 4, 0.02
+        west, north = -0.861, 11.731
+        east = west + width * res
+        south = north - height * res
+        transform = from_bounds(west, south, east, north, width, height)
+
+        data = np.ones((height, width), dtype=np.uint8)
+        da = xr.DataArray(
+            data,
+            dims=["y", "x"],
+            attrs={"_FillValue": 255},
+        )
+        da.rio.write_nodata(255, inplace=True)
+        ds = xr.Dataset(
+            {"flood_extent": da},
+            coords={
+                "x": west + (np.arange(width) + 0.5) * res,
+                "y": north - (np.arange(height) + 0.5) * res,
+            },
+        )
+        ds.rio.write_crs("EPSG:4326", inplace=True)
+        ds.rio.write_transform(transform, inplace=True)
+
+        r = Reprojector(
+            target_resolution=1.0 / 60.0,
+            variable_resampling={"flood_extent": "nearest"},
+            snap_to_global_grid=True,
+        )
+        ds_out = r.reproject(ds)
+
+        vals = ds_out["flood_extent"].values
+        unique = set(np.unique(vals).tolist())
+        assert 0 not in unique
+        assert unique.issubset({1, 255})
+        assert 255 in unique
 
 
 class TestResolveResampling:

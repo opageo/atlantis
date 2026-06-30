@@ -499,6 +499,43 @@ def _harmonise_safely(fn, label: str, *args, **kwargs) -> bool:
         return False
 
 
+def _raw_nodata_for_source(source_id: str) -> int | None:
+    """Return the raw-code nodata sentinel used by a source's Atlantis outputs."""
+    if source_id == "viirs":
+        # Atlantis writes raw VIIRS rasters with nodata=0 for clip / mosaic fill.
+        return 0
+    if source_id == "modis":
+        return 255
+    return None
+
+
+def _prepare_raw_dataset_for_harmonise(best_ds, *, source_id: str):
+    """Attach source-appropriate raw nodata metadata before NN reprojection."""
+    if "raw" not in best_ds:
+        return best_ds
+
+    preferred_nodata = _raw_nodata_for_source(source_id)
+    if preferred_nodata is None:
+        return best_ds
+
+    # Deep-copy only the raw band we mutate; the surrounding dataset is shallow
+    # copied so the other (untouched) variables are shared rather than cloned.
+    raw = best_ds["raw"].copy(deep=True)
+    try:
+        current_nodata = raw.rio.nodata
+    except Exception:
+        current_nodata = None
+
+    if current_nodata is None:
+        raw.rio.write_nodata(preferred_nodata, inplace=True)
+        raw.attrs.setdefault("nodata", preferred_nodata)
+        raw.attrs.setdefault("_FillValue", preferred_nodata)
+
+    prepared = best_ds.copy(deep=False)
+    prepared["raw"] = raw
+    return prepared
+
+
 def _harmonise_source(
     best_ds,
     event_id,
@@ -544,7 +581,7 @@ def _harmonise_source(
 
     # Native / raw mode — NN-reproject the raw codes to the 1-arcmin grid and
     # write them as-is (mirrors the GFM native harmonise path).
-    ds_harm = h.reprojector.reproject(best_ds)
+    ds_harm = h.reprojector.reproject(_prepare_raw_dataset_for_harmonise(best_ds, source_id=source_id))
     write_harmonised_raster(ds_harm["raw"], tif_path)
     if announce:
         console.print(f"  Harmonised → {tif_path.name}")
