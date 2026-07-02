@@ -175,6 +175,28 @@ demo-gfm = """atlantis --verbose fetch \
   --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
   --plot --harmonise --no-keep-processed \
   --output ./data/Valencia_2024"""
+demo-raw = """atlantis --verbose fetch \
+  --event Valencia_2024 --source viirs \
+  --bbox "-1.5 38.8 0.5 40.0" \
+  --start-date 2024-10-29 --end-date 2024-11-04 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Valencia_2024"""
+demo-modis-raw = """atlantis --verbose fetch \
+  --event Valencia_2024 --source modis \
+  --bbox "-1.5 38.8 0.5 40.0" \
+  --start-date 2024-10-29 --end-date 2024-11-04 \
+  --modis-backend laads_hdf4 --modis-composite F2 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Valencia_2024"""
+demo-gfm-raw = """atlantis --verbose fetch \
+  --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" \
+  --start-date 2024-10-29 --end-date 2024-11-04 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Valencia_2024"""
 test = "pytest -n auto tests/"
 lint = "ruff check ."
 lint-fix = "ruff check . --fix"

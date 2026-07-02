@@ -132,15 +132,28 @@ def _resolution_label(source_id: str) -> str:
     return SOURCE_RESOLUTION_LABELS.get(source_id, "native")
 
 
-def _ds_is_classified(ds) -> bool:
-    """True when a fetched dataset holds derived layers (vs native bands).
+def _ds_is_classified(ds, source_id: str | None = None) -> bool:
+    """True when a fetched dataset holds derived layers for its source.
 
-    Registry-driven: a dataset is classified when it contains any derived layer
-    declared by a source, rather than checking a single hard-coded name.
+    Derived-layer names can overlap with native bands of other sources
+    (e.g. ``exclusion_mask`` is native for GFM but derived for VIIRS/MODIS),
+    so the check is scoped to the dataset's source when known.
     """
+    if source_id is None:
+        source_id = ds.attrs.get("source_id")
+    if source_id is None:
+        # Last-resort fallback: any derived layer from any source.
+        from atlantis.layers import all_registries
+
+        derived_names = {layer.name for registry in all_registries().values() for layer in registry.list_derived()}
+        return any(name in ds.data_vars for name in derived_names)
+
     from atlantis.layers import all_registries
 
-    derived_names = {layer.name for registry in all_registries().values() for layer in registry.list_derived()}
+    registry = all_registries().get(source_id)
+    if registry is None:
+        return False
+    derived_names = {layer.name for layer in registry.list_derived()}
     return any(name in ds.data_vars for name in derived_names)
 
 
@@ -391,7 +404,7 @@ def _select_best_result(
     for result in fetch_results:
         ds = fetcher.to_dataset(result)
         date_label = _date_label(result)
-        if _ds_is_classified(ds):
+        if _ds_is_classified(ds, source_id=fetcher.source_id):
             flooded = pixel_stats_classified(ds["flood_fraction"].values, name=date_label)
             if flooded > best_flood_count:
                 best_flood_count = flooded
@@ -419,7 +432,7 @@ def _plot_source(
     """Save a PNG visualisation of the peak-flood date for any source."""
     pretty = _pretty_source(source_id)
     res = _resolution_label(source_id)
-    if _ds_is_classified(best_ds):
+    if _ds_is_classified(best_ds, source_id=source_id):
         layer_label = _classified_layer_label(source_id)
         plot_classified(
             best_ds["flood_fraction"],
@@ -565,7 +578,7 @@ def _harmonise_source(
     tif_path = harm_dir / f"{event_id}_{date_label}_{source_id}_harmonised.tif"
     png_harm_path = plot_dir / f"{event_id}_{date_label}_{source_id}_harmonised.png"
 
-    if _ds_is_classified(best_ds):
+    if _ds_is_classified(best_ds, source_id=source_id):
         ds_harm = h.harmonise(best_ds, source_id=source_id)
         write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
         if announce:
@@ -668,7 +681,7 @@ def _harmonise_gfm(
     plot_dir.mkdir(parents=True, exist_ok=True)
     h = Harmoniser()
 
-    if _ds_is_classified(ds):
+    if _ds_is_classified(ds, source_id="gfm"):
         # Classified mode
         ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
         tif_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.tif"
