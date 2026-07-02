@@ -10,7 +10,7 @@ Pipeline per granule:
      — pathological for HTTP range reads. The tempfile is deleted in a
      ``finally`` block so peak disk = workers × 20 MB ≈ 120 MB total.
   2. Classify at native 375 m → keep ``flood_fraction`` only (skip the
-     auxiliary ``quality_mask`` / ``permanent_water`` allocations).
+      auxiliary ``water_fraction`` / ``reference_water`` / ``exclusion_mask`` allocations).
   3. Harmonise to 1-arcmin global grid via Harmoniser.
   4. Scale float32 [0, 1] → uint8 [0, 100], NaN → 255.
   5. Write a true COG into an in-memory MemoryFile (output is ~2-3 KB).
@@ -106,8 +106,8 @@ def _flood_fraction_dataarray(
     """Wrap a flood_fraction array into a georeferenced rioxarray DataArray.
 
     Inlined here (instead of using :func:`processed_tile_to_dataset`) so
-    the batch path never allocates the unused ``quality_mask`` /
-    ``permanent_water`` arrays.
+    the batch path never allocates the unused ``water_fraction`` /
+    ``reference_water`` / ``exclusion_mask`` arrays.
     """
     import rioxarray  # noqa: F401 — registers .rio on xarray objects
     import xarray as xr

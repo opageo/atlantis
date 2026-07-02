@@ -47,7 +47,7 @@ _VSICURL_PREFIX = "/vsicurl/"
 
 #: Derived layers carried as named ``ProcessedTile`` fields; everything else a
 #: source registers goes through ``ProcessedTile.extra_layers``.
-_CORE_DERIVED = ("flood_fraction", "quality_mask", "permanent_water")
+_CORE_DERIVED = ("water_fraction", "flood_fraction", "reference_water", "exclusion_mask")
 
 
 def _decode_flood_fraction(data: np.ndarray) -> np.ndarray:
@@ -81,12 +81,15 @@ class ProcessedTile:
 
     Attributes:
         raw: Raw tile data.
+        water_fraction: Continuous water fraction array (float32, 0.0-1.0).
+            Derived from VIIRS fraction codes plus explicit handling for
+            reference water (99) and unquantified floodwater (15).
         flood_fraction: Continuous flood fraction array (float32, 0.0–1.0).
-            Derived from VIIRS water-fraction codes 101–200 as (code−100)/100.
+            Derived directly from VIIRS fraction codes 100-200 as (code−100)/100.
             Valid non-flood observations produce 0.0; fill and cloud pixels are
             preserved as NaN.
-        quality_mask: Quality mask array (0=bad, 1=good).
-        permanent_water: Permanent water mask array (0/1).
+        exclusion_mask: Exclusion mask array (1=excluded, 0=usable).
+        reference_water: Reference water mask array (0/1).
         transform: Affine transform for the processed data.
         crs: Coordinate reference system.
         cloud_fraction: Fraction of cloud cover (0.0-1.0).
@@ -96,9 +99,10 @@ class ProcessedTile:
     crs: str
     cloud_fraction: float
     raw: np.ndarray | None = None
+    water_fraction: np.ndarray | None = None
     flood_fraction: np.ndarray | None = None
-    quality_mask: np.ndarray | None = None
-    permanent_water: np.ndarray | None = None
+    exclusion_mask: np.ndarray | None = None
+    reference_water: np.ndarray | None = None
     #: Additional derived layers (e.g. cloud_mask, shadow) keyed by layer name.
     extra_layers: dict[str, np.ndarray] = field(default_factory=dict)
 
@@ -113,9 +117,10 @@ class OutputPaths:
     """Paths for the output files."""
 
     raw: Path | None = None
+    water_fraction: Path | None = None
     flood_fraction: Path | None = None
-    quality_mask: Path | None = None
-    permanent_water: Path | None = None
+    exclusion_mask: Path | None = None
+    reference_water: Path | None = None
     #: Output paths for extra derived layers, keyed by layer name.
     extra: dict[str, Path] = field(default_factory=dict)
 
@@ -141,9 +146,9 @@ def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str
         crs: Coordinate reference system string (e.g. ``"EPSG:4326"``).
 
     Returns:
-        :class:`ProcessedTile` with ``flood_fraction`` populated; other
-        fields (``quality_mask``, ``permanent_water``) are set but callers
-        that only need ``flood_fraction`` may discard them.
+        :class:`ProcessedTile` with water/flood fractions populated; other
+        core fields are set but callers that only need ``flood_fraction`` may
+        discard them.
     """
     ctx = DerivationContext(arrays={SELECTED_BAND: data})
     derived = {spec.name: spec.derive(ctx) for spec in registry.list_derived()}
@@ -156,9 +161,10 @@ def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str
     cloud_fraction = float(cloud[valid].sum() / n_valid) if n_valid else 0.0
 
     return ProcessedTile(
+        water_fraction=derived["water_fraction"],
         flood_fraction=derived["flood_fraction"],
-        quality_mask=derived["quality_mask"],
-        permanent_water=derived["permanent_water"],
+        exclusion_mask=derived["exclusion_mask"],
+        reference_water=derived["reference_water"],
         extra_layers=extra,
         transform=transform,
         crs=crs,
@@ -171,10 +177,10 @@ def classify_viirs_flood_fraction(data: np.ndarray) -> np.ndarray:
 
     Lighter-weight sibling of :func:`classify_viirs_pixels` for batch
     workflows that only need ``flood_fraction``: skips the
-    ``quality_mask`` / ``permanent_water_mask`` allocations entirely
+    auxiliary mask allocations entirely
     (~40 MB saved per 4448×4448 granule).
 
-    VIIRS codes 101–200 encode water fraction as ``(code − 100) / 100``.
+    VIIRS codes 100–200 encode fraction as ``(code − 100) / 100``.
     Valid non-flood observations map to 0.0, while fill and cloud are preserved
     as NaN so downstream averaging skips them.
 
@@ -254,9 +260,10 @@ class ViirsRasterProcessor:
         base_name = f"{event_id}_{date_token}_viirs"
         if self.classify:
             paths = OutputPaths(
+                water_fraction=output_dir / f"{base_name}_water_fraction.tif",
                 flood_fraction=output_dir / f"{base_name}_flood_fraction.tif",
-                quality_mask=output_dir / f"{base_name}_quality_mask.tif",
-                permanent_water=output_dir / f"{base_name}_permanent_water.tif",
+                exclusion_mask=output_dir / f"{base_name}_exclusion_mask.tif",
+                reference_water=output_dir / f"{base_name}_reference_water.tif",
                 extra={name: output_dir / f"{base_name}_{name}.tif" for name in processed.extra_layers},
             )
         else:
@@ -268,8 +275,8 @@ class ViirsRasterProcessor:
         metadata = self._build_metadata(
             event_id=event_id,
             processed=processed,
-            width=processed.raw.shape[1] if processed.raw is not None else processed.flood_fraction.shape[1],
-            height=processed.raw.shape[0] if processed.raw is not None else processed.flood_fraction.shape[0],
+            width=processed.raw.shape[1] if processed.raw is not None else processed.water_fraction.shape[1],
+            height=processed.raw.shape[0] if processed.raw is not None else processed.water_fraction.shape[0],
         )
 
         return ProcessTilesResult(paths=paths, metadata=metadata, processed=processed)
@@ -340,13 +347,13 @@ class ViirsRasterProcessor:
 
         n_total = int(data.size)
         n_fill = int(np.isin(data, list(FILL_CODES)).sum())
-        n_flood = int(((data >= 101) & (data <= 200)).sum())
+        n_flood = int(((data >= 100) & (data <= 200)).sum())
         n_cloud = int(np.isin(data, list(CLOUD_CODES)).sum())
         n_perm_water = int(np.isin(data, list(PERMANENT_WATER_CODES)).sum())
         n_clear = n_total - n_fill - n_cloud - n_flood - n_perm_water
         if n_total:
             logger.debug(
-                "Classification: flood {:.1f}%, cloud {:.1f}%, permanent-water"
+                "Classification: fraction-coded {:.1f}%, cloud {:.1f}%, reference-water"
                 " {:.1f}%, clear {:.1f}%, fill/no-data {:.1f}%",
                 n_flood / n_total * 100,
                 n_cloud / n_total * 100,
@@ -377,7 +384,7 @@ class ViirsRasterProcessor:
             paths: Output file paths.
         """
         # Determine shape from whichever array is available
-        ref_shape = processed.raw.shape if processed.raw is not None else processed.flood_fraction.shape
+        ref_shape = processed.raw.shape if processed.raw is not None else processed.water_fraction.shape
         base_meta = {
             "driver": "GTiff",
             "height": ref_shape[0],
@@ -391,6 +398,19 @@ class ViirsRasterProcessor:
         if paths.raw is not None and processed.raw is not None:
             with rasterio.open(paths.raw, "w", **base_meta, dtype="uint8", nodata=0) as dst:
                 dst.write(processed.raw, 1)
+
+        if paths.water_fraction is not None and processed.water_fraction is not None:
+            pct = np.full(processed.water_fraction.shape, CLASSIFIED_FLOOD_NODATA, dtype=np.uint8)
+            valid = ~np.isnan(processed.water_fraction)
+            pct[valid] = np.round(processed.water_fraction[valid] * 100).clip(0, 100).astype(np.uint8)
+            with rasterio.open(
+                paths.water_fraction,
+                "w",
+                **base_meta,
+                dtype="uint8",
+                nodata=CLASSIFIED_FLOOD_NODATA,
+            ) as dst:
+                dst.write(pct, 1)
 
         if paths.flood_fraction is not None and processed.flood_fraction is not None:
             # Store as uint8 percentage (0–100); missing flood_fraction values
@@ -407,13 +427,13 @@ class ViirsRasterProcessor:
             ) as dst:
                 dst.write(pct, 1)
 
-        if paths.quality_mask is not None and processed.quality_mask is not None:
-            with rasterio.open(paths.quality_mask, "w", **base_meta, dtype="uint8", nodata=0) as dst:
-                dst.write(processed.quality_mask, 1)
+        if paths.exclusion_mask is not None and processed.exclusion_mask is not None:
+            with rasterio.open(paths.exclusion_mask, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(processed.exclusion_mask, 1)
 
-        if paths.permanent_water is not None and processed.permanent_water is not None:
-            with rasterio.open(paths.permanent_water, "w", **base_meta, dtype="uint8", nodata=0) as dst:
-                dst.write(processed.permanent_water, 1)
+        if paths.reference_water is not None and processed.reference_water is not None:
+            with rasterio.open(paths.reference_water, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(processed.reference_water, 1)
 
         # Extra derived layers (e.g. cloud_mask, shadow): written generically
         # using each layer's registered dtype / nodata.
@@ -452,15 +472,15 @@ class ViirsRasterProcessor:
             bbox=(min(west, east), min(south, north), max(west, east), max(south, north)),
             cloud_fraction=processed.cloud_fraction,
             quality_bitmask=0,
-            permanent_water_mask_available=True,
+            permanent_water_mask_available=processed.reference_water is not None,
         )
 
     @staticmethod
     def aggregate_tiles(tiles: list[ProcessedTile]) -> ProcessedTile:
         """Aggregate multiple ``ProcessedTile`` instances across time.
 
-        Uses mean for continuous variables (flood_fraction) and mode for
-        categorical variables (quality_mask, permanent_water, raw).
+        Uses mean for continuous variables (water_fraction, flood_fraction) and
+        source-aware rules for categorical variables.
 
         Args:
             tiles: Sequence of ``ProcessedTile`` instances sharing the same
@@ -480,6 +500,13 @@ class ViirsRasterProcessor:
 
         ref = tiles[0]
 
+        # ── water_fraction: mean across time ────────────────────────────
+        water_arrays = [t.water_fraction for t in tiles if t.water_fraction is not None]
+        water_fraction: np.ndarray | None = None
+        if water_arrays:
+            stack = np.stack(water_arrays, axis=0)
+            water_fraction = np.nanmean(stack, axis=0).astype(np.float32)
+
         # ── flood_fraction: mean across time ────────────────────────────
         flood_arrays = [t.flood_fraction for t in tiles if t.flood_fraction is not None]
         flood_fraction: np.ndarray | None = None
@@ -487,25 +514,25 @@ class ViirsRasterProcessor:
             stack = np.stack(flood_arrays, axis=0)
             flood_fraction = np.nanmean(stack, axis=0).astype(np.float32)
 
-        # ── quality_mask: any valid observation across time ─────────────
-        quality_arrays = [t.quality_mask for t in tiles if t.quality_mask is not None]
-        quality_mask: np.ndarray | None = None
-        if quality_arrays:
-            stack = np.stack(quality_arrays, axis=0).astype(np.uint8)
-            quality_mask = np.any(stack > 0, axis=0).astype(np.uint8)
+        # ── exclusion_mask: excluded only if every observation is excluded ─
+        exclusion_arrays = [t.exclusion_mask for t in tiles if t.exclusion_mask is not None]
+        exclusion_mask: np.ndarray | None = None
+        if exclusion_arrays:
+            stack = np.stack(exclusion_arrays, axis=0).astype(np.uint8)
+            exclusion_mask = np.all(stack > 0, axis=0).astype(np.uint8)
 
-        # ── permanent_water: majority across valid observations only ────
-        pw_arrays = [t.permanent_water for t in tiles if t.permanent_water is not None]
-        permanent_water: np.ndarray | None = None
-        if pw_arrays:
-            stack = np.stack(pw_arrays, axis=0).astype(np.uint8)
-            if quality_arrays and len(quality_arrays) == len(pw_arrays):
-                valid_stack = np.stack(quality_arrays, axis=0).astype(bool)
+        # ── reference_water: majority across usable observations only ────
+        rw_arrays = [t.reference_water for t in tiles if t.reference_water is not None]
+        reference_water: np.ndarray | None = None
+        if rw_arrays:
+            stack = np.stack(rw_arrays, axis=0).astype(np.uint8)
+            if exclusion_arrays and len(exclusion_arrays) == len(rw_arrays):
+                valid_stack = ~(np.stack(exclusion_arrays, axis=0).astype(bool))
                 valid_count = valid_stack.sum(axis=0)
-                pw_count = np.sum((stack > 0) & valid_stack, axis=0)
-                permanent_water = np.where(valid_count > 0, (pw_count / valid_count) > 0.5, 0).astype(np.uint8)
+                rw_count = np.sum((stack > 0) & valid_stack, axis=0)
+                reference_water = np.where(valid_count > 0, (rw_count / valid_count) > 0.5, 0).astype(np.uint8)
             else:
-                permanent_water = _mode_uint8(stack)
+                reference_water = _mode_uint8(stack)
 
         # ── raw: mode across time ───────────────────────────────────────
         raw_arrays = [t.raw for t in tiles if t.raw is not None]
@@ -527,9 +554,10 @@ class ViirsRasterProcessor:
 
         return ProcessedTile(
             raw=raw,
+            water_fraction=water_fraction,
             flood_fraction=flood_fraction,
-            quality_mask=quality_mask,
-            permanent_water=permanent_water,
+            exclusion_mask=exclusion_mask,
+            reference_water=reference_water,
             extra_layers=extra_layers,
             transform=ref.transform,
             crs=ref.crs,
