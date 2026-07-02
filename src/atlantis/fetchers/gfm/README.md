@@ -42,11 +42,14 @@ gfm/
 
 ### With `--classify` (default)
 
-| Variable          | Source                       | Encoding on disk |
-| ----------------- | ---------------------------- | ---------------- |
-| `flood_fraction`  | flood pixel accumulator      | float32 (0–1)    |
-| `quality_mask`    | valid observations count > 0 | uint8 (0/1)      |
-| `permanent_water` | reference water mask band    | uint8 (0/1)      |
+| Variable          | Source                    | Encoding on disk                  |
+| ----------------- | ------------------------- | --------------------------------- |
+| `water_fraction`  | water pixel accumulator   | uint8 percent (0–100), nodata=255 |
+| `flood_fraction`  | flood pixel accumulator   | uint8 percent (0–100), nodata=255 |
+| `reference_water` | reference water mask band | uint8 native codes                |
+
+Classified mode also preserves native-code extras such as `exclusion_mask`,
+`ensemble_likelihood`, `advisory_flags`, and `ensemble_water_extent` when present.
 
 ### With `--no-classify` (native/raw mode)
 

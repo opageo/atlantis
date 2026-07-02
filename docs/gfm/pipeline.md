@@ -108,7 +108,7 @@ The GFM processing pipeline operates per-date and per-item. Each STAC item
 corresponds to a single Sentinel-1 acquisition over one Sentinel-2 tile
 footprint. Multiple items can cover the same date and bbox.
 
-> **Layers.** `--classify` (default) emits the **derived** layers `flood_fraction`, `quality_mask`, `permanent_water` (built from observation counts); `--no-classify` emits the **native** `ensemble_flood_extent` and `reference_water_mask` codes untouched. See [the layer reference](../layers.md) or `atlantis list-layers --source gfm`.
+> **Layers.** The exact GFM layer inventory is centralised in the canonical [layer reference](../layers.md#layers-gfm) and in `atlantis list-layers --source gfm`. This page only describes how classified vs native mode process those layers.
 
 ### Step-by-step
 
@@ -118,16 +118,18 @@ footprint. Multiple items can cover the same date and bbox.
 STAC search → group by date → per-item loop → coarsen → accumulate → derive products
                                     │
                     load (native CRS, ~20 m, odc.stac)
-                    build binary masks (flood, perm, valid) at native res
+          build binary masks (flood, water, valid) at native res
                     mean-pool masks × coarsen_factor (→ per-class fractions)
                     reproject to canonical ~80 m EPSG:4326 grid (average)
                     │
-                (flood_count, perm_water_count, valid_count) ← accumulate
+        (flood_count, water_count, valid_count) ← accumulate
                     │
                     derive:
+            water_fraction  = water_count / valid_count    [0, 1], NaN where unobserved
                         flood_fraction  = flood_count / valid_count    [0, 1], NaN where unobserved
-                        quality_mask    = (valid_count > 0).uint8      {0, 1}
-                        permanent_water = (perm_ratio > 0.5).uint8     {0, 1}
+            reference_water = reference_water_codes        {0,1,2,255}
+          carry native-code companions:
+            exclusion_mask, advisory_flags, ensemble_likelihood
 ```
 
 **Native / raw mode** (`--no-classify`)
@@ -140,7 +142,10 @@ STAC search → group by date → per-item loop → NN-reproject codes → max-p
                     │
                     masked-max accumulation across items:
                         ensemble_flood_extent  = max(valid codes) over items, nodata=255
+            ensemble_water_extent  = max(valid codes) over items, nodata=255
                         reference_water_mask   = max(valid codes) over items, nodata=255
+            exclusion_mask / ensemble_likelihood = max(valid codes) over items
+            advisory_flags = bitwise OR over valid codes
 ```
 
 In native mode no max-pool or binary-mask step is performed — codes are
@@ -221,12 +226,15 @@ All dates are stacked and reduced element-wise:
 
 **Classified mode:**
 
-| Layer             | Reduction                                   | Rationale                             |
-| :---------------- | :------------------------------------------ | :------------------------------------ |
-| `flood_fraction`  | `np.nanmean(stack, axis=0)`                 | Continuous variable → arithmetic mean |
-| `quality_mask`    | `np.any(stack > 0, axis=0)`                 | 1 if any date had valid data          |
-| `permanent_water` | majority vote (`mean(stack, axis=0) > 0.5`) | Most-frequent value across dates      |
-| `cloud_fraction`  | scalar `1 − valid_pixels/total_pixels`      | Tile-level metadata                   |
+| Layer                 | Reduction                              | Rationale                                 |
+| :-------------------- | :------------------------------------- | :---------------------------------------- |
+| `water_fraction`      | `np.nanmean(stack, axis=0)`            | Continuous variable → arithmetic mean     |
+| `flood_fraction`      | `np.nanmean(stack, axis=0)`            | Continuous variable → arithmetic mean     |
+| `reference_water`     | masked-max of codes                    | Highest valid shared code wins            |
+| `exclusion_mask`      | masked-max of codes                    | Preserve strongest valid exclusion code   |
+| `ensemble_likelihood` | masked-max of codes                    | Preserve strongest valid likelihood code  |
+| `advisory_flags`      | bitwise OR across valid observations   | Preserve all advisory bits seen over time |
+| `cloud_fraction`      | scalar `1 − valid_pixels/total_pixels` | Tile-level metadata                       |
 
 `nanmean` means pixels that were unobserved (NaN) on some dates are averaged
 over the dates that _did_ observe them — no bias toward missing data.
@@ -256,12 +264,19 @@ harmonised GeoTIFF + PNG.
     gfm/
       processed/    # absent with --no-keep-processed
         # Classified mode:
+        <event_id>_<YYYYMMDD>_gfm_water_fraction.tif    # uint8 pct 0–100, nodata=255
         <event_id>_<YYYYMMDD>_gfm_flood_fraction.tif    # uint8 pct 0–100, nodata=255
-        <event_id>_<YYYYMMDD>_gfm_quality_mask.tif      # uint8, nodata=255
-        <event_id>_<YYYYMMDD>_gfm_permanent_water.tif   # uint8, nodata=255
+        <event_id>_<YYYYMMDD>_gfm_reference_water.tif   # uint8 codes 0/1/2/255
+        <event_id>_<YYYYMMDD>_gfm_exclusion_mask.tif    # uint8 native codes
+        <event_id>_<YYYYMMDD>_gfm_advisory_flags.tif    # uint8 native bitmask
+        <event_id>_<YYYYMMDD>_gfm_ensemble_likelihood.tif  # uint8 0–100
         # Native / raw mode (--no-classify):
         <event_id>_<YYYYMMDD>_gfm_ensemble_flood_extent.tif   # uint8, nodata=255
+        <event_id>_<YYYYMMDD>_gfm_ensemble_water_extent.tif   # uint8, nodata=255
         <event_id>_<YYYYMMDD>_gfm_reference_water_mask.tif    # uint8, nodata=255
+        <event_id>_<YYYYMMDD>_gfm_exclusion_mask.tif          # uint8 native codes
+        <event_id>_<YYYYMMDD>_gfm_advisory_flags.tif          # uint8 native bitmask
+        <event_id>_<YYYYMMDD>_gfm_ensemble_likelihood.tif     # uint8 0–100
       plots/        # with --plot
         <event_id>_<date_token>_gfm.png
         <event_id>_<date_token>_gfm_harmonised.png      # with --harmonise
@@ -279,9 +294,10 @@ harmonised GeoTIFF + PNG.
 Source items (EODC STAC)      uint8   codes 0/1/255              ~20 m
         │
         ▼ classify (binary masks → mean-pool → average reproject)
-Processed (--classify)        uint8   flood pct 0–100            ~80 m, nodata=255
-                              uint8   quality 0/1                ~80 m, nodata=255
-                              uint8   perm. water 0/1            ~80 m, nodata=255
+Processed (--classify)        uint8   water pct 0–100            ~80 m, nodata=255
+                              uint8   flood pct 0–100            ~80 m, nodata=255
+                              uint8   reference_water codes      ~80 m, nodata=255
+                              uint8   exclusion/advisory/etc.    ~80 m, nodata=255
         │
         ▼ harmonise
 Harmonised                    uint8   flood pct 0–100            ~1 arcmin, nodata=255
@@ -291,8 +307,7 @@ Harmonised                    uint8   flood pct 0–100            ~1 arcmin, no
 Source items (EODC STAC)      uint8   codes 0/1/2/255            ~20 m
         │
         ▼ --no-classify (NN reproject codes)
-Processed                     uint8   ensemble_flood_extent      ~80 m, nodata=255
-                              uint8   reference_water_mask       ~80 m, nodata=255
+Processed                     uint8   native GFM code bands      ~80 m, nodata=255
         │
         ▼ harmonise
 Harmonised (raw)              uint8   same codes                 ~1 arcmin, nodata=255
@@ -307,18 +322,25 @@ This mirrors the VIIRS (375 m) and MODIS (250 m) ladders: a source-resolution
 
 ### Processed outputs — classified mode (~80 m, EPSG:4326)
 
-| File                    | Dtype | Nodata | Values                                                     |
-| ----------------------- | ----- | ------ | ---------------------------------------------------------- |
-| `*_flood_fraction.tif`  | uint8 | 255    | 0–100 — % of obs flooded (`round(frac×100)`); 255 = no obs |
-| `*_quality_mask.tif`    | uint8 | 255    | 1 = valid observation, 0 = no data                         |
-| `*_permanent_water.tif` | uint8 | 255    | 1 = permanent water, 0 = not                               |
+| File                        | Dtype | Nodata | Values                                                     |
+| --------------------------- | ----- | ------ | ---------------------------------------------------------- |
+| `*_water_fraction.tif`      | uint8 | 255    | 0–100 — % of obs water (`round(frac×100)`); 255 = no obs   |
+| `*_flood_fraction.tif`      | uint8 | 255    | 0–100 — % of obs flooded (`round(frac×100)`); 255 = no obs |
+| `*_reference_water.tif`     | uint8 | 255    | 0 = land, 1 = water, 2 = permanent water, 255 = nodata     |
+| `*_exclusion_mask.tif`      | uint8 | 255    | Native GFM exclusion-mask codes                            |
+| `*_advisory_flags.tif`      | uint8 | 255    | Native advisory bitmask                                    |
+| `*_ensemble_likelihood.tif` | uint8 | 255    | Native ensemble likelihood values (0–100)                  |
 
 ### Processed outputs — native / raw mode (~80 m, EPSG:4326)
 
 | File                          | Dtype | Nodata | Values                                                 |
 | ----------------------------- | ----- | ------ | ------------------------------------------------------ |
 | `*_ensemble_flood_extent.tif` | uint8 | 255    | 0 = dry, 1 = flood, 255 = nodata                       |
+| `*_ensemble_water_extent.tif` | uint8 | 255    | 0 = dry, 1 = water, 255 = nodata                       |
 | `*_reference_water_mask.tif`  | uint8 | 255    | 0 = land, 1 = water, 2 = permanent water, 255 = nodata |
+| `*_exclusion_mask.tif`        | uint8 | 255    | Native GFM exclusion-mask codes                        |
+| `*_advisory_flags.tif`        | uint8 | 255    | Native advisory bitmask                                |
+| `*_ensemble_likelihood.tif`   | uint8 | 255    | Native ensemble likelihood values (0–100)              |
 
 All processed outputs use **CRS**: EPSG:4326 (WGS84), **Compression**: LZW.
 

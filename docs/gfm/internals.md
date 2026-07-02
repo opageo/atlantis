@@ -32,17 +32,17 @@ Today the fetcher loads only:
 - `ensemble_flood_extent`
 - `reference_water_mask`
 
-Other upstream assets such as `ensemble_water_extent`, `ensemble_likelihood`,
-`exclusion_mask`, `advisory_flags`, and the DLR / TUW / LIST intermediate
-flood-extent and likelihood layers are not yet exposed through `GFMFetcher`.
+Atlantis now exposes the core native GFM bands plus the auxiliary
+`ensemble_water_extent`, `exclusion_mask`, `ensemble_likelihood`, and
+`advisory_flags` layers. The algorithm-specific DLR / TUW / LIST intermediate
+flood-extent and likelihood assets remain unexposed.
 
-This is deliberate in the current pipeline. Atlantis derives its public layers
-from the two discrete source assets so the semantics stay stable:
-`flood_fraction` comes from flood coverage, `permanent_water` comes from the
-permanent-water code, and `quality_mask` records observation coverage only. The
-fetcher does not currently reinterpret `advisory_flags` or `exclusion_mask` as
-validity masks, because that would change the meaning of `quality_mask` from
-"observed" to a mixed coverage-and-confidence signal.
+The classified pipeline keeps the shared semantics narrow and explicit:
+`water_fraction` comes from accumulated water coverage, `flood_fraction` comes
+from accumulated flood coverage, and `reference_water` carries the native
+reference-water codes under the shared layer name. The fetcher does not fold
+`advisory_flags` or `exclusion_mask` into a single shared validity layer;
+those codes are surfaced as companion layers instead.
 
 ## Processing pipeline
 
@@ -50,10 +50,11 @@ When you run `atlantis fetch --source gfm`, Atlantis executes a date-grouped
 SAR pipeline. The processor supports two modes controlled by `classify`
 (default `True`):
 
-- **Classified mode** (`--classify`, default): builds 0/1 flood/perm/valid
+- **Classified mode** (`--classify`, default): builds 0/1 flood/water/valid
   masks, mean-pools them by the coarsen factor, reprojects with average
-  resampling, accumulates counts, and derives `flood_fraction` /
-  `quality_mask` / `permanent_water`.
+  resampling, accumulates counts, and derives `water_fraction` /
+  `flood_fraction` / `reference_water` while carrying native-code companions
+  such as `exclusion_mask`, `ensemble_likelihood`, and `advisory_flags`.
 - **Native / raw mode** (`--no-classify`): NN-reprojects discrete pixel codes
   directly to the canonical grid and max-pools codes across items for each date;
   emits `ensemble_flood_extent` and `reference_water_mask` as-is.
@@ -72,19 +73,19 @@ flowchart TD
     B --> C
     subgraph C["2. Process date group - GfmRasterProcessor.process_items()"]
         C1["odc.stac.load in native CRS"]
-        C2["Build 0/1 flood, perm, valid masks"]
+        C2["Build 0/1 flood, water, valid masks"]
         C3["Mean-pool by coarsen factor"]
         C1 --> C2 --> C3
     end
     C --> D
     subgraph D["3. Reproject and accumulate"]
         D1["Reproject to canonical ~80 m EPSG:4326 grid"]
-        D2["Accumulate flood_count, perm_water_count, valid_count"]
+        D2["Accumulate flood_count, water_count, valid_count\n+ carry reference/exclusion/advisory codes"]
         D1 --> D2
     end
     D --> E
     subgraph E["4. Classify and select"]
-        E1["Compute flood_fraction, quality_mask, permanent_water"]
+        E1["Compute water_fraction, flood_fraction, reference_water"]
         E2["Apply peak / aggregate / all strategy"]
         E1 --> E2
     end
@@ -142,7 +143,7 @@ Sentinel-1 SAR is noisy at native resolution. In classified mode,
 
 ```python
 flood_mask = (xx["ensemble_flood_extent"] == GFM_FLOOD).coarsen(...).mean()
-perm_mask = (xx["reference_water_mask"] == GFM_PERMANENT_WATER).coarsen(...).mean()
+water_mask = (xx["ensemble_water_extent"] == GFM_WATER).coarsen(...).mean()
 ```
 
 Each coarsened cell holds the _fraction_ of sub-pixels in the class — the
@@ -166,7 +167,7 @@ by the coarsen factor:
 | Mask    | Rule                            |
 | ------- | ------------------------------- |
 | `flood` | `ensemble_flood_extent == 1`    |
-| `perm`  | `reference_water_mask == 2`     |
+| `water` | `ensemble_water_extent == 1`    |
 | `valid` | Either source band is not `255` |
 
 Mean-pooling the 0/1 masks (rather than `max`-pooling the nominal codes) keeps
@@ -207,7 +208,13 @@ Each item contributes a fractional amount in `[0, 1]` to those accumulators.
 `src/atlantis/fetchers/gfm/derived.py` and registered on the GFM layer registry
 (`gfm/layers.py`); unlike VIIRS/MODIS, the GFM derivations read accumulated
 _counts_ rather than raw codes. Browse them with `atlantis list-layers --source gfm`
-or in [the layer reference](../layers.md).
+or in the canonical [GFM derived layer reference](../layers.md#layers-gfm-derived).
+
+$$
+\mathrm{water\_fraction} = \frac{\text{water\_count}}{\text{valid\_count}}
+$$
+
+with `NaN` where `valid_count == 0`.
 
 $$
 \text{flood\_fraction} = \frac{\text{flood\_count}}{\text{valid\_count}}
@@ -216,15 +223,12 @@ $$
 with `NaN` where `valid_count == 0`.
 
 $$
-\text{quality\_mask} = \mathbb{1}[\text{valid\_count} > 0]
+\mathrm{reference\_water} = \text{reference\_water\_codes}
 $$
 
-$$
-\text{permanent\_water} = \mathbb{1}\left[\frac{\text{perm\_water\_count}}{\text{valid\_count}} > 0.5\right]
-$$
-
-`quality_mask` is therefore a valid-observation coverage mask, not the
-upstream `advisory_flags` or `exclusion_mask` layer.
+`exclusion_mask`, `advisory_flags`, and `ensemble_likelihood` are preserved as
+native-code companion layers; they are not used to derive the shared
+`water_fraction` / `flood_fraction` maths.
 
 `cloud_fraction` is computed as the fraction of pixels with no valid coverage.
 

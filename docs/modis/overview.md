@@ -66,7 +66,7 @@ history are documented later in this page; the quick reference is:
 Atlantis exposes these as **layers** of two kinds (full catalogue: [layer reference](../layers.md), or run `atlantis list-layers --source modis`):
 
 - **Native** — the selected MCDWD flood composite, passed through untouched as `raw` (`--no-classify`). The eleven ancillary count layers are catalogued but not loaded by the default pipeline.
-- **Derived** — computed by Atlantis with `--classify` (default): `flood_fraction` (class 3), `quality_mask` (class ≠ 255), `permanent_water` (class 1), and the MODIS-only `recurring_flood` (class 2).
+- **Derived** — the registry-defined MODIS layers emitted with `--classify`. Their exact names, dtypes, resampling, and descriptions are maintained only in the canonical [layer reference](../layers.md#layers-modis-derived).
 
 `flood_fraction` is therefore a **derived** layer, not a native MCDWD value.
 
@@ -222,7 +222,7 @@ as anything other than "clear". Three subtleties affect downstream code:
    detections.
 3. **`255` is not equivalent to "no flood".** Treating it as `0` in
    downstream binary masks systematically under-reports flood. The
-   suggested Atlantis mapping (`quality_mask = (class != 255)`) preserves
+   suggested Atlantis mapping (`exclusion_mask = (class == 255)`) preserves
    the distinction.
 
 ### Surface water vs flood (reference water mask)
@@ -711,7 +711,7 @@ are mutually exclusive. Two reasonable adaptations:
 
 The binarised path is the most directly comparable to VIIRS output. The
 recurring-flood class (2) can be folded in as a separate mask layer
-analogous to VIIRS `permanent_water`.
+alongside VIIRS `reference_water`.
 
 ### Suggested layer mapping
 
@@ -721,13 +721,14 @@ This mapping is **implemented**: MODIS exposes the same sensor-agnostic
 stay source-agnostic). The `raw` row is the **native** passthrough; the count
 layers are catalogued native layers that are not loaded by default.
 
-| MODIS variable    | Kind    | Derivation                        | Equivalent VIIRS variable |
-| ----------------- | ------- | --------------------------------- | ------------------------- |
-| `flood_fraction`  | derived | `class == 3` aggregated to target | `flood_fraction`          |
-| `quality_mask`    | derived | `class != 255`                    | `quality_mask`            |
-| `permanent_water` | derived | `class == 1`                      | `permanent_water`         |
-| `recurring_flood` | derived | `class == 2`                      | _(none — MODIS-only)_     |
-| `raw`             | native  | original uint8 composite codes    | `raw`                     |
+| MODIS variable    | Kind    | Derivation                             | Equivalent VIIRS variable |
+| ----------------- | ------- | -------------------------------------- | ------------------------- |
+| `water_fraction`  | derived | `class ∈ {1,2,3}` aggregated to target | `water_fraction`          |
+| `flood_fraction`  | derived | `class == 3` aggregated to target      | `flood_fraction`          |
+| `exclusion_mask`  | derived | `class == 255`                         | `exclusion_mask`          |
+| `reference_water` | derived | `class ∈ {1,2}`                        | `reference_water`         |
+| `recurring_flood` | derived | `class == 2`                           | _(none — MODIS-only)_     |
+| `raw`             | native  | original uint8 composite codes         | `raw`                     |
 
 ## NRT vs reprocessed: which one to use
 

@@ -29,7 +29,7 @@ print(int((flood > 0).sum().item()), "pixels with non-zero flood fraction")
 
 `VIIRSFetcher()` itself defaults to `classify=False` and `stream=False`; the CLI enables both by default.
 
-> **Native vs derived layers.** With `classify=True` (CLI default) `to_dataset()` returns the **derived** layers `flood_fraction`, `quality_mask`, `permanent_water`, `cloud_mask`, `snow_ice`, and `shadow`. With `classify=False` it returns the single **native** band `raw`. `flood_fraction` is a _derived_ layer (decoded from the native codes), not a value the source ships. List every native and derived layer with `atlantis list-layers --source viirs` or `atlantis.layers.list_layers("viirs")`; see [the layer reference](../layers.md).
+> **Native vs derived layers.** The exact VIIRS layer inventory is maintained in the canonical [layer reference](../layers.md#layers-viirs) and via `atlantis list-layers --source viirs`. With `classify=True`, `to_dataset()` returns the registry-defined derived layers; with `classify=False` it returns the native `raw` band.
 
 ## Raw mode (no classification)
 
@@ -114,14 +114,14 @@ plt.show()
 
 ## VIIRSFetcher parameters
 
-| Parameter        | Type   | Default     | Description                                                                                                                                                                          |
-| ---------------- | ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `stream`         | `bool` | `False`     | Stream tiles via `/vsicurl/` instead of downloading; the CLI turns this on by default                                                                                                |
-| `classify`       | `bool` | `False`     | Emit **derived** layers (`flood_fraction`, `quality_mask`, `permanent_water`, `cloud_mask`, `snow_ice`, `shadow`) instead of the native `raw` band; the CLI turns this on by default |
-| `strategy`       | `str`  | `"peak"`    | Multi-date reduction: `"peak"`, `"aggregate"`, or `"all"`                                                                                                                            |
-| `keep_processed` | `bool` | `True`      | Write intermediate `processed/` GeoTIFFs when classified or raw outputs are materialised                                                                                             |
-| `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)                                                                                                                                         |
-| `data_format`    | `str`  | `"tif"`     | Remote format to query; only `"tif"` is currently implemented                                                                                                                        |
+| Parameter        | Type   | Default     | Description                                                                                                                                                              |
+| ---------------- | ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `stream`         | `bool` | `False`     | Stream tiles via `/vsicurl/` instead of downloading; the CLI turns this on by default                                                                                    |
+| `classify`       | `bool` | `False`     | Emit the derived VIIRS layers from the canonical [layer reference](../layers.md#layers-viirs-derived) instead of the native `raw` band; the CLI turns this on by default |
+| `strategy`       | `str`  | `"peak"`    | Multi-date reduction: `"peak"`, `"aggregate"`, or `"all"`                                                                                                                |
+| `keep_processed` | `bool` | `True`      | Write intermediate `processed/` GeoTIFFs when classified or raw outputs are materialised                                                                                 |
+| `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)                                                                                                                             |
+| `data_format`    | `str`  | `"tif"`     | Remote format to query; only `"tif"` is currently implemented                                                                                                            |
 
 > See [overview.md § Backends](overview.md#backends) for a detailed comparison of the two
 > sources (host, compositing window, tile naming, AOI grid, coverage years and

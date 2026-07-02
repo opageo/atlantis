@@ -836,10 +836,9 @@ def fetch(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, plus"
-        " source-specific extras) computed by Atlantis. Default: on."
+        help="Emit the source's derived layers from the registry-backed layer catalogue. Default: on."
         " Use --no-classify to emit the native source layers untouched (raw codes/bands)."
-        " MODIS adds a recurring_flood derived layer; see `atlantis list-layers`.",
+        " See `atlantis list-layers` for the exact inventory.",
     ),
     stream: bool = typer.Option(
         True,
@@ -925,7 +924,7 @@ def fetch(
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
         modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).
         modis_composite: Which MCDWD composite to fetch (F1, F1C, F2, F3).
-        classify: If True, write flood-fraction/quality-mask/permanent-water layers instead of raw data.
+        classify: If True, write water/flood-fraction plus reference/exclusion layers instead of raw data.
             MODIS adds a recurring_flood layer when classified.
         stream: If True, stream remote tiles without downloading to disk. For MODIS, only
             valid with --modis-backend lance_geotiff.
@@ -1172,8 +1171,7 @@ def fetch_kurosiwo_viirs(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, plus"
-        " VIIRS extras like cloud_mask/snow_ice/shadow) computed by Atlantis. Default: on."
+        help="Emit the VIIRS derived layers from the registry-backed layer catalogue. Default: on."
         " Use --no-classify to emit the native VIIRS band untouched. See `atlantis list-layers`.",
     ),
     stream: bool = typer.Option(
@@ -1216,7 +1214,7 @@ def fetch_kurosiwo_viirs(
         use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
-        classify: If True, write flood-fraction/quality-mask/permanent-water layers instead of raw data.
+        classify: If True, write water/flood-fraction plus reference/exclusion layers instead of raw data.
         stream: If True, stream remote tiles without downloading to disk.
         plot: Save PNG visualisation of the peak-flood date per case.
         plot_dir: Directory for PNG output (default: <output>/plots/).
@@ -1409,8 +1407,9 @@ def fetch_kurosiwo_modis(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, recurring_flood)"
-        " computed by Atlantis, or --no-classify to emit the native MCDWD composite untouched.",
+        help="Emit the MODIS derived layers from the registry-backed layer catalogue,"
+        " or --no-classify to emit the native MCDWD composite untouched."
+        " See `atlantis list-layers` for the exact inventory.",
     ),
     stream: bool = typer.Option(
         True,
@@ -1451,7 +1450,7 @@ def fetch_kurosiwo_modis(
         use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
         modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).
         modis_composite: Which MCDWD composite to fetch (F1, F1C, F2, F3).
-        classify: If True, write flood-fraction/quality-mask/permanent-water/recurring-flood layers.
+        classify: If True, write water_fraction/flood_fraction/reference_water/exclusion_mask/recurring_flood layers.
         stream: If True, stream remote tiles without downloading (lance_geotiff only).
         plot: Save PNG visualisation of the peak-flood date per case.
         plot_dir: Directory for PNG output (default: <output>/plots/).

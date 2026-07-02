@@ -26,10 +26,13 @@ The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the
 
 ### Native vs derived layers
 
-Atlantis distinguishes two kinds of layers (see the full catalogue in [the layer reference](../layers.md), or run `atlantis list-layers --source viirs`):
+Atlantis distinguishes **native** and **derived** VIIRS layers, but the exact
+inventory is maintained only in the canonical
+[VIIRS layer reference](../layers.md#layers-viirs) and via
+`atlantis list-layers --source viirs`.
 
-- **Native layer** — the single encoded VFM band above, fetched and passed through untouched. Emitted with `--no-classify` as `raw`.
-- **Derived layers** — computed by Atlantis from that native band with `--classify` (the default): `flood_fraction` (a continuous water fraction, **not** a raw code), `quality_mask`, `permanent_water`, plus the mask layers `cloud_mask` (30), `snow_ice` (20), and `shadow` (50).
+- **Native layer** — the single encoded VFM band above, fetched and passed through untouched.
+- **Derived layers** — the registry-defined decoded products emitted with `--classify`.
 
 `flood_fraction` is therefore a **derived** layer, not something the source ships — it is decoded from the native codes `101–200` as `(code − 100) / 100`.
 
@@ -45,7 +48,7 @@ uv run atlantis fetch \
   --no-keep-processed --harmonise
 ```
 
-This streams VIIRS tiles from NOAA S3, derives per-pixel flood fraction plus quality and permanent-water masks, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/`):
+This streams VIIRS tiles from NOAA S3, derives per-pixel water/flood fractions plus reference/exclusion and weather masks, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/`):
 
 ```
 harmonised/
@@ -99,7 +102,7 @@ uv run atlantis harmonise \
 
 | Flag                  | Default | Effect                                                                                                                                                                                   |
 | --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--classify`          | on      | Emit **derived** layers — `flood_fraction`, `quality_mask`, `permanent_water`, plus `cloud_mask` / `snow_ice` / `shadow`                                                                 |
+| `--classify`          | on      | Emit **derived** layers — `water_fraction`, `flood_fraction`, `reference_water`, `exclusion_mask`, plus `cloud_mask` / `snow_ice` / `shadow`                                             |
 | `--no-classify`       |         | Emit the **native** VFM band untouched (single `raw` GeoTIFF)                                                                                                                            |
 | `--harmonise`         | off     | Also produce a resampled 1-arcmin flood-fraction GeoTIFF                                                                                                                                 |
 | `--no-keep-processed` | off     | Skip writing intermediate 375 m GeoTIFFs; keep processed rasters in memory unless combined with `--harmonise` and/or `--plot`                                                            |
@@ -157,7 +160,7 @@ days around it, then keeps the peak plus the 4 nearest post-event dates (the
 | `--no-stream`     |           | Download tiles to `raw/` for reuse across runs           |
 | `--viirs-backend` | `noaa_s3` | Data source (`noaa_s3` or `gmu_legacy`)                  |
 
-With `--classify`, codes `101–200` become `flood_fraction` values in `[0.01, 1.00]` in memory and are written as uint8 percentages `[1, 100]` on disk. Codes `1`, `17`, `20`, `30`, and `99` contribute `0` flood fraction; the companion **derived** masks `quality_mask`, `permanent_water`, `cloud_mask`, `snow_ice`, and `shadow` are written alongside. With `--no-classify`, the single **native** band is written untouched as `raw`.
+With `--classify`, codes `101–200` become both `water_fraction` and `flood_fraction` values in `[0.01, 1.00]` in memory and are written as uint8 percentages `[1, 100]` on disk. `water_fraction` additionally promotes NOAA `NormalWater` (`99`) and the unquantified floodwater code (`15`) to `1.0`; `flood_fraction` keeps those as `0.0`. Fill/cloud pixels become `NaN` in memory and are encoded as `255` on disk for the fraction rasters. The companion **derived** masks `reference_water`, `exclusion_mask`, `cloud_mask`, `snow_ice`, and `shadow` are written alongside. With `--no-classify`, the single **native** band is written untouched as `raw`.
 
 ### `atlantis fetch-kurosiwo-viirs` flags
 
@@ -297,9 +300,10 @@ details on backend selection.
       raw/          # only with --no-stream
       processed/    # absent with --no-keep-processed
         # --classify (default) — derived layers:
+        <event_id>_<YYYYMMDD>_viirs_water_fraction.tif
         <event_id>_<YYYYMMDD>_viirs_flood_fraction.tif
-        <event_id>_<YYYYMMDD>_viirs_quality_mask.tif
-        <event_id>_<YYYYMMDD>_viirs_permanent_water.tif
+        <event_id>_<YYYYMMDD>_viirs_reference_water.tif
+        <event_id>_<YYYYMMDD>_viirs_exclusion_mask.tif
         <event_id>_<YYYYMMDD>_viirs_cloud_mask.tif
         <event_id>_<YYYYMMDD>_viirs_snow_ice.tif
         <event_id>_<YYYYMMDD>_viirs_shadow.tif
@@ -319,7 +323,7 @@ All GeoTIFFs share these properties:
 - **CRS**: EPSG:4326 (WGS84)
 - **Dtype**: uint8
 - **Compression**: LZW
-- **Nodata**: `255` for `processed/*_flood_fraction.tif` and `harmonised/*.tif`; `0` for `processed/*_raw.tif` and the derived masks (`*_quality_mask.tif`, `*_permanent_water.tif`, `*_cloud_mask.tif`, `*_snow_ice.tif`, `*_shadow.tif`). Note the _native_ VFM band's own `_FillValue` is `1`; Atlantis writes its `raw` passthrough with `nodata=0` (clip/mosaic fill).
+- **Nodata**: `255` for `processed/*_{water,flood}_fraction.tif` and `harmonised/*.tif`; `0` for `processed/*_raw.tif` and the derived masks (`*_reference_water.tif`, `*_exclusion_mask.tif`, `*_cloud_mask.tif`, `*_snow_ice.tif`, `*_shadow.tif`). Note the _native_ VFM band's own `_FillValue` is `1`; Atlantis writes its `raw` passthrough with `nodata=0` (clip/mosaic fill).
 
 Processed and harmonised flood-fraction values are stored as **integer percentages** (0–100),
 where 0 = no flood and 100 = fully flooded. This gives 1% precision while

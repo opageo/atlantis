@@ -17,7 +17,7 @@ construction, and the generated layer catalogue in `docs/layers.md`.
 ### Implemented today
 
 - `VIIRSFetcher` can search, download, mosaic, clip, and write GeoTIFF outputs from the NOAA S3 or GMU JPSS Flood archive.
-- `GFMFetcher` can search, stream, coarsen, reproject, and write GeoTIFF outputs from the EODC STAC API (Sentinel-1 SAR). `--classify` emits derived layers (`flood_fraction`, `quality_mask`, `permanent_water`); `--no-classify` emits the native `ensemble_flood_extent` and `reference_water_mask` bands.
+- `GFMFetcher` can search, stream, coarsen, reproject, and write GeoTIFF outputs from the EODC STAC API (Sentinel-1 SAR). The exact GFM native/derived inventory is centralised in `docs/layers.md`.
 - `MODISFetcher` can search, download/stream, mosaic, clip, and write GeoTIFF outputs from NASA LANCE (NRT) or LAADS (archive) backends.
 - `atlantis fetch` works for explicit bbox/date extraction across all three sources (VIIRS, GFM, MODIS).
 - `atlantis fetch-kurosiwo-viirs` and `atlantis fetch-kurosiwo-modis` work directly from the KuroSiwo catalogue or from a precomputed metadata CSV.
@@ -315,12 +315,8 @@ Default output layout (no flags, streaming and classify on):
 ~/.cache/atlantis/raw/Yangtze_2020/
 └── viirs/
     └── processed/
-  ├── Yangtze_2020_20200722_viirs_flood_fraction.tif
-  ├── Yangtze_2020_20200722_viirs_quality_mask.tif
-  ├── Yangtze_2020_20200722_viirs_permanent_water.tif
-  ├── Yangtze_2020_20200722_viirs_cloud_mask.tif
-  ├── Yangtze_2020_20200722_viirs_snow_ice.tif
-  └── Yangtze_2020_20200722_viirs_shadow.tif
+        ├── Yangtze_2020_20200722_viirs_<layer>.tif
+        └── ... one file per derived VIIRS layer from docs/layers.md
 ```
 
 Use `--no-stream` to cache raw tiles to disk for reuse across runs. Use `--no-classify` to emit the native source layer (`raw` for VIIRS and MODIS; native SAR bands for GFM) instead of Atlantis-derived layers.
@@ -389,12 +385,8 @@ Default output layout (without `--no-keep-processed`, streaming on by default):
     └── viirs/
         ├── raw/
         └── processed/
-      ├── KuroSiwo_470_20201014_viirs_flood_fraction.tif
-            ├── KuroSiwo_470_20201014_viirs_quality_mask.tif
-      ├── KuroSiwo_470_20201014_viirs_permanent_water.tif
-      ├── KuroSiwo_470_20201014_viirs_cloud_mask.tif
-      ├── KuroSiwo_470_20201014_viirs_snow_ice.tif
-      └── KuroSiwo_470_20201014_viirs_shadow.tif
+            ├── KuroSiwo_470_20201014_viirs_<layer>.tif
+            └── ... one file per derived VIIRS layer from docs/layers.md
 ```
 
 Widen the search window around the KuroSiwo flood-time date:
@@ -430,14 +422,9 @@ That mode is intentionally not the default because KuroSiwo `date_start -> date_
 
 ### 5.6 VIIRS Output Semantics
 
-With `--classify` (default), Atlantis computes the following **derived layers**:
-
-- `*_flood_fraction.tif` — flood fraction in `[0, 1]`, written as uint8 percent
-- `*_quality_mask.tif` — validity mask for aggregation and harmonisation
-- `*_permanent_water.tif` — permanent water mask derived from native `NormalWater`
-- `*_cloud_mask.tif` — cloud-class mask derived from native code `30`
-- `*_snow_ice.tif` — snow/ice mask derived from native code `20`
-- `*_shadow.tif` — shadow mask derived from native code `50`
+With `--classify` (default), Atlantis writes one GeoTIFF per derived VIIRS
+layer from the canonical layer reference in `docs/layers.md`. The fraction
+layers are written as uint8 percentages; the categorical masks remain uint8.
 
 With `--no-classify`, Atlantis writes the single native `raw` VFM layer instead.
 The native source `_FillValue` is `1`; Atlantis also treats `0` as missing when
@@ -490,11 +477,9 @@ Key GFM-specific options:
 
 ### 6.3 GFM Output Semantics
 
-With `--classify` (default):
-
-- `*_gfm_flood_fraction.tif` — flood probability in [0, 1]
-- `*_gfm_quality_mask.tif` — pixel validity mask
-- `*_gfm_permanent_water.tif` — permanent water body mask derived from accumulated native `reference_water_mask` counts
+With `--classify` (default), Atlantis writes one GeoTIFF per derived or
+code-preserving companion layer listed in the canonical GFM section of
+`docs/layers.md`.
 
 With `--no-classify` (native/raw mode — emits SAR band codes as-is):
 
@@ -564,10 +549,9 @@ uv run atlantis fetch-kurosiwo-modis \
 
 When classified (`--classify`, the default):
 
-- `*_modis_flood_fraction.tif` — flood fraction in `[0, 1]`, written as uint8 percent
-- `*_modis_quality_mask.tif` — pixel validity mask
-- `*_modis_permanent_water.tif` — permanent water body mask
-- `*_modis_recurring_flood.tif` — recurring flood areas mask
+Atlantis writes one GeoTIFF per derived MODIS layer from the canonical layer
+reference in `docs/layers.md`. Fraction layers are written as uint8
+percentages; categorical layers remain uint8 masks/codes.
 
 When raw (`--no-classify`):
 
