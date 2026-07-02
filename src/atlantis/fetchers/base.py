@@ -115,8 +115,8 @@ class AbstractFloodFetcher(ABC):
 
         Standard variables:
             - flood_extent: float32, values 0-1
-            - quality_mask: uint8, quality flags
-            - permanent_water: uint8, permanent water mask
+            - exclusion_mask: uint8, 1=excluded/invalid, 0=usable
+            - reference_water: uint8, reference/permanent water layer
 
         Args:
             result: The fetch result to convert.
