@@ -88,10 +88,10 @@ def cloud_aware_score(
         flood = int(flood_codes.sum())
     elif processed.flood_fraction is not None:
         ff = processed.flood_fraction
-        qm = processed.quality_mask
+        exclusion = processed.exclusion_mask
         total = int(ff.size)
-        if qm is not None:
-            missing = int((qm == 0).sum())
+        if exclusion is not None:
+            missing = int((exclusion > 0).sum())
         else:
             missing = 0
         valid = total - missing

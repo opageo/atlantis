@@ -165,8 +165,9 @@ class MODISFetcher(AbstractFloodFetcher):
             backup_base_url: Optional ``nrt4`` mirror URL for the
                 ``lance_geotiff`` backend.
             timeout: HTTP request timeout in seconds.
-            classify: Decode raw codes into ``flood_fraction``,
-                ``recurring_flood``, ``permanent_water``, ``quality_mask``.
+            classify: Decode raw codes into ``water_fraction``,
+                ``flood_fraction``, ``reference_water``, ``exclusion_mask``,
+                and ``recurring_flood``.
             stream: Stream remote tiles via GDAL ``/vsicurl/``. Only valid
                 for ``lance_geotiff``; raises ``ValueError`` otherwise.
             strategy: Multi-date reduction (``peak`` / ``aggregate`` / ``all``).
@@ -665,9 +666,10 @@ class MODISFetcher(AbstractFloodFetcher):
             p
             for p in (
                 paths.raw,
+                paths.water_fraction,
                 paths.flood_fraction,
-                paths.quality_mask,
-                paths.permanent_water,
+                paths.exclusion_mask,
+                paths.reference_water,
                 paths.recurring_flood,
             )
             if p is not None
@@ -726,30 +728,25 @@ class MODISFetcher(AbstractFloodFetcher):
         if raw_path:
             variables["raw"] = rxr.open_rasterio(raw_path).squeeze(drop=True).rename("raw")
         else:
-            ff_path = next(path for name, path in files_by_name.items() if name.endswith("_flood_fraction.tif"))
-            qm_path = next(path for name, path in files_by_name.items() if name.endswith("_quality_mask.tif"))
-            pw_path = next(path for name, path in files_by_name.items() if name.endswith("_permanent_water.tif"))
-            rf_path = next(
-                (path for name, path in files_by_name.items() if name.endswith("_recurring_flood.tif")),
-                None,
-            )
+            from atlantis.fetchers.modis.layers import registry
 
-            flood_fraction = rxr.open_rasterio(ff_path).squeeze(drop=True).astype("float32")
-            nodata = flood_fraction.rio.nodata
-            if nodata is None:
-                nodata = INSUFFICIENT_DATA_CODE
-            flood_fraction = flood_fraction.where(flood_fraction != nodata) / 100.0
-            variables["flood_fraction"] = flood_fraction.rename("flood_fraction")
-            variables["quality_mask"] = (
-                rxr.open_rasterio(qm_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
-            )
-            variables["permanent_water"] = (
-                rxr.open_rasterio(pw_path).squeeze(drop=True).astype("uint8").rename("permanent_water")
-            )
-            if rf_path is not None:
-                variables["recurring_flood"] = (
-                    rxr.open_rasterio(rf_path).squeeze(drop=True).astype("uint8").rename("recurring_flood")
+            for spec in registry.list_derived():
+                layer_path = next(
+                    (path for name, path in files_by_name.items() if name.endswith(f"_{spec.name}.tif")),
+                    None,
                 )
+                if layer_path is None:
+                    continue
+
+                layer = rxr.open_rasterio(layer_path).squeeze(drop=True)
+                if spec.dtype == "float32":
+                    nodata = layer.rio.nodata
+                    if nodata is None:
+                        nodata = INSUFFICIENT_DATA_CODE
+                    layer = layer.astype("float32").where(layer != nodata) / 100.0
+                else:
+                    layer = layer.astype(spec.dtype)
+                variables[spec.name] = layer.rename(spec.name)
 
         dataset = xr.Dataset(variables)
         dataset.attrs["source_id"] = self.source_id

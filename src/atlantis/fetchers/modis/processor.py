@@ -174,16 +174,17 @@ class ProcessedTile:
             Treat this value as "fraction of insufficient-data pixels", not
             literal cloud cover.
         raw: Original uint8 codes when ``--no-classify`` is used.
+        water_fraction: Binary float32 mask covering classes 1/2/3.
+            Pixels coded as ``255`` are stored as ``NaN`` so downstream
+            averaging ignores insufficient data instead of treating it as dry
+            land.
         flood_fraction: Binary float32 mask ``(class == 3).astype(float32)``.
             Pixels coded as ``255`` are stored as ``NaN`` so downstream
             averaging ignores insufficient data instead of treating it as dry
             land.
-        quality_mask: ``(class != 255).astype(uint8)`` — 1 = valid
-            observation, 0 = insufficient data (composite-specific: always
-            HAND-masked and terrain-shadow-masked; cloud / cloud-shadow
-            coverage depends on the composite — see the embedded TIFF
-            ``description`` tag).
-        permanent_water: ``(class == 1).astype(uint8)``.
+        exclusion_mask: ``(class == 255).astype(uint8)`` — 1 = excluded or
+            invalid, 0 = usable classification.
+        reference_water: ``isin(class, [1, 2]).astype(uint8)``.
         recurring_flood: ``(class == 2).astype(uint8)`` — MODIS-only.
             Always ``None`` when ``--no-classify`` is used.
     """
@@ -192,9 +193,10 @@ class ProcessedTile:
     crs: str
     cloud_fraction: float
     raw: np.ndarray | None = None
+    water_fraction: np.ndarray | None = None
     flood_fraction: np.ndarray | None = None
-    quality_mask: np.ndarray | None = None
-    permanent_water: np.ndarray | None = None
+    exclusion_mask: np.ndarray | None = None
+    reference_water: np.ndarray | None = None
     recurring_flood: np.ndarray | None = None
 
     @property
@@ -208,9 +210,10 @@ class OutputPaths:
     """Paths for the output GeoTIFFs (``None`` means: don't write)."""
 
     raw: Path | None = None
+    water_fraction: Path | None = None
     flood_fraction: Path | None = None
-    quality_mask: Path | None = None
-    permanent_water: Path | None = None
+    exclusion_mask: Path | None = None
+    reference_water: Path | None = None
     recurring_flood: Path | None = None
 
 
@@ -413,9 +416,10 @@ class ModisRasterProcessor:
         base_name = f"{event_id}_{date_token}_modis"
         if self.classify:
             paths = OutputPaths(
+                water_fraction=output_dir / f"{base_name}_water_fraction.tif",
                 flood_fraction=output_dir / f"{base_name}_flood_fraction.tif",
-                quality_mask=output_dir / f"{base_name}_quality_mask.tif",
-                permanent_water=output_dir / f"{base_name}_permanent_water.tif",
+                exclusion_mask=output_dir / f"{base_name}_exclusion_mask.tif",
+                reference_water=output_dir / f"{base_name}_reference_water.tif",
                 recurring_flood=output_dir / f"{base_name}_recurring_flood.tif",
             )
         else:
@@ -424,7 +428,7 @@ class ModisRasterProcessor:
         if write_outputs:
             self._write_outputs(processed, paths)
 
-        ref_array = processed.raw if processed.raw is not None else processed.flood_fraction
+        ref_array = processed.raw if processed.raw is not None else processed.water_fraction
         height, width = ref_array.shape  # type: ignore[union-attr]
         metadata = self._build_metadata(event_id, processed, width=width, height=height)
         return ProcessTilesResult(paths=paths, metadata=metadata, processed=processed)
@@ -520,23 +524,27 @@ class ModisRasterProcessor:
         valid = data != INSUFFICIENT_DATA_CODE
         cloud_fraction = float(1.0 - valid.sum() / valid.size) if valid.size else 0.0
 
+        water_fraction = registry.get_derived("water_fraction").derive(ctx)
         flood_fraction = registry.get_derived("flood_fraction").derive(ctx)
-        quality_mask = registry.get_derived("quality_mask").derive(ctx)
-        permanent_water = registry.get_derived("permanent_water").derive(ctx)
+        exclusion_mask = registry.get_derived("exclusion_mask").derive(ctx)
+        reference_water = registry.get_derived("reference_water").derive(ctx)
         recurring_flood = registry.get_derived("recurring_flood").derive(ctx)
 
         logger.debug(
-            "Classification: {} flood, {} recurring, {} permanent-water, {} insufficient (255 fraction {:.1f}%)",
+            "Classification: {} water, {} flood, {} recurring,"
+            " {} reference-water, {} insufficient (255 fraction {:.1f}%)",
+            int(np.nansum(water_fraction)),
             int(np.nansum(flood_fraction)),
             int(recurring_flood.sum()),
-            int(permanent_water.sum()),
+            int(reference_water.sum()),
             int((~valid).sum()),
             cloud_fraction * 100,
         )
         return ProcessedTile(
+            water_fraction=water_fraction,
             flood_fraction=flood_fraction,
-            quality_mask=quality_mask,
-            permanent_water=permanent_water,
+            exclusion_mask=exclusion_mask,
+            reference_water=reference_water,
             recurring_flood=recurring_flood,
             transform=transform,
             crs=crs,
@@ -554,7 +562,7 @@ class ModisRasterProcessor:
         self._write_outputs(processed, paths)
 
     def _write_outputs(self, processed: ProcessedTile, paths: OutputPaths) -> None:
-        ref_shape = processed.raw.shape if processed.raw is not None else processed.flood_fraction.shape
+        ref_shape = processed.raw.shape if processed.raw is not None else processed.water_fraction.shape
         base_meta = {
             "driver": "GTiff",
             "height": ref_shape[0],
@@ -569,6 +577,13 @@ class ModisRasterProcessor:
             with rasterio.open(paths.raw, "w", **base_meta, dtype="uint8", nodata=INSUFFICIENT_DATA_CODE) as dst:
                 dst.write(processed.raw, 1)
 
+        if paths.water_fraction is not None and processed.water_fraction is not None:
+            pct = np.full(processed.water_fraction.shape, INSUFFICIENT_DATA_CODE, dtype=np.uint8)
+            valid = np.isfinite(processed.water_fraction)
+            pct[valid] = np.round(np.clip(processed.water_fraction[valid], 0.0, 1.0) * 100).astype(np.uint8)
+            with rasterio.open(paths.water_fraction, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(pct, 1)
+
         if paths.flood_fraction is not None and processed.flood_fraction is not None:
             # Store as uint8 percent (0–100) with nodata=255 to mirror VIIRS.
             pct = np.full(processed.flood_fraction.shape, INSUFFICIENT_DATA_CODE, dtype=np.uint8)
@@ -577,16 +592,16 @@ class ModisRasterProcessor:
             with rasterio.open(paths.flood_fraction, "w", **base_meta, dtype="uint8", nodata=255) as dst:
                 dst.write(pct, 1)
 
-        if paths.quality_mask is not None and processed.quality_mask is not None:
-            with rasterio.open(paths.quality_mask, "w", **base_meta, dtype="uint8", nodata=0) as dst:
-                dst.write(processed.quality_mask, 1)
+        if paths.exclusion_mask is not None and processed.exclusion_mask is not None:
+            with rasterio.open(paths.exclusion_mask, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(processed.exclusion_mask, 1)
 
-        if paths.permanent_water is not None and processed.permanent_water is not None:
-            with rasterio.open(paths.permanent_water, "w", **base_meta, dtype="uint8", nodata=0) as dst:
-                dst.write(processed.permanent_water, 1)
+        if paths.reference_water is not None and processed.reference_water is not None:
+            with rasterio.open(paths.reference_water, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(processed.reference_water, 1)
 
         if paths.recurring_flood is not None and processed.recurring_flood is not None:
-            with rasterio.open(paths.recurring_flood, "w", **base_meta, dtype="uint8", nodata=0) as dst:
+            with rasterio.open(paths.recurring_flood, "w", **base_meta, dtype="uint8", nodata=255) as dst:
                 dst.write(processed.recurring_flood, 1)
 
     def _build_metadata(self, event_id: str, processed: ProcessedTile, width: int, height: int) -> TileMetadata:
@@ -603,7 +618,7 @@ class ModisRasterProcessor:
             bbox=(min(west, east), min(south, north), max(west, east), max(south, north)),
             cloud_fraction=processed.cloud_fraction,
             quality_bitmask=0,
-            permanent_water_mask_available=processed.permanent_water is not None,
+            permanent_water_mask_available=processed.reference_water is not None,
         )
 
     # ── Aggregation ─────────────────────────────────────────────────────
@@ -612,8 +627,8 @@ class ModisRasterProcessor:
     def aggregate_tiles(tiles: list[ProcessedTile]) -> ProcessedTile:
         """Aggregate ``ProcessedTile`` instances across time.
 
-        - ``flood_fraction``: nan-mean across the time axis.
-        - ``recurring_flood`` / ``permanent_water`` / ``quality_mask`` / ``raw``: per-pixel mode.
+        - ``water_fraction`` / ``flood_fraction``: nan-mean across the time axis.
+        - ``recurring_flood`` / ``reference_water`` / ``exclusion_mask`` / ``raw``: per-pixel mode.
         - ``cloud_fraction``: arithmetic mean of per-tile values.
         """
         if not tiles:
@@ -622,6 +637,9 @@ class ModisRasterProcessor:
             return tiles[0]
 
         ref = tiles[0]
+
+        water_arrays = [t.water_fraction for t in tiles if t.water_fraction is not None]
+        water_fraction = np.nanmean(np.stack(water_arrays, axis=0), axis=0).astype(np.float32) if water_arrays else None
 
         flood_arrays = [t.flood_fraction for t in tiles if t.flood_fraction is not None]
         flood_fraction = np.nanmean(np.stack(flood_arrays, axis=0), axis=0).astype(np.float32) if flood_arrays else None
@@ -635,9 +653,10 @@ class ModisRasterProcessor:
 
         return ProcessedTile(
             raw=_mode_layer("raw"),
+            water_fraction=water_fraction,
             flood_fraction=flood_fraction,
-            quality_mask=_mode_layer("quality_mask"),
-            permanent_water=_mode_layer("permanent_water"),
+            exclusion_mask=_mode_layer("exclusion_mask"),
+            reference_water=_mode_layer("reference_water"),
             recurring_flood=_mode_layer("recurring_flood"),
             transform=ref.transform,
             crs=ref.crs,
