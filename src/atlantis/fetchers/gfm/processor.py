@@ -12,7 +12,7 @@ GFM encoding (verified against EODC STAC COGs):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,8 +35,9 @@ from atlantis.fetchers.gfm.layers import (  # noqa: F401 — re-exported for bac
     GFM_NODATA,
     GFM_PERMANENT_WATER,
     GFM_WATER,
-    PERM_WATER_COUNT,
+    REFERENCE_WATER_CODES,
     VALID_COUNT,
+    WATER_COUNT,
     registry,
 )
 from atlantis.harmoniser.reprojector import Reprojector
@@ -59,7 +60,11 @@ GFM_STAC_CFG: dict = {
     "GFM": {
         "assets": {
             "ensemble_flood_extent": {"data_type": "uint8", "nodata": GFM_NODATA},
+            "ensemble_water_extent": {"data_type": "uint8", "nodata": GFM_NODATA},
             "reference_water_mask": {"data_type": "uint8", "nodata": GFM_NODATA},
+            "exclusion_mask": {"data_type": "uint8", "nodata": GFM_NODATA},
+            "ensemble_likelihood": {"data_type": "uint8", "nodata": GFM_NODATA},
+            "advisory_flags": {"data_type": "uint8", "nodata": GFM_NODATA},
         }
     }
 }
@@ -93,14 +98,30 @@ def _masked_max(a: np.ndarray, b: np.ndarray, nodata: int) -> np.ndarray:
     return result.astype(np.uint8)
 
 
+def _masked_or(a: np.ndarray, b: np.ndarray, nodata: int) -> np.ndarray:
+    """Element-wise bitwise OR of two uint8 arrays treating *nodata* as absent."""
+    a_valid = a != nodata
+    b_valid = b != nodata
+    result = np.full_like(a, nodata)
+    both = a_valid & b_valid
+    result = np.where(both, np.bitwise_or(a, b), result)
+    result = np.where(a_valid & ~b_valid, a, result)
+    result = np.where(~a_valid & b_valid, b, result)
+    return result.astype(np.uint8)
+
+
 @dataclass(frozen=True)
 class GfmProcessedTile:
     """Result from processing GFM items for a single date group.
 
     Classified mode (``classify=True``, default):
+        water_fraction: Float32 array [0, 1] — fraction of observations with water.
         flood_fraction: Float32 array [0, 1] — fraction of observations with flood.
-        quality_mask: Uint8 array (1=valid observation exists, 0=no data).
-        permanent_water: Uint8 array (1=permanent water, 0=not).
+        reference_water: Uint8 array of the native reference-water codes under
+            the shared layer name.
+        extra_layers: Additional native-code outputs carried alongside the core
+            fractions, such as exclusion_mask, ensemble_likelihood, and
+            advisory_flags.
 
     Native / raw mode (``classify=False``):
         ensemble_flood_extent: Uint8 array of raw codes (0=dry,1=flood,255=nodata),
@@ -121,9 +142,10 @@ class GfmProcessedTile:
     shape: tuple[int, int]
     cloud_fraction: float = 0.0
     # Classified fields
+    water_fraction: np.ndarray | None = None
     flood_fraction: np.ndarray | None = None
-    quality_mask: np.ndarray | None = None
-    permanent_water: np.ndarray | None = None
+    reference_water: np.ndarray | None = None
+    extra_layers: dict[str, np.ndarray] = field(default_factory=dict)
     # Native / raw fields
     ensemble_flood_extent: np.ndarray | None = None
     reference_water_mask: np.ndarray | None = None
@@ -131,7 +153,7 @@ class GfmProcessedTile:
     @property
     def is_classified(self) -> bool:
         """True when derived layers are present rather than the native bands."""
-        return self.flood_fraction is not None
+        return self.water_fraction is not None
 
 
 @dataclass(frozen=True)
@@ -139,12 +161,13 @@ class GfmOutputPaths:
     """File paths for written GFM processed outputs."""
 
     # Classified paths
+    water_fraction: Path | None = None
     flood_fraction: Path | None = None
-    quality_mask: Path | None = None
-    permanent_water: Path | None = None
+    reference_water: Path | None = None
     # Native / raw paths
     ensemble_flood_extent: Path | None = None
     reference_water_mask: Path | None = None
+    extra: dict[str, Path] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -165,7 +188,7 @@ class GfmRasterProcessor:
        (fraction of sub-pixels per class; no categorical ranking).
     3. Reproject to EPSG:4326 aligned to the ~80 m global grid.
     4. Accumulate per-pixel flood/valid/permanent-water counts.
-    5. Derive flood_fraction, quality_mask, permanent_water.
+    5. Derive water_fraction, flood_fraction, and reference_water.
 
     Native / raw mode (``classify=False``):
     1. Load each item in native CRS at native resolution.
@@ -193,8 +216,8 @@ class GfmRasterProcessor:
             reprojector: Pre-configured Reprojector instance. If None, one is
                 created at the coarsen-applied native resolution (~80 m for
                 coarsen_factor=4), snapped to the global grid.
-            classify: When True (default), derive flood_fraction / quality_mask /
-                permanent_water from per-pixel counts. When False, emit the native
+            classify: When True (default), derive water_fraction / flood_fraction /
+                reference_water from per-pixel counts. When False, emit the native
                 ensemble_flood_extent and reference_water_mask bands as-is,
                 reprojected with nearest-neighbour to the ~80 m processed grid.
                 The downstream ``--harmonise`` step resamples processed/ to the
@@ -237,8 +260,8 @@ class GfmRasterProcessor:
         """Process a list of STAC items into a flood map.
 
         In classified mode (``classify=True``, default), derives
-        ``flood_fraction`` / ``quality_mask`` / ``permanent_water`` from
-        per-pixel accumulator counts.  In native mode (``classify=False``),
+        ``water_fraction`` / ``flood_fraction`` / ``reference_water`` from
+        per-pixel accumulator counts. In native mode (``classify=False``),
         reprojects raw band codes to the ~80 m processed grid using
         nearest-neighbour and max-pools codes across items for the date group.
 
@@ -295,8 +318,12 @@ class GfmRasterProcessor:
 
         # Accumulators
         flood_count: np.ndarray | None = None
-        perm_water_count: np.ndarray | None = None
+        water_count: np.ndarray | None = None
         valid_count: np.ndarray | None = None
+        reference_water_codes: np.ndarray | None = None
+        exclusion_codes: np.ndarray | None = None
+        advisory_flags: np.ndarray | None = None
+        ensemble_likelihood: np.ndarray | None = None
         ref_coords = None
         ref_dims = None
 
@@ -329,8 +356,9 @@ class GfmRasterProcessor:
             # codes, and consistent with the average reproject that follows. A
             # categorical max would rank codes by number (and let nodata=255 win
             # every mixed block), which is meaningless for class labels.
-            flood_mask_native, perm_mask_native, valid_mask_native = self._build_native_masks(
+            flood_mask_native, water_mask_native, valid_mask_native = self._build_native_masks(
                 xx["ensemble_flood_extent"],
+                xx["ensemble_water_extent"],
                 xx["reference_water_mask"],
                 self.coarsen_factor,
             )
@@ -338,9 +366,20 @@ class GfmRasterProcessor:
             masks = xr.Dataset(
                 {
                     "flood": flood_mask_native,
-                    "perm": perm_mask_native,
+                    "water": water_mask_native,
                     "valid": valid_mask_native,
                 }
+            ).rio.write_crs(crs_src)
+
+            code_bands = xr.Dataset(
+                {
+                    "reference_water": xx["reference_water_mask"].squeeze(drop=True),
+                    "exclusion_mask": xx["exclusion_mask"].squeeze(drop=True),
+                    "advisory_flags": xx["advisory_flags"].squeeze(drop=True),
+                }
+            ).rio.write_crs(crs_src)
+            likelihood_band = xr.Dataset(
+                {"ensemble_likelihood": xx["ensemble_likelihood"].squeeze(drop=True).astype("float32")}
             ).rio.write_crs(crs_src)
 
             # Reproject each mask directly onto the ~80 m global
@@ -348,26 +387,52 @@ class GfmRasterProcessor:
             # items accumulate on the same aligned grid — no double
             # reprojection needed at harmonisation time.
             masks_ll = self._reproject_to_canonical_grid(masks)
-            del xx, flood_mask_native, perm_mask_native, valid_mask_native, masks
+            codes_ll = self._reproject_codes_to_canonical_grid(code_bands)
+            likelihood_ll = self._reproject_likelihood_to_canonical_grid(likelihood_band)
+            del xx, flood_mask_native, water_mask_native, valid_mask_native, masks, code_bands, likelihood_band
 
             flood_frac = np.squeeze(masks_ll["flood"].fillna(0.0).values.astype("float32"))
-            perm_frac = np.squeeze(masks_ll["perm"].fillna(0.0).values.astype("float32"))
+            water_frac = np.squeeze(masks_ll["water"].fillna(0.0).values.astype("float32"))
             valid_frac = np.squeeze(masks_ll["valid"].fillna(0.0).values.astype("float32"))
+            ref_codes = np.squeeze(codes_ll["reference_water"].values).astype(np.uint8)
+            excl_codes = np.squeeze(codes_ll["exclusion_mask"].values).astype(np.uint8)
+            advisory = np.squeeze(codes_ll["advisory_flags"].values).astype(np.uint8)
+            likelihood = np.squeeze(likelihood_ll["ensemble_likelihood"].values).astype(np.float32)
 
             # Initialize accumulators on first valid load
             if flood_count is None:
                 shape = flood_frac.shape
                 flood_count = np.zeros(shape, dtype=np.float32)
-                perm_water_count = np.zeros(shape, dtype=np.float32)
+                water_count = np.zeros(shape, dtype=np.float32)
                 valid_count = np.zeros(shape, dtype=np.float32)
+                reference_water_codes = ref_codes.copy()
+                exclusion_codes = excl_codes.copy()
+                advisory_flags = advisory.copy()
+                ensemble_likelihood = likelihood.copy()
                 ref_coords = masks_ll["flood"].coords
                 ref_dims = masks_ll["flood"].dims
+            else:
+                reference_water_codes = _masked_max(reference_water_codes, ref_codes, GFM_NODATA)
+                exclusion_codes = _masked_max(exclusion_codes, excl_codes, GFM_NODATA)
+                advisory_flags = _masked_or(advisory_flags, advisory, GFM_NODATA)
+                ensemble_likelihood = np.fmax(ensemble_likelihood, likelihood)
 
             flood_count += flood_frac
-            perm_water_count += perm_frac
+            water_count += water_frac
             valid_count += valid_frac
 
-            del masks_ll, flood_frac, perm_frac, valid_frac
+            del (
+                masks_ll,
+                codes_ll,
+                likelihood_ll,
+                flood_frac,
+                water_frac,
+                valid_frac,
+                ref_codes,
+                excl_codes,
+                advisory,
+                likelihood,
+            )
             logger.debug("Item {}/{} processed", idx + 1, len(items))
 
         if flood_count is None or valid_count is None:
@@ -375,7 +440,26 @@ class GfmRasterProcessor:
             return None
 
         # Compute derived products
-        processed = self._classify(flood_count, perm_water_count, valid_count, ref_coords, ref_dims)
+        extra_layers: dict[str, np.ndarray] = {
+            "exclusion_mask": exclusion_codes,
+            "advisory_flags": advisory_flags,
+        }
+        if ensemble_likelihood is not None:
+            likelihood_codes = np.full(ensemble_likelihood.shape, GFM_NODATA, dtype=np.uint8)
+            valid_likelihood = np.isfinite(ensemble_likelihood)
+            likelihood_codes[valid_likelihood] = np.rint(
+                np.clip(ensemble_likelihood[valid_likelihood], 0.0, 100.0)
+            ).astype(np.uint8)
+            extra_layers["ensemble_likelihood"] = likelihood_codes
+        processed = self._classify(
+            flood_count,
+            water_count,
+            valid_count,
+            ref_coords,
+            ref_dims,
+            reference_water_codes=reference_water_codes,
+            extra_layers=extra_layers,
+        )
 
         # Build metadata
         metadata = TileMetadata(
@@ -386,7 +470,7 @@ class GfmRasterProcessor:
             resolution=self.reprojector.target_resolution,
             bbox=self._snapped_bounds,
             cloud_fraction=processed.cloud_fraction,
-            permanent_water_mask_available=True,
+            permanent_water_mask_available=processed.reference_water is not None,
         )
 
         # Write outputs if requested
@@ -418,9 +502,10 @@ class GfmRasterProcessor:
         west, south, east, north = self.bbox
         aoi = box(west, south, east, north)
 
-        # Accumulators: masked-max of codes across items (nodata=255)
+        # Accumulators: masked-max / OR of codes across items (nodata=255)
         efe_accum: np.ndarray | None = None
         rwm_accum: np.ndarray | None = None
+        extra_accum: dict[str, np.ndarray] = {}
 
         logger.info(
             "Processing {} GFM items in native mode (nearest-neighbour reproject, no coarsen)",
@@ -448,22 +533,53 @@ class GfmRasterProcessor:
             codes_ds = xr.Dataset(
                 {
                     "ensemble_flood_extent": xx["ensemble_flood_extent"].squeeze(drop=True),
+                    "ensemble_water_extent": xx["ensemble_water_extent"].squeeze(drop=True),
                     "reference_water_mask": xx["reference_water_mask"].squeeze(drop=True),
+                    "exclusion_mask": xx["exclusion_mask"].squeeze(drop=True),
+                    "ensemble_likelihood": xx["ensemble_likelihood"].squeeze(drop=True),
+                    "advisory_flags": xx["advisory_flags"].squeeze(drop=True),
                 }
             ).rio.write_crs(crs_src)
             codes_ll = self._reproject_codes_to_canonical_grid(codes_ds)
 
             efe = np.squeeze(codes_ll["ensemble_flood_extent"].values).astype(np.uint8)
             rwm = np.squeeze(codes_ll["reference_water_mask"].values).astype(np.uint8)
+            extra = {
+                "ensemble_water_extent": np.squeeze(codes_ll["ensemble_water_extent"].values).astype(np.uint8),
+                "exclusion_mask": np.squeeze(codes_ll["exclusion_mask"].values).astype(np.uint8),
+                "ensemble_likelihood": np.squeeze(codes_ll["ensemble_likelihood"].values).astype(np.uint8),
+                "advisory_flags": np.squeeze(codes_ll["advisory_flags"].values).astype(np.uint8),
+            }
             del xx, codes_ds, codes_ll
 
             if efe_accum is None:
                 efe_accum = efe.copy()
                 rwm_accum = rwm.copy()
+                extra_accum = {name: values.copy() for name, values in extra.items()}
             else:
                 # Masked max: valid code beats nodata; max of two valid codes wins.
                 efe_accum = _masked_max(efe_accum, efe, GFM_NODATA)
                 rwm_accum = _masked_max(rwm_accum, rwm, GFM_NODATA)
+                extra_accum["ensemble_water_extent"] = _masked_max(
+                    extra_accum["ensemble_water_extent"],
+                    extra["ensemble_water_extent"],
+                    GFM_NODATA,
+                )
+                extra_accum["exclusion_mask"] = _masked_max(
+                    extra_accum["exclusion_mask"],
+                    extra["exclusion_mask"],
+                    GFM_NODATA,
+                )
+                extra_accum["ensemble_likelihood"] = _masked_max(
+                    extra_accum["ensemble_likelihood"],
+                    extra["ensemble_likelihood"],
+                    GFM_NODATA,
+                )
+                extra_accum["advisory_flags"] = _masked_or(
+                    extra_accum["advisory_flags"],
+                    extra["advisory_flags"],
+                    GFM_NODATA,
+                )
 
             logger.debug("Item {}/{} processed (native)", idx + 1, len(items))
 
@@ -471,7 +587,7 @@ class GfmRasterProcessor:
             logger.warning("No valid data found in {} items", len(items))
             return None
 
-        processed = self._build_native_tile(efe_accum, rwm_accum)
+        processed = self._build_native_tile(efe_accum, rwm_accum, extra_layers=extra_accum)
 
         metadata = TileMetadata(
             event_id=event_id,
@@ -493,10 +609,11 @@ class GfmRasterProcessor:
     @staticmethod
     def _build_native_masks(
         flood_native: "xr.DataArray",
-        perm_native: "xr.DataArray",
+        water_native: "xr.DataArray",
+        reference_native: "xr.DataArray",
         coarsen_factor: int = 1,
     ) -> tuple["xr.DataArray", "xr.DataArray", "xr.DataArray"]:
-        """Build float32 flood, permanent-water, and validity coverage masks.
+        """Build float32 flood, water, and validity coverage masks.
 
         The discrete GFM source codes are nominal categories (flood / dry /
         nodata; land / water / permanent / nodata), so they must not be pooled
@@ -509,14 +626,16 @@ class GfmRasterProcessor:
         ordering and let nodata (255) dominate any mixed block.
         """
         flood_mask = (flood_native == GFM_FLOOD).astype("float32")
-        perm_mask = (perm_native == GFM_PERMANENT_WATER).astype("float32")
-        # An observation contributes to "valid" if either band has a non-nodata code.
-        valid_mask = ((flood_native != GFM_NODATA) | (perm_native != GFM_NODATA)).astype("float32")
+        water_mask = (water_native == GFM_WATER).astype("float32")
+        # An observation contributes to "valid" if any core band has a non-nodata code.
+        valid_mask = (
+            (flood_native != GFM_NODATA) | (water_native != GFM_NODATA) | (reference_native != GFM_NODATA)
+        ).astype("float32")
         if coarsen_factor > 1:
             flood_mask = flood_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
-            perm_mask = perm_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+            water_mask = water_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
             valid_mask = valid_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
-        return flood_mask, perm_mask, valid_mask
+        return flood_mask, water_mask, valid_mask
 
     def _reproject_to_canonical_grid(self, masks: "xr.Dataset") -> "xr.Dataset":
         """Reproject a native-CRS mask dataset onto the pre-computed canonical grid.
@@ -565,16 +684,32 @@ class GfmRasterProcessor:
             transform=self._dst_transform,
         )
 
+    def _reproject_likelihood_to_canonical_grid(self, likelihood: "xr.Dataset") -> "xr.Dataset":
+        """Reproject native likelihood values to the canonical grid with averaging."""
+        likelihood = likelihood.squeeze(drop=True)
+        likelihood = likelihood.where(likelihood != GFM_NODATA, np.nan)
+        return likelihood.rio.reproject(
+            "EPSG:4326",
+            nodata=np.nan,
+            resampling=Resampling.average,
+            shape=(self._dst_height, self._dst_width),
+            transform=self._dst_transform,
+        )
+
     def _build_native_tile(
         self,
         efe: np.ndarray,
         rwm: np.ndarray,
+        *,
+        extra_layers: dict[str, np.ndarray] | None = None,
     ) -> GfmProcessedTile:
         """Build a GfmProcessedTile holding native band arrays.
 
         Args:
             efe: ensemble_flood_extent uint8 array on the canonical grid.
             rwm: reference_water_mask uint8 array on the canonical grid.
+            extra_layers: Optional dict of extra native-code arrays (e.g.
+                ensemble_water_extent, exclusion_mask) keyed by layer name.
 
         Returns:
             GfmProcessedTile with native fields populated.
@@ -585,6 +720,7 @@ class GfmRasterProcessor:
         return GfmProcessedTile(
             ensemble_flood_extent=efe,
             reference_water_mask=rwm,
+            extra_layers=extra_layers or {},
             transform=self._dst_transform,
             crs="EPSG:4326",
             shape=efe.shape,
@@ -594,12 +730,15 @@ class GfmRasterProcessor:
     def _classify(
         self,
         flood_count: np.ndarray,
-        perm_water_count: np.ndarray,
+        water_count: np.ndarray,
         valid_count: np.ndarray,
         coords,
         dims,
+        *,
+        reference_water_codes: np.ndarray | None = None,
+        extra_layers: dict[str, np.ndarray] | None = None,
     ) -> GfmProcessedTile:
-        """Compute flood fraction, quality mask, and permanent water from counts.
+        """Compute water/flood fractions plus code-preserving reference water.
 
         The counts are float accumulators of per-pixel class coverage fractions
         (one contribution per item, in ``[0, 1]``). The per-layer maths lives in
@@ -608,25 +747,31 @@ class GfmRasterProcessor:
         ctx = DerivationContext(
             arrays={
                 FLOOD_COUNT: flood_count,
-                PERM_WATER_COUNT: perm_water_count,
+                WATER_COUNT: water_count,
                 VALID_COUNT: valid_count,
+                REFERENCE_WATER_CODES: (
+                    reference_water_codes
+                    if reference_water_codes is not None
+                    else np.full(flood_count.shape, GFM_NODATA, dtype=np.uint8)
+                ),
             }
         )
+        water_fraction = registry.get_derived("water_fraction").derive(ctx)
         flood_fraction = registry.get_derived("flood_fraction").derive(ctx)
-        quality_mask = registry.get_derived("quality_mask").derive(ctx)
-        permanent_water = registry.get_derived("permanent_water").derive(ctx)
+        reference_water = registry.get_derived("reference_water").derive(ctx)
 
         # Coverage fraction (proxy for cloud/missing)
-        total_pixels = flood_fraction.size
-        valid_pixels = int(np.sum(quality_mask))
+        total_pixels = water_fraction.size
+        valid_pixels = int(np.sum(valid_count > 0))
         cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0
 
         # Use the pre-computed canonical grid transform
-        shape = flood_fraction.shape
+        shape = water_fraction.shape
         return GfmProcessedTile(
+            water_fraction=water_fraction,
             flood_fraction=flood_fraction,
-            quality_mask=quality_mask,
-            permanent_water=permanent_water,
+            reference_water=reference_water,
+            extra_layers=extra_layers or {},
             transform=self._dst_transform,
             crs="EPSG:4326",
             shape=shape,
@@ -656,7 +801,7 @@ class GfmRasterProcessor:
     ) -> GfmOutputPaths:
         """Write processed arrays to GeoTIFF files.
 
-        Writes classified layers (flood_fraction, quality_mask, permanent_water)
+        Writes classified layers (water_fraction, flood_fraction, reference_water)
         or native bands (ensemble_flood_extent, reference_water_mask) depending
         on which fields are populated in *processed*.
         """
@@ -695,30 +840,49 @@ class GfmRasterProcessor:
         if processed.ensemble_flood_extent is not None:
             efe_path = _write_tif(processed.ensemble_flood_extent, "ensemble_flood_extent", "uint8", GFM_NODATA)
             rwm_path = _write_tif(processed.reference_water_mask, "reference_water_mask", "uint8", GFM_NODATA)
-            return GfmOutputPaths(ensemble_flood_extent=efe_path, reference_water_mask=rwm_path)
+            extra_paths: dict[str, Path] = {}
+            for name, array in processed.extra_layers.items():
+                spec = registry.get_native(name)
+                extra_paths[name] = _write_tif(array, name, spec.dtype, spec.nodata)
+            return GfmOutputPaths(
+                ensemble_flood_extent=efe_path,
+                reference_water_mask=rwm_path,
+                extra=extra_paths,
+            )
 
-        # Classified mode — flood_fraction as uint8 percent (0–100) nodata 255,
-        # mirroring the VIIRS/MODIS convention (was float32 / -9999).
+        # Classified mode — fractions as uint8 percent (0–100) nodata 255,
+        # mirroring the VIIRS/MODIS convention.
+        wf_src = np.squeeze(processed.water_fraction)
+        wf_pct = np.full(wf_src.shape, GFM_NODATA, dtype=np.uint8)
+        wf_valid = np.isfinite(wf_src)
+        wf_pct[wf_valid] = np.round(np.clip(wf_src[wf_valid], 0.0, 1.0) * 100).astype(np.uint8)
+        wf_path = _write_tif(wf_pct, "water_fraction", "uint8", GFM_NODATA)
+
         ff_src = np.squeeze(processed.flood_fraction)
         ff_pct = np.full(ff_src.shape, GFM_NODATA, dtype=np.uint8)
         ff_valid = np.isfinite(ff_src)
         ff_pct[ff_valid] = np.round(np.clip(ff_src[ff_valid], 0.0, 1.0) * 100).astype(np.uint8)
         ff_path = _write_tif(ff_pct, "flood_fraction", "uint8", GFM_NODATA)
-        qm_path = _write_tif(processed.quality_mask, "quality_mask", "uint8", 255)
-        pw_path = _write_tif(processed.permanent_water, "permanent_water", "uint8", 255)
+        rw_path = _write_tif(processed.reference_water, "reference_water", "uint8", GFM_NODATA)
+
+        extra_paths: dict[str, Path] = {}
+        for name, array in processed.extra_layers.items():
+            spec = registry.get_native(name)
+            extra_paths[name] = _write_tif(array, name, spec.dtype, spec.nodata)
 
         return GfmOutputPaths(
+            water_fraction=wf_path,
             flood_fraction=ff_path,
-            quality_mask=qm_path,
-            permanent_water=pw_path,
+            reference_water=rw_path,
+            extra=extra_paths,
         )
 
     @staticmethod
     def aggregate_tiles(tiles: list[GfmProcessedTile]) -> GfmProcessedTile | None:
         """Aggregate multiple date-group tiles into one (for aggregate strategy).
 
-        Classified mode: mean for flood_fraction, OR for quality, majority for
-        permanent_water.
+        Classified mode: mean for water/flood fractions, masked-max for
+        reference-water codes, and source-aware rules for extra native bands.
         Native mode: masked-max of raw codes across all dates.
         """
         if not tiles:
@@ -732,15 +896,22 @@ class GfmRasterProcessor:
         if ref.ensemble_flood_extent is not None:
             efe = ref.ensemble_flood_extent.copy()
             rwm = ref.reference_water_mask.copy()
+            extra_layers = {name: array.copy() for name, array in ref.extra_layers.items()}
             for t in tiles[1:]:
                 efe = _masked_max(efe, t.ensemble_flood_extent, GFM_NODATA)
                 rwm = _masked_max(rwm, t.reference_water_mask, GFM_NODATA)
+                for name, array in t.extra_layers.items():
+                    if name == "advisory_flags":
+                        extra_layers[name] = _masked_or(extra_layers[name], array, GFM_NODATA)
+                    else:
+                        extra_layers[name] = _masked_max(extra_layers[name], array, GFM_NODATA)
             total_pixels = efe.size
             valid_pixels = int(np.sum(efe != GFM_NODATA))
             cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0
             return GfmProcessedTile(
                 ensemble_flood_extent=efe,
                 reference_water_mask=rwm,
+                extra_layers=extra_layers,
                 transform=ref.transform,
                 crs=ref.crs,
                 shape=ref.shape,
@@ -748,26 +919,34 @@ class GfmRasterProcessor:
             )
 
         # ── Classified mode ────────────────────────────────────────────────────
+        wf_stack = np.stack([t.water_fraction for t in tiles], axis=0)
+        water_fraction = np.nanmean(wf_stack, axis=0).astype(np.float32)
+
         # Stack flood fractions and compute mean (ignoring NaN)
         ff_stack = np.stack([t.flood_fraction for t in tiles], axis=0)
         flood_fraction = np.nanmean(ff_stack, axis=0).astype(np.float32)
 
-        # Quality: OR across dates (1 if any date had valid data)
-        qm_stack = np.stack([t.quality_mask for t in tiles], axis=0)
-        quality_mask = np.any(qm_stack > 0, axis=0).astype(np.uint8)
+        reference_water = ref.reference_water.copy()
+        for t in tiles[1:]:
+            reference_water = _masked_max(reference_water, t.reference_water, GFM_NODATA)
 
-        # Permanent water: majority vote across dates
-        pw_stack = np.stack([t.permanent_water for t in tiles], axis=0)
-        permanent_water = (np.mean(pw_stack, axis=0) > 0.5).astype(np.uint8)
+        extra_layers = {name: array.copy() for name, array in ref.extra_layers.items()}
+        for t in tiles[1:]:
+            for name, array in t.extra_layers.items():
+                if name == "advisory_flags":
+                    extra_layers[name] = _masked_or(extra_layers[name], array, GFM_NODATA)
+                else:
+                    extra_layers[name] = _masked_max(extra_layers[name], array, GFM_NODATA)
 
-        total_pixels = flood_fraction.size
-        valid_pixels = int(np.sum(quality_mask))
+        total_pixels = water_fraction.size
+        valid_pixels = int(np.sum(np.isfinite(water_fraction)))
         cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0
 
         return GfmProcessedTile(
+            water_fraction=water_fraction,
             flood_fraction=flood_fraction,
-            quality_mask=quality_mask,
-            permanent_water=permanent_water,
+            reference_water=reference_water,
+            extra_layers=extra_layers,
             transform=ref.transform,
             crs=ref.crs,
             shape=ref.shape,
