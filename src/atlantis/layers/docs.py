@@ -47,15 +47,22 @@ def _derived_table(layers: list[DerivedLayer]) -> list[str]:
     return lines
 
 
+def _anchor(anchor_id: str) -> str:
+    """Return an explicit HTML anchor for stable cross-doc links."""
+    return f'<a id="{anchor_id}"></a>'
+
+
 def render_source_markdown(registry: LayerRegistry) -> str:
     """Render one source's native and derived layer tables as Markdown."""
-    lines = [f"## {registry.source_id}", ""]
+    lines = [_anchor(f"layers-{registry.source_id}"), f"## {registry.source_id}", ""]
+    lines.append(_anchor(f"layers-{registry.source_id}-native"))
     lines.append(f"### Native layers ({registry.source_id})")
     lines.append("")
     lines.append("Layers the source physically provides (fetched untouched).")
     lines.append("")
     lines.extend(_native_table(registry.list_native()))
     lines.append("")
+    lines.append(_anchor(f"layers-{registry.source_id}-derived"))
     lines.append(f"### Derived layers ({registry.source_id})")
     lines.append("")
     lines.append("Layers Atlantis computes from native inputs (not downloaded).")
@@ -74,6 +81,9 @@ def render_all_markdown() -> str:
     lines = [
         "# Atlantis layers",
         "",
+        "This is the **canonical human-readable layer inventory** for Atlantis.",
+        "Other docs should link here instead of repeating native/derived layer tables.",
+        "",
         "Auto-generated from the per-source layer registries "
         "(`atlantis.fetchers.<source>.layers`). Do not edit by hand — regenerate "
         "with `python scripts/generate_layer_docs.py` (or `atlantis list-layers`).",
@@ -82,7 +92,17 @@ def render_all_markdown() -> str:
         "layer is computed by Atlantis from native inputs (for example "
         "`flood_fraction`).",
         "",
+        "## Quick links",
+        "",
     ]
-    for registry in all_registries().values():
+    registries = list(all_registries().values())
+    for registry in registries:
+        lines.append(
+            f"- `{registry.source_id}`: "
+            f"[native](#layers-{registry.source_id}-native) / "
+            f"[derived](#layers-{registry.source_id}-derived)"
+        )
+    lines.append("")
+    for registry in registries:
         lines.append(render_source_markdown(registry))
     return "\n".join(lines).rstrip() + "\n"

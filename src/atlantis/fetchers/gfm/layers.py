@@ -5,8 +5,9 @@ Sentinel-1 SAR code bands as STAC assets. Unlike MODIS/VIIRS, GFM derivations do
 not read raw pixel codes directly: the processor accumulates per-class coverage
 *counts* across the SAR observations in a date group, and the derived layers are
 computed from those accumulators. The processor therefore exposes the counts to
-derivations under the keys :data:`FLOOD_COUNT`, :data:`PERM_WATER_COUNT`, and
-:data:`VALID_COUNT`.
+derivations under the keys :data:`FLOOD_COUNT`, :data:`WATER_COUNT`, and
+:data:`VALID_COUNT`, plus the reprojected reference-water codes under
+:data:`REFERENCE_WATER_CODES`.
 
 Derived-layer definitions live in :mod:`atlantis.fetchers.gfm.derived` and are
 imported at the end of this module so a single ``import ...gfm.layers`` populates
@@ -32,14 +33,22 @@ GFM_WATER: int = 1
 GFM_PERMANENT_WATER: int = 2
 
 #: Native bands loaded from each GFM STAC item.
-GFM_BANDS: list[str] = ["ensemble_flood_extent", "reference_water_mask"]
+GFM_BANDS: list[str] = [
+    "ensemble_flood_extent",
+    "ensemble_water_extent",
+    "reference_water_mask",
+    "exclusion_mask",
+    "ensemble_likelihood",
+    "advisory_flags",
+]
 
 #: Derivation input keys: accumulated per-class coverage counts (float32),
 #: summed across the SAR observations in a date group (one contribution in
 #: ``[0, 1]`` per observation).
 FLOOD_COUNT = "flood_count"
-PERM_WATER_COUNT = "perm_water_count"
+WATER_COUNT = "water_count"
 VALID_COUNT = "valid_count"
+REFERENCE_WATER_CODES = "reference_water_codes"
 
 registry = register_source_registry(LayerRegistry("gfm"))
 
@@ -51,6 +60,17 @@ registry.add_native(
         nodata=GFM_NODATA,
         description="Ensemble SAR flood extent, passed through untouched.",
         codes={GFM_DRY: "dry / observed-not-flooded", GFM_FLOOD: "flood", GFM_NODATA: "nodata"},
+        resampling="nearest",
+        aggregation="max",
+    )
+)
+registry.add_native(
+    NativeLayer(
+        name="ensemble_water_extent",
+        dtype="uint8",
+        nodata=GFM_NODATA,
+        description="Ensemble SAR water extent, passed through untouched.",
+        codes={GFM_DRY: "dry / observed-not-water", GFM_WATER: "water", GFM_NODATA: "nodata"},
         resampling="nearest",
         aggregation="max",
     )
@@ -70,6 +90,36 @@ registry.add_native(
             GFM_PERMANENT_WATER: "permanent water",
             GFM_NODATA: "nodata",
         },
+        resampling="nearest",
+        aggregation="max",
+    )
+)
+registry.add_native(
+    NativeLayer(
+        name="exclusion_mask",
+        dtype="uint8",
+        nodata=GFM_NODATA,
+        description="Native GFM exclusion-mask codes, passed through untouched.",
+        resampling="nearest",
+        aggregation="max",
+    )
+)
+registry.add_native(
+    NativeLayer(
+        name="ensemble_likelihood",
+        dtype="uint8",
+        nodata=GFM_NODATA,
+        description="Native GFM ensemble flood-likelihood values (0-100), passed through untouched.",
+        resampling="average",
+        aggregation="max",
+    )
+)
+registry.add_native(
+    NativeLayer(
+        name="advisory_flags",
+        dtype="uint8",
+        nodata=GFM_NODATA,
+        description="Native GFM advisory bitmask codes, passed through untouched.",
         resampling="nearest",
         aggregation="max",
     )
