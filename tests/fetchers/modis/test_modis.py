@@ -69,17 +69,20 @@ def _make_event(
 def _make_processed_tile(*, flood_count: int = 0) -> ProcessedTile:
     """Build a 4×4 ProcessedTile with the requested number of flood pixels."""
     flood = np.zeros((4, 4), dtype=np.float32)
+    water = np.zeros((4, 4), dtype=np.float32)
     if flood_count:
         flat = flood.reshape(-1)
         flat[:flood_count] = 1.0
+        water.reshape(-1)[:flood_count] = 1.0
     return ProcessedTile(
         transform=from_origin(0.0, 1.0, 0.25, 0.25),
         crs="EPSG:4326",
         cloud_fraction=0.0,
+        water_fraction=water,
         flood_fraction=flood,
         recurring_flood=np.zeros((4, 4), dtype=np.uint8),
-        permanent_water=np.zeros((4, 4), dtype=np.uint8),
-        quality_mask=np.ones((4, 4), dtype=np.uint8),
+        reference_water=np.zeros((4, 4), dtype=np.uint8),
+        exclusion_mask=np.zeros((4, 4), dtype=np.uint8),
     )
 
 
@@ -401,9 +404,10 @@ class TestToDataset:
     def test_stored_flood_nodata_round_trips_to_nan(self, tmp_path):
         fetcher = MODISFetcher(classify=True)
 
+        water = np.array([[100, 255], [100, 255]], dtype=np.uint8)
         flood = np.array([[100, 255], [0, 255]], dtype=np.uint8)
-        quality = np.array([[1, 0], [1, 0]], dtype=np.uint8)
-        permanent_water = np.array([[0, 0], [1, 0]], dtype=np.uint8)
+        exclusion = np.array([[0, 1], [0, 1]], dtype=np.uint8)
+        reference_water = np.array([[0, 0], [1, 0]], dtype=np.uint8)
         recurring = np.array([[0, 0], [0, 0]], dtype=np.uint8)
 
         def _write_layer(path, data, *, nodata):
@@ -421,20 +425,22 @@ class TestToDataset:
             ) as dst:
                 dst.write(data, 1)
 
+        wf_path = tmp_path / "test_water_fraction.tif"
         ff_path = tmp_path / "test_flood_fraction.tif"
-        qm_path = tmp_path / "test_quality_mask.tif"
-        pw_path = tmp_path / "test_permanent_water.tif"
+        em_path = tmp_path / "test_exclusion_mask.tif"
+        rw_path = tmp_path / "test_reference_water.tif"
         rf_path = tmp_path / "test_recurring_flood.tif"
 
+        _write_layer(wf_path, water, nodata=255)
         _write_layer(ff_path, flood, nodata=255)
-        _write_layer(qm_path, quality, nodata=0)
-        _write_layer(pw_path, permanent_water, nodata=0)
-        _write_layer(rf_path, recurring, nodata=0)
+        _write_layer(em_path, exclusion, nodata=255)
+        _write_layer(rw_path, reference_water, nodata=255)
+        _write_layer(rf_path, recurring, nodata=255)
 
         result = FetchResult(
             event_id="test_event",
             source_id="modis",
-            files=[ff_path, qm_path, pw_path, rf_path],
+            files=[wf_path, ff_path, em_path, rw_path, rf_path],
             metadata=TileMetadata(
                 event_id="test_event",
                 source_id="modis",
@@ -446,6 +452,8 @@ class TestToDataset:
         dataset = fetcher.to_dataset(result)
 
         flood_fraction = dataset["flood_fraction"].values
+        water_fraction = dataset["water_fraction"].values
+        assert water_fraction[0, 0] == pytest.approx(1.0, rel=1e-6)
         assert flood_fraction[0, 0] == pytest.approx(1.0, rel=1e-6)
         assert flood_fraction[1, 0] == pytest.approx(0.0, rel=1e-6)
         assert np.isnan(flood_fraction[0, 1])

@@ -182,21 +182,22 @@ class TestModisRasterProcessor:
             tile_paths=[tile_path], event_id="test", date_token="20240822", output_dir=tmp_path
         )
         assert result is not None
-        for path_attr in ("flood_fraction", "quality_mask", "permanent_water", "recurring_flood"):
+        for path_attr in ("water_fraction", "flood_fraction", "exclusion_mask", "reference_water", "recurring_flood"):
             path = getattr(result.paths, path_attr)
             assert path is not None and path.exists(), f"{path_attr} not written"
 
         # Verify pixel-level semantics on the in-memory ProcessedTile.
         proc = result.processed
+        # Water (classes 1/2/3) count: 10 pixels in our 4×4.
+        assert int((proc.water_fraction > 0).sum()) == 10
         # Flood (class 3) count: 4 in our 4×4 (positions (0,3),(1,0),(1,1),(3,3))
         assert int((proc.flood_fraction > 0).sum()) == 4
         # Recurring (class 2): positions (0,2), (1,2)
         assert int(proc.recurring_flood.sum()) == 2
-        # Permanent (class 1): positions (0,1), (1,3), (2,2), (2,3)
-        assert int(proc.permanent_water.sum()) == 4
-        # quality_mask: HAND-masked / cloud (255) drops to 0; everything else 1.
-        # Two 255 pixels at (3,0) and (3,1) → 14 valid pixels.
-        assert int(proc.quality_mask.sum()) == 14
+        # Reference water (classes 1 and 2): 6 pixels.
+        assert int(proc.reference_water.sum()) == 6
+        # Exclusion mask: two insufficient-data pixels at (3,0) and (3,1).
+        assert int(proc.exclusion_mask.sum()) == 2
         assert np.isnan(proc.flood_fraction[3, 0])
         assert np.isnan(proc.flood_fraction[3, 1])
 
@@ -207,18 +208,19 @@ class TestModisRasterProcessor:
             assert encoded[3, 0] == INSUFFICIENT_DATA_CODE
             assert encoded[3, 1] == INSUFFICIENT_DATA_CODE
 
-    def test_hand_masked_pixels_drop_from_quality(self, tmp_path):
+    def test_hand_masked_pixels_are_fully_excluded(self, tmp_path):
         geom = box(-1.0, -1.0, 1.0, 1.0)
         processor = ModisRasterProcessor(area_geometry=geom, classify=True)
         tile_path = tmp_path / "tile.tif"
-        # All 255: no flood at all, quality_mask should be all zeros.
+        # All 255: no usable data at all, exclusion_mask should be all ones.
         data = np.full((4, 4), INSUFFICIENT_DATA_CODE, dtype=np.uint8)
         _write_tile(tile_path, -1.0, -1.0, 1.0, 1.0, data)
         result = processor.process_tiles(
             tile_paths=[tile_path], event_id="test", date_token="20240822", output_dir=tmp_path
         )
         assert result is not None
-        assert int(result.processed.quality_mask.sum()) == 0
+        assert int(result.processed.exclusion_mask.sum()) == 16
+        assert np.isnan(result.processed.water_fraction).all()
         assert int((result.processed.flood_fraction > 0).sum()) == 0
         assert np.isnan(result.processed.flood_fraction).all()
 
@@ -229,25 +231,27 @@ class TestModisRasterProcessor:
             transform=transform,
             crs="EPSG:4326",
             cloud_fraction=0.2,
+            water_fraction=np.array([1.0, 0.0, 0.0], dtype=np.float32),
             flood_fraction=np.array([1.0, 0.0, 0.0], dtype=np.float32),
-            quality_mask=np.array([1, 1, 0], dtype=np.uint8),
-            permanent_water=np.array([0, 1, 0], dtype=np.uint8),
+            exclusion_mask=np.array([0, 0, 1], dtype=np.uint8),
+            reference_water=np.array([0, 1, 0], dtype=np.uint8),
             recurring_flood=np.array([0, 0, 1], dtype=np.uint8),
         )
         t2 = ProcessedTile(
             transform=transform,
             crs="EPSG:4326",
             cloud_fraction=0.4,
+            water_fraction=np.array([1.0, 0.0, 1.0], dtype=np.float32),
             flood_fraction=np.array([1.0, 0.0, 1.0], dtype=np.float32),
-            quality_mask=np.array([1, 0, 0], dtype=np.uint8),
-            permanent_water=np.array([0, 1, 0], dtype=np.uint8),
+            exclusion_mask=np.array([0, 0, 1], dtype=np.uint8),
+            reference_water=np.array([0, 1, 0], dtype=np.uint8),
             recurring_flood=np.array([0, 0, 1], dtype=np.uint8),
         )
         agg = ModisRasterProcessor.aggregate_tiles([t1, t2])
+        assert pytest.approx(agg.water_fraction.tolist()) == [1.0, 0.0, 0.5]
         assert pytest.approx(agg.flood_fraction.tolist()) == [1.0, 0.0, 0.5]
-        # Mode along axis 0 — ties broken by lowest value via argmax.
-        assert agg.quality_mask.tolist() == [1, 0, 0]
-        assert agg.permanent_water.tolist() == [0, 1, 0]
+        assert agg.exclusion_mask.tolist() == [0, 0, 1]
+        assert agg.reference_water.tolist() == [0, 1, 0]
         assert agg.recurring_flood.tolist() == [0, 0, 1]
         assert agg.cloud_fraction == pytest.approx(0.3, rel=1e-6)
 

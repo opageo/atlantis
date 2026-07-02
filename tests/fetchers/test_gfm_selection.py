@@ -21,12 +21,10 @@ def _make_flood_tile(n_flood_pixels: int) -> GfmProcessedTile:
     transform = from_origin(0.0, 1.0, 1.0, -1.0)
     data = np.zeros((4, 4), dtype=np.float32)
     data.ravel()[:n_flood_pixels] = 0.7
-    quality = np.ones_like(data, dtype=np.uint8)
-    permanent = np.zeros_like(data, dtype=np.uint8)
     return GfmProcessedTile(
+        water_fraction=data.copy(),
         flood_fraction=data,
-        quality_mask=quality,
-        permanent_water=permanent,
+        reference_water=np.zeros_like(data, dtype=np.uint8),
         transform=transform,
         crs="EPSG:4326",
         shape=data.shape,

@@ -9,6 +9,7 @@ from atlantis.fetchers.gfm.processor import (
     GFM_FLOOD,
     GFM_NODATA,
     GFM_PERMANENT_WATER,
+    GFM_WATER,
     GfmProcessedTile,
     GfmRasterProcessor,
     _masked_max,
@@ -22,7 +23,7 @@ class TestGfmProcessorClassify:
         """All valid pixels are flood → flood_fraction = 1.0."""
         proc = GfmRasterProcessor(bbox=(0, 0, 1, 1))
         flood_count = np.full((5, 5), 10, dtype=np.uint32)
-        perm_water_count = np.zeros((5, 5), dtype=np.uint32)
+        water_count = np.full((5, 5), 10, dtype=np.uint32)
         valid_count = np.full((5, 5), 10, dtype=np.uint32)
 
         import xarray as xr
@@ -31,18 +32,26 @@ class TestGfmProcessorClassify:
         dims = ("y", "x")
         mock_coords = xr.DataArray(np.zeros((5, 5)), coords=coords, dims=dims).coords
 
-        tile = proc._classify(flood_count, perm_water_count, valid_count, mock_coords, dims)
+        tile = proc._classify(
+            flood_count,
+            water_count,
+            valid_count,
+            mock_coords,
+            dims,
+            reference_water_codes=np.zeros((5, 5), dtype=np.uint8),
+        )
 
+        assert tile.water_fraction.shape == (5, 5)
+        np.testing.assert_allclose(tile.water_fraction, 1.0)
         assert tile.flood_fraction.shape == (5, 5)
         np.testing.assert_allclose(tile.flood_fraction, 1.0)
-        np.testing.assert_array_equal(tile.quality_mask, 1)
-        np.testing.assert_array_equal(tile.permanent_water, 0)
+        np.testing.assert_array_equal(tile.reference_water, 0)
 
     def test_all_dry(self):
         """All valid pixels are dry → flood_fraction = 0.0."""
         proc = GfmRasterProcessor(bbox=(0, 0, 1, 1))
         flood_count = np.zeros((5, 5), dtype=np.uint32)
-        perm_water_count = np.zeros((5, 5), dtype=np.uint32)
+        water_count = np.zeros((5, 5), dtype=np.uint32)
         valid_count = np.full((5, 5), 10, dtype=np.uint32)
 
         import xarray as xr
@@ -51,16 +60,23 @@ class TestGfmProcessorClassify:
         dims = ("y", "x")
         mock_coords = xr.DataArray(np.zeros((5, 5)), coords=coords, dims=dims).coords
 
-        tile = proc._classify(flood_count, perm_water_count, valid_count, mock_coords, dims)
+        tile = proc._classify(
+            flood_count,
+            water_count,
+            valid_count,
+            mock_coords,
+            dims,
+            reference_water_codes=np.zeros((5, 5), dtype=np.uint8),
+        )
 
+        np.testing.assert_allclose(tile.water_fraction, 0.0)
         np.testing.assert_allclose(tile.flood_fraction, 0.0)
-        np.testing.assert_array_equal(tile.quality_mask, 1)
 
     def test_no_valid_data(self):
-        """No valid observations → flood_fraction = NaN, quality_mask = 0."""
+        """No valid observations → fractions = NaN and cloud_fraction = 1."""
         proc = GfmRasterProcessor(bbox=(0, 0, 1, 1))
         flood_count = np.zeros((5, 5), dtype=np.uint32)
-        perm_water_count = np.zeros((5, 5), dtype=np.uint32)
+        water_count = np.zeros((5, 5), dtype=np.uint32)
         valid_count = np.zeros((5, 5), dtype=np.uint32)
 
         import xarray as xr
@@ -69,17 +85,24 @@ class TestGfmProcessorClassify:
         dims = ("y", "x")
         mock_coords = xr.DataArray(np.zeros((5, 5)), coords=coords, dims=dims).coords
 
-        tile = proc._classify(flood_count, perm_water_count, valid_count, mock_coords, dims)
+        tile = proc._classify(
+            flood_count,
+            water_count,
+            valid_count,
+            mock_coords,
+            dims,
+            reference_water_codes=np.full((5, 5), GFM_NODATA, dtype=np.uint8),
+        )
 
+        assert np.all(np.isnan(tile.water_fraction))
         assert np.all(np.isnan(tile.flood_fraction))
-        np.testing.assert_array_equal(tile.quality_mask, 0)
         assert tile.cloud_fraction == 1.0
 
     def test_mixed_data(self):
         """Mix of flood and dry → fractional values."""
         proc = GfmRasterProcessor(bbox=(0, 0, 1, 1))
         flood_count = np.array([[3, 0], [1, 5]], dtype=np.uint32)
-        perm_water_count = np.zeros((2, 2), dtype=np.uint32)
+        water_count = np.array([[5, 1], [4, 8]], dtype=np.uint32)
         valid_count = np.array([[10, 10], [10, 10]], dtype=np.uint32)
 
         import xarray as xr
@@ -88,18 +111,29 @@ class TestGfmProcessorClassify:
         dims = ("y", "x")
         mock_coords = xr.DataArray(np.zeros((2, 2)), coords=coords, dims=dims).coords
 
-        tile = proc._classify(flood_count, perm_water_count, valid_count, mock_coords, dims)
+        tile = proc._classify(
+            flood_count,
+            water_count,
+            valid_count,
+            mock_coords,
+            dims,
+            reference_water_codes=np.zeros((2, 2), dtype=np.uint8),
+        )
 
+        np.testing.assert_allclose(tile.water_fraction[0, 0], 0.5)
+        np.testing.assert_allclose(tile.water_fraction[0, 1], 0.1)
+        np.testing.assert_allclose(tile.water_fraction[1, 0], 0.4)
+        np.testing.assert_allclose(tile.water_fraction[1, 1], 0.8)
         np.testing.assert_allclose(tile.flood_fraction[0, 0], 0.3)
         np.testing.assert_allclose(tile.flood_fraction[0, 1], 0.0)
         np.testing.assert_allclose(tile.flood_fraction[1, 0], 0.1)
         np.testing.assert_allclose(tile.flood_fraction[1, 1], 0.5)
 
-    def test_permanent_water_majority(self):
-        """Permanent water majority vote: > 50% → permanent_water = 1."""
+    def test_reference_water_preserves_native_codes(self):
+        """Reference water is carried through under the shared layer name."""
         proc = GfmRasterProcessor(bbox=(0, 0, 1, 1))
         flood_count = np.zeros((2, 2), dtype=np.uint32)
-        perm_water_count = np.array([[6, 4], [8, 2]], dtype=np.uint32)
+        water_count = np.zeros((2, 2), dtype=np.uint32)
         valid_count = np.full((2, 2), 10, dtype=np.uint32)
 
         import xarray as xr
@@ -108,12 +142,17 @@ class TestGfmProcessorClassify:
         dims = ("y", "x")
         mock_coords = xr.DataArray(np.zeros((2, 2)), coords=coords, dims=dims).coords
 
-        tile = proc._classify(flood_count, perm_water_count, valid_count, mock_coords, dims)
+        reference_codes = np.array([[2, 1], [0, GFM_NODATA]], dtype=np.uint8)
+        tile = proc._classify(
+            flood_count,
+            water_count,
+            valid_count,
+            mock_coords,
+            dims,
+            reference_water_codes=reference_codes,
+        )
 
-        assert tile.permanent_water[0, 0] == 1  # 6/10 > 0.5
-        assert tile.permanent_water[0, 1] == 0  # 4/10 < 0.5
-        assert tile.permanent_water[1, 0] == 1  # 8/10 > 0.5
-        assert tile.permanent_water[1, 1] == 0  # 2/10 < 0.5
+        np.testing.assert_array_equal(tile.reference_water, reference_codes)
 
 
 class TestGfmProcessorNativeMasks:
@@ -130,7 +169,17 @@ class TestGfmProcessorNativeMasks:
             ),
             dims=("y", "x"),
         )
-        perm_native = xr.DataArray(
+        water_native = xr.DataArray(
+            np.array(
+                [
+                    [1, 1, GFM_NODATA],
+                    [1, GFM_NODATA, 0],
+                ],
+                dtype=np.uint8,
+            ),
+            dims=("y", "x"),
+        )
+        reference_native = xr.DataArray(
             np.array(
                 [
                     [0, GFM_PERMANENT_WATER, GFM_NODATA],
@@ -141,10 +190,14 @@ class TestGfmProcessorNativeMasks:
             dims=("y", "x"),
         )
 
-        flood_mask, perm_mask, valid_mask = GfmRasterProcessor._build_native_masks(flood_native, perm_native)
+        flood_mask, water_mask, valid_mask = GfmRasterProcessor._build_native_masks(
+            flood_native,
+            water_native,
+            reference_native,
+        )
 
         np.testing.assert_array_equal(flood_mask.values, np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
-        np.testing.assert_array_equal(perm_mask.values, np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
+        np.testing.assert_array_equal(water_mask.values, np.array([[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
         np.testing.assert_array_equal(valid_mask.values, np.array([[1.0, 1.0, 0.0], [1.0, 1.0, 1.0]], dtype=np.float32))
 
     def test_mean_pool_preserves_flood_fraction_not_max_code(self):
@@ -158,19 +211,25 @@ class TestGfmProcessorNativeMasks:
             np.array([[GFM_FLOOD, GFM_NODATA], [GFM_DRY, GFM_FLOOD]], dtype=np.uint8),
             dims=("y", "x"),
         )
-        perm_native = xr.DataArray(
+        water_native = xr.DataArray(
+            np.array([[GFM_WATER, GFM_NODATA], [GFM_DRY, GFM_WATER]], dtype=np.uint8),
+            dims=("y", "x"),
+        )
+        reference_native = xr.DataArray(
             np.array([[GFM_DRY, GFM_DRY], [GFM_PERMANENT_WATER, GFM_DRY]], dtype=np.uint8),
             dims=("y", "x"),
         )
 
-        flood_mask, perm_mask, valid_mask = GfmRasterProcessor._build_native_masks(
-            flood_native, perm_native, coarsen_factor=2
+        flood_mask, water_mask, valid_mask = GfmRasterProcessor._build_native_masks(
+            flood_native,
+            water_native,
+            reference_native,
+            coarsen_factor=2,
         )
 
-        # 2 of 4 sub-pixels are flood, 1 of 4 is permanent water, all 4 valid
-        # (reference_water_mask is never nodata here).
+        # 2 of 4 sub-pixels are flood, 2 of 4 are water, all 4 valid.
         np.testing.assert_allclose(flood_mask.values, np.array([[0.5]], dtype=np.float32))
-        np.testing.assert_allclose(perm_mask.values, np.array([[0.25]], dtype=np.float32))
+        np.testing.assert_allclose(water_mask.values, np.array([[0.5]], dtype=np.float32))
         np.testing.assert_allclose(valid_mask.values, np.array([[1.0]], dtype=np.float32))
 
     def test_canonical_grid_snaps_bbox_outward(self):
@@ -198,11 +257,13 @@ class TestGfmProcessorWriteOutputs:
 
     def test_write_outputs(self, tmp_path):
         rng = np.random.default_rng(0)
+        water_fraction = np.clip(rng.random((10, 10)).astype(np.float32) + 0.2, 0.0, 1.0)
         flood_fraction = rng.random((10, 10)).astype(np.float32)
         tile = GfmProcessedTile(
+            water_fraction=water_fraction,
             flood_fraction=flood_fraction,
-            quality_mask=np.ones((10, 10), dtype=np.uint8),
-            permanent_water=np.zeros((10, 10), dtype=np.uint8),
+            reference_water=np.zeros((10, 10), dtype=np.uint8),
+            extra_layers={"exclusion_mask": np.ones((10, 10), dtype=np.uint8)},
             transform=from_bounds(10, 20, 11, 21, 10, 10),
             crs="EPSG:4326",
             shape=(10, 10),
@@ -212,15 +273,21 @@ class TestGfmProcessorWriteOutputs:
         proc = GfmRasterProcessor(bbox=(10, 20, 11, 21))
         paths = proc._write_outputs(tile, "test_event", "20240101", tmp_path)
 
+        assert paths.water_fraction is not None
+        assert paths.water_fraction.exists()
         assert paths.flood_fraction is not None
         assert paths.flood_fraction.exists()
-        assert paths.quality_mask is not None
-        assert paths.quality_mask.exists()
-        assert paths.permanent_water is not None
-        assert paths.permanent_water.exists()
+        assert paths.reference_water is not None
+        assert paths.reference_water.exists()
+        assert paths.extra["exclusion_mask"].exists()
 
         # Verify file content
         import rasterio
+
+        with rasterio.open(str(paths.water_fraction)) as ds:
+            assert ds.nodata == 255
+            expected = np.rint(np.clip(water_fraction, 0.0, 1.0) * 100).astype(np.uint8)
+            np.testing.assert_array_equal(ds.read(1), expected)
 
         with rasterio.open(str(paths.flood_fraction)) as ds:
             assert ds.crs.to_epsg() == 4326
@@ -242,50 +309,57 @@ class TestGfmProcessorAggregation:
         """Aggregate flood_fraction should be the mean across tiles."""
         t = from_bounds(0, 0, 1, 1, 5, 5)
         tile1 = GfmProcessedTile(
+            water_fraction=np.full((5, 5), 0.4, dtype=np.float32),
             flood_fraction=np.full((5, 5), 0.2, dtype=np.float32),
-            quality_mask=np.ones((5, 5), dtype=np.uint8),
-            permanent_water=np.zeros((5, 5), dtype=np.uint8),
+            reference_water=np.zeros((5, 5), dtype=np.uint8),
             transform=t,
             crs="EPSG:4326",
             shape=(5, 5),
         )
         tile2 = GfmProcessedTile(
+            water_fraction=np.full((5, 5), 1.0, dtype=np.float32),
             flood_fraction=np.full((5, 5), 0.8, dtype=np.float32),
-            quality_mask=np.ones((5, 5), dtype=np.uint8),
-            permanent_water=np.zeros((5, 5), dtype=np.uint8),
+            reference_water=np.zeros((5, 5), dtype=np.uint8),
             transform=t,
             crs="EPSG:4326",
             shape=(5, 5),
         )
 
         result = GfmRasterProcessor.aggregate_tiles([tile1, tile2])
+        np.testing.assert_allclose(result.water_fraction, 0.7, atol=1e-6)
         np.testing.assert_allclose(result.flood_fraction, 0.5, atol=1e-6)
 
-    def test_aggregate_quality_or(self):
-        """Quality mask should be OR across tiles."""
+    def test_aggregate_reference_water_and_advisory_flags(self):
+        """Reference-water codes use masked max and advisory flags use bitwise OR."""
         _ = from_bounds(0, 0, 1, 1, 5, 5)
-        qm1 = np.array([[1, 0], [0, 1]], dtype=np.uint8)
-        qm2 = np.array([[0, 1], [1, 0]], dtype=np.uint8)
+        rw1 = np.array([[0, 1], [GFM_NODATA, 0]], dtype=np.uint8)
+        rw2 = np.array([[2, 0], [1, GFM_NODATA]], dtype=np.uint8)
 
         tile1 = GfmProcessedTile(
+            water_fraction=np.zeros((2, 2), dtype=np.float32),
             flood_fraction=np.zeros((2, 2), dtype=np.float32),
-            quality_mask=qm1,
-            permanent_water=np.zeros((2, 2), dtype=np.uint8),
+            reference_water=rw1,
+            extra_layers={"advisory_flags": np.array([[1, 2], [4, 8]], dtype=np.uint8)},
             transform=from_bounds(0, 0, 1, 1, 2, 2),
             crs="EPSG:4326",
             shape=(2, 2),
         )
         tile2 = GfmProcessedTile(
+            water_fraction=np.zeros((2, 2), dtype=np.float32),
             flood_fraction=np.zeros((2, 2), dtype=np.float32),
-            quality_mask=qm2,
-            permanent_water=np.zeros((2, 2), dtype=np.uint8),
+            reference_water=rw2,
+            extra_layers={"advisory_flags": np.array([[2, 1], [1, GFM_NODATA]], dtype=np.uint8)},
             transform=from_bounds(0, 0, 1, 1, 2, 2),
             crs="EPSG:4326",
             shape=(2, 2),
         )
 
         result = GfmRasterProcessor.aggregate_tiles([tile1, tile2])
-        np.testing.assert_array_equal(result.quality_mask, np.ones((2, 2), dtype=np.uint8))
+        np.testing.assert_array_equal(result.reference_water, np.array([[2, 1], [1, 0]], dtype=np.uint8))
+        np.testing.assert_array_equal(
+            result.extra_layers["advisory_flags"],
+            np.array([[3, 3], [5, 8]], dtype=np.uint8),
+        )
 
 
 # ── Native / raw-mode tests ───────────────────────────────────────────────────
@@ -331,9 +405,9 @@ class TestBuildNativeTile:
         tile = proc._build_native_tile(efe, rwm)
         np.testing.assert_array_equal(tile.ensemble_flood_extent, efe)
         np.testing.assert_array_equal(tile.reference_water_mask, rwm)
+        assert tile.water_fraction is None
         assert tile.flood_fraction is None
-        assert tile.quality_mask is None
-        assert tile.permanent_water is None
+        assert tile.reference_water is None
 
     def test_cloud_fraction_proportional_to_nodata(self):
         proc = self._make_proc()
@@ -399,8 +473,9 @@ class TestWriteOutputsNative:
 
         assert paths.ensemble_flood_extent is not None and paths.ensemble_flood_extent.exists()
         assert paths.reference_water_mask is not None and paths.reference_water_mask.exists()
+        assert paths.water_fraction is None
         assert paths.flood_fraction is None
-        assert paths.quality_mask is None
+        assert paths.reference_water is None
 
         import rasterio
 

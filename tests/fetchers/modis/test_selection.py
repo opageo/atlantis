@@ -18,7 +18,7 @@ def _processed(
     *,
     flood: np.ndarray | None = None,
     raw: np.ndarray | None = None,
-    quality: np.ndarray | None = None,
+    exclusion: np.ndarray | None = None,
     recurring: np.ndarray | None = None,
 ) -> ProcessedTile:
     transform = from_origin(0.0, 1.0, 1.0, -1.0)
@@ -28,7 +28,7 @@ def _processed(
         cloud_fraction=0.0,
         raw=raw,
         flood_fraction=flood,
-        quality_mask=quality,
+        exclusion_mask=exclusion,
         recurring_flood=recurring,
     )
 
@@ -90,10 +90,10 @@ class TestCloudAwareScore:
         assert cloud_aware_score(_processed(raw=raw), include_recurring=True) == pytest.approx(0.5, rel=1e-6)
 
     def test_score_uses_classified_when_raw_absent(self):
-        # Quality mask shows 1 missing pixel out of 4; 1 flood → score = 0.5 * 0.75 = 0.375
+        # Exclusion mask shows 1 missing pixel out of 4; 1 flood → score = 0.5 * 0.75 = 0.375
         flood = np.array([[1.0, 0.0], [0.0, 0.0]], dtype=np.float32)
-        quality = np.array([[1, 1], [1, 0]], dtype=np.uint8)
-        score = cloud_aware_score(_processed(flood=flood, quality=quality))
+        exclusion = np.array([[0, 0], [0, 1]], dtype=np.uint8)
+        score = cloud_aware_score(_processed(flood=flood, exclusion=exclusion))
         assert score == pytest.approx(1 / 3 * 0.75, rel=1e-6)
 
 
