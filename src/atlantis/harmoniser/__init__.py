@@ -26,31 +26,70 @@ __all__ = [
     "Tiler",
     "Normaliser",
     "NormaliserConfig",
+    "discover_nodata",
     "write_harmonised_raster",
 ]
+
+
+def discover_nodata(data_array: "xr.DataArray") -> float | None:
+    """Best-effort discovery of a DataArray's recorded nodata sentinel.
+
+    Inspects explicit metadata attributes (``_FillValue`` / ``nodata`` /
+    ``missing_value``) in order, then falls back to rioxarray's ``.rio.nodata``.
+    Returns the first value that converts to ``float`` (which may be ``NaN``
+    when that is the declared fill), or ``None`` when no sentinel is recorded.
+    Callers apply their own dtype- or domain-specific fallback.
+    """
+    for key in ("_FillValue", "nodata", "missing_value"):
+        value = data_array.attrs.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+
+    try:
+        rio_nodata = data_array.rio.nodata
+        if rio_nodata is not None:
+            return float(rio_nodata)
+    except Exception:
+        pass
+
+    return None
+
+
+def _integer_nodata(data_array: "xr.DataArray") -> int:
+    """Return the integer nodata sentinel to preserve when writing code rasters."""
+    discovered = discover_nodata(data_array)
+    if discovered is None or np.isnan(discovered):
+        return HARMONISED_NODATA
+    return int(discovered)
 
 
 def write_harmonised_raster(data_array: "xr.DataArray", output_path: Path | str) -> None:
     """Write a harmonised DataArray to a uint8 GeoTIFF.
 
     Flood fraction values in [0, 1] are scaled to [0, 100] (percent).
-    NaN pixels are written as nodata=255. Binary masks (quality, permanent
-    water) are written as-is with the same nodata sentinel.
+    NaN pixels are written as nodata=255. Integer code rasters preserve their
+    existing nodata sentinel when one is present; otherwise they default to 255.
 
     Args:
         data_array: The xarray DataArray to write (float32 in [0,1] or uint8 binary).
         output_path: Destination file path.
     """
     arr = data_array.values
+    nodata = HARMONISED_NODATA
     if np.issubdtype(arr.dtype, np.floating):
         # Scale [0, 1] → [0, 100], NaN → 255
         scaled = np.where(np.isnan(arr), HARMONISED_NODATA, np.round(arr * 100)).astype(np.uint8)
     else:
-        # Already integer (quality_mask, permanent_water) — just set nodata
+        # Integer masks / code rasters stay byte-for-byte unchanged.
         scaled = arr.astype(np.uint8)
+        nodata = _integer_nodata(data_array)
 
     out_da = data_array.copy(data=scaled)
-    out_da.rio.write_nodata(HARMONISED_NODATA, inplace=True)
+    out_da.rio.write_nodata(nodata, inplace=True)
     out_da.rio.to_raster(
         str(output_path),
         dtype="uint8",

@@ -48,6 +48,8 @@ print("MODIS-only layers present:", "recurring_flood" in ds)
 LANCE only retains files for ~1 week. For older dates, use the LAADS
 backend below.
 
+> **Native vs derived layers.** With `classify=True` (CLI default) `to_dataset()` returns the **derived** layers `flood_fraction`, `quality_mask`, `permanent_water`, and the MODIS-only `recurring_flood`. With `classify=False` it returns the **native** `raw` composite codes. `flood_fraction` is a _derived_ layer, not a native MCDWD value. List every native and derived layer with `atlantis list-layers --source modis` or `atlantis.layers.list_layers("modis")`; see [the layer reference](../layers.md).
+
 ## Download mode (cache tiles locally)
 
 ```python
@@ -114,7 +116,7 @@ print(raw_ds["raw"].dtype, raw_ds["raw"].shape)
 ```
 
 This preserves the original categorical codes (`0/1/2/3/255`) instead of
-deriving the VIIRS-parity layers.
+deriving the VIIRS-parity derived layers.
 
 ## KuroSiwo events
 
@@ -172,23 +174,25 @@ issues, the LANCE retention window, empty listings, or tile mismatches.
 
 ## MODISFetcher parameters
 
-| Parameter         | Type   | Default           | Description                                                                                                |
-| ----------------- | ------ | ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| `backend`         | `str`  | `"lance_geotiff"` | `"lance_geotiff"` (NRT, streamable) or `"laads_hdf4"` (historical, download)                               |
-| `composite`       | `str`  | `"F2"`            | One of `"F1"` / `"F1C"` / `"F2"` / `"F3"` (1-day, 1-day cloud-shadow screened, 2-day, 3-day)               |
-| `classify`        | `bool` | `False`           | Decode raw codes into VIIRS-parity layers + `recurring_flood`; the CLI turns this on by default            |
-| `stream`          | `bool` | `False`           | `/vsicurl/` streaming. Only valid with `lance_geotiff`; raises otherwise. The CLI turns this on by default |
-| `strategy`        | `str`  | `"peak"`          | Multi-date reduction: `"peak"`, `"aggregate"`, `"all"`                                                     |
-| `keep_processed`  | `bool` | `True`            | Write intermediate processed/ GeoTIFFs                                                                     |
-| `base_url`        | `str`  | per-backend       | Override the backend's primary base URL                                                                    |
-| `backup_base_url` | `str`  | `nrt4` mirror     | LANCE-only: secondary host used as fallback on connection error                                            |
-| `timeout`         | `int`  | `300`             | HTTP request timeout (seconds)                                                                             |
+| Parameter         | Type   | Default           | Description                                                                                                                                                              |
+| ----------------- | ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `backend`         | `str`  | `"lance_geotiff"` | `"lance_geotiff"` (NRT, streamable) or `"laads_hdf4"` (historical, download)                                                                                             |
+| `composite`       | `str`  | `"F2"`            | One of `"F1"` / `"F1C"` / `"F2"` / `"F3"` (1-day, 1-day cloud-shadow screened, 2-day, 3-day)                                                                             |
+| `classify`        | `bool` | `False`           | Emit **derived** layers (`flood_fraction`, `quality_mask`, `permanent_water`, `recurring_flood`) instead of the native `raw` composite; the CLI turns this on by default |
+| `stream`          | `bool` | `False`           | `/vsicurl/` streaming. Only valid with `lance_geotiff`; raises otherwise. The CLI turns this on by default                                                               |
+| `strategy`        | `str`  | `"peak"`          | Multi-date reduction: `"peak"`, `"aggregate"`, `"all"`                                                                                                                   |
+| `keep_processed`  | `bool` | `True`            | Write intermediate processed/ GeoTIFFs                                                                                                                                   |
+| `base_url`        | `str`  | per-backend       | Override the backend's primary base URL                                                                                                                                  |
+| `backup_base_url` | `str`  | `nrt4` mirror     | LANCE-only: secondary host used as fallback on connection error                                                                                                          |
+| `timeout`         | `int`  | `300`             | HTTP request timeout (seconds)                                                                                                                                           |
 
 Atlantis does not auto-select a MODIS composite from cloudiness or event
 timing. The chosen `composite` is fixed for the whole fetch, and defaults to
 `F2` unless you override it.
 
 ## Output layers (with `--classify` / `classify=True`)
+
+These are the **derived** layers Atlantis computes; `--no-classify` emits the native `raw` composite instead.
 
 | Variable          | MODIS class                 | Disk encoding                     |
 | ----------------- | --------------------------- | --------------------------------- |

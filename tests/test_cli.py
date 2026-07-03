@@ -1492,13 +1492,61 @@ def test_harmonise_source_native_writes_raw_codes(tmp_path):
 
     with rasterio.open(str(tif)) as dsr:
         assert dsr.dtypes[0] == "uint8"
+        assert dsr.nodata == 0
         values = set(np.unique(dsr.read(1)).tolist())
     # Nearest-neighbour reprojection preserves the discrete codes — only the
-    # source codes plus the uncovered-border fill (0) and nodata (255) may
+    # source codes plus the uncovered-border fill (0) may
     # appear. No averaged intermediates (e.g. 50, 130) are introduced.
-    assert values <= {0, 1, 17, 30, 99, 160, 255}
+    assert values <= {0, 1, 17, 30, 99, 160}
+    assert 255 not in values
     # At least one genuine flood/feature code survived the reprojection.
     assert values & {1, 17, 30, 99, 160}
+
+
+def test_harmonise_source_modis_raw_preserves_255_nodata(tmp_path):
+    """MODIS raw harmonisation must keep 255 as nodata, not create 0 borders."""
+    import rioxarray  # noqa: F401
+    import xarray as xr
+
+    from atlantis.cli import _harmonise_source
+
+    width = height = 60
+    res = 0.004
+    west, north = 20.0, 35.4
+    codes = np.ones((height, width), dtype=np.uint8)
+    ds = xr.Dataset(
+        {"raw": xr.DataArray(codes, dims=["y", "x"])},
+        coords={
+            "x": west + (np.arange(width) + 0.5) * res,
+            "y": north - (np.arange(height) + 0.5) * res,
+        },
+    )
+    ds.rio.write_crs("EPSG:4326", inplace=True)
+
+    harm_dir = tmp_path / "harm"
+    plot_dir = tmp_path / "png"
+    _harmonise_source(
+        ds,
+        "evt",
+        "20240101",
+        source_id="modis",
+        harm_dir=harm_dir,
+        plot_dir=plot_dir,
+        announce=False,
+    )
+
+    tif = harm_dir / "evt_20240101_modis_harmonised.tif"
+    assert tif.exists()
+
+    import rasterio
+
+    with rasterio.open(str(tif)) as dsr:
+        assert dsr.dtypes[0] == "uint8"
+        assert dsr.nodata == 255
+        values = set(np.unique(dsr.read(1)).tolist())
+    assert values <= {1, 255}
+    assert 0 not in values
+    assert 255 in values
 
 
 def test_fetch_unknown_source_reports_unknown():

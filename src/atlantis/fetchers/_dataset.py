@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     import xarray as xr
     from rasterio.transform import Affine
 
+    from atlantis.layers import LayerRegistry
+
 
 def georeference_array(
     array: np.ndarray,
@@ -87,3 +89,66 @@ def build_dataset(
     dataset.attrs["source_id"] = source_id
     dataset.attrs["event_id"] = event_id
     return dataset
+
+
+def _layer_array(processed: object, name: str) -> "np.ndarray | None":
+    """Return the array for layer *name* from a processed tile.
+
+    Looks up a named attribute first (e.g. ``processed.flood_fraction``), then an
+    optional ``extra_layers`` dict used to carry layers beyond the core fields.
+    """
+    array = getattr(processed, name, None)
+    if array is None:
+        extra = getattr(processed, "extra_layers", None)
+        if extra:
+            array = extra.get(name)
+    return array
+
+
+def dataset_from_processed(
+    processed: object,
+    registry: "LayerRegistry",
+    *,
+    event_id: str,
+    source_id: str,
+) -> "xr.Dataset":
+    """Build a Dataset from a processed tile, driven by the source registry.
+
+    The set of variables is determined by the registry rather than hard-coded:
+    classified tiles emit the registry's derived layers; raw/native tiles emit
+    the native layers. Only layers actually populated on *processed* are
+    included, so optional layers (e.g. MODIS counts) are skipped when absent.
+
+    Args:
+        processed: A processed-tile object exposing ``is_classified``,
+            ``transform``, ``crs``, and per-layer attributes / ``extra_layers``.
+        registry: The source's layer registry.
+        event_id: Flood event identifier.
+        source_id: Data source identifier.
+
+    Returns:
+        Georeferenced dataset with one variable per populated layer.
+    """
+    specs = registry.list_derived() if processed.is_classified else registry.list_native()
+    variables: list[tuple[str, np.ndarray, np.dtype]] = []
+    seen: set[str] = set()
+    for spec in specs:
+        array = _layer_array(processed, spec.name)
+        if array is None:
+            continue
+        variables.append((spec.name, array, np.dtype(spec.dtype)))
+        seen.add(spec.name)
+
+    # Carry any extra layers not described by a spec (defensive).
+    extra = getattr(processed, "extra_layers", None) or {}
+    for name, array in extra.items():
+        if array is not None and name not in seen:
+            variables.append((name, array, np.asarray(array).dtype))
+
+    return build_dataset(
+        variables,
+        processed.transform,
+        processed.crs,
+        event_id=event_id,
+        source_id=source_id,
+    )

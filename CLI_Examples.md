@@ -5,6 +5,10 @@ sources — **VIIRS**, **MODIS**, and **GFM** — focused on the most important
 pipeline options (`--classify/--no-classify`, `--stream/--no-stream`,
 `--harmonise`, `--strategy`, and the source-specific backend/composite flags).
 
+Throughout this guide, `--classify` means Atlantis emits **derived layers** and
+`--no-classify` means it emits the **native layers** fetched from the source
+unchanged. Run `pixi run atlantis list-layers` to inspect the full catalogue.
+
 All commands use **pixi**. The same flags work for any AOI and date window; the
 examples reuse the **Valencia 2024** flood (a Mediterranean DANA flash flood) as
 a common AOI so you can compare sources and options side by side.
@@ -79,7 +83,7 @@ Swap them for any other AOI/time window (see [More flood events](#more-flood-eve
 | Flag                                                            | Default            | What it does                                                                                                       |
 | --------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `--source`, `-s`                                                | `all`              | `viirs`, `modis`, `gfm`, or `all`.                                                                                 |
-| `--classify` / `--no-classify`                                  | `--classify`       | Derive flood-fraction / quality / permanent-water layers, **or** write the raw source codes.                       |
+| `--classify` / `--no-classify`                                  | `--classify`       | Emit Atlantis **derived layers**, or write the source-native layers unchanged.                                     |
 | `--harmonise`                                                   | off                | Reproject the source-resolution `processed/` output to the canonical **1-arcmin** grid (stackable across sources). |
 | `--stream` / `--no-stream`                                      | `--stream`         | Stream tiles via `/vsicurl/`, or download them first. (GFM always streams; MODIS streaming needs `lance_geotiff`.) |
 | `--plot`                                                        | off                | Save a PNG per output date.                                                                                        |
@@ -119,15 +123,16 @@ pixi run atlantis fetch --event Valencia_2024 --source viirs \
   --no-stream --harmonise
 ```
 
-### 3. Classified vs. raw codes (`--classify` / `--no-classify`)
+### 3. Derived vs. native layers (`--classify` / `--no-classify`)
 
 ```bash
-# Classified flood fraction (default)
+# Derived layers (default): flood_fraction, quality_mask, permanent_water,
+# plus VIIRS cloud_mask, snow_ice, and shadow
 pixi run atlantis fetch --event Valencia_2024 --source viirs \
   --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
   --classify --harmonise --plot
 
-# Raw VFM pixel codes (0–200), nearest-neighbour resampled when harmonised
+# Native VIIRS layer: raw VFM pixel codes, nearest-neighbour resampled when harmonised
 pixi run atlantis fetch --event Valencia_2024 --source viirs \
   --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
   --no-classify --harmonise --plot
@@ -199,7 +204,11 @@ pixi run atlantis fetch --event Valencia_2024 --source modis \
   --modis-backend laads_hdf4 --modis-composite F3 --harmonise
 ```
 
-### 4. Classified vs. raw codes (`--classify` / `--no-classify`)
+### 4. Derived vs. native layers (`--classify` / `--no-classify`)
+
+With `--classify`, MODIS writes the derived `flood_fraction`, `quality_mask`,
+`permanent_water`, and `recurring_flood` layers. With `--no-classify`, it writes
+the native `raw` MCDWD composite unchanged.
 
 ```bash
 # Raw MCDWD codes: 0=no-water, 1=water, 2=recurring, 3=unusual flood, 255=insufficient
@@ -232,10 +241,10 @@ pixi run atlantis fetch --event Valencia_2024 --source gfm \
   --strategy peak --plot --harmonise
 ```
 
-### 2. Classified vs. native SAR codes (`--classify` / `--no-classify`)
+### 2. Derived vs. native SAR layers (`--classify` / `--no-classify`)
 
 ```bash
-# Classified flood fraction (default; ~80 m → 1 arcmin with --harmonise)
+# Derived layers (default): flood_fraction, quality_mask, permanent_water
 pixi run atlantis fetch --event Valencia_2024 --source gfm \
   --bbox "-1.5 38.8 0.5 40.0" --start-date 2024-10-29 --end-date 2024-11-04 \
   --classify --harmonise --plot
@@ -307,9 +316,10 @@ A classified run with `--harmonise --plot` writes, per source:
   harmonised/   # 1-arcmin GeoTIFFs (with --harmonise)
 ```
 
-With `--no-classify`, `processed/` and `harmonised/` hold the raw code bands
-instead — e.g. GFM `*_ensemble_flood_extent.tif` / `*_reference_water_mask.tif`,
-or VIIRS/MODIS `*_raw.tif`.
+With `--classify`, `processed/` and `harmonised/` hold derived layers. With
+`--no-classify`, they hold the native source layers instead — e.g. GFM
+`*_ensemble_flood_extent.tif` / `*_reference_water_mask.tif`, or VIIRS/MODIS
+`*_raw.tif`.
 
 ## More flood events
 

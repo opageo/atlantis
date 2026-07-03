@@ -120,9 +120,12 @@ harmonised GeoTIFF contains the flood layer only; `quality_mask` and
 ## Dataset variables
 
 `GFMFetcher.to_dataset()` returns an `xarray.Dataset` whose variables depend on
-the `classify` flag.
+the `classify` flag. `flood_fraction` is a **derived** layer (built from
+observation counts, not a raw code); the native bands are passed through
+untouched. See the full catalogue in [the layer reference](../layers.md) or via
+`atlantis list-layers --source gfm`.
 
-**Classified mode** (`classify=True`, default):
+**Derived layers** (`classify=True`, default):
 
 | Variable          | Dtype     | Meaning                                                                           |
 | ----------------- | --------- | --------------------------------------------------------------------------------- |
@@ -130,7 +133,7 @@ the `classify` flag.
 | `quality_mask`    | `uint8`   | Valid-observation coverage mask: `1` where any valid observation exists           |
 | `permanent_water` | `uint8`   | Derived mask: `1` where `reference_water_mask == 2` exceeds 50% of valid coverage |
 
-**Native / raw mode** (`classify=False`):
+**Native layers** (`classify=False`):
 
 | Variable                | Dtype   | Meaning                                                                   |
 | ----------------------- | ------- | ------------------------------------------------------------------------- |
@@ -139,18 +142,18 @@ the `classify` flag.
 
 ## GFMFetcher parameters
 
-| Parameter          | Type            | Default              | Description                                                                                                            |
-| ------------------ | --------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `api_url`          | `Optional[str]` | `None`               | Override the default EODC STAC endpoint                                                                                |
-| `coarsen_factor`   | `int`           | `4`                  | Mean-pool factor for the class masks (classified); also sets the processed grid spacing (~20 m × factor) in both modes |
-| `resampling`       | `Resampling`    | `Resampling.average` | Reprojection resampling method (classified mode only)                                                                  |
-| `classify`         | `bool`          | `True`               | `True` = derive flood_fraction / quality / permanent_water; `False` = emit raw codes                                   |
-| `strategy`         | `str`           | `"peak"`             | One of `peak`, `aggregate`, or `all`                                                                                   |
-| `keep_processed`   | `bool`          | `True`               | Write processed GeoTIFFs to `processed/`                                                                               |
-| `peak_days_before` | `int`           | `0`                  | Window filter before the peak date                                                                                     |
-| `peak_days_after`  | `int`           | `0`                  | Window filter after the peak date                                                                                      |
-| `max_observations` | `int`           | `0`                  | Cap the number of returned dates after windowing                                                                       |
-| `peak_priority`    | `str`           | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`                                                                         |
+| Parameter          | Type            | Default              | Description                                                                                                                                                          |
+| ------------------ | --------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api_url`          | `Optional[str]` | `None`               | Override the default EODC STAC endpoint                                                                                                                              |
+| `coarsen_factor`   | `int`           | `4`                  | Mean-pool factor for the class masks (classified); also sets the processed grid spacing (~20 m × factor) in both modes                                               |
+| `resampling`       | `Resampling`    | `Resampling.average` | Reprojection resampling method (classified mode only)                                                                                                                |
+| `classify`         | `bool`          | `True`               | `True` = emit derived layers (`flood_fraction`, `quality_mask`, `permanent_water`); `False` = emit the native `ensemble_flood_extent` + `reference_water_mask` codes |
+| `strategy`         | `str`           | `"peak"`             | One of `peak`, `aggregate`, or `all`                                                                                                                                 |
+| `keep_processed`   | `bool`          | `True`               | Write processed GeoTIFFs to `processed/`                                                                                                                             |
+| `peak_days_before` | `int`           | `0`                  | Window filter before the peak date                                                                                                                                   |
+| `peak_days_after`  | `int`           | `0`                  | Window filter after the peak date                                                                                                                                    |
+| `max_observations` | `int`           | `0`                  | Cap the number of returned dates after windowing                                                                                                                     |
+| `peak_priority`    | `str`           | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`                                                                                                                       |
 
 ## Notes
 

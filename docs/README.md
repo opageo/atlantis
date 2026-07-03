@@ -3,6 +3,11 @@
 Reference guide for Atlantis data sources, processing pipelines, and shared
 design notes.
 
+The layer registry is now the main source of truth for what Atlantis can emit
+per source. Start with [Layers](./layers.md) or `atlantis list-layers` if you
+need to confirm the native layers fetched from a source versus the derived
+layers Atlantis computes from them.
+
 ## Data Sources
 
 - [VIIRS](./viirs/overview.md) - Optical flood mapping guides, API usage,
@@ -14,6 +19,9 @@ design notes.
 
 ## Architecture and Design
 
+- [Layers](./layers.md) - Per-source catalogue of native and derived layers
+  (auto-generated from the layer registries; regenerate with
+  `python scripts/generate_layer_docs.py` or view via `atlantis list-layers`).
 - [KuroSiwo STAC design](./kurosiwo-stac-design.md)
 - [STAC architecture diagrams](./mermaid_stac_ks_labeled.md)
 - [Compact STAC mermaid diagram](./mermaid_stac_ks.md)

@@ -133,8 +133,15 @@ def _resolution_label(source_id: str) -> str:
 
 
 def _ds_is_classified(ds) -> bool:
-    """True when a fetched dataset holds derived layers (vs native bands)."""
-    return "flood_fraction" in ds
+    """True when a fetched dataset holds derived layers (vs native bands).
+
+    Registry-driven: a dataset is classified when it contains any derived layer
+    declared by a source, rather than checking a single hard-coded name.
+    """
+    from atlantis.layers import all_registries
+
+    derived_names = {layer.name for registry in all_registries().values() for layer in registry.list_derived()}
+    return any(name in ds.data_vars for name in derived_names)
 
 
 def _date_label(result: FetchResult) -> str:
@@ -492,6 +499,43 @@ def _harmonise_safely(fn, label: str, *args, **kwargs) -> bool:
         return False
 
 
+def _raw_nodata_for_source(source_id: str) -> int | None:
+    """Return the raw-code nodata sentinel used by a source's Atlantis outputs."""
+    if source_id == "viirs":
+        # Atlantis writes raw VIIRS rasters with nodata=0 for clip / mosaic fill.
+        return 0
+    if source_id == "modis":
+        return 255
+    return None
+
+
+def _prepare_raw_dataset_for_harmonise(best_ds, *, source_id: str):
+    """Attach source-appropriate raw nodata metadata before NN reprojection."""
+    if "raw" not in best_ds:
+        return best_ds
+
+    preferred_nodata = _raw_nodata_for_source(source_id)
+    if preferred_nodata is None:
+        return best_ds
+
+    # Deep-copy only the raw band we mutate; the surrounding dataset is shallow
+    # copied so the other (untouched) variables are shared rather than cloned.
+    raw = best_ds["raw"].copy(deep=True)
+    try:
+        current_nodata = raw.rio.nodata
+    except Exception:
+        current_nodata = None
+
+    if current_nodata is None:
+        raw.rio.write_nodata(preferred_nodata, inplace=True)
+        raw.attrs.setdefault("nodata", preferred_nodata)
+        raw.attrs.setdefault("_FillValue", preferred_nodata)
+
+    prepared = best_ds.copy(deep=False)
+    prepared["raw"] = raw
+    return prepared
+
+
 def _harmonise_source(
     best_ds,
     event_id,
@@ -537,7 +581,7 @@ def _harmonise_source(
 
     # Native / raw mode — NN-reproject the raw codes to the 1-arcmin grid and
     # write them as-is (mirrors the GFM native harmonise path).
-    ds_harm = h.reprojector.reproject(best_ds)
+    ds_harm = h.reprojector.reproject(_prepare_raw_dataset_for_harmonise(best_ds, source_id=source_id))
     write_harmonised_raster(ds_harm["raw"], tif_path)
     if announce:
         console.print(f"  Harmonised → {tif_path.name}")
@@ -792,10 +836,10 @@ def fetch(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Classify pixels into flood-fraction, quality-mask, and permanent-water"
-        " layers instead of writing raw data. Default: on."
-        " Use --no-classify to write raw integer pixel codes instead."
-        " MODIS adds a recurring_flood layer when classified.",
+        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, plus"
+        " source-specific extras) computed by Atlantis. Default: on."
+        " Use --no-classify to emit the native source layers untouched (raw codes/bands)."
+        " MODIS adds a recurring_flood derived layer; see `atlantis list-layers`.",
     ),
     stream: bool = typer.Option(
         True,
@@ -1128,9 +1172,9 @@ def fetch_kurosiwo_viirs(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Classify VIIRS pixels into flood-fraction, quality-mask, and permanent-water"
-        " layers instead of writing raw data. Default: on."
-        " Use --no-classify to write raw integer pixel codes instead.",
+        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, plus"
+        " VIIRS extras like cloud_mask/snow_ice/shadow) computed by Atlantis. Default: on."
+        " Use --no-classify to emit the native VIIRS band untouched. See `atlantis list-layers`.",
     ),
     stream: bool = typer.Option(
         True,
@@ -1365,7 +1409,8 @@ def fetch_kurosiwo_modis(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Classify MCDWD pixels into flood / recurring / permanent / quality layers.",
+        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, recurring_flood)"
+        " computed by Atlantis, or --no-classify to emit the native MCDWD composite untouched.",
     ),
     stream: bool = typer.Option(
         True,
@@ -1812,6 +1857,48 @@ def list_sources_cmd() -> None:
     }
     rows = [[src, source_descriptions.get(src, "No description")] for src in sources]
     console.print(summary_table("Available Data Sources", ["Name", "Description"], rows))
+
+
+@cli.command("list-layers")
+def list_layers_cmd(
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Limit to one source (e.g. modis, viirs, gfm). Omit to list every source.",
+    ),
+) -> None:
+    """List the native and derived layers available per source."""
+    from atlantis.layers import all_registries, available_sources, get_source_registry
+
+    command_header("list-layers")
+
+    if source is not None:
+        available = available_sources()
+        if source not in available:
+            fail(f"Unknown source '{source}'. Available: {', '.join(available)}")
+            raise typer.Exit(code=1)
+        registries = {source: get_source_registry(source)}
+    else:
+        registries = all_registries()
+
+    for source_id, registry in registries.items():
+        section_rule(f"{source_id} layers")
+        rows = [
+            [layer.name, "native", layer.dtype, str(layer.nodata), layer.description]
+            for layer in registry.list_native()
+        ]
+        rows += [
+            [layer.name, "derived", layer.dtype, str(layer.nodata), layer.description]
+            for layer in registry.list_derived()
+        ]
+        console.print(
+            summary_table(
+                f"{source_id} layers",
+                ["Layer", "Kind", "dtype", "nodata", "Description"],
+                rows,
+            )
+        )
 
 
 @cli.command()

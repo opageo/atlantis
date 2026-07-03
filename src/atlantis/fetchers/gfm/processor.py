@@ -23,21 +23,27 @@ from loguru import logger
 from rasterio.enums import Resampling
 from rasterio.transform import Affine, from_bounds
 
+# Code constants, native band list, and the layer registry live in ``layers.py``
+# (the single source of truth). Re-exported here so existing
+# ``from ...gfm.processor import GFM_FLOOD`` style imports keep working.
+from atlantis.fetchers.gfm.layers import (  # noqa: F401 — re-exported for backwards compatibility
+    FLOOD_COUNT,
+    GFM_BANDS,
+    GFM_DRY,
+    GFM_FLOOD,
+    GFM_LAND,
+    GFM_NODATA,
+    GFM_PERMANENT_WATER,
+    GFM_WATER,
+    PERM_WATER_COUNT,
+    VALID_COUNT,
+    registry,
+)
 from atlantis.harmoniser.reprojector import Reprojector
+from atlantis.layers import DerivationContext
 from atlantis.models.metadata import TileMetadata
 
-# ── GFM code constants ────────────────────────────────────────────────────────
-GFM_NODATA: int = 255
-# ensemble_flood_extent codes
-GFM_DRY: int = 0
-GFM_FLOOD: int = 1
-# reference_water_mask codes
-GFM_LAND: int = 0
-GFM_WATER: int = 1
-GFM_PERMANENT_WATER: int = 2
-
-#: Bands loaded from STAC items.
-GFM_BANDS: list[str] = ["ensemble_flood_extent", "reference_water_mask"]
+# ── GFM processing constants ─────────────────────────────────────────────────
 
 #: Default coarsen factor (native ~20 m → ~80 m before reproject).
 DEFAULT_COARSEN_FACTOR: int = 4
@@ -596,27 +602,19 @@ class GfmRasterProcessor:
         """Compute flood fraction, quality mask, and permanent water from counts.
 
         The counts are float accumulators of per-pixel class coverage fractions
-        (one contribution per item, in ``[0, 1]``).
+        (one contribution per item, in ``[0, 1]``). The per-layer maths lives in
+        the GFM layer registry (:mod:`atlantis.fetchers.gfm.derived`).
         """
-        # Flood fraction: sum(flood_coverage) / sum(valid_coverage), NaN where no valid obs
-        with np.errstate(divide="ignore", invalid="ignore"):
-            flood_fraction = np.where(
-                valid_count > 0,
-                flood_count.astype(np.float32) / valid_count.astype(np.float32),
-                np.nan,
-            ).astype(np.float32)
-
-        # Quality mask: 1 where at least one valid observation contributed
-        quality_mask = (valid_count > 0).astype(np.uint8)
-
-        # Permanent water: > 50% of observed coverage is permanent water
-        with np.errstate(divide="ignore", invalid="ignore"):
-            perm_ratio = np.where(
-                valid_count > 0,
-                perm_water_count.astype(np.float32) / valid_count.astype(np.float32),
-                0.0,
-            )
-        permanent_water = (perm_ratio > 0.5).astype(np.uint8)
+        ctx = DerivationContext(
+            arrays={
+                FLOOD_COUNT: flood_count,
+                PERM_WATER_COUNT: perm_water_count,
+                VALID_COUNT: valid_count,
+            }
+        )
+        flood_fraction = registry.get_derived("flood_fraction").derive(ctx)
+        quality_mask = registry.get_derived("quality_mask").derive(ctx)
+        permanent_water = registry.get_derived("permanent_water").derive(ctx)
 
         # Coverage fraction (proxy for cloud/missing)
         total_pixels = flood_fraction.size

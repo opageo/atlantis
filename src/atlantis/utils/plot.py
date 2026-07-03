@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 # ── VIIRS pixel code legend ──────────────────────────────────────────────────
 
 VIIRS_RAW_CODES: dict[int, tuple[str, str]] = {
+    0: ("Clip / mosaic fill", "#000000"),
     1: ("Fill / No data", "#000000"),
     17: ("Vegetation", "#2ca02c"),
     20: ("Snow / ice", "#17becf"),

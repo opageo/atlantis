@@ -203,7 +203,11 @@ Each item contributes a fractional amount in `[0, 1]` to those accumulators.
 ## Stage 5 - Classification (classified mode only)
 
 `GfmRasterProcessor._classify()` converts the accumulated counts into the final
-public layers:
+**derived** layers. The per-layer maths is declared in
+`src/atlantis/fetchers/gfm/derived.py` and registered on the GFM layer registry
+(`gfm/layers.py`); unlike VIIRS/MODIS, the GFM derivations read accumulated
+_counts_ rather than raw codes. Browse them with `atlantis list-layers --source gfm`
+or in [the layer reference](../layers.md).
 
 $$
 \text{flood\_fraction} = \frac{\text{flood\_count}}{\text{valid\_count}}

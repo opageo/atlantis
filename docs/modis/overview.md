@@ -63,8 +63,12 @@ history are documented later in this page; the quick reference is:
 | `3`   | Unusual flood             |
 | `255` | Insufficient data         |
 
-Atlantis typically maps those codes into `flood_fraction`, `quality_mask`,
-`permanent_water`, and `recurring_flood` for downstream analysis.
+Atlantis exposes these as **layers** of two kinds (full catalogue: [layer reference](../layers.md), or run `atlantis list-layers --source modis`):
+
+- **Native** — the selected MCDWD flood composite, passed through untouched as `raw` (`--no-classify`). The eleven ancillary count layers are catalogued but not loaded by the default pipeline.
+- **Derived** — computed by Atlantis with `--classify` (default): `flood_fraction` (class 3), `quality_mask` (class ≠ 255), `permanent_water` (class 1), and the MODIS-only `recurring_flood` (class 2).
+
+`flood_fraction` is therefore a **derived** layer, not a native MCDWD value.
 
 ## What is MODIS?
 
@@ -106,7 +110,7 @@ All current products are **Collection 6.1, Release 1.1**.
 
 Each daily HDF holds **four flood layers** — `Flood 1-Day 250m`,
 `Flood 1-Day CS 250m` (cloud-shadow screened), `Flood 2-Day 250m`, and
-`Flood 3-Day 250m` — alongside the eight ancillary count layers from which
+`Flood 3-Day 250m` — alongside the eleven ancillary count layers from which
 they are derived (see [§ HDF4 layer inventory](#hdf4-layer-inventory)).
 
 The rule that turns water detections into a flood layer is intentionally
@@ -711,17 +715,19 @@ analogous to VIIRS `permanent_water`.
 
 ### Suggested layer mapping
 
-To keep the downstream harmoniser and ECMWF benchmarking notebooks
-([notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb](../../notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb))
-sensor-agnostic, MODIS should expose the same dataset variables VIIRS does:
+This mapping is **implemented**: MODIS exposes the same sensor-agnostic
+**derived** layers VIIRS does (so the harmoniser and ECMWF benchmarking notebooks,
+[notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb](../../notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb),
+stay source-agnostic). The `raw` row is the **native** passthrough; the count
+layers are catalogued native layers that are not loaded by default.
 
-| MODIS variable    | Derivation                        | Equivalent VIIRS variable |
-| ----------------- | --------------------------------- | ------------------------- |
-| `flood_fraction`  | `class == 3` aggregated to target | `flood_fraction`          |
-| `quality_mask`    | `class != 255`                    | `quality_mask`            |
-| `permanent_water` | `class == 1`                      | `permanent_water`         |
-| `recurring_flood` | `class == 2`                      | _(none — MODIS-only)_     |
-| `raw` (optional)  | original uint8 codes              | `raw`                     |
+| MODIS variable    | Kind    | Derivation                        | Equivalent VIIRS variable |
+| ----------------- | ------- | --------------------------------- | ------------------------- |
+| `flood_fraction`  | derived | `class == 3` aggregated to target | `flood_fraction`          |
+| `quality_mask`    | derived | `class != 255`                    | `quality_mask`            |
+| `permanent_water` | derived | `class == 1`                      | `permanent_water`         |
+| `recurring_flood` | derived | `class == 2`                      | _(none — MODIS-only)_     |
+| `raw`             | native  | original uint8 composite codes    | `raw`                     |
 
 ## NRT vs reprocessed: which one to use
 

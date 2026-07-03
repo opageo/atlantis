@@ -8,10 +8,16 @@
 
 Atlantis has a strong domain model, fetcher registry, and three fully operational source paths with harmonisation support.
 
+Across all three sources, Atlantis now distinguishes between **native layers**
+(the source products fetched unchanged, emitted by `--no-classify`) and
+**derived layers** (computed by Atlantis, emitted by `--classify`). The shared
+layer registries under `src/atlantis/layers/` drive CLI discovery, dataset
+construction, and the generated layer catalogue in `docs/layers.md`.
+
 ### Implemented today
 
 - `VIIRSFetcher` can search, download, mosaic, clip, and write GeoTIFF outputs from the NOAA S3 or GMU JPSS Flood archive.
-- `GFMFetcher` can search, stream, coarsen, reproject, and write GeoTIFF outputs from the EODC STAC API (Sentinel-1 SAR). Supports `--classify` (flood_fraction / quality_mask / permanent_water) and `--no-classify` (native ensemble_flood_extent / reference_water_mask bands).
+- `GFMFetcher` can search, stream, coarsen, reproject, and write GeoTIFF outputs from the EODC STAC API (Sentinel-1 SAR). `--classify` emits derived layers (`flood_fraction`, `quality_mask`, `permanent_water`); `--no-classify` emits the native `ensemble_flood_extent` and `reference_water_mask` bands.
 - `MODISFetcher` can search, download/stream, mosaic, clip, and write GeoTIFF outputs from NASA LANCE (NRT) or LAADS (archive) backends.
 - `atlantis fetch` works for explicit bbox/date extraction across all three sources (VIIRS, GFM, MODIS).
 - `atlantis fetch-kurosiwo-viirs` and `atlantis fetch-kurosiwo-modis` work directly from the KuroSiwo catalogue or from a precomputed metadata CSV.
@@ -97,6 +103,10 @@ src/atlantis/
 ├── __init__.py            # Package entry point, version
 ├── cli.py                 # Typer CLI — fetch / fetch-kurosiwo-viirs / fetch-kurosiwo-modis / harmonise / etc.
 ├── config.py              # Pydantic settings hierarchy (env-var driven)
+├── layers/
+│   ├── spec.py            # NativeLayer / DerivedLayer / DerivationContext
+│   ├── registry.py        # LayerRegistry + cross-source discovery helpers
+│   └── docs.py            # Markdown renderer for docs/layers.md
 │
 ├── models/
 │   ├── event.py           # FloodEvent dataclass
@@ -305,12 +315,15 @@ Default output layout (no flags, streaming and classify on):
 ~/.cache/atlantis/raw/Yangtze_2020/
 └── viirs/
     └── processed/
-        ├── Yangtze_2020_20200722_viirs_flood_extent.tif
-        ├── Yangtze_2020_20200722_viirs_quality_mask.tif
-        └── Yangtze_2020_20200722_viirs_permanent_water.tif
+  ├── Yangtze_2020_20200722_viirs_flood_fraction.tif
+  ├── Yangtze_2020_20200722_viirs_quality_mask.tif
+  ├── Yangtze_2020_20200722_viirs_permanent_water.tif
+  ├── Yangtze_2020_20200722_viirs_cloud_mask.tif
+  ├── Yangtze_2020_20200722_viirs_snow_ice.tif
+  └── Yangtze_2020_20200722_viirs_shadow.tif
 ```
 
-Use `--no-stream` to cache raw tiles to disk for reuse across runs. Use `--no-classify` to write raw integer pixel codes instead of the derived layers.
+Use `--no-stream` to cache raw tiles to disk for reuse across runs. Use `--no-classify` to emit the native source layer (`raw` for VIIRS and MODIS; native SAR bands for GFM) instead of Atlantis-derived layers.
 
 ### 5.4 KuroSiwo CLI Usage
 
@@ -376,9 +389,12 @@ Default output layout (without `--no-keep-processed`, streaming on by default):
     └── viirs/
         ├── raw/
         └── processed/
-            ├── KuroSiwo_470_20201014_viirs_flood_extent.tif
+      ├── KuroSiwo_470_20201014_viirs_flood_fraction.tif
             ├── KuroSiwo_470_20201014_viirs_quality_mask.tif
-            └── KuroSiwo_470_20201014_viirs_permanent_water.tif
+      ├── KuroSiwo_470_20201014_viirs_permanent_water.tif
+      ├── KuroSiwo_470_20201014_viirs_cloud_mask.tif
+      ├── KuroSiwo_470_20201014_viirs_snow_ice.tif
+      └── KuroSiwo_470_20201014_viirs_shadow.tif
 ```
 
 Widen the search window around the KuroSiwo flood-time date:
@@ -414,13 +430,20 @@ That mode is intentionally not the default because KuroSiwo `date_start -> date_
 
 ### 5.6 VIIRS Output Semantics
 
-Current VIIRS processed outputs are:
+With `--classify` (default), Atlantis computes the following **derived layers**:
 
-- `*_flood_extent.tif` — binary flood mask derived from VIIRS values `>= 160`
-- `*_quality_mask.tif` — `0` where cloud or water masks invalidate the pixel, `1` otherwise
-- `*_permanent_water.tif` — binary mask derived from VIIRS permanent-water code `17`
+- `*_flood_fraction.tif` — flood fraction in `[0, 1]`, written as uint8 percent
+- `*_quality_mask.tif` — validity mask for aggregation and harmonisation
+- `*_permanent_water.tif` — permanent water mask derived from native `NormalWater`
+- `*_cloud_mask.tif` — cloud-class mask derived from native code `30`
+- `*_snow_ice.tif` — snow/ice mask derived from native code `20`
+- `*_shadow.tif` — shadow mask derived from native code `50`
 
-These are suitable for analysis and for conversion through `to_dataset()`, and can be harmonised to 1 arcmin via `--harmonise`.
+With `--no-classify`, Atlantis writes the single native `raw` VFM layer instead.
+The native source `_FillValue` is `1`; Atlantis also treats `0` as missing when
+clip/mosaic operations introduce empty pixels.
+
+These outputs are suitable for analysis and for conversion through `to_dataset()`, and can be harmonised to 1 arcmin via `--harmonise`.
 
 ### 5.7 Current VIIRS Limitations
 
@@ -471,12 +494,15 @@ With `--classify` (default):
 
 - `*_gfm_flood_fraction.tif` — flood probability in [0, 1]
 - `*_gfm_quality_mask.tif` — pixel validity mask
-- `*_gfm_permanent_water.tif` — permanent water body mask
+- `*_gfm_permanent_water.tif` — permanent water body mask derived from accumulated native `reference_water_mask` counts
 
 With `--no-classify` (native/raw mode — emits SAR band codes as-is):
 
 - `*_gfm_ensemble_flood_extent.tif` — uint8 flood code (0=dry, 1=flood, 255=nodata)
 - `*_gfm_reference_water_mask.tif` — uint8 water code (0=land, 1=water, 2=permanent, 255=nodata)
+
+Atlantis currently exposes these two native GFM layers. The upstream STAC items
+include additional assets, but they are not yet surfaced by the fetcher.
 
 In native mode, reprojection uses nearest-neighbour; the coarsen step is skipped.
 
@@ -491,7 +517,7 @@ In native mode, reprojection uses nearest-neighbour; the coarsen step is skipped
 1. Determines MODIS sinusoidal tile (h, v) coverage for the bbox
 2. Queries either the LANCE NRT mirror (last ~1 week) or the LAADS archive (2003+)
 3. Downloads or streams composites (F1, F1C, F2, F3)
-4. Mosaics tiles, clips to the bbox, and classifies flood pixels
+4. Mosaics tiles, clips to the bbox, and either emits the native `raw` composite or derives Atlantis layers from it
 5. Writes processed GeoTIFF outputs
 
 ### 7.2 MODIS Backends
@@ -538,7 +564,7 @@ uv run atlantis fetch-kurosiwo-modis \
 
 When classified (`--classify`, the default):
 
-- `*_modis_flood_extent.tif` — binary flood mask
+- `*_modis_flood_fraction.tif` — flood fraction in `[0, 1]`, written as uint8 percent
 - `*_modis_quality_mask.tif` — pixel validity mask
 - `*_modis_permanent_water.tif` — permanent water body mask
 - `*_modis_recurring_flood.tif` — recurring flood areas mask
@@ -546,6 +572,10 @@ When classified (`--classify`, the default):
 When raw (`--no-classify`):
 
 - `*_modis_raw.tif` — original MCDWD integer pixel codes
+
+Atlantis also knows about the eleven native MODIS count layers present in the
+HDF product, but the standard fetch pipeline currently emits the selected `raw`
+composite in native mode.
 
 ---
 
@@ -608,6 +638,10 @@ The harmonisation pipeline consists of:
 1. **Reproject** (implemented) — CRS detection, grid snapping to a canonical 1-arcmin reference grid, per-variable resampling
 2. **Normalise** (implemented) — value scaling to [0, 1], quality mask generation
 3. **Tile** (planned) — uniform 224×224 tiling for ML models
+
+Layer metadata controls important parts of this step: derived flood fractions
+default to averaging, while native code layers and categorical masks use
+nearest-neighbour or mode-style handling as declared in the layer registries.
 
 The `Harmoniser` orchestrator class chains Reprojector → Normaliser and is used by:
 

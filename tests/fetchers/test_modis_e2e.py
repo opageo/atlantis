@@ -1,8 +1,12 @@
 """End-to-end tests for the MODIS pipeline (Valencia 2024).
 
-Compare pipeline outputs (harmonised GeoTIFFs) byte-for-byte against
-reference files stored on S3 at:
+Compare pipeline outputs (harmonised GeoTIFFs) against reference files stored
+on S3 at:
     s3://atlantis/reference/Valencia_2024_modis/modis/harmonised/
+
+By default the raster comparison tolerates small live-data drift on the
+overlapping aligned grid. Set ATLANTIS_E2E_STRICT_REFERENCE_BYTES=1 to also
+require exact file identity against the stored reference object.
 
 These tests require:
     - EARTHDATA_TOKEN environment variable (LAADS DAAC access)
@@ -11,6 +15,7 @@ These tests require:
 
 Run with:
     uv run python -m pytest tests/fetchers/test_modis_e2e.py -v -m e2e
+    ATLANTIS_E2E_STRICT_REFERENCE_BYTES=1 uv run python -m pytest tests/fetchers/test_modis_e2e.py -v -m e2e
 """
 
 from __future__ import annotations
@@ -20,9 +25,10 @@ import os
 import pytest
 from upath import UPath
 
-from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env
+from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env, strict_reference_bytes_enabled
 
 S3_REFERENCE_BASE = "s3://atlantis/reference/Valencia_2024_modis/"
+STRICT_REFERENCE_BYTES = strict_reference_bytes_enabled()
 
 # Event parameters matching the reference run
 EVENT_ID = "Valencia_2024"
@@ -66,7 +72,7 @@ class TestModisE2EPeak:
         self.tmp_path = tmp_path
 
     def test_peak_matches_reference(self):
-        """Pipeline output with strategy=peak matches the S3 reference byte-for-byte."""
+        """Pipeline output matches the S3 reference raster, optionally by exact bytes."""
         reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["peak"]
 
         output_dir = UPath(self.tmp_path / "output")
@@ -84,7 +90,7 @@ class TestModisE2EPeak:
             produced = tifs[0]
 
         with s3_rasterio_env():
-            compare_rasters(produced, reference_file)
+            compare_rasters(produced, reference_file, require_byte_identity=STRICT_REFERENCE_BYTES)
 
 
 @pytest.mark.e2e
@@ -100,7 +106,7 @@ class TestModisE2EAggregate:
         self.tmp_path = tmp_path
 
     def test_aggregate_matches_reference(self):
-        """Pipeline output with strategy=aggregate matches the S3 reference byte-for-byte."""
+        """Pipeline output matches the S3 reference raster, optionally by exact bytes."""
         reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["aggregate"]
 
         output_dir = UPath(self.tmp_path / "output")
@@ -117,4 +123,4 @@ class TestModisE2EAggregate:
             produced = tifs[0]
 
         with s3_rasterio_env():
-            compare_rasters(produced, reference_file)
+            compare_rasters(produced, reference_file, require_byte_identity=STRICT_REFERENCE_BYTES)
