@@ -27,7 +27,8 @@ from rasterio.transform import Affine, from_bounds
 # (the single source of truth). Re-exported here so existing
 # ``from ...gfm.processor import GFM_FLOOD`` style imports keep working.
 from atlantis.fetchers.gfm.layers import (  # noqa: F401 — re-exported for backwards compatibility
-    FLOOD_COUNT,
+    ENSEMBLE_FLOOD_EXTENT_COUNT,
+    ENSEMBLE_WATER_EXTENT_COUNT,
     GFM_BANDS,
     GFM_DRY,
     GFM_FLOOD,
@@ -35,9 +36,8 @@ from atlantis.fetchers.gfm.layers import (  # noqa: F401 — re-exported for bac
     GFM_NODATA,
     GFM_PERMANENT_WATER,
     GFM_WATER,
-    REFERENCE_WATER_CODES,
+    REFERENCE_WATER_MASK_CODES,
     VALID_COUNT,
-    WATER_COUNT,
     registry,
 )
 from atlantis.harmoniser.reprojector import Reprojector
@@ -746,10 +746,10 @@ class GfmRasterProcessor:
         """
         ctx = DerivationContext(
             arrays={
-                FLOOD_COUNT: flood_count,
-                WATER_COUNT: water_count,
+                ENSEMBLE_FLOOD_EXTENT_COUNT: flood_count,
+                ENSEMBLE_WATER_EXTENT_COUNT: water_count,
                 VALID_COUNT: valid_count,
-                REFERENCE_WATER_CODES: (
+                REFERENCE_WATER_MASK_CODES: (
                     reference_water_codes
                     if reference_water_codes is not None
                     else np.full(flood_count.shape, GFM_NODATA, dtype=np.uint8)

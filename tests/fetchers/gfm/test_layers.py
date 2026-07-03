@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 
+from atlantis.fetchers.gfm.layers import (
+    ENSEMBLE_FLOOD_EXTENT_COUNT,
+    ENSEMBLE_WATER_EXTENT_COUNT,
+    REFERENCE_WATER_MASK_CODES,
+    VALID_COUNT,
+)
 from atlantis.layers import DerivationContext, get_source_registry
 
 
@@ -16,10 +22,10 @@ def _ctx(
     ref = reference if reference is not None else np.full(flood.shape, 255, dtype=np.uint8)
     return DerivationContext(
         arrays={
-            "flood_count": flood.astype("float32"),
-            "water_count": water.astype("float32"),
-            "valid_count": valid.astype("float32"),
-            "reference_water_codes": ref.astype("uint8"),
+            ENSEMBLE_FLOOD_EXTENT_COUNT: flood.astype("float32"),
+            ENSEMBLE_WATER_EXTENT_COUNT: water.astype("float32"),
+            VALID_COUNT: valid.astype("float32"),
+            REFERENCE_WATER_MASK_CODES: ref.astype("uint8"),
         }
     )
 

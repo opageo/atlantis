@@ -122,12 +122,12 @@ STAC search → group by date → per-item loop → coarsen → accumulate → d
                     mean-pool masks × coarsen_factor (→ per-class fractions)
                     reproject to canonical ~80 m EPSG:4326 grid (average)
                     │
-        (flood_count, water_count, valid_count) ← accumulate
+        (ensemble_flood_extent_count, ensemble_water_extent_count, valid_count) ← accumulate
                     │
                     derive:
-            water_fraction  = water_count / valid_count    [0, 1], NaN where unobserved
-                        flood_fraction  = flood_count / valid_count    [0, 1], NaN where unobserved
-            reference_water = reference_water_codes        {0,1,2,255}
+            water_fraction  = ensemble_water_extent_count / valid_count    [0, 1], NaN where unobserved
+                        flood_fraction  = ensemble_flood_extent_count / valid_count    [0, 1], NaN where unobserved
+            reference_water = reference_water_mask_codes    {0,1,2,255}
           carry native-code companions:
             exclusion_mask, advisory_flags, ensemble_likelihood
 ```

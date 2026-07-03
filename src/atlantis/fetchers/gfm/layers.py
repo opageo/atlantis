@@ -5,9 +5,12 @@ Sentinel-1 SAR code bands as STAC assets. Unlike MODIS/VIIRS, GFM derivations do
 not read raw pixel codes directly: the processor accumulates per-class coverage
 *counts* across the SAR observations in a date group, and the derived layers are
 computed from those accumulators. The processor therefore exposes the counts to
-derivations under the keys :data:`FLOOD_COUNT`, :data:`WATER_COUNT`, and
-:data:`VALID_COUNT`, plus the reprojected reference-water codes under
-:data:`REFERENCE_WATER_CODES`.
+derivations under the keys :data:`ENSEMBLE_FLOOD_EXTENT_COUNT` (accumulated from
+native ``ensemble_flood_extent``), :data:`ENSEMBLE_WATER_EXTENT_COUNT`
+(accumulated from native ``ensemble_water_extent``), and :data:`VALID_COUNT`
+(accumulated validity of either band), plus the reprojected reference-water
+codes under :data:`REFERENCE_WATER_MASK_CODES` (carried through from native
+``reference_water_mask``).
 
 Derived-layer definitions live in :mod:`atlantis.fetchers.gfm.derived` and are
 imported at the end of this module so a single ``import ...gfm.layers`` populates
@@ -44,11 +47,17 @@ GFM_BANDS: list[str] = [
 
 #: Derivation input keys: accumulated per-class coverage counts (float32),
 #: summed across the SAR observations in a date group (one contribution in
-#: ``[0, 1]`` per observation).
-FLOOD_COUNT = "flood_count"
-WATER_COUNT = "water_count"
+#: ``[0, 1]`` per observation). Named after the native band each accumulates,
+#: except :data:`VALID_COUNT`, which combines the per-pixel validity of all
+#: three core bands (``ensemble_flood_extent``, ``ensemble_water_extent``, and
+#: ``reference_water_mask``) — an observation counts as valid if *any* of the
+#: three has a non-nodata code.
+ENSEMBLE_FLOOD_EXTENT_COUNT = "ensemble_flood_extent_count"
+ENSEMBLE_WATER_EXTENT_COUNT = "ensemble_water_extent_count"
 VALID_COUNT = "valid_count"
-REFERENCE_WATER_CODES = "reference_water_codes"
+#: Reprojected ``reference_water_mask`` codes, carried through (masked-max)
+#: across the SAR observations in a date group.
+REFERENCE_WATER_MASK_CODES = "reference_water_mask_codes"
 
 registry = register_source_registry(LayerRegistry("gfm"))
 

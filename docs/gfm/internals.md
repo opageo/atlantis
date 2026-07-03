@@ -80,7 +80,7 @@ flowchart TD
     C --> D
     subgraph D["3. Reproject and accumulate"]
         D1["Reproject to canonical ~80 m EPSG:4326 grid"]
-        D2["Accumulate flood_count, water_count, valid_count\n+ carry reference/exclusion/advisory codes"]
+        D2["Accumulate ensemble_flood_extent_count, ensemble_water_extent_count, valid_count\n+ carry reference/exclusion/advisory codes"]
         D1 --> D2
     end
     D --> E
@@ -195,11 +195,13 @@ flowchart LR
 
 The three count arrays are:
 
-- `flood_count`
-- `perm_water_count`
-- `valid_count`
+- `ensemble_flood_extent_count` (accumulated from native `ensemble_flood_extent`)
+- `ensemble_water_extent_count` (accumulated from native `ensemble_water_extent`)
+- `valid_count` (accumulated validity of either band)
 
 Each item contributes a fractional amount in `[0, 1]` to those accumulators.
+These are the exact keys exposed on the `DerivationContext` passed to the
+derived-layer functions (see `gfm/layers.py` and `gfm/derived.py`).
 
 ## Stage 5 - Classification (classified mode only)
 
@@ -211,19 +213,19 @@ _counts_ rather than raw codes. Browse them with `atlantis list-layers --source 
 or in the canonical [GFM derived layer reference](../layers.md#layers-gfm-derived).
 
 $$
-\mathrm{water\_fraction} = \frac{\text{water\_count}}{\text{valid\_count}}
+\mathrm{water\_fraction} = \frac{\text{ensemble\_water\_extent\_count}}{\text{valid\_count}}
 $$
 
 with `NaN` where `valid_count == 0`.
 
 $$
-\text{flood\_fraction} = \frac{\text{flood\_count}}{\text{valid\_count}}
+\text{flood\_fraction} = \frac{\text{ensemble\_flood\_extent\_count}}{\text{valid\_count}}
 $$
 
 with `NaN` where `valid_count == 0`.
 
 $$
-\mathrm{reference\_water} = \text{reference\_water\_codes}
+\mathrm{reference\_water} = \text{reference\_water\_mask\_codes}
 $$
 
 `exclusion_mask`, `advisory_flags`, and `ensemble_likelihood` are preserved as
