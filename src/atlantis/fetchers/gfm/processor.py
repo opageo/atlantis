@@ -6,8 +6,8 @@ from the reference ``extract_gfm.py`` script.
 GFM encoding (verified against EODC STAC COGs):
     ``ensemble_flood_extent``: 0 = dry / observed-not-flooded, 1 = flood,
     255 = nodata.
-    ``reference_water_mask``: 0 = land, 1 = water (seasonal/observed),
-    2 = permanent water, 255 = nodata.
+    ``reference_water_mask`` (GFM PDD Table 20): 0 = no water, 1 = permanent
+    water, 2 = seasonal water, 255 = nodata.
 """
 
 from __future__ import annotations
@@ -127,8 +127,8 @@ class GfmProcessedTile:
         ensemble_flood_extent: Uint8 array of raw codes (0=dry,1=flood,255=nodata),
             max-pooled across items for the date group and reprojected to the
             ~80 m processed grid with nearest-neighbour resampling.
-        reference_water_mask: Uint8 array of raw codes (0=land,1=water,2=perm,255=nodata),
-            same treatment.
+        reference_water_mask: Uint8 array of raw codes (0=no water, 1=permanent,
+            2=seasonal, 255=nodata; GFM PDD Table 20), same treatment.
 
     Common fields:
         transform: Affine transform for the output grid.

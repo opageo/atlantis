@@ -30,10 +30,15 @@ GFM_NODATA: int = 255
 # ensemble_flood_extent codes
 GFM_DRY: int = 0
 GFM_FLOOD: int = 1
-# reference_water_mask codes
-GFM_LAND: int = 0
+# ensemble_water_extent codes (0 = dry / not-water reuses GFM_DRY)
 GFM_WATER: int = 1
-GFM_PERMANENT_WATER: int = 2
+# reference_water_mask codes — GFM PDD Table 20, confirmed against the live COGs
+# and a month-stability test (code 1 is byte-identical across the monthly masks →
+# permanent; code 2 varies by month → seasonal). NB: this module previously set
+# GFM_PERMANENT_WATER = 2, which was backwards.
+GFM_LAND: int = 0
+GFM_PERMANENT_WATER: int = 1
+GFM_SEASONAL_WATER: int = 2
 
 #: Native bands loaded from each GFM STAC item.
 GFM_BANDS: list[str] = [
@@ -90,13 +95,14 @@ registry.add_native(
         dtype="uint8",
         nodata=GFM_NODATA,
         description=(
-            "Reference water mask, passed through untouched. Atlantis follows the EODC "
-            "COG encoding (2 = permanent), which diverges from the public PDD Table 20."
+            "Reference water mask, passed through untouched. Codes follow GFM PDD "
+            "Table 20: 0 = no water, 1 = permanent water, 2 = seasonal water. The "
+            "seasonal class (2) is the GFM analog of MODIS recurring_flood."
         ),
         codes={
-            GFM_LAND: "land",
-            GFM_WATER: "water (seasonal / observed)",
+            GFM_LAND: "no water",
             GFM_PERMANENT_WATER: "permanent water",
+            GFM_SEASONAL_WATER: "seasonal water",
             GFM_NODATA: "nodata",
         },
         resampling="nearest",
