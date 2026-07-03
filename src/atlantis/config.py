@@ -227,7 +227,9 @@ class VizConfig(BaseSettings):
         cmap: Default colormap name.
         host: Bind address for the local Panel server.
         port: Port for the local Panel server.
-        basemap: Overlay a web-tile basemap (requires ``geoviews``).
+        basemap: Overlay coastlines & country borders (vector features drawn on
+            top of the data; requires ``geoviews``/``cartopy``).
+        tiles: Add an OSM web-tile basemap under the data (requires ``geoviews``).
         rasterize: Server-side rasterise via datashader (recommended for large
             windows; requires ``datashader``).
         frame_width: Plot frame width in pixels.
@@ -245,6 +247,7 @@ class VizConfig(BaseSettings):
     host: str = "localhost"
     port: int = 5006
     basemap: bool = False
+    tiles: bool = False
     rasterize: bool = True
     frame_width: int = 700
 

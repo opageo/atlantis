@@ -51,3 +51,31 @@ def test_missing_variable_raises():
 
     with pytest.raises(KeyError):
         build_cube_dashboard(ds=_ds(2), var="not_a_var", rasterize=False)
+
+
+_no_geoviews = pytest.mark.skipif(
+    importlib.util.find_spec("geoviews") is None,
+    reason="geoviews not installed (atlantis[viz])",
+)
+
+
+@_no_geoviews
+def test_basemap_overlays_coastline_and_borders():
+    from atlantis.viz import build_cube_dashboard
+
+    # Single time step → an Overlay whose top layers are the vector features.
+    obj = build_cube_dashboard(ds=_ds(1).isel(time=0), source="viirs", rasterize=False, basemap=True)
+    layers = [k[0] for k in obj.keys()]
+    assert "Coastline" in layers
+    assert "Borders" in layers
+
+
+@_no_geoviews
+def test_tiles_adds_web_basemap_under_data():
+    from atlantis.viz import build_cube_dashboard
+
+    obj = build_cube_dashboard(ds=_ds(1).isel(time=0), source="viirs", rasterize=False, tiles=True)
+    layers = [k[0] for k in obj.keys()]
+    # WMTS tiles sit under the data; without basemap there are no vector features.
+    assert "WMTS" in layers
+    assert "Coastline" not in layers

@@ -79,18 +79,33 @@ def build_cube_dashboard(
     start: date | str | None = None,
     end: date | str | None = None,
     basemap: bool = False,
+    tiles: bool = False,
     cmap: str = "Blues",
     rasterize: bool = True,
     frame_width: int = 700,
     storage_options: dict[str, Any] | None = None,
     archive_config: ArchiveConfig | None = None,
 ):
-    """Build an interactive hvplot image of a datacube variable (with time slider).
+    """Build a HoloViz dashboard for the datacube.
 
-    Pass an in-memory ``ds`` *or* a ``source`` (read from the archive / STAC).
-
-    Returns:
-        A HoloViews object (``DynamicMap``/``Image``) suitable for ``panel.panel``.
+    :param str | None source: _description_, defaults to None
+    :param xr.Dataset | None ds: _description_, defaults to None
+    :param str | None archive_root: _description_, defaults to None
+    :param str | None stac: _description_, defaults to None
+    :param str var: _description_, defaults to "flood_fraction"
+    :param tuple[float, float, float, float] | None bbox: _description_, defaults to None
+    :param date | str | None start: _description_, defaults to None
+    :param date | str | None end: _description_, defaults to None
+    :param bool basemap: _description_, defaults to False
+    :param bool tiles: _description_, defaults to False
+    :param str cmap: _description_, defaults to "Blues"
+    :param bool rasterize: _description_, defaults to True
+    :param int frame_width: _description_, defaults to 700
+    :param dict[str, Any] | None storage_options: _description_, defaults to None
+    :param ArchiveConfig | None archive_config: _description_, defaults to None
+    :raises ValueError: _description_
+    :raises KeyError: _description_
+    :return _type_: _description_
     """
     import hvplot.xarray  # noqa: F401 - registers the `.hvplot` accessor
 
@@ -130,12 +145,19 @@ def build_cube_dashboard(
             opts["rasterize"] = True
         else:
             logger.warning("datashader not installed — rendering without server-side rasterisation.")
-    if basemap:
+    if basemap or tiles:
         if _has("geoviews"):
+            # geo=True projects the EPSG:4326 grid. Coastlines & borders are drawn
+            # as vector overlays *on top* of the (opaque) data so they remain
+            # visible — a web-tile basemap alone sits underneath and is hidden.
             opts["geo"] = True
-            opts["tiles"] = "OSM"
+            if basemap:
+                opts["coastline"] = "50m"
+                opts["features"] = ["borders"]
+            if tiles:
+                opts["tiles"] = "OSM"
         else:
-            logger.warning("geoviews not installed — skipping basemap overlay.")
+            logger.warning("geoviews/cartopy not installed — skipping map overlay.")
 
     return da.hvplot.image(**opts)
 
