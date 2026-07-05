@@ -254,6 +254,54 @@ depends-on = [
 ]
 
 # ============================================================================
+# VIIRS examples — raw (no flood classification)
+# ============================================================================
+
+[tasks.example-harvey-viirs-raw]
+cmd = """atlantis --verbose fetch \
+  --event Harvey_2017 --source viirs \
+  --bbox "-97.27 28.24 -95.54 29.80" \
+  --start-date 2017-08-28 --end-date 2017-08-31 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Harvey_2017"""
+
+[tasks.example-bihar-viirs-raw]
+cmd = """atlantis --verbose fetch \
+  --event Bihar_2019 --source viirs \
+  --bbox "84.84 24.92 86.49 26.16" \
+  --start-date 2019-09-16 --end-date 2019-09-20 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Bihar_2019"""
+
+[tasks.example-vamco-viirs-raw]
+cmd = """atlantis --verbose fetch \
+  --event Vamco_2020 --source viirs \
+  --bbox "121.14 16.72 122.25 18.45" \
+  --start-date 2020-11-12 --end-date 2020-11-14 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Vamco_2020"""
+
+[tasks.example-westafrica-viirs-raw]
+cmd = """atlantis --verbose fetch \
+  --event WestAfrica_2020 --source viirs \
+  --bbox "-0.86 8.26 1.99 11.73" \
+  --start-date 2020-10-13 --end-date 2020-10-15 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/WestAfrica_2020"""
+
+[tasks.examples-viirs-raw]
+depends-on = [
+  "example-harvey-viirs-raw",
+  "example-bihar-viirs-raw",
+  "example-vamco-viirs-raw",
+  "example-westafrica-viirs-raw",
+]
+
+# ============================================================================
 # MODIS examples (require EARTHDATA_TOKEN + LAADS pre-auth)
 # ============================================================================
 
@@ -303,6 +351,58 @@ depends-on = [
   "example-bihar-modis",
   "example-vamco-modis",
   "example-westafrica-modis",
+]
+
+# ============================================================================
+# MODIS examples — raw (no flood classification)
+# ============================================================================
+
+[tasks.example-harvey-modis-raw]
+cmd = """atlantis --verbose fetch \
+  --event Harvey_2017 --source modis \
+  --bbox "-97.27 28.24 -95.54 29.80" \
+  --start-date 2017-08-28 --end-date 2017-08-31 \
+  --modis-backend laads_hdf4 --modis-composite F2 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Harvey_2017"""
+
+[tasks.example-bihar-modis-raw]
+cmd = """atlantis --verbose fetch \
+  --event Bihar_2019 --source modis \
+  --bbox "84.84 24.92 86.49 26.16" \
+  --start-date 2019-09-16 --end-date 2019-09-20 \
+  --modis-backend laads_hdf4 --modis-composite F2 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Bihar_2019"""
+
+[tasks.example-vamco-modis-raw]
+cmd = """atlantis --verbose fetch \
+  --event Vamco_2020 --source modis \
+  --bbox "121.14 16.72 122.25 18.45" \
+  --start-date 2020-11-12 --end-date 2020-11-14 \
+  --modis-backend laads_hdf4 --modis-composite F2 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Vamco_2020"""
+
+[tasks.example-westafrica-modis-raw]
+cmd = """atlantis --verbose fetch \
+  --event WestAfrica_2020 --source modis \
+  --bbox "-0.86 8.26 1.99 11.73" \
+  --start-date 2020-10-13 --end-date 2020-10-15 \
+  --modis-backend laads_hdf4 --modis-composite F2 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/WestAfrica_2020"""
+
+[tasks.examples-modis-raw]
+depends-on = [
+  "example-harvey-modis-raw",
+  "example-bihar-modis-raw",
+  "example-vamco-modis-raw",
+  "example-westafrica-modis-raw",
 ]
 
 # ============================================================================
@@ -364,8 +464,69 @@ depends-on = [
 ]
 
 # ============================================================================
+# GFM examples — raw (no flood classification)
+# ============================================================================
+
+[tasks.example-harvey-gfm-raw]
+cmd = """atlantis --verbose fetch \
+  --event Harvey_2017 --source gfm \
+  --bbox "-97.27 28.24 -95.54 29.80" \
+  --start-date 2017-08-28 --end-date 2017-08-31 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Harvey_2017"""
+
+[tasks.example-bihar-gfm-raw]
+cmd = """atlantis --verbose fetch \
+  --event Bihar_2019 --source gfm \
+  --bbox "84.84 24.92 86.49 26.16" \
+  --start-date 2019-09-16 --end-date 2019-09-20 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Bihar_2019"""
+
+[tasks.example-vamco-gfm-raw]
+cmd = """atlantis --verbose fetch \
+  --event Vamco_2020 --source gfm \
+  --bbox "121.14 16.72 122.25 18.45" \
+  --start-date 2020-11-12 --end-date 2020-11-14 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Vamco_2020"""
+
+[tasks.example-westafrica-gfm-raw]
+cmd = """atlantis --verbose fetch \
+  --event WestAfrica_2020 --source gfm \
+  --bbox "-0.86 8.26 1.99 11.73" \
+  --start-date 2020-10-13 --end-date 2020-10-15 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/WestAfrica_2020"""
+
+[tasks.example-valencia-gfm-raw]
+cmd = """atlantis --verbose fetch \
+  --event Valencia_2024 --source gfm \
+  --bbox "-1.5 38.8 0.5 40.0" \
+  --start-date 2024-10-29 --end-date 2024-11-04 \
+  --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
+  --no-classify --plot --harmonise --no-keep-processed \
+  --output ./data/Valencia_2024"""
+
+[tasks.examples-gfm-raw]
+depends-on = [
+  "example-harvey-gfm-raw",
+  "example-bihar-gfm-raw",
+  "example-vamco-gfm-raw",
+  "example-westafrica-gfm-raw",
+  "example-valencia-gfm-raw",
+]
+
+# ============================================================================
 # Run all examples
 # ============================================================================
 
 [tasks.examples]
 depends-on = ["examples-viirs", "examples-modis", "examples-gfm"]
+
+[tasks.examples-raw]
+depends-on = ["examples-viirs-raw", "examples-modis-raw", "examples-gfm-raw"]
