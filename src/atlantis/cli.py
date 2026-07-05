@@ -467,8 +467,8 @@ def _plot_source(
         raw = best_ds["raw"]
         if source_id != "modis":
             # Collapse the continuous flood range (101–200) onto the single
-            # representative code 160 so the categorical legend matches the render.
-            raw = raw.where((raw < 101) | (raw > 200), 160)
+            # representative code 100 so the categorical legend matches the render.
+            raw = raw.where((raw < 101) | (raw > 200), 100)
         plot_raw(
             raw,
             title=f"{event_id}: {pretty} raw composite {date_label} ({res})",
@@ -603,8 +603,8 @@ def _harmonise_source(
     raw = ds_harm["raw"]
     if source_id != "modis":
         # Collapse the continuous flood range (101–200) onto the single
-        # representative code 160 so the categorical legend matches the render.
-        raw = raw.where((raw < 101) | (raw > 200), 160)
+        # representative code 100 so the categorical legend matches the render.
+        raw = raw.where((raw < 101) | (raw > 200), 100)
     plot_raw(
         raw,
         title=f"{event_id}: {pretty} harmonised raw composite {date_label} (1 arcmin)",

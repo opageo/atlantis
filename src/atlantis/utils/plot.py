@@ -30,12 +30,12 @@ if TYPE_CHECKING:
 VIIRS_RAW_CODES: dict[int, tuple[str, str]] = {
     0: ("Clip / mosaic fill", "#000000"),
     1: ("Fill / No data", "#000000"),
-    15: ("Floodwater (unquantified, no fraction)", "#9467bd"),
+    15: ("Floodwater (unquantified, no fraction)", "#ffeb3b"),
     17: ("Vegetation", "#2ca02c"),
     20: ("Snow / ice", "#17becf"),
     30: ("Cloud", "#cccccc"),
     99: ("Permanent water", "#1f77b4"),
-    160: ("Flood (codes 101–200, ≥60% frac)", "#FF0000"),
+    100: ("Flood (codes above 100)", "#FF0000"),
 }
 
 # GFM native ensemble_flood_extent band codes
