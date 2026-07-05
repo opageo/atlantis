@@ -706,6 +706,8 @@ class TestSelectBestResult:
         ds_map = {r1.files[0]: ds1, r2.files[0]: ds2, r3.files[0]: ds3}
 
         class _Fetcher:
+            source_id = "viirs"
+
             def to_dataset(self, result):
                 return ds_map[result.files[0]]
 
