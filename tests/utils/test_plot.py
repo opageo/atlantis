@@ -85,7 +85,7 @@ class TestLegendPatches:
 
 class TestViirsCodes:
     def test_expected_codes_present(self):
-        expected_codes = {0, 1, 17, 20, 30, 99, 160}
+        expected_codes = {0, 1, 15, 17, 20, 30, 99, 160}
         assert set(VIIRS_RAW_CODES.keys()) == expected_codes
 
     def test_code_values_are_tuples(self):

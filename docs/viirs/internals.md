@@ -194,6 +194,19 @@ source-specific distinctions worth remembering here are:
 - `cloud_mask`, `snow_ice`, and `shadow` remain simple code-specific uint8
   masks.
 
+> **`reference_water` `0` is "not reference water", not "missing".** The
+> derivation (`viirs/derived.py`) initialises every pixel to `0` and only sets
+> code-99 pixels to `1`; it does **not** consult `exclusion_mask`. Consequently
+> a fill/cloud pixel (codes `0`, `1`, `30`) is also written as `0`, making it
+> **indistinguishable from genuinely-observed dry land** in `reference_water`
+> alone. The GeoTIFF `nodata=0` tag is a shared rendering convention for all
+> binary derived masks (so the background renders transparent), **not** a
+> data-availability flag. On a single date — or with the `peak` strategy — you
+> must pair `reference_water` with `exclusion_mask` (`1` = fill/cloud) to tell
+> "observed non-water" from "couldn't observe." In `aggregate` mode this is
+> partly mitigated: `reference_water` is reduced by `majority` over non-excluded
+> dates only (see [pipeline.md](pipeline.md#aggregate--temporal-composite-mean--mode)).
+
 The authoritative legend lives in the band tag `WaterDetection#TypeDescription`
 inside each NOAA GeoTIFF (verified against a fetched raw tile). Per that tag, code `99 = NormalWater` is the reference-water
 class and is the basis of `reference_water`; code `20 = Snow_ice` (now surfaced as `snow_ice`),

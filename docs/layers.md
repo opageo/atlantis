@@ -105,3 +105,50 @@ Layers Atlantis computes from native inputs (not downloaded).
 | `cloud_mask` | uint8 | 0 | `raw` | mode | mode | Cloud mask (code 30): 1 where the pixel is cloud-covered. |
 | `snow_ice` | uint8 | 0 | `raw` | mode | mode | Snow/ice mask (NOAA code 20). |
 | `shadow` | uint8 | 0 | `raw` | mode | mode | Terrain/cloud shadow mask (code 50) — flags low-confidence observations. |
+
+<a id="layers-cross-source"></a>
+## Cross-source gotchas
+
+The per-source sections above describe each source in isolation. The hazards below only matter when GFM, MODIS, and VIIRS outputs are stitched together (unioned, compared, or averaged in one pipeline).
+
+### `reference_water` differs in both schema and nodata
+
+- **GFM** `reference_water` is a carried-through **3-class** native band (`0` = no water, `1` = permanent, `2` = seasonal), `nodata=255`.
+- **MODIS** `reference_water` is a **binary** `0/1` mask (classes `1` and `2`), `nodata=0`.
+- **VIIRS** `reference_water` is a **binary** `0/1` mask (code `99`), `nodata=0`.
+
+Code that unions or compares `reference_water` masks across sources must handle `255` vs `0` explicitly **and** must not collapse GFM's permanent/seasonal split into a single bit.
+
+### `0` in `reference_water` means different things across sources
+
+The nodata/`0` encoding is not a shared data-availability convention:
+
+- **GFM** — `255` genuinely means "unobserved"; `0` means "observed, no water". The two are distinguishable from the raster alone.
+- **MODIS / VIIRS** — `nodata=0` is a shared **rendering convention** for all binary derived masks (background renders transparent), **not** a data-availability flag. A pixel that could not be observed (MODIS insufficient-data `255`; VIIRS fill/cloud codes `0`/`1`/`30`) is also written as `0` in `reference_water` — indistinguishable from genuinely-observed non-water. On a single date (or `peak` strategy) you must pair `reference_water` with `exclusion_mask` (`1` = fill/cloud/insufficient) to tell "observed non-water" from "couldn't observe". In `aggregate` mode this is partly mitigated because the masks are reduced over non-excluded dates only (VIIRS `majority`, MODIS `mode`).
+
+### `exclusion_mask` is a binary mask for MODIS/VIIRS but native codes for GFM
+
+- **MODIS / VIIRS** `exclusion_mask` is a clean **binary `0/1`** mask (`0` = usable, `1` = excluded), `nodata=0`.
+- **GFM** `exclusion_mask` is **native multi-valued GFM codes** (`nodata=255`), passed through untouched — not a binary `0/1` mask.
+
+Averaging or OR-ing `exclusion_mask` across sources yields garbage on the GFM side; convert GFM codes to a binary mask before combining.
+
+### Aggregation policies differ by source
+
+| Layer | gfm | modis | viirs |
+| --- | --- | --- | --- |
+| `exclusion_mask` | masked_max | mode | all_true |
+| `reference_water` | masked_max | mode | majority |
+| `flood_fraction` / `water_fraction` | nanmean | nanmean | nanmean |
+
+An aggregate pipeline that mixes sources applies different per-source logic to the masks. In particular VIIRS is conservative — a pixel is excluded only if **every** observation was fill/cloud, and `reference_water` requires a strict majority of usable observations — while MODIS reduces over all dates. See the per-source operator values in the table above.
+
+### `reference_water` semantics differ
+
+GFM and MODIS both carry a permanent-vs-seasonal split, but VIIRS does not:
+
+- **GFM** — permanent (`1`) and seasonal (`2`); the seasonal class is the GFM analog of MODIS `recurring_flood`.
+- **MODIS** — `recurring_flood` is a separate derived layer (class `2`); `reference_water` itself folds classes `1` and `2` together.
+- **VIIRS** — only a single "normal water" class (`99`); no permanent/seasonal split exists.
+
+Recurring/seasonal water is therefore only available from MODIS and GFM, not from VIIRS.

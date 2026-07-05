@@ -20,7 +20,7 @@ from Sentinel-1A and Sentinel-1B. Two key bands are provided per acquisition:
 | Asset                   | Meaning                                                                                |
 | ----------------------- | -------------------------------------------------------------------------------------- |
 | `ensemble_flood_extent` | Flood classification: 0 = dry, 1 = flood, 255 = nodata                                 |
-| `reference_water_mask`  | Water type: 0 = land, 1 = water (seasonal/observed), 2 = permanent water, 255 = nodata |
+| `reference_water_mask`  | Water type: 0 = no water, 1 = permanent water, 2 = seasonal water, 255 = nodata        |
 
 Native product resolution is **~20 m** in the STAC COGs. Atlantis coarsens to
 ~80 m (default `--gfm-coarsen-factor 4`) before reprojection to reduce SAR
@@ -40,7 +40,7 @@ inventory is maintained only in the canonical
 - **Native layers** are fetched untouched with `--no-classify`.
 - **Derived layers** are computed from observation counts with `--classify`.
 
-`flood_fraction` is therefore a **derived** layer — and, unlike VIIRS/MODIS, it is built from _observation counts_, not raw codes. Atlantis follows the EODC COG encoding `2 = permanent` for `reference_water_mask` (verified against a fetched source COG), which diverges from the public PDD Table 20.
+`flood_fraction` is therefore a **derived** layer — and, unlike VIIRS/MODIS, it is built from _observation counts_, not raw codes. The EODC COG encoding of `reference_water_mask` **follows GFM PDD Table 20**: `0 = no water`, `1 = permanent water`, `2 = seasonal water`, `255 = nodata`. This was confirmed against fetched source COGs via a month-stability test (code `1` is byte-identical across the monthly masks → permanent; code `2` varies by month → seasonal). An earlier assumption that the permanent/seasonal codes were swapped was a bug, now corrected in `atlantis.fetchers.gfm.layers`; the seasonal class (`2`) is the GFM analog of MODIS `recurring_flood`.
 
 ## How Atlantis processes GFM
 

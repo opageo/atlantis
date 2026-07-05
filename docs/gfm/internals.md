@@ -164,11 +164,11 @@ GFM uses discrete codes, so classification happens before reprojection. The
 processor builds three float32 masks at native resolution, then mean-pools them
 by the coarsen factor:
 
-| Mask    | Rule                            |
-| ------- | ------------------------------- |
-| `flood` | `ensemble_flood_extent == 1`    |
-| `water` | `ensemble_water_extent == 1`    |
-| `valid` | Either source band is not `255` |
+| Mask    | Rule                                                                              |
+| ------- | --------------------------------------------------------------------------------- |
+| `flood` | `ensemble_flood_extent == 1`                                                      |
+| `water` | `ensemble_water_extent == 1`                                                      |
+| `valid` | Any of the three core bands is not `255` (flood, water, or `reference_water_mask`) |
 
 Mean-pooling the 0/1 masks (rather than `max`-pooling the nominal codes) keeps
 discrete classes meaningful and avoids nodata dominating mixed blocks. After
@@ -197,7 +197,7 @@ The three count arrays are:
 
 - `ensemble_flood_extent_count` (accumulated from native `ensemble_flood_extent`)
 - `ensemble_water_extent_count` (accumulated from native `ensemble_water_extent`)
-- `valid_count` (accumulated validity of either band)
+- `valid_count` (accumulated validity of any of the three core bands: `ensemble_flood_extent`, `ensemble_water_extent`, `reference_water_mask`)
 
 Each item contributes a fractional amount in `[0, 1]` to those accumulators.
 These are the exact keys exposed on the `DerivationContext` passed to the

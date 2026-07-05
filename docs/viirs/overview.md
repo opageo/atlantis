@@ -15,6 +15,7 @@ The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the
 | Code    | Meaning                                           |
 | ------- | ------------------------------------------------- |
 | 1       | Fill / No data (nodata sentinel)                  |
+| 15      | Floodwater without fraction retrieval             |
 | 17      | Vegetation                                        |
 | 20      | Snow / ice                                        |
 | 30      | Cloud cover                                       |
@@ -22,7 +23,7 @@ The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the
 | 101–200 | **Flood water** — water fraction % = `code − 100` |
 | ≥160    | High-confidence flood (≥60% water fraction)       |
 
-> **Note:** The authoritative legend is embedded in each NOAA GeoTIFF as the band tag `WaterDetection#TypeDescription` (verified against a fetched raw tile). The table above mirrors that tag for the classes Atlantis decodes. Cloud (30), snow/ice (20), and shadow (50) are now surfaced as dedicated `cloud_mask`, `snow_ice`, and `shadow` derived layers; the remaining additional classes (16=Bareland, 27=River/lake ice, 38=mixed snow/ice/water) are present in the source data but currently pass through as `0` flood fraction with no dedicated layer. The source `_FillValue` is `1` (not `0`).
+> **Note:** The authoritative legend is embedded in each NOAA GeoTIFF as the band tag `WaterDetection#TypeDescription` (verified against a fetched raw tile). The table above mirrors that tag for the classes Atlantis decodes. Cloud (30), snow/ice (20), and shadow (50) are now surfaced as dedicated `cloud_mask`, `snow_ice`, and `shadow` derived layers; the remaining additional classes (16=Bareland, 27=River/lake ice, 38=mixed snow/ice/water) are present in the source data but currently pass through as `0` flood fraction with no dedicated layer. Code `15` ("Floodwater without fraction retrieval") is flagged as floodwater by NOAA but carries no sub-pixel water fraction; Atlantis therefore forces it to `1.0` in `water_fraction` while keeping it at `0.0` in `flood_fraction`, exactly as it does for NormalWater (`99`). The source `_FillValue` is `1` (not `0`).
 
 ### Native vs derived layers
 

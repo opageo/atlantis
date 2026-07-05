@@ -338,7 +338,7 @@ This mirrors the VIIRS (375 m) and MODIS (250 m) ladders: a source-resolution
 | --------------------------- | ----- | ------ | ---------------------------------------------------------- |
 | `*_water_fraction.tif`      | uint8 | 255    | 0–100 — % of obs water (`round(frac×100)`); 255 = no obs   |
 | `*_flood_fraction.tif`      | uint8 | 255    | 0–100 — % of obs flooded (`round(frac×100)`); 255 = no obs |
-| `*_reference_water.tif`     | uint8 | 255    | 0 = land, 1 = water, 2 = permanent water, 255 = nodata     |
+| `*_reference_water.tif`     | uint8 | 255    | 0 = no water, 1 = permanent water, 2 = seasonal water, 255 = nodata |
 | `*_exclusion_mask.tif`      | uint8 | 255    | Native GFM exclusion-mask codes                            |
 | `*_advisory_flags.tif`      | uint8 | 255    | Native advisory bitmask                                    |
 | `*_ensemble_likelihood.tif` | uint8 | 255    | Native ensemble likelihood values (0–100)                  |
@@ -349,7 +349,7 @@ This mirrors the VIIRS (375 m) and MODIS (250 m) ladders: a source-resolution
 | ----------------------------- | ----- | ------ | ------------------------------------------------------ |
 | `*_ensemble_flood_extent.tif` | uint8 | 255    | 0 = dry, 1 = flood, 255 = nodata                       |
 | `*_ensemble_water_extent.tif` | uint8 | 255    | 0 = dry, 1 = water, 255 = nodata                       |
-| `*_reference_water_mask.tif`  | uint8 | 255    | 0 = land, 1 = water, 2 = permanent water, 255 = nodata |
+| `*_reference_water_mask.tif`  | uint8 | 255    | 0 = no water, 1 = permanent water, 2 = seasonal water, 255 = nodata |
 | `*_exclusion_mask.tif`        | uint8 | 255    | Native GFM exclusion-mask codes                        |
 | `*_advisory_flags.tif`        | uint8 | 255    | Native advisory bitmask                                |
 | `*_ensemble_likelihood.tif`   | uint8 | 255    | Native ensemble likelihood values (0–100)              |
