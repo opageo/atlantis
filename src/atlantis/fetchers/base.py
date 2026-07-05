@@ -114,7 +114,7 @@ class AbstractFloodFetcher(ABC):
         """Convert fetch result to xarray Dataset with standard variable names.
 
         Standard variables:
-            - flood_extent: float32, values 0-1
+            - flood_fraction: float32, values 0-1
             - exclusion_mask: uint8, 1=excluded/invalid, 0=usable
             - reference_water: uint8, reference/permanent water layer
 

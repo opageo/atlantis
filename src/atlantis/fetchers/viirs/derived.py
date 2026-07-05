@@ -88,7 +88,7 @@ def flood_fraction(ctx: DerivationContext) -> np.ndarray:
         "Pre-existing water classes count as usable observations."
     ),
     resampling="mode",
-    aggregation="mode",
+    aggregation="all_true",
 )
 def exclusion_mask(ctx: DerivationContext) -> np.ndarray:
     """Mark fill and cloud pixels excluded (1); everything else usable (0)."""
@@ -102,7 +102,7 @@ def exclusion_mask(ctx: DerivationContext) -> np.ndarray:
     nodata=0,
     description="Reference-water mask for NOAA NormalWater (code 99).",
     resampling="mode",
-    aggregation="mode",
+    aggregation="majority",
 )
 def reference_water(ctx: DerivationContext) -> np.ndarray:
     """Mark VIIRS reference-water pixels (code 99)."""

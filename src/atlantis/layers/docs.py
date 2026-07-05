@@ -52,9 +52,26 @@ def _anchor(anchor_id: str) -> str:
     return f'<a id="{anchor_id}"></a>'
 
 
+#: Optional native→derived recipe blurbs rendered under each source heading.
+SOURCE_RECIPES: dict[str, str] = {
+    "gfm": (
+        "GFM native extent bands are converted to derived fractions through the "
+        "following recipe: build 0/1 masks at native resolution from the extent "
+        "bands, mean-pool by the coarsen factor, average-reproject to the ~80 m "
+        "processed grid, then accumulate per-class counts across the date group. "
+        "`water_fraction` / `flood_fraction` are the class count divided by "
+        "`valid_count` (NaN where unobserved); `reference_water` is the "
+        "masked-max of native reference-water codes."
+    ),
+}
+
+
 def render_source_markdown(registry: LayerRegistry) -> str:
     """Render one source's native and derived layer tables as Markdown."""
     lines = [_anchor(f"layers-{registry.source_id}"), f"## {registry.source_id}", ""]
+    recipe = SOURCE_RECIPES.get(registry.source_id)
+    if recipe:
+        lines.extend([f"> {recipe}", ""])
     lines.append(_anchor(f"layers-{registry.source_id}-native"))
     lines.append(f"### Native layers ({registry.source_id})")
     lines.append("")

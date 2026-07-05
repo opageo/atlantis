@@ -222,29 +222,41 @@ The output filename carries only the single winning date token, e.g.
 
 ### `aggregate` — temporal composite
 
-All dates are stacked and reduced element-wise:
+All dates are stacked and reduced element-wise by
+[`atlantis.layers.aggregate_layer`](../../src/atlantis/layers/aggregation.py),
+using the operator declared for each layer in the
+[GFM layer registry](../layers.md#layers-gfm):
 
 **Classified mode:**
 
-| Layer                 | Reduction                              | Rationale                                 |
-| :-------------------- | :------------------------------------- | :---------------------------------------- |
-| `water_fraction`      | `np.nanmean(stack, axis=0)`            | Continuous variable → arithmetic mean     |
-| `flood_fraction`      | `np.nanmean(stack, axis=0)`            | Continuous variable → arithmetic mean     |
-| `reference_water`     | masked-max of codes                    | Highest valid shared code wins            |
-| `exclusion_mask`      | masked-max of codes                    | Preserve strongest valid exclusion code   |
-| `ensemble_likelihood` | masked-max of codes                    | Preserve strongest valid likelihood code  |
-| `advisory_flags`      | bitwise OR across valid observations   | Preserve all advisory bits seen over time |
-| `cloud_fraction`      | scalar `1 − valid_pixels/total_pixels` | Tile-level metadata                       |
+| Layer                 | Operator      | Rationale                                                                 |
+| :-------------------- | :------------ | :------------------------------------------------------------------------ |
+| `water_fraction`      | `nanmean`     | Continuous variable → arithmetic mean; NaN dates skipped per-pixel        |
+| `flood_fraction`      | `nanmean`     | Continuous variable → arithmetic mean; NaN dates skipped per-pixel        |
+| `reference_water`     | `masked_max`  | Highest valid shared code wins; nodata=255 never dominates a mixed pixel  |
+| `exclusion_mask`      | `masked_max`  | Preserve strongest valid exclusion code; nodata ignored                   |
+| `ensemble_likelihood` | `masked_max`  | Preserve strongest valid likelihood code; nodata ignored                  |
+| `advisory_flags`      | `masked_or`   | Bitwise OR across valid observations; preserves every advisory bit seen   |
+| `cloud_fraction`      | scalar        | Tile-level metadata (`1 − valid_pixels/total_pixels`)                     |
 
 `nanmean` means pixels that were unobserved (NaN) on some dates are averaged
 over the dates that _did_ observe them — no bias toward missing data.
 
 **Native / raw mode:**
 
-| Layer                   | Reduction           | Rationale                             |
-| :---------------------- | :------------------ | :------------------------------------ |
-| `ensemble_flood_extent` | masked-max of codes | Valid code always beats nodata (255)  |
-| `reference_water_mask`  | masked-max of codes | Highest valid class wins across dates |
+| Layer                   | Operator     | Rationale                                                            |
+| :---------------------- | :----------- | :------------------------------------------------------------------- |
+| `ensemble_flood_extent` | `masked_max` | Valid code always beats nodata (255); highest valid class wins       |
+| `ensemble_water_extent` | `masked_max` | Valid code always beats nodata (255); highest valid class wins       |
+| `reference_water_mask`  | `masked_max` | Highest valid class wins across dates; nodata never dominates        |
+| `exclusion_mask`        | `masked_max` | Preserve strongest valid exclusion code                              |
+| `ensemble_likelihood`   | `masked_max` | Preserve strongest valid likelihood code                             |
+| `advisory_flags`        | `masked_or`  | Bitwise OR across valid observations; preserves every advisory bit   |
+
+> **Why `masked_max` / `masked_or` for GFM?** GFM uses `nodata=255` for unobserved
+> pixels. A plain numeric `max` would let 255 win every mixed block, so the
+> aggregation engine explicitly treats 255 as absent: a valid code always beats
+> nodata, and `advisory_flags` are combined with bitwise OR so no flag is lost.
 
 The output `date_token` spans the full range:
 `{first_date}_{last_date}`, e.g. `20241030_20241101`. For a single date the

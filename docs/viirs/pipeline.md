@@ -110,17 +110,25 @@ mosaic.
 Implemented in [`ViirsRasterProcessor.aggregate_tiles`](../../src/atlantis/fetchers/viirs/processor.py).
 
 All `N` dates are stacked into a `(N, H, W)` array per layer and reduced
-**element-wise**:
+**element-wise** by [`atlantis.layers.aggregate_layer`](../../src/atlantis/layers/aggregation.py),
+using the operator declared for each layer in the
+[VIIRS layer registry](../layers.md#layers-viirs):
 
-| Layer                                | Reduction                  | Rationale                                                    |
-| :----------------------------------- | :------------------------- | :----------------------------------------------------------- |
-| `water_fraction`                     | `np.nanmean(stack, 0)`     | Continuous variable → arithmetic mean                        |
-| `flood_fraction`                     | `np.nanmean(stack, 0)`     | Continuous variable → arithmetic mean                        |
-| `exclusion_mask`                     | `np.all(stack > 0, 0)`     | Excluded only if every observation was fill/cloud            |
-| `reference_water`                    | majority over usable dates | Ignore excluded dates when reducing the reference-water mask |
-| `cloud_mask` / `snow_ice` / `shadow` | mode (uint8) along axis 0  | Categorical 0/1 derived masks → most-frequent value          |
-| `raw`                                | mode (uint8) along axis 0  | Categorical VFM codes → most-frequent value                  |
-| `cloud_fraction`                     | scalar `np.mean`           | Per-tile metadata, not a pixel array                         |
+| Layer                                | Operator     | Rationale                                                    |
+| :----------------------------------- | :----------- | :----------------------------------------------------------- |
+| `water_fraction`                     | `nanmean`    | Continuous variable → arithmetic mean                        |
+| `flood_fraction`                     | `nanmean`    | Continuous variable → arithmetic mean                        |
+| `exclusion_mask`                     | `all_true`   | Excluded only if every observation was fill/cloud            |
+| `reference_water`                    | `majority`   | Ignore excluded dates when reducing the reference-water mask |
+| `cloud_mask` / `snow_ice` / `shadow` | `mode`       | Categorical 0/1 derived masks → most-frequent value          |
+| `raw`                                | `mode`       | Categorical VFM codes → most-frequent value                  |
+| `cloud_fraction`                     | scalar       | Per-tile metadata (`np.mean`), not a pixel array             |
+
+> **Why `all_true` / `majority` for VIIRS?** VIIRS is optical, so cloud and
+> fill gaps are common. `exclusion_mask` therefore uses a conservative rule: a
+> pixel is excluded only if **every** date in the stack was fill/cloud. Because
+> those excluded dates should not vote on `reference_water`, it is reduced by a
+> strict majority over usable (non-excluded) observations only.
 
 Important properties:
 

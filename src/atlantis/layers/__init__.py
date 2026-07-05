@@ -25,6 +25,10 @@ Typical use in a source's ``layers.py``::
 
 from __future__ import annotations
 
+from atlantis.layers.aggregation import (
+    AggregationOp,
+    aggregate_layer,
+)
 from atlantis.layers.registry import (
     LayerRegistry,
     all_registries,
@@ -50,6 +54,7 @@ from atlantis.layers.spec import (
 
 __all__ = [
     "AggregationMethod",
+    "AggregationOp",
     "DeriveFn",
     "DerivationContext",
     "DerivedLayer",
@@ -58,6 +63,7 @@ __all__ = [
     "LayerRegistry",
     "NativeLayer",
     "ResamplingMethod",
+    "aggregate_layer",
     "all_registries",
     "available_sources",
     "find_layer",

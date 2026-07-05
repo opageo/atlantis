@@ -33,7 +33,7 @@ from atlantis.fetchers.viirs.layers import (  # noqa: F401 — re-exported for b
     SELECTED_BAND,
     registry,
 )
-from atlantis.layers import DerivationContext
+from atlantis.layers import DerivationContext, aggregate_layer
 from atlantis.models.metadata import TileMetadata
 
 if TYPE_CHECKING:
@@ -479,8 +479,11 @@ class ViirsRasterProcessor:
     def aggregate_tiles(tiles: list[ProcessedTile]) -> ProcessedTile:
         """Aggregate multiple ``ProcessedTile`` instances across time.
 
-        Uses mean for continuous variables (water_fraction, flood_fraction) and
-        source-aware rules for categorical variables.
+        Dispatches each layer to the shared :func:`~atlantis.layers.aggregate_layer`
+        engine using the per-layer aggregation declared in the VIIRS registry.
+        Fraction layers are nan-meaned; ``exclusion_mask`` requires every
+        observation to be excluded; ``reference_water`` takes a majority over
+        usable (non-excluded) observations only; categorical masks use mode.
 
         Args:
             tiles: Sequence of ``ProcessedTile`` instances sharing the same
@@ -500,68 +503,60 @@ class ViirsRasterProcessor:
 
         ref = tiles[0]
 
-        # ── water_fraction: mean across time ────────────────────────────
-        water_arrays = [t.water_fraction for t in tiles if t.water_fraction is not None]
-        water_fraction: np.ndarray | None = None
-        if water_arrays:
-            stack = np.stack(water_arrays, axis=0)
-            water_fraction = np.nanmean(stack, axis=0).astype(np.float32)
-
-        # ── flood_fraction: mean across time ────────────────────────────
-        flood_arrays = [t.flood_fraction for t in tiles if t.flood_fraction is not None]
-        flood_fraction: np.ndarray | None = None
-        if flood_arrays:
-            stack = np.stack(flood_arrays, axis=0)
-            flood_fraction = np.nanmean(stack, axis=0).astype(np.float32)
-
-        # ── exclusion_mask: excluded only if every observation is excluded ─
-        exclusion_arrays = [t.exclusion_mask for t in tiles if t.exclusion_mask is not None]
-        exclusion_mask: np.ndarray | None = None
-        if exclusion_arrays:
-            stack = np.stack(exclusion_arrays, axis=0).astype(np.uint8)
-            exclusion_mask = np.all(stack > 0, axis=0).astype(np.uint8)
-
-        # ── reference_water: majority across usable observations only ────
-        rw_arrays = [t.reference_water for t in tiles if t.reference_water is not None]
-        reference_water: np.ndarray | None = None
-        if rw_arrays:
-            stack = np.stack(rw_arrays, axis=0).astype(np.uint8)
-            if exclusion_arrays and len(exclusion_arrays) == len(rw_arrays):
-                valid_stack = ~(np.stack(exclusion_arrays, axis=0).astype(bool))
-                valid_count = valid_stack.sum(axis=0)
-                rw_count = np.sum((stack > 0) & valid_stack, axis=0)
-                reference_water = np.where(valid_count > 0, (rw_count / valid_count) > 0.5, 0).astype(np.uint8)
-            else:
-                reference_water = _mode_uint8(stack)
-
-        # ── raw: mode across time ───────────────────────────────────────
-        raw_arrays = [t.raw for t in tiles if t.raw is not None]
-        raw: np.ndarray | None = None
-        if raw_arrays:
-            stack = np.stack(raw_arrays, axis=0).astype(np.uint8)
-            raw = _mode_uint8(stack)
-
-        # ── cloud_fraction: mean ────────────────────────────────────────
-        cloud_fraction = float(np.mean([t.cloud_fraction for t in tiles]))
-
-        # ── extra derived layers: per-pixel mode across time ────────────
-        extra_layers: dict[str, np.ndarray] = {}
+        # Collect per-layer stacks from core fields and extra_layers.
+        stacks: dict[str, list[np.ndarray | None]] = {
+            "raw": [t.raw for t in tiles],
+            "water_fraction": [t.water_fraction for t in tiles],
+            "flood_fraction": [t.flood_fraction for t in tiles],
+            "exclusion_mask": [t.exclusion_mask for t in tiles],
+            "reference_water": [t.reference_water for t in tiles],
+        }
         extra_names = {name for t in tiles for name in t.extra_layers}
         for name in extra_names:
-            arrays = [t.extra_layers[name] for t in tiles if name in t.extra_layers]
-            stack = np.stack(arrays, axis=0).astype(np.uint8)
-            extra_layers[name] = _mode_uint8(stack)
+            stacks[name] = [t.extra_layers.get(name) for t in tiles]
 
+        # Build a usable-observation mask for the majority operator. It is
+        # driven by the ``exclusion_mask`` stack when that layer is present.
+        exclusion_arrays = [a for a in stacks["exclusion_mask"] if a is not None]
+        valid_stack: np.ndarray | None = None
+        if exclusion_arrays:
+            valid_stack = ~(np.stack(exclusion_arrays, axis=0) > 0)
+
+        # Reduce every layer through the shared engine.
+        reduced: dict[str, np.ndarray | None] = {}
+        for name, arrays in stacks.items():
+            present = [a for a in arrays if a is not None]
+            if not present:
+                reduced[name] = None
+                continue
+            spec = registry.get(name)
+            op = spec.aggregation
+            # ``majority`` needs a valid_stack whose time axis matches the layer
+            # stack. Preserve the old fallback to mode when they do not align.
+            layer_valid_stack = None
+            if op == "majority":
+                if valid_stack is not None and valid_stack.shape[0] == len(present):
+                    layer_valid_stack = valid_stack
+                else:
+                    op = "mode"
+            reduced[name] = aggregate_layer(
+                np.stack(present, axis=0),
+                op,  # type: ignore[arg-type]
+                nodata=spec.nodata,
+                valid_stack=layer_valid_stack,
+            )
+
+        extra_layers = {name: reduced[name] for name in extra_names}
         return ProcessedTile(
-            raw=raw,
-            water_fraction=water_fraction,
-            flood_fraction=flood_fraction,
-            exclusion_mask=exclusion_mask,
-            reference_water=reference_water,
+            raw=reduced["raw"],
+            water_fraction=reduced["water_fraction"],
+            flood_fraction=reduced["flood_fraction"],
+            exclusion_mask=reduced["exclusion_mask"],
+            reference_water=reduced["reference_water"],
             extra_layers=extra_layers,
             transform=ref.transform,
             crs=ref.crs,
-            cloud_fraction=cloud_fraction,
+            cloud_fraction=float(np.mean([t.cloud_fraction for t in tiles])),
         )
 
 

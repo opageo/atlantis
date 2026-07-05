@@ -41,7 +41,7 @@ from atlantis.fetchers.gfm.layers import (  # noqa: F401 — re-exported for bac
     registry,
 )
 from atlantis.harmoniser.reprojector import Reprojector
-from atlantis.layers import DerivationContext
+from atlantis.layers import DerivationContext, aggregate_layer
 from atlantis.models.metadata import TileMetadata
 
 # ── GFM processing constants ─────────────────────────────────────────────────
@@ -881,9 +881,11 @@ class GfmRasterProcessor:
     def aggregate_tiles(tiles: list[GfmProcessedTile]) -> GfmProcessedTile | None:
         """Aggregate multiple date-group tiles into one (for aggregate strategy).
 
-        Classified mode: mean for water/flood fractions, masked-max for
-        reference-water codes, and source-aware rules for extra native bands.
-        Native mode: masked-max of raw codes across all dates.
+        Dispatches each layer to the shared :func:`~atlantis.layers.aggregate_layer`
+        engine using the per-layer aggregation declared in the GFM registry.
+        Classified mode averages fractions and reduces code bands with
+        masked-max / masked-or; native mode applies the same code-band reductions
+        to the raw bands.
         """
         if not tiles:
             return None
@@ -891,26 +893,64 @@ class GfmRasterProcessor:
             return tiles[0]
 
         ref = tiles[0]
+        is_native = ref.ensemble_flood_extent is not None
 
-        # ── Native / raw mode ─────────────────────────────────────────────────
-        if ref.ensemble_flood_extent is not None:
-            efe = ref.ensemble_flood_extent.copy()
-            rwm = ref.reference_water_mask.copy()
-            extra_layers = {name: array.copy() for name, array in ref.extra_layers.items()}
-            for t in tiles[1:]:
-                efe = _masked_max(efe, t.ensemble_flood_extent, GFM_NODATA)
-                rwm = _masked_max(rwm, t.reference_water_mask, GFM_NODATA)
-                for name, array in t.extra_layers.items():
-                    if name == "advisory_flags":
-                        extra_layers[name] = _masked_or(extra_layers[name], array, GFM_NODATA)
-                    else:
-                        extra_layers[name] = _masked_max(extra_layers[name], array, GFM_NODATA)
+        # Collect per-layer stacks from the appropriate tile fields.
+        stacks: dict[str, list[np.ndarray]] = {}
+        if is_native:
+            stacks["ensemble_flood_extent"] = [t.ensemble_flood_extent for t in tiles]
+            stacks["reference_water_mask"] = [t.reference_water_mask for t in tiles]
+        else:
+            stacks["water_fraction"] = [t.water_fraction for t in tiles]
+            stacks["flood_fraction"] = [t.flood_fraction for t in tiles]
+            stacks["reference_water"] = [t.reference_water for t in tiles]
+
+        extra_names = {name for t in tiles for name in t.extra_layers}
+        for name in extra_names:
+            stacks[name] = [t.extra_layers.get(name) for t in tiles]
+
+        # Build a usable-observation mask from the exclusion_mask stack when it
+        # is present. Only the ``majority`` operator consumes it.
+        valid_stack: np.ndarray | None = None
+        if "exclusion_mask" in stacks:
+            em_arrays = [a for a in stacks["exclusion_mask"] if a is not None]
+            if em_arrays:
+                em_stack = np.stack(em_arrays, axis=0)
+                valid_stack = ~(em_stack > 0)
+
+        # Reduce every layer through the shared engine, reading the operator and
+        # nodata sentinel from the registry.
+        reduced: dict[str, np.ndarray] = {}
+        for name, arrays in stacks.items():
+            present = [a for a in arrays if a is not None]
+            if not present:
+                continue
+            spec = registry.get(name)
+            op = spec.aggregation
+            # ``majority`` needs a valid_stack whose time axis matches the layer
+            # stack. Fall back to mode when they do not align.
+            layer_valid_stack = None
+            if op == "majority" and valid_stack is not None and valid_stack.shape[0] == len(present):
+                layer_valid_stack = valid_stack
+            elif op == "majority":
+                op = "mode"
+            reduced[name] = aggregate_layer(
+                np.stack(present, axis=0),
+                op,  # type: ignore[arg-type]
+                nodata=spec.nodata,
+                valid_stack=layer_valid_stack,
+            )
+
+        # Rebuild the source-specific tile type.
+        if is_native:
+            efe = reduced["ensemble_flood_extent"]
             total_pixels = efe.size
             valid_pixels = int(np.sum(efe != GFM_NODATA))
             cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0
+            extra_layers = {name: reduced[name] for name in extra_names}
             return GfmProcessedTile(
                 ensemble_flood_extent=efe,
-                reference_water_mask=rwm,
+                reference_water_mask=reduced["reference_water_mask"],
                 extra_layers=extra_layers,
                 transform=ref.transform,
                 crs=ref.crs,
@@ -918,34 +958,15 @@ class GfmRasterProcessor:
                 cloud_fraction=cloud_fraction,
             )
 
-        # ── Classified mode ────────────────────────────────────────────────────
-        wf_stack = np.stack([t.water_fraction for t in tiles], axis=0)
-        water_fraction = np.nanmean(wf_stack, axis=0).astype(np.float32)
-
-        # Stack flood fractions and compute mean (ignoring NaN)
-        ff_stack = np.stack([t.flood_fraction for t in tiles], axis=0)
-        flood_fraction = np.nanmean(ff_stack, axis=0).astype(np.float32)
-
-        reference_water = ref.reference_water.copy()
-        for t in tiles[1:]:
-            reference_water = _masked_max(reference_water, t.reference_water, GFM_NODATA)
-
-        extra_layers = {name: array.copy() for name, array in ref.extra_layers.items()}
-        for t in tiles[1:]:
-            for name, array in t.extra_layers.items():
-                if name == "advisory_flags":
-                    extra_layers[name] = _masked_or(extra_layers[name], array, GFM_NODATA)
-                else:
-                    extra_layers[name] = _masked_max(extra_layers[name], array, GFM_NODATA)
-
+        water_fraction = reduced["water_fraction"]
         total_pixels = water_fraction.size
         valid_pixels = int(np.sum(np.isfinite(water_fraction)))
         cloud_fraction = 1.0 - (valid_pixels / total_pixels) if total_pixels > 0 else 1.0
-
+        extra_layers = {name: reduced[name] for name in extra_names}
         return GfmProcessedTile(
             water_fraction=water_fraction,
-            flood_fraction=flood_fraction,
-            reference_water=reference_water,
+            flood_fraction=reduced["flood_fraction"],
+            reference_water=reduced["reference_water"],
             extra_layers=extra_layers,
             transform=ref.transform,
             crs=ref.crs,

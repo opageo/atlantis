@@ -41,7 +41,7 @@ from atlantis.fetchers.modis.layers import (  # noqa: F401 — re-exported for b
     UNUSUAL_FLOOD_CODE,
     registry,
 )
-from atlantis.layers import DerivationContext
+from atlantis.layers import DerivationContext, aggregate_layer
 from atlantis.models.metadata import TileMetadata
 
 if TYPE_CHECKING:
@@ -627,9 +627,10 @@ class ModisRasterProcessor:
     def aggregate_tiles(tiles: list[ProcessedTile]) -> ProcessedTile:
         """Aggregate ``ProcessedTile`` instances across time.
 
-        - ``water_fraction`` / ``flood_fraction``: nan-mean across the time axis.
-        - ``recurring_flood`` / ``reference_water`` / ``exclusion_mask`` / ``raw``: per-pixel mode.
-        - ``cloud_fraction``: arithmetic mean of per-tile values.
+        Dispatches each layer to the shared :func:`~atlantis.layers.aggregate_layer`
+        engine using the per-layer aggregation declared in the MODIS registry.
+        Fraction layers are nan-meaned; categorical masks are reduced by mode.
+        ``cloud_fraction`` remains a scalar mean of per-tile values.
         """
         if not tiles:
             raise ValueError("Cannot aggregate an empty list of tiles")
@@ -638,26 +639,34 @@ class ModisRasterProcessor:
 
         ref = tiles[0]
 
-        water_arrays = [t.water_fraction for t in tiles if t.water_fraction is not None]
-        water_fraction = np.nanmean(np.stack(water_arrays, axis=0), axis=0).astype(np.float32) if water_arrays else None
-
-        flood_arrays = [t.flood_fraction for t in tiles if t.flood_fraction is not None]
-        flood_fraction = np.nanmean(np.stack(flood_arrays, axis=0), axis=0).astype(np.float32) if flood_arrays else None
-
-        def _mode_layer(attr: str) -> np.ndarray | None:
-            arrays = [getattr(t, attr) for t in tiles if getattr(t, attr) is not None]
+        layer_names = [
+            "raw",
+            "water_fraction",
+            "flood_fraction",
+            "exclusion_mask",
+            "reference_water",
+            "recurring_flood",
+        ]
+        reduced: dict[str, np.ndarray | None] = {}
+        for name in layer_names:
+            arrays = [getattr(t, name) for t in tiles if getattr(t, name) is not None]
             if not arrays:
-                return None
-            stack = np.stack(arrays, axis=0).astype(np.uint8)
-            return _mode_uint8(stack)
+                reduced[name] = None
+                continue
+            spec = registry.get(name)
+            reduced[name] = aggregate_layer(
+                np.stack(arrays, axis=0),
+                spec.aggregation,  # type: ignore[arg-type]
+                nodata=spec.nodata,
+            )
 
         return ProcessedTile(
-            raw=_mode_layer("raw"),
-            water_fraction=water_fraction,
-            flood_fraction=flood_fraction,
-            exclusion_mask=_mode_layer("exclusion_mask"),
-            reference_water=_mode_layer("reference_water"),
-            recurring_flood=_mode_layer("recurring_flood"),
+            raw=reduced["raw"],
+            water_fraction=reduced["water_fraction"],
+            flood_fraction=reduced["flood_fraction"],
+            exclusion_mask=reduced["exclusion_mask"],
+            reference_water=reduced["reference_water"],
+            recurring_flood=reduced["recurring_flood"],
             transform=ref.transform,
             crs=ref.crs,
             cloud_fraction=float(np.mean([t.cloud_fraction for t in tiles])),

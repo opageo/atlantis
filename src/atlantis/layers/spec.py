@@ -31,10 +31,13 @@ if TYPE_CHECKING:
 ResamplingMethod = str  # one of: "average", "bilinear", "nearest", "cubic", "mode"
 
 #: Aggregation methods used when collapsing several observations (dates) of the
-#: same layer into one. ``nanmean`` averages fractions ignoring NaNs; ``mode``
-#: takes the per-pixel majority code; ``any`` ORs boolean masks; ``max`` keeps
-#: the largest valid code.
-AggregationMethod = str  # one of: "nanmean", "mean", "mode", "any", "max"
+#: same layer into one. The canonical set is defined by ``AggregationOp`` in
+#: :mod:`atlantis.layers.aggregation`; the alias stays a plain string for
+#: backward compatibility. Common values: ``nanmean`` averages fractions ignoring
+#: NaNs; ``mode`` takes the per-pixel majority code; ``masked_max`` / ``masked_or``
+#: treat a nodata sentinel as absent; ``all_true`` requires every observation to
+#: be truthy; ``majority`` counts usable observations only.
+AggregationMethod = str  # see atlantis.layers.aggregation.AggregationOp
 
 
 class LayerKind(str, Enum):

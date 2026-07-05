@@ -75,7 +75,7 @@ registry.add_native(
         description="Ensemble SAR flood extent, passed through untouched.",
         codes={GFM_DRY: "dry / observed-not-flooded", GFM_FLOOD: "flood", GFM_NODATA: "nodata"},
         resampling="nearest",
-        aggregation="max",
+        aggregation="masked_max",
     )
 )
 registry.add_native(
@@ -86,7 +86,7 @@ registry.add_native(
         description="Ensemble SAR water extent, passed through untouched.",
         codes={GFM_DRY: "dry / observed-not-water", GFM_WATER: "water", GFM_NODATA: "nodata"},
         resampling="nearest",
-        aggregation="max",
+        aggregation="masked_max",
     )
 )
 registry.add_native(
@@ -106,7 +106,7 @@ registry.add_native(
             GFM_NODATA: "nodata",
         },
         resampling="nearest",
-        aggregation="max",
+        aggregation="masked_max",
     )
 )
 registry.add_native(
@@ -116,7 +116,7 @@ registry.add_native(
         nodata=GFM_NODATA,
         description="Native GFM exclusion-mask codes, passed through untouched.",
         resampling="nearest",
-        aggregation="max",
+        aggregation="masked_max",
     )
 )
 registry.add_native(
@@ -126,7 +126,7 @@ registry.add_native(
         nodata=GFM_NODATA,
         description="Native GFM ensemble flood-likelihood values (0-100), passed through untouched.",
         resampling="average",
-        aggregation="max",
+        aggregation="masked_max",
     )
 )
 registry.add_native(
@@ -136,7 +136,7 @@ registry.add_native(
         nodata=GFM_NODATA,
         description="Native GFM advisory bitmask codes, passed through untouched.",
         resampling="nearest",
-        aggregation="max",
+        aggregation="masked_or",
     )
 )
 

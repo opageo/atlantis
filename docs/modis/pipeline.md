@@ -178,15 +178,24 @@ markedly in cloud cover.
 
 ### `aggregate` — nan-mean / mode
 
-| Layer             | Reduction         | Why                             |
-| ----------------- | ----------------- | ------------------------------- |
-| `water_fraction`  | `np.nanmean(...)` | Continuous → arithmetic mean    |
-| `flood_fraction`  | `np.nanmean(...)` | Continuous → arithmetic mean    |
-| `exclusion_mask`  | mode (uint8)      | Categorical 0/1 → most-frequent |
-| `reference_water` | mode              | Categorical                     |
-| `recurring_flood` | mode              | Categorical                     |
-| `raw`             | mode              | Categorical 0/1/2/3/255         |
-| `cloud_fraction`  | scalar `np.mean`  | Scalar metadata                 |
+All layers are reduced by [`atlantis.layers.aggregate_layer`](../../src/atlantis/layers/aggregation.py)
+using the operator declared for each layer in the
+[MODIS layer registry](../layers.md#layers-modis):
+
+| Layer             | Operator  | Why                                                                         |
+| ----------------- | --------- | --------------------------------------------------------------------------- |
+| `water_fraction`  | `nanmean` | Continuous → arithmetic mean; insufficient-data pixels (NaN) are skipped    |
+| `flood_fraction`  | `nanmean` | Continuous → arithmetic mean; insufficient-data pixels (NaN) are skipped    |
+| `exclusion_mask`  | `mode`    | Categorical 0/1 → most-frequent; ties resolve to the lowest value           |
+| `reference_water` | `mode`    | Categorical 0/1/2 mask → most-frequent                                      |
+| `recurring_flood` | `mode`    | Categorical 0/1/2 mask → most-frequent                                      |
+| `raw`             | `mode`    | Categorical 0/1/2/3/255 composite → most-frequent                           |
+| `cloud_fraction`  | scalar    | Scalar metadata (`np.mean` of per-tile values)                              |
+
+> **Why `mode` for MODIS masks?** MODIS derivations are categorical 0/1/2/3/255
+> masks. Mode preserves the most-frequent class per pixel and breaks ties by the
+> lowest value, which is the right behavior for nominal codes (unlike a numeric
+> max, which would rank classes by value and let `255` dominate).
 
 The aggregated tile inherits the transform/CRS from the first date —
 all dates share the same grid by construction.

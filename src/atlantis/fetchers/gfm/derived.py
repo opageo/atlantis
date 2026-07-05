@@ -86,7 +86,7 @@ def flood_fraction(ctx: DerivationContext) -> np.ndarray:
         "(masked-max across the date group) under the shared layer name."
     ),
     resampling="nearest",
-    aggregation="max",
+    aggregation="masked_max",
 )
 def reference_water(ctx: DerivationContext) -> np.ndarray:
     """Carry the native reference-water codes under the shared layer name."""

@@ -72,11 +72,11 @@ def test_reference_water_is_passed_through_under_shared_name() -> None:
     np.testing.assert_array_equal(out, reference)
 
 
-def test_native_bands_use_nearest_and_max() -> None:
+def test_native_bands_use_nearest_and_masked_max() -> None:
     registry = get_source_registry("gfm")
     efe = registry.get_native("ensemble_flood_extent")
     assert efe.resampling == "nearest"
-    assert efe.aggregation == "max"
+    assert efe.aggregation == "masked_max"
     assert efe.codes[1] == "flood"
     ewe = registry.get_native("ensemble_water_extent")
     assert ewe.codes[1] == "water"
