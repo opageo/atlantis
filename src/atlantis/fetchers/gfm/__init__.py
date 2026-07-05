@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from rasterio.enums import Resampling
 
+from atlantis.config import FetcherConfig
 from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResult
 from atlantis.fetchers.gfm.backend import DEFAULT_GFM_STAC_URL, GfmStacBackend
 from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
@@ -100,6 +101,7 @@ class GFMFetcher(AbstractFloodFetcher):
         peak_days_after: int = 0,
         max_observations: int = 0,
         peak_priority: str = "post",
+        max_retries: int | None = None,
     ) -> None:
         """Initialize the GFM fetcher.
 
@@ -125,6 +127,8 @@ class GFMFetcher(AbstractFloodFetcher):
             peak_priority: How to fill *max_observations* around the peak:
                 ``"post"`` (post-event first), ``"pre"`` (pre-event first),
                 or ``"balanced"`` (alternating ±1, ±2, …).
+            max_retries: Number of retries for transient GFM tile-read failures.
+                Defaults to ``FetcherConfig.max_retries`` (3).
         """
         self.api_url = api_url or DEFAULT_GFM_STAC_URL
         self.coarsen_factor = coarsen_factor
@@ -132,6 +136,7 @@ class GFMFetcher(AbstractFloodFetcher):
         self.classify = classify
         self.strategy = strategy
         self.keep_processed = keep_processed
+        self.max_retries = max_retries if max_retries is not None else FetcherConfig().max_retries
         self._backend = GfmStacBackend(api_url=self.api_url)
         self.last_diagnostics: GfmSearchDiagnostics | None = None
 
@@ -238,6 +243,7 @@ class GFMFetcher(AbstractFloodFetcher):
             coarsen_factor=self.coarsen_factor,
             resampling=self.resampling,
             classify=self.classify,
+            max_retries=self.max_retries,
         )
 
         date_results: list[tuple[str, GfmProcessedTile]] = []

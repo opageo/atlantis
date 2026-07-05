@@ -12,9 +12,11 @@ GFM encoding (verified against EODC STAC COGs):
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable, TypeVar
 
 import numpy as np
 import rasterio
@@ -43,6 +45,8 @@ from atlantis.fetchers.gfm.layers import (  # noqa: F401 — re-exported for bac
 from atlantis.harmoniser.reprojector import Reprojector
 from atlantis.layers import DerivationContext, aggregate_layer
 from atlantis.models.metadata import TileMetadata
+
+_T = TypeVar("_T")
 
 # ── GFM processing constants ─────────────────────────────────────────────────
 
@@ -204,6 +208,7 @@ class GfmRasterProcessor:
         resampling: Resampling = Resampling.average,
         reprojector: Reprojector | None = None,
         classify: bool = True,
+        max_retries: int = 3,
     ) -> None:
         """Initialize the GFM raster processor.
 
@@ -222,11 +227,14 @@ class GfmRasterProcessor:
                 reprojected with nearest-neighbour to the ~80 m processed grid.
                 The downstream ``--harmonise`` step resamples processed/ to the
                 canonical 1-arcmin grid (matching VIIRS/MODIS behaviour).
+            max_retries: Number of retries for transient tile-read failures
+                (HTTP errors, timeouts, etc.) before skipping an item.
         """
         self.bbox = bbox
         self.coarsen_factor = coarsen_factor
         self.resampling = resampling
         self.classify = classify
+        self.max_retries = max_retries
         # GFM processed/ is written at the coarsen-applied native resolution
         # (~80 m for coarsen_factor=4), expressed in degrees. The downstream
         # --harmonise step resamples this to the canonical 1-arcmin grid, so GFM
@@ -247,6 +255,100 @@ class GfmRasterProcessor:
         self._dst_width = max(1, int(round((se - sw) / res)))
         self._dst_height = max(1, int(round((sn - ss) / res)))
         self._dst_transform = from_bounds(sw, ss, se, sn, self._dst_width, self._dst_height)
+
+    @staticmethod
+    def _is_retryable_read_error(exc: Exception) -> bool:
+        """Return True when a raster read failure looks transient."""
+        msg = str(exc).lower()
+        # EODC's object storage can return 404/500 briefly during outages;
+        # treat any explicit HTTP response code as retryable.
+        if "http response code" in msg:
+            return True
+        if any(term in msg for term in ("timed out", "timeout", "connection", "reset", "refused")):
+            return True
+        return isinstance(exc, (rasterio.errors.RasterioIOError, OSError))
+
+    def _retry_read(
+        self,
+        operation: "Callable[[], _T]",
+        *,
+        item_id: str = "",
+        context: str = "tile read",
+    ) -> _T | None:
+        """Run a network-touching raster operation with bounded retries.
+
+        If the operation keeps failing after *max_retries* attempts, logs a
+        warning and returns ``None`` so the caller can skip the offending item.
+        """
+        max_attempts = max(1, self.max_retries + 1)
+        last_exc: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return operation()
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if not self._is_retryable_read_error(exc) or attempt >= max_attempts:
+                    logger.warning(
+                        "GFM {} failed for item {} after {}/{} attempt(s): {}",
+                        context,
+                        item_id,
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
+                    logger.info("Skipping GFM item {} due to unrecoverable tile-read failure", item_id)
+                    return None
+                delay = min(0.25 * (2 ** (attempt - 1)), 2.0)
+                logger.warning(
+                    "GFM {} retry {}/{} for item {} in {:.2f}s: {}",
+                    context,
+                    attempt + 1,
+                    max_attempts,
+                    item_id,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+        # Defensive fallback (unreachable, but keeps mypy happy).
+        logger.warning(
+            "GFM {} failed for item {} after {}/{} attempt(s): {}",
+            context,
+            item_id,
+            max_attempts,
+            max_attempts,
+            last_exc,
+        )
+        return None
+
+    def _load_item(
+        self,
+        item,
+        aoi,
+        crs_src,
+        resolution: float,
+    ) -> "xr.Dataset | None":
+        """Load one STAC item into memory, retrying transient read failures."""
+        import odc.stac
+
+        def _do_load() -> "xr.Dataset":
+            xx = odc.stac.load(
+                [item],
+                bbox=aoi.bounds,
+                crs=crs_src,
+                bands=GFM_BANDS,
+                resolution=resolution,
+                dtype="uint8",
+                groupby="solar_day",
+                chunks={},
+            )
+            # Force eager load so all HTTP reads happen here, inside the retry.
+            return xx.load()
+
+        return self._retry_read(
+            _do_load,
+            item_id=item.id,
+            context="tile load",
+        )
 
     def process_items(
         self,
@@ -303,7 +405,6 @@ class GfmRasterProcessor:
         write_outputs: bool = True,
     ) -> GfmProcessResult | None:
         """Classified processing path: coarsen → accumulate → derive products."""
-        import odc.stac
         import pyproj
         import rioxarray  # noqa: F401
         import xarray as xr
@@ -335,19 +436,8 @@ class GfmRasterProcessor:
         )
 
         for idx, item in enumerate(items):
-            try:
-                xx = odc.stac.load(
-                    [item],
-                    bbox=aoi.bounds,
-                    crs=crs_src,
-                    bands=GFM_BANDS,
-                    resolution=resolution,
-                    dtype="uint8",
-                    groupby="solar_day",
-                    chunks={},
-                )
-            except Exception as e:
-                logger.warning("Failed to load item {} ({}): {}", idx, item.id, e)
+            xx = self._load_item(item, aoi, crs_src, resolution)
+            if xx is None:
                 continue
 
             # Build per-class 0/1 masks at native resolution, then mean-pool to
@@ -490,7 +580,6 @@ class GfmRasterProcessor:
         write_outputs: bool = True,
     ) -> GfmProcessResult | None:
         """Native / raw processing path: NN-reproject codes and max-pool across items."""
-        import odc.stac
         import pyproj
         import rioxarray  # noqa: F401
         from shapely.geometry import box
@@ -513,19 +602,8 @@ class GfmRasterProcessor:
         )
 
         for idx, item in enumerate(items):
-            try:
-                xx = odc.stac.load(
-                    [item],
-                    bbox=aoi.bounds,
-                    crs=crs_src,
-                    bands=GFM_BANDS,
-                    resolution=resolution,
-                    dtype="uint8",
-                    groupby="solar_day",
-                    chunks={},
-                )
-            except Exception as e:
-                logger.warning("Failed to load item {} ({}): {}", idx, item.id, e)
+            xx = self._load_item(item, aoi, crs_src, resolution)
+            if xx is None:
                 continue
 
             # Reproject raw codes to the ~80 m processed grid with NN;

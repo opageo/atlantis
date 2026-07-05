@@ -482,3 +482,76 @@ class TestWriteOutputsNative:
         with rasterio.open(str(paths.ensemble_flood_extent)) as ds:
             assert ds.nodata == GFM_NODATA
             assert ds.dtypes[0] == "uint8"
+
+
+class TestGfmRetryRead:
+    """Test the transient-failure retry helpers."""
+
+    def test_is_retryable_read_error_detects_http(self):
+        """HTTP response code messages and rasterio IO errors are retryable."""
+        from rasterio.errors import RasterioIOError
+
+        proc = GfmRasterProcessor(bbox=(0, 0, 1, 1))
+        assert proc._is_retryable_read_error(RasterioIOError("HTTP response code: 404"))
+        assert proc._is_retryable_read_error(RasterioIOError("HTTP response code: 500"))
+        assert proc._is_retryable_read_error(RasterioIOError("Connection reset"))
+        assert not proc._is_retryable_read_error(ValueError("bad input"))
+
+    def test_retry_read_succeeds_first_attempt(self):
+        proc = GfmRasterProcessor(bbox=(0, 0, 1, 1))
+        result = proc._retry_read(lambda: "ok", item_id="item-1", context="test")
+        assert result == "ok"
+
+    def test_retry_read_retries_then_succeeds(self, monkeypatch):
+        proc = GfmRasterProcessor(bbox=(0, 0, 1, 1), max_retries=2)
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) < 2:
+                from rasterio.errors import RasterioIOError
+
+                raise RasterioIOError("HTTP response code: 503")
+            return "recovered"
+
+        monkeypatch.setattr("time.sleep", lambda _s: None)
+        result = proc._retry_read(flaky, item_id="item-1", context="test")
+        assert result == "recovered"
+        assert len(calls) == 2
+
+    def test_retry_read_returns_none_after_exhaustion(self, monkeypatch):
+        proc = GfmRasterProcessor(bbox=(0, 0, 1, 1), max_retries=1)
+        monkeypatch.setattr("time.sleep", lambda _s: None)
+
+        def always_fails():
+            from rasterio.errors import RasterioIOError
+
+            raise RasterioIOError("HTTP response code: 404")
+
+        result = proc._retry_read(always_fails, item_id="item-1", context="test")
+        assert result is None
+
+    def test_load_item_retries_then_skips(self, monkeypatch):
+        """A persistently failing odc.stac.load returns None so the item is skipped."""
+        import odc.stac
+        from rasterio.errors import RasterioIOError
+
+        proc = GfmRasterProcessor(bbox=(0, 0, 1, 1), max_retries=1)
+        monkeypatch.setattr("time.sleep", lambda _s: None)
+
+        class FakeItem:
+            id = "fake-item"
+
+        fake_aoi = type("Aoi", (), {"bounds": (0, 0, 1, 1)})()
+        fake_crs = type("Crs", (), {"__name__": "EPSG:4326"})()
+
+        calls = []
+
+        def fake_load(*_args, **_kwargs):
+            calls.append(1)
+            raise RasterioIOError("HTTP response code: 404")
+
+        monkeypatch.setattr(odc.stac, "load", fake_load)
+        result = proc._load_item(FakeItem(), fake_aoi, fake_crs, 20.0)
+        assert result is None
+        assert len(calls) == 2  # initial + 1 retry
