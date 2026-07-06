@@ -138,6 +138,17 @@ cartopy = ">=0.22"
 metview-python = "*"
 
 # ============================================================================
+# Feature: docs (MkDocs + Material for site generation)
+# ============================================================================
+
+[feature.docs.dependencies]
+python = ">=3.11,<3.15"
+
+[feature.docs.pypi-dependencies]
+mkdocs-material = ">=9.0"
+mkdocstrings = { version = ">=0.25", extras = ["python"] }
+
+# ============================================================================
 # Environments
 # ============================================================================
 
@@ -146,6 +157,7 @@ default = { features = ["dev"], solve-group = "default" }
 ml = { features = ["dev", "ml"], solve-group = "default" }
 notebooks = { features = ["dev", "ml", "notebooks"], solve-group = "default" }
 batch = { features = ["dev", "batch"], solve-group = "default" }
+docs = { features = ["docs"], solve-group = "default" }
 
 # ============================================================================
 # Tasks
@@ -153,6 +165,8 @@ batch = { features = ["dev", "batch"], solve-group = "default" }
 
 [tasks]
 setup = "python scripts/setup.py"
+docs = "mkdocs serve"
+docs-build = "mkdocs build --strict"
 demo = """atlantis --verbose fetch \
   --event Valencia_2024 --source viirs \
   --bbox "-1.5 38.8 0.5 40.0" \

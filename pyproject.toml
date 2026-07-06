@@ -78,6 +78,10 @@ dev = [
   "ripgrep>=15.1.0",
   "atlantis[batch]",
 ]
+docs = [
+  "mkdocs-material>=9.0",
+  "mkdocstrings[python]>=0.25",
+]
 
 [tool.uv]
 default-groups = ["dev"]
