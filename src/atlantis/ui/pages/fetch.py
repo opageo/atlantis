@@ -58,9 +58,7 @@ def _render_results(response: FetchResponse) -> None:
         return
 
     with ui.column().classes("gap-4 w-full mt-4"):
-        ui.label(
-            f"Results for {response.event_id} ({response.source_id})"
-        ).classes("text-lg font-bold")
+        ui.label(f"Results for {response.event_id} ({response.source_id})").classes("text-lg font-bold")
 
         if response.files:
             ui.label(f"{len(response.files)} file(s) written").classes("text-sm text-gray-600")
@@ -139,9 +137,7 @@ def _open_plot_dialog(response: FetchResponse) -> None:
     """Open a large dialog showing the full-resolution plot."""
     with ui.dialog() as dialog, ui.card().classes("w-[95vw] max-w-5xl"):
         with ui.row().classes("w-full items-center justify-between mb-2"):
-            ui.label(
-                f"{response.event_id} — {response.source_id}"
-            ).classes("text-lg font-bold")
+            ui.label(f"{response.event_id} — {response.source_id}").classes("text-lg font-bold")
             ui.button(icon="close", on_click=dialog.close).props("flat round dense")
 
         if response.plot_path and response.plot_path.exists():
@@ -264,9 +260,7 @@ def fetch_page() -> None:
                             with progress_bar_area:
                                 fetch_progress_bar(p)
                             if p.message:
-                                log_widget.log(
-                                    p.message, level="info" if p.stage != "error" else "error"
-                                )
+                                log_widget.log(p.message, level="info" if p.stage != "error" else "error")
                         except Exception:
                             pass
 
@@ -305,7 +299,6 @@ def _render_form(on_submit) -> None:
     s = app.storage.user
 
     with ui.column().classes("gap-4 p-3"):
-
         # ── Event pre-sets ─────────────────────────────────────────────────
         with ui.card().classes("w-full p-3"):
             ui.label("Quick Pre-sets").classes("text-sm font-semibold mb-2")
@@ -323,11 +316,15 @@ def _render_form(on_submit) -> None:
         # ── Event Configuration ────────────────────────────────────────────
         with ui.card().classes("w-full p-3"):
             ui.label("Event Configuration").classes("text-sm font-semibold mb-2")
-            event_input = ui.input(
-                label="Event ID",
-                value=str(s["event_id"]),
-                placeholder="e.g. Valencia_2024",
-            ).props("outlined dense").classes("w-full")
+            event_input = (
+                ui.input(
+                    label="Event ID",
+                    value=str(s["event_id"]),
+                    placeholder="e.g. Valencia_2024",
+                )
+                .props("outlined dense")
+                .classes("w-full")
+            )
             event_input.on(
                 "update:model-value",
                 lambda e: s.update({"event_id": e.args[0] if e.args else ""}),
@@ -412,10 +409,14 @@ def _render_form(on_submit) -> None:
                         gre.bind_value(s, "gfm_resampling")
 
         # ── Submit ─────────────────────────────────────────────────────────
-        fetch_btn = ui.button(
-            "Start Fetch",
-            icon="cloud_download",
-            on_click=on_submit,
-        ).classes("w-full").props("color=cyan")
+        fetch_btn = (
+            ui.button(
+                "Start Fetch",
+                icon="cloud_download",
+                on_click=on_submit,
+            )
+            .classes("w-full")
+            .props("color=cyan")
+        )
 
     return fetch_btn

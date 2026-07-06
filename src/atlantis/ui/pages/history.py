@@ -37,13 +37,9 @@ def _render_event_card(summary) -> None:
         with ui.row().classes("items-center justify-between w-full"):
             with ui.column().classes("gap-1"):
                 ui.label(summary.event_id).classes("text-lg font-bold")
-                ui.label(
-                    f"{', '.join(summary.sources)} · {summary.file_count} files"
-                ).classes("text-sm text-gray-500")
+                ui.label(f"{', '.join(summary.sources)} · {summary.file_count} files").classes("text-sm text-gray-500")
                 if summary.dates:
-                    ui.label(
-                        f"Dates: {summary.dates[0]} → {summary.dates[-1]}"
-                    ).classes("text-xs text-gray-400")
+                    ui.label(f"Dates: {summary.dates[0]} → {summary.dates[-1]}").classes("text-xs text-gray-400")
 
         with ui.expansion("View Files", icon="folder").classes("w-full mt-2"):
             file_tree_card(summary.root)

@@ -104,7 +104,6 @@ def diagnostic_card(diagnostics) -> None:
     with ui.card().classes("bg-amber-50 border border-amber-300 mt-4 p-4 w-full"):
         ui.label("No results found").classes("text-lg font-bold text-amber-800")
         with ui.column().classes("gap-2 mt-2"):
-
             miss = getattr(diagnostics, "missing_aoi_coverage", False)
             if miss:
                 ui.label(
@@ -123,9 +122,9 @@ def diagnostic_card(diagnostics) -> None:
 
             net = getattr(diagnostics, "network_unreachable", False)
             if net:
-                ui.label(
-                    f"Backend '{getattr(diagnostics, 'backend', '?')}' is unreachable. Check network."
-                ).classes("text-sm text-amber-700")
+                ui.label(f"Backend '{getattr(diagnostics, 'backend', '?')}' is unreachable. Check network.").classes(
+                    "text-sm text-amber-700"
+                )
                 last_err = getattr(diagnostics, "last_network_error", None)
                 if last_err:
                     ui.label(f"Last error: {last_err}").classes("text-xs text-amber-600")
@@ -138,21 +137,19 @@ def diagnostic_card(diagnostics) -> None:
 
             no_aoi = getattr(diagnostics, "no_aoi_match_in_listings", False)
             if no_aoi:
-                ui.label("Dates had listings but none contained tiles for AOI.").classes(
-                    "text-sm text-amber-700"
-                )
+                ui.label("Dates had listings but none contained tiles for AOI.").classes("text-sm text-amber-700")
 
             no_items = getattr(diagnostics, "no_items_found", False)
             if no_items:
-                ui.label(
-                    "STAC search returned no items for this bbox and date range. Try widening the dates."
-                ).classes("text-sm text-amber-700")
+                ui.label("STAC search returned no items for this bbox and date range. Try widening the dates.").classes(
+                    "text-sm text-amber-700"
+                )
 
             tm = getattr(diagnostics, "auth_token_missing", False)
             if tm:
-                ui.label(
-                    "EARTHDATA_TOKEN not set. Register at https://urs.earthdata.nasa.gov/"
-                ).classes("text-sm text-amber-700")
+                ui.label("EARTHDATA_TOKEN not set. Register at https://urs.earthdata.nasa.gov/").classes(
+                    "text-sm text-amber-700"
+                )
 
             outside_lance = getattr(diagnostics, "outside_lance_window", False)
             if outside_lance:
@@ -162,9 +159,7 @@ def diagnostic_card(diagnostics) -> None:
 
             tile_count = getattr(diagnostics, "tile_count", None)
             if tile_count is not None and not tile_count:
-                ui.label("BBox maps to zero MODIS tiles (likely dateline-crossing).").classes(
-                    "text-sm text-amber-700"
-                )
+                ui.label("BBox maps to zero MODIS tiles (likely dateline-crossing).").classes("text-sm text-amber-700")
 
             no_tile_match = getattr(diagnostics, "no_tile_match_in_listings", False)
             if no_tile_match:

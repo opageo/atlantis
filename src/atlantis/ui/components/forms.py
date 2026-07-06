@@ -55,12 +55,16 @@ def source_selector(on_change: Callable[[str], None] | None = None) -> ui.select
         on_change: Called with the new source id when selection changes.
     """
     sources = list_fetchers()
-    return ui.select(
-        options=sources,
-        label="Data Source",
-        value=sources[0] if sources else None,
-        on_change=lambda e: on_change(e.value) if on_change else None,
-    ).props("outlined dense").classes("w-full")
+    return (
+        ui.select(
+            options=sources,
+            label="Data Source",
+            value=sources[0] if sources else None,
+            on_change=lambda e: on_change(e.value) if on_change else None,
+        )
+        .props("outlined dense")
+        .classes("w-full")
+    )
 
 
 def bbox_input() -> tuple[ui.number, ui.number, ui.number, ui.number]:
@@ -140,37 +144,51 @@ def option_toggle(
 
 def strategy_selector(value: str = "peak") -> ui.select:
     """Strategy dropdown (peak, aggregate, all)."""
-    return ui.select(
-        options=["peak", "aggregate", "all"],
-        label="Strategy",
-        value=value,
-    ).props("outlined dense").classes("w-full")
+    return (
+        ui.select(
+            options=["peak", "aggregate", "all"],
+            label="Strategy",
+            value=value,
+        )
+        .props("outlined dense")
+        .classes("w-full")
+    )
 
 
 def viirs_options(default_backend: str = "noaa_s3") -> ui.select:
     """VIIRS backend dropdown."""
-    return ui.select(
-        options=["noaa_s3", "gmu_legacy"],
-        label="VIIRS Backend",
-        value=default_backend,
-    ).props("outlined dense").classes("w-full")
+    return (
+        ui.select(
+            options=["noaa_s3", "gmu_legacy"],
+            label="VIIRS Backend",
+            value=default_backend,
+        )
+        .props("outlined dense")
+        .classes("w-full")
+    )
 
 
-def modis_options(
-    default_backend: str = "lance_geotiff", default_composite: str = "F2"
-) -> tuple[ui.select, ui.select]:
+def modis_options(default_backend: str = "lance_geotiff", default_composite: str = "F2") -> tuple[ui.select, ui.select]:
     """MODIS backend + composite dropdowns."""
-    backend = ui.select(
-        options=["lance_geotiff", "laads_hdf4"],
-        label="MODIS Backend",
-        value=default_backend,
-    ).props("outlined dense").classes("w-full")
+    backend = (
+        ui.select(
+            options=["lance_geotiff", "laads_hdf4"],
+            label="MODIS Backend",
+            value=default_backend,
+        )
+        .props("outlined dense")
+        .classes("w-full")
+    )
 
-    composite = ui.select(
-        options=["F1", "F1C", "F2", "F3"],
-        label="MODIS Composite",
-        value=default_composite,
-    ).props("outlined dense").classes("w-full")
+    composite = (
+        ui.select(
+            options=["F1", "F1C", "F2", "F3"],
+            label="MODIS Composite",
+            value=default_composite,
+        )
+        .props("outlined dense")
+        .classes("w-full")
+    )
 
     return backend, composite
 
@@ -183,10 +201,14 @@ def gfm_options(default_coarsen: int = 4) -> tuple[ui.number, ui.select]:
         .classes("w-full")
     )
 
-    resampling = ui.select(
-        options=["average", "bilinear", "nearest", "cubic"],
-        label="Resampling",
-        value="average",
-    ).props("outlined dense").classes("w-full")
+    resampling = (
+        ui.select(
+            options=["average", "bilinear", "nearest", "cubic"],
+            label="Resampling",
+            value="average",
+        )
+        .props("outlined dense")
+        .classes("w-full")
+    )
 
     return coarsen, resampling
