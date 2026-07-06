@@ -2442,5 +2442,9 @@ def batch_viirs(
     run_batch(tasks, process_fn=process_granule, cfg=cfg)
 
 
+from atlantis.ui.cli import web_app  # noqa: E402
+
+cli.add_typer(web_app, name="web", help="Launch the Atlantis web dashboard.")
+
 if __name__ == "__main__":
     cli()

@@ -61,6 +61,9 @@ notebooks = [
   "requests>=2.34.2",
   "metview>=1.16",
 ]
+ui = [
+  "nicegui>=2.0",
+]
 
 [dependency-groups]
 dev = [

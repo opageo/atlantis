@@ -138,14 +138,22 @@ cartopy = ">=0.22"
 metview-python = "*"
 
 # ============================================================================
+# Feature: ui (NiceGUI web dashboard)
+# ============================================================================
+
+[feature.ui.pypi-dependencies]
+nicegui = ">=2.0"
+
+# ============================================================================
 # Environments
 # ============================================================================
 
 [environments]
-default = { features = ["dev"], solve-group = "default" }
+default = { features = ["dev", "ui"], solve-group = "default" }
 ml = { features = ["dev", "ml"], solve-group = "default" }
 notebooks = { features = ["dev", "ml", "notebooks"], solve-group = "default" }
 batch = { features = ["dev", "batch"], solve-group = "default" }
+ui = { features = ["dev", "ui"], solve-group = "default" }
 
 # ============================================================================
 # Tasks
@@ -204,6 +212,7 @@ format = "ruff format ."
 format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
 verify-gdal = """python -c "from osgeo import gdal; assert gdal.GetDriverByName('HDF4'), 'HDF4 driver missing'; print('GDAL', gdal.__version__, '— HDF4 driver: OK')" """
+web = "atlantis web launch --host 0.0.0.0 --port 8080"
 
 # ============================================================================
 # VIIRS examples
