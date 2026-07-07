@@ -160,22 +160,26 @@ def _ds_is_classified(ds, source_id: str | None = None) -> bool:
 def _date_label(result: FetchResult) -> str:
     """Human-readable date label for a fetch result."""
     if result.date_token:
-        token = result.date_token
-        # Only format as YYYY-MM-DD if the token is an 8-digit date string.
-        # Special tokens like "aggregated" are returned as-is.
-        if len(token) == 8 and token.isdigit():
-            return f"{token[:4]}-{token[4:6]}-{token[6:8]}"
-        return token
+        return _date_label_from_token(result.date_token)
     if result.files:
         return date_from_filename(result.files[0].name)
     return "unknown"
+
+
+def _date_label_from_token(token: str) -> str:
+    """Format an 8-digit date token as YYYY-MM-DD, or return as-is."""
+    if len(token) == 8 and token.isdigit():
+        return f"{token[:4]}-{token[4:6]}-{token[6:8]}"
+    return token
 
 
 # Backwards-compatibility alias used by tests / external tooling.
 _viirs_date_label = _date_label
 
 
-def _report_fetch_writes(source_id: str, fetch_results: list[FetchResult], *, keep_processed: bool) -> None:
+def _report_fetch_writes(
+    source_id: str, fetch_results: list[FetchResult], *, keep_processed: bool, strategy: str = "peak"
+) -> None:
     """Print what a fetcher persisted (disk vs in-memory composite/peak date)."""
     disk_files = sum(len(result.files) for result in fetch_results)
     if disk_files:
@@ -187,6 +191,8 @@ def _report_fetch_writes(source_id: str, fetch_results: list[FetchResult], *, ke
         label = _date_label(fetch_results[0])
         if label == "aggregated":
             info("Aggregated composite: processed in memory (no processed/ GeoTIFFs)")
+        elif strategy == "all" and len(fetch_results) > 1:
+            info(f"{len(fetch_results)} date(s) processed in memory (no processed/ GeoTIFFs)")
         else:
             info(f"Peak-flood date {label}: processed in memory (no processed/ GeoTIFFs)")
 
@@ -412,6 +418,12 @@ def _select_best_result(
                 best_date_label = date_label
         else:
             pixel_stats_raw(ds["raw"].values, name=date_label)
+            raw_vals = ds["raw"].values.ravel()
+            flooded = int(((raw_vals >= 101) & (raw_vals <= 200)).sum())
+            if flooded > best_flood_count:
+                best_flood_count = flooded
+                best_result = result
+                best_date_label = date_label
 
     if best_result is None:
         best_result = fetch_results[0]
@@ -1108,7 +1120,7 @@ def fetch(
                 checklist.complete("Fetch tiles", detail=fetch_detail)
 
             if src in ("viirs", "modis"):
-                _report_fetch_writes(src, fetch_results, keep_processed=keep_processed)
+                _report_fetch_writes(src, fetch_results, keep_processed=keep_processed, strategy=strategy)
             else:
                 ok(f"Wrote {written_files} files")
                 all_paths = [path for result in fetch_results for path in result.files]
@@ -1120,8 +1132,14 @@ def fetch(
             ):
                 n_returned = len(fetch_results)
                 parts = []
+                peak_label = ""
+                if fetcher._peak_token:
+                    peak_label = _date_label_from_token(fetcher._peak_token)
                 if effective_days_before > 0 or effective_days_after > 0:
-                    parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
+                    window_desc = f"window: -{effective_days_before}/+{effective_days_after} days around peak"
+                    if peak_label:
+                        window_desc += f" ({peak_label})"
+                    parts.append(window_desc)
                 if max_observations > 0:
                     parts.append(f"max {max_observations} obs (priority={peak_priority})")
                 info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")

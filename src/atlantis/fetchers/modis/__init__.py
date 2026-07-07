@@ -206,6 +206,7 @@ class MODISFetcher(AbstractFloodFetcher):
         self.strategy = strategy
         self.keep_processed = keep_processed
         self.last_diagnostics: ModisSearchDiagnostics | None = None
+        self._peak_token: str | None = None
 
         if self.strategy not in VALID_STRATEGIES:
             raise ValueError(f"Invalid strategy '{self.strategy}'. Expected one of: {sorted(VALID_STRATEGIES)}")
@@ -590,6 +591,7 @@ class MODISFetcher(AbstractFloodFetcher):
                 peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t]))
             else:
                 peak_token = None
+            self._peak_token = peak_token
             logger.debug(
                 "MODIS peak-window [-{}, +{}]: {} → {} date(s) (peak={})",
                 self.peak_days_before,
@@ -601,6 +603,7 @@ class MODISFetcher(AbstractFloodFetcher):
         else:
             surviving = list(date_tokens)
             peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t])) if surviving else None
+            self._peak_token = peak_token
 
         if uses_subsample and peak_token is not None and len(surviving) > self.max_observations:
             surviving = subsample_around_peak(
