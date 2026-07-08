@@ -45,6 +45,7 @@ ipympl = ">=0.10.0"
 plotly = ">=6.7.0"
 rasterstats = ">=0.21.0"
 odc-stac = ">=0.4"
+cartopy = ">0.22"
 
 # --- Geo extras (mirrors pyproject.toml [project.optional-dependencies].geo) ---
 xarray = ">=2024.1"
