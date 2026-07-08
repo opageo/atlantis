@@ -2300,7 +2300,7 @@ def batch_viirs(
 viirs_cube_app = typer.Typer(help="Build the VIIRS 1-arcmin Zarr datacube (resume-safe, streaming).")
 viirs_batch_app.add_typer(viirs_cube_app, name="cube")
 
-_VIIRS_CATALOGUE = "s3://atlantis/assets/viirs/jpss/2020/catalogue.parquet"
+_VIIRS_CATALOGUE = "s3://atlantis/assets/viirs/viirs_archive_catalog.parquet"
 
 
 @viirs_cube_app.command("run")
@@ -2558,15 +2558,19 @@ def stac_export_geoparquet(
     import pystac
 
     from atlantis.stac.geoparquet import export_items_to_geoparquet
+    from atlantis.stac.io import FsspecStacIO
+
+    config = get_config()
+    storage_options = config.archive.storage_options or None
 
     command_header("stac export-geoparquet", subtitle=output)
     href = catalog if catalog.rstrip("/").endswith(".json") else catalog.rstrip("/") + "/catalog.json"
-    cat = pystac.Catalog.from_file(href)
+    cat = pystac.Catalog.from_file(href, stac_io=FsspecStacIO(storage_options))
     items = list(cat.get_items(recursive=True))
     if not items:
         warn("Catalog has no items — nothing to export.")
         raise typer.Exit(code=0)
-    dest = export_items_to_geoparquet(items, output)
+    dest = export_items_to_geoparquet(items, output, storage_options=storage_options)
     ok(f"Exported {len(items)} item(s) → {dest}")
 
 
@@ -2588,7 +2592,7 @@ def viz_serve(
     start: str | None = typer.Option(None, "--start", help="Inclusive start date (YYYY-MM-DD)."),
     end: str | None = typer.Option(None, "--end", help="Inclusive end date (YYYY-MM-DD)."),
     basemap: bool = typer.Option(
-        False, "--basemap", help="Overlay coastlines & country borders (requires geoviews/cartopy)."
+        True, "--basemap", help="Overlay coastlines & country borders (requires geoviews/cartopy)."
     ),
     tiles: bool = typer.Option(
         False, "--tiles", help="Add an OSM web-tile basemap under the data (requires geoviews)."

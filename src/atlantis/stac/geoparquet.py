@@ -24,9 +24,32 @@ def _as_dicts(items: "Iterable[pystac.Item | dict[str, Any]]") -> list[dict[str,
     return [it.to_dict() if hasattr(it, "to_dict") else it for it in items]
 
 
+def _pyarrow_filesystem_for(dest: str, storage_options: dict[str, Any] | None) -> tuple[str, Any]:
+    """Resolve *dest* to a (path, pyarrow filesystem) pair for ``pq.ParquetWriter``.
+
+    Local paths are returned unchanged with ``filesystem=None`` so pyarrow infers
+    a local filesystem. Remote URIs (``s3://``, ``gs://``, ``az://``, ...) are
+    resolved via fsspec — honouring *storage_options* (credentials, custom
+    ``endpoint_url``, ...) — and wrapped as a ``pyarrow.fs.FileSystem``, since
+    pyarrow's own URI resolution has no way to pick up those options.
+    """
+    from urllib.parse import urlparse
+
+    if urlparse(dest).scheme in ("", "file"):
+        return dest, None
+
+    import fsspec
+    import pyarrow.fs
+
+    fs, path = fsspec.core.url_to_fs(dest, **(storage_options or {}))
+    return path, pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(fs))
+
+
 def export_items_to_geoparquet(
     items: "Iterable[pystac.Item | dict[str, Any]]",
     dest: str,
+    *,
+    storage_options: dict[str, Any] | None = None,
 ) -> str:
     """Write STAC *items* to a stac-geoparquet file at *dest*.
 
@@ -35,7 +58,9 @@ def export_items_to_geoparquet(
 
     Args:
         items: STAC items (pystac ``Item`` objects or item dicts).
-        dest: Output ``.parquet`` path (local; or remote if the backend supports it).
+        dest: Output ``.parquet`` path — local, or remote (``s3://``, ``gs://``, ...).
+        storage_options: fsspec filesystem options for a remote *dest* (credentials,
+            ``anon``, custom ``endpoint_url`` via ``client_kwargs``, ...).
 
     Returns:
         The destination path.
@@ -49,7 +74,8 @@ def export_items_to_geoparquet(
         from stac_geoparquet import arrow as sg_arrow
 
         batches = sg_arrow.parse_stac_items_to_arrow(item_dicts)
-        sg_arrow.to_parquet(batches, dest)
+        write_path, filesystem = _pyarrow_filesystem_for(dest, storage_options)
+        sg_arrow.to_parquet(batches, write_path, filesystem=filesystem)
         logger.info(f"Wrote {len(item_dicts)} item(s) → {dest} (arrow API)")
         return dest
     except Exception as exc:  # noqa: BLE001 - fall back across API versions
@@ -58,7 +84,8 @@ def export_items_to_geoparquet(
     import stac_geoparquet
 
     gdf = stac_geoparquet.to_geodataframe(item_dicts)
-    gdf.to_parquet(dest)
+    write_path, filesystem = _pyarrow_filesystem_for(dest, storage_options)
+    gdf.to_parquet(write_path, filesystem=filesystem)
     logger.info(f"Wrote {len(item_dicts)} item(s) → {dest} (geodataframe API)")
     return dest
 
