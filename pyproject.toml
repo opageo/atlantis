@@ -53,18 +53,20 @@ batch = [
   "rio-cogeo>=5.0",             # `rio cogeo validate` for verification
 ]
 stac = [
-  "atlantis[geo]",              # pystac, pystac-client, xarray, zarr
-  "stac-geoparquet>=0.6",       # serverless columnar item index (scale path)
-  "xpystac>=0.1",               # open a STAC Item/Asset/Collection as xarray (Zarr)
+  "atlantis[geo]",
+  "pystac>=1.9",
+  "pystac-client>=0.7",   # pystac, pystac-client, xarray, zarr
+  "stac-geoparquet>=0.6", # serverless columnar item index (scale path)
+  "xpystac>=0.1",         # open a STAC Item/Asset/Collection as xarray (Zarr)
 ]
 viz = [
-  "atlantis[geo]",              # xarray/zarr datacube reads
-  "hvplot>=0.10",               # xarray .hvplot interface (time slider)
-  "holoviews>=1.18",            # backing element model
-  "panel>=1.4",                 # local dashboard server (`panel serve`)
-  "datashader>=0.16",           # server-side rasterisation of large grids
-  "geoviews>=1.11",             # optional basemap / coastlines
-  "bokeh>=3.0",                 # hvplot rendering backend
+  "atlantis[geo]",    # xarray/zarr datacube reads
+  "hvplot>=0.10",     # xarray .hvplot interface (time slider)
+  "holoviews>=1.18",  # backing element model
+  "panel>=1.4",       # local dashboard server (`panel serve`)
+  "datashader>=0.16", # server-side rasterisation of large grids
+  "geoviews>=1.11",   # optional basemap / coastlines
+  "bokeh>=3.0",       # hvplot rendering backend
 ]
 notebooks = [
   "atlantis[geo,ml]",
@@ -93,7 +95,7 @@ dev = [
   "ripgrep>=15.1.0",
   "atlantis[geo]",
   "atlantis[viz]",
-  "atlantis[stac]"
+  "atlantis[stac]",
 ]
 
 [[tool.uv.index]]
@@ -141,8 +143,8 @@ testpaths = ["tests"]
 addopts = "-m 'not e2e'"
 env = ["R:AWS_PROFILE=default"]
 markers = [
-    "e2e: end-to-end tests requiring network access (STAC API + S3)",
-    "slow: slow integration tests that spin a real Dask cluster",
+  "e2e: end-to-end tests requiring network access (STAC API + S3)",
+  "slow: slow integration tests that spin a real Dask cluster",
 ]
 
 [tool.coverage.run]
