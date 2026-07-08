@@ -22,7 +22,7 @@ dependencies = [
   "plotly>=6.7.0",
   "rasterstats>=0.21.0",
   "odc-stac>=0.4",
-  "numpy>=2.5.1",
+  "numpy>=2",
   "rasterio>=1.4",
   "rioxarray>=0.22",
   "xarray",
@@ -58,7 +58,8 @@ viz = [
   "hvplot>=0.10",     # xarray .hvplot interface (time slider)
   "holoviews>=1.18",  # backing element model
   "panel>=1.4",       # local dashboard server (`panel serve`)
-  "datashader>=0.16", # server-side rasterisation of large grids
+  "datashader>=0.19", # server-side rasterisation of large grids
+  "numba>=0.60",
   "geoviews>=1.11",   # optional basemap / coastlines
   "bokeh>=3.0",       # hvplot rendering backend
 ]
