@@ -3,7 +3,7 @@
 This package makes *layers* a first-class, source-agnostic Atlantis concept.
 
 * Declare what a source physically offers with :class:`NativeLayer`.
-* Define what Atlantis computes (``flood_fraction``, ``quality_mask``, ...) with
+* Define what Atlantis computes (``water_fraction``, ``flood_fraction``, ...) with
   :class:`DerivedLayer` — each a declarative spec plus a pure ``derive`` function.
 * Publish both through a per-source :class:`LayerRegistry`, the single source of
   truth used by processors, the CLI (``atlantis layers list``), and the docs.
@@ -25,6 +25,10 @@ Typical use in a source's ``layers.py``::
 
 from __future__ import annotations
 
+from atlantis.layers.aggregation import (
+    AggregationOp,
+    aggregate_layer,
+)
 from atlantis.layers.registry import (
     LayerRegistry,
     all_registries,
@@ -50,6 +54,7 @@ from atlantis.layers.spec import (
 
 __all__ = [
     "AggregationMethod",
+    "AggregationOp",
     "DeriveFn",
     "DerivationContext",
     "DerivedLayer",
@@ -58,6 +63,7 @@ __all__ = [
     "LayerRegistry",
     "NativeLayer",
     "ResamplingMethod",
+    "aggregate_layer",
     "all_registries",
     "available_sources",
     "find_layer",

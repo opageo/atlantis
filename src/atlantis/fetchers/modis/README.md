@@ -39,10 +39,11 @@ modis/
 
 | Variable          | Source class | Encoding on disk                  |
 | ----------------- | ------------ | --------------------------------- |
+| `water_fraction`  | class 1/2/3  | uint8 percent (0–100), nodata=255 |
 | `flood_fraction`  | class 3      | uint8 percent (0–100), nodata=255 |
 | `recurring_flood` | class 2      | uint8 (0/1), nodata=0             |
-| `permanent_water` | class 1      | uint8 (0/1), nodata=0             |
-| `quality_mask`    | class != 255 | uint8 (0/1), nodata=0             |
+| `reference_water` | class 1      | uint8 (0/1), nodata=0             |
+| `exclusion_mask`  | class = 255  | uint8 (0/1), nodata=0             |
 
 `recurring_flood` is MODIS-specific and has no VIIRS counterpart.
 

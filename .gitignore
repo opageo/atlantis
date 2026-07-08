@@ -248,3 +248,4 @@ tmp/
 .github/prompts/
 *.db
 *.db-journal
+.kilo/

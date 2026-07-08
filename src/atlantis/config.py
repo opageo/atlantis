@@ -44,7 +44,8 @@ class HarmoniseConfig(BaseSettings):
         tile_size: Size of square tiles in pixels for ML models.
         resampling: Default resampling method (average, bilinear, nearest).
         variable_resampling: Per-variable resampling overrides. Defaults:
-            flood_fraction->average, quality_mask->mode, permanent_water->mode, raw->nearest.
+            water_fraction/flood_fraction->average,
+            exclusion_mask/reference_water->mode, raw->nearest.
         normalise_range: Tuple of (min, max) for value normalisation.
         snap_to_global_grid: If True (default), snap output windows to the canonical
             global lat/lon grid anchored at ``(global_grid_origin_lon, global_grid_origin_lat)``
@@ -69,13 +70,20 @@ class HarmoniseConfig(BaseSettings):
     tile_size: int = 224
     resampling: Literal["average", "bilinear", "nearest", "cubic"] = "average"
     variable_resampling: dict[str, Literal["average", "bilinear", "nearest", "cubic", "mode"]] = {
+        "water_fraction": "average",
         "flood_fraction": "average",
+        # Legacy aliases retained for internal/backward compatibility.
         "quality_mask": "mode",
         "permanent_water": "mode",
+        "exclusion_mask": "mode",
+        "reference_water": "mode",
         "recurring_flood": "mode",
+        "ensemble_likelihood": "average",
+        "advisory_flags": "mode",
         "raw": "nearest",
         # GFM native code bands — preserve discrete codes (no averaging).
         "ensemble_flood_extent": "nearest",
+        "ensemble_water_extent": "nearest",
         "reference_water_mask": "nearest",
     }
     normalise_range: tuple[float, float] = (0.0, 1.0)

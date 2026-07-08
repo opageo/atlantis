@@ -77,15 +77,15 @@ class TestHarmoniser:
         assert h.normaliser.config.normalise_range == (0.0, 2.0)
 
     def test_harmonise_full_pipeline(self):
-        """End-to-end: resample + normalise + masks."""
+        """End-to-end: resample + normalise + exclusion/reference layers."""
         ds = _make_viirs_dataset()
         h = Harmoniser()
         ds_out = h.harmonise(ds, source_id="viirs")
 
         # Check output structure
         assert "flood_fraction" in ds_out.data_vars
-        assert "quality_mask" in ds_out.data_vars
-        assert "permanent_water" in ds_out.data_vars
+        assert "exclusion_mask" in ds_out.data_vars
+        assert "reference_water" in ds_out.data_vars
 
         # Resolution reduced
         assert ds_out["flood_fraction"].shape[0] < ds["flood_fraction"].shape[0]
@@ -134,7 +134,7 @@ class TestHarmoniser:
             h.harmonise(ds, source_id="viirs")
 
     def test_harmonise_no_classify(self):
-        """Should handle datasets without quality_mask."""
+        """Should handle datasets without exclusion/reference layers."""
         import rioxarray  # noqa: F401
         import xarray as xr
 
@@ -155,7 +155,8 @@ class TestHarmoniser:
         h = Harmoniser()
         ds_out = h.harmonise(ds, source_id="viirs")
         assert "flood_fraction" in ds_out.data_vars
-        assert "quality_mask" in ds_out.data_vars  # generated
+        assert "exclusion_mask" in ds_out.data_vars  # generated
+        assert "reference_water" in ds_out.data_vars  # generated
 
     def test_harmonise_single_raster(self):
         """Single small raster should still produce valid output."""

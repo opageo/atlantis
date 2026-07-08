@@ -23,20 +23,29 @@ class NormaliserConfig:
         fill_value: Value to use for missing data.
         clip: Whether to clip values outside normalise_range.
         skip_normalise_vars: Set of variable names to skip normalisation for.
-            ``flood_fraction`` is included because it is already a physical
-            fraction in ``[0, 1]`` produced by every fetcher (VIIRS, MODIS,
-            GFM). A per-image min-max stretch would corrupt its physical
-            meaning. With ``clip=True`` the harmoniser still enforces the
-            ``[0, 1]`` boundary defensively without rescaling.
-            ``quality_mask``, ``permanent_water``, and ``raw`` are skipped
-            because they carry discrete codes that must not be stretched.
+            ``water_fraction`` and ``flood_fraction`` are included because they
+            are already physical fractions in ``[0, 1]``. A per-image min-max
+            stretch would corrupt their physical meaning. With ``clip=True`` the
+            harmoniser still enforces the ``[0, 1]`` boundary defensively
+            without rescaling. ``exclusion_mask``, ``reference_water``, and
+            ``raw`` are skipped because they carry discrete codes that must not
+            be stretched.
     """
 
     normalise_range: tuple[float, float] = (0.0, 1.0)
     fill_value: float = -9999.0
     clip: bool = True
     skip_normalise_vars: set[str] = field(
-        default_factory=lambda: {"flood_fraction", "quality_mask", "permanent_water", "raw"}
+        default_factory=lambda: {
+            "water_fraction",
+            "flood_fraction",
+            "exclusion_mask",
+            "reference_water",
+            # Legacy aliases retained for compatibility with older callers/tests.
+            "quality_mask",
+            "permanent_water",
+            "raw",
+        }
     )
 
 
@@ -128,86 +137,88 @@ class Normaliser:
         ds.attrs["normalisation_applied"] = variable
         return ds
 
-    def generate_quality_mask(self, dataset: "xr.Dataset", variable: str = "flood_fraction") -> "xr.DataArray":
-        """Generate a quality mask from data values.
+    def generate_exclusion_mask(self, dataset: "xr.Dataset", variable: str = "flood_fraction") -> "xr.DataArray":
+        """Generate or forward a binary exclusion mask.
 
-        The mask is constructed from multiple sources of information:
-        - A ``quality_mask`` variable in the dataset is used directly if present
-        - Otherwise derived from fill / NaN detection on *variable*
-        - Cloud flags from dataset metadata (``cloud_fraction`` attribute) are
-          incorporated as a flag when contaminated
-
-        Returns:
-            DataArray with uint8 quality flags:
-            - 0: valid data
-            - 1: no data / fill value
-            - 2: cloud contaminated
-            - 4: snow contaminated
-            - 8: outside area of interest
+        The returned mask uses the shared convention ``1 = excluded/invalid``
+        and ``0 = usable``.
         """
         import xarray as xr
 
-        # ── Use existing quality_mask variable if available ────────────
-        if "quality_mask" in dataset.data_vars:
+        if "exclusion_mask" in dataset.data_vars:
+            mask = dataset["exclusion_mask"].values.astype(np.uint8)
+        elif "quality_mask" in dataset.data_vars:
             qm = dataset["quality_mask"].values.astype(np.uint8)
-            # quality_mask from VIIRS: 1=good, 0=bad → invert to flags
-            mask = np.zeros_like(qm, dtype=np.uint8)
-            mask[qm == 0] = 1  # no data / fill
+            mask = np.where(qm > 0, 0, 1).astype(np.uint8)
         else:
-            # ── Derive from variable fill values / NaN ────────────────
             da = dataset[variable]
             data = da.values
             mask = np.zeros(data.shape, dtype=np.uint8)
-
-            # NaN / fill detection
             if np.issubdtype(data.dtype, np.floating):
                 mask[np.isnan(data)] = 1
             elif self.config.fill_value is not None:
                 mask[data == self.config.fill_value] = 1
 
-        # ── Cloud contamination from metadata ──────────────────────────
-        cloud_frac = dataset.attrs.get("cloud_fraction", 0.0)
-        if cloud_frac > 0.1:
-            # Flag whole scene as potentially cloud-contaminated
-            # (pixel-level cloud mask is only available from the source quality mask)
-            mask[mask == 0] = 2
-
         return xr.DataArray(
             mask,
             dims=dataset[variable].dims,
             coords=dataset[variable].coords,
-            attrs={"description": "Quality flags: 0=valid, 1=nodata, 2=cloud, 4=snow, 8=outside"},
-            name="quality_mask",
+            attrs={"description": "Exclusion mask: 1=excluded/invalid, 0=usable"},
+            name="exclusion_mask",
         )
 
-    def generate_permanent_water_mask(self, dataset: "xr.Dataset") -> "xr.DataArray":
-        """Generate permanent water mask from reference data.
+    def generate_reference_water(self, dataset: "xr.Dataset") -> "xr.DataArray":
+        """Generate or forward the shared reference-water layer.
 
         Args:
-            dataset: Input xarray Dataset with a ``permanent_water`` variable
-                (from VIIRS classification) or from which a mask can be derived.
+            dataset: Input xarray Dataset with a ``reference_water`` or legacy
+                ``permanent_water`` variable.
 
         Returns:
-            DataArray with permanent water (1) and non-water (0) as uint8.
+            DataArray carrying the reference-water values as uint8.
         """
         import xarray as xr
 
-        if "permanent_water" in dataset.data_vars:
-            pw = dataset["permanent_water"].values.astype(np.uint8)
-            pw_mask = np.where(pw > 0, 1, 0).astype(np.uint8)
+        if "reference_water" in dataset.data_vars:
+            ref = dataset["reference_water"].values.astype(np.uint8)
+        elif "permanent_water" in dataset.data_vars:
+            ref = dataset["permanent_water"].values.astype(np.uint8)
         else:
-            pw_mask = np.zeros(
+            ref = np.zeros(
                 _shape_from_dataset(dataset),
                 dtype=np.uint8,
             )
 
         return xr.DataArray(
-            pw_mask,
+            ref,
             dims=dataset[list(dataset.data_vars)[0]].dims,
             coords=dataset[list(dataset.data_vars)[0]].coords,
-            attrs={"description": "Permanent water mask: 1=water, 0=land"},
-            name="permanent_water",
+            attrs={"description": "Reference water layer"},
+            name="reference_water",
         )
+
+    def generate_quality_mask(self, dataset: "xr.Dataset", variable: str = "flood_fraction") -> "xr.DataArray":
+        """Backward-compatible wrapper for callers still requesting quality_mask."""
+        import xarray as xr
+
+        exclusion = self.generate_exclusion_mask(dataset, variable=variable)
+        mask = exclusion.values.astype(np.uint8).copy()
+
+        cloud_frac = dataset.attrs.get("cloud_fraction", 0.0)
+        if cloud_frac > 0.1:
+            mask[mask == 0] = 2
+
+        return xr.DataArray(
+            mask,
+            dims=exclusion.dims,
+            coords=exclusion.coords,
+            attrs={"description": "Quality flags: 0=valid, 1=nodata, 2=cloud, 4=snow, 8=outside"},
+            name="quality_mask",
+        )
+
+    def generate_permanent_water_mask(self, dataset: "xr.Dataset") -> "xr.DataArray":
+        """Backward-compatible wrapper for callers still requesting permanent_water."""
+        return self.generate_reference_water(dataset).rename("permanent_water")
 
 
 def _shape_from_dataset(dataset: "xr.Dataset") -> tuple[int, ...]:

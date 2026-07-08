@@ -30,11 +30,12 @@ if TYPE_CHECKING:
 VIIRS_RAW_CODES: dict[int, tuple[str, str]] = {
     0: ("Clip / mosaic fill", "#000000"),
     1: ("Fill / No data", "#000000"),
+    15: ("Floodwater (unquantified, no fraction)", "#ffeb3b"),
     17: ("Vegetation", "#2ca02c"),
     20: ("Snow / ice", "#17becf"),
     30: ("Cloud", "#cccccc"),
     99: ("Permanent water", "#1f77b4"),
-    160: ("Flood (codes 101–200, ≥60% frac)", "#FF0000"),
+    100: ("Flood (codes above 100)", "#FF0000"),
 }
 
 # GFM native ensemble_flood_extent band codes
@@ -44,11 +45,13 @@ GFM_ENSEMBLE_FLOOD_EXTENT_CODES: dict[int, tuple[str, str]] = {
     255: ("No data", "#000000"),
 }
 
-# GFM native reference_water_mask band codes
+# GFM native reference_water_mask band codes (GFM PDD Table 20; verified against
+# live COGs — code 1 is byte-identical across monthly masks → permanent, code 2
+# varies by month → seasonal). See atlantis.fetchers.gfm.layers.
 GFM_REFERENCE_WATER_MASK_CODES: dict[int, tuple[str, str]] = {
-    0: ("Land", "#d4c5a9"),
-    1: ("Water", "#1f77b4"),
-    2: ("Permanent water", "#08306b"),
+    0: ("No water", "#d4c5a9"),
+    1: ("Permanent water", "#08306b"),
+    2: ("Seasonal water", "#6baed6"),
     255: ("No data", "#000000"),
 }
 

@@ -65,7 +65,7 @@ flowchart TD
     E --> F
     subgraph F["5. Write — ViirsRasterProcessor._write_outputs()"]
         F1["Save as compressed GeoTIFF (LZW, uint8)"]
-        F2["--classify: derive flood_fraction, quality_mask, permanent_water, cloud_mask, snow_ice, shadow; else write native raw"]
+        F2["--classify: derive water_fraction, flood_fraction, reference_water, exclusion_mask, cloud_mask, snow_ice, shadow; else write native raw"]
         F1 --> F2
     end
 ```
@@ -79,7 +79,7 @@ Call chain for a single date:
 - `VIIRSFetcher.fetch()` then either streams remote URLs directly to the processor or downloads tiles with `download_file()`.
 - `ViirsRasterProcessor.process_tiles()` in `processor.py` constructs output paths and dispatches raster work.
 - `ViirsRasterProcessor._mosaic_and_clip()` in `processor.py` runs `rasterio.merge.merge()` followed by `rasterio.mask.mask()`.
-- `ViirsRasterProcessor._classify_pixels()` in `processor.py` derives the layers when classification is enabled. The per-layer maths is defined declaratively in `src/atlantis/fetchers/viirs/derived.py` and registered on the VIIRS layer registry (`viirs/layers.py`); the processor iterates that registry rather than hard-coding names. The core derived layers (`flood_fraction`, `quality_mask`, `permanent_water`) land on named `ProcessedTile` fields; the extra masks (`cloud_mask`, `snow_ice`, `shadow`) flow through `ProcessedTile.extra_layers`.
+- `ViirsRasterProcessor._classify_pixels()` in `processor.py` derives the layers when classification is enabled. The per-layer maths is defined declaratively in `src/atlantis/fetchers/viirs/derived.py` and registered on the VIIRS layer registry (`viirs/layers.py`); the processor iterates that registry rather than hard-coding names. The core derived layers (`water_fraction`, `flood_fraction`, `reference_water`, `exclusion_mask`) land on named `ProcessedTile` fields; the extra masks (`cloud_mask`, `snow_ice`, `shadow`) flow through `ProcessedTile.extra_layers`.
 
 ## Stage 3 — Mosaic
 
@@ -181,22 +181,39 @@ The write step emits one of two **layer kinds**:
 - **Native** (`--no-classify`) — the single encoded VFM band is written untouched as `raw`.
 - **Derived** (`--classify`, default) — `_classify_pixels()` decodes the native codes into the derived layers below. Each layer is a pure function declared in `src/atlantis/fetchers/viirs/derived.py` and registered on the VIIRS layer registry, so adding one means adding a spec (browse them with `atlantis list-layers --source viirs` or in [the layer reference](../layers.md)).
 
-| Layer (derived)   | Rule                                                                    | Meaning                                                                                                        |
-| ----------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `flood_fraction`  | `101 <= pixel <= 200 ? (pixel - 100) / 100 : ({0,1,30} -> NaN, else 0)` | Flooded-water fraction in `[0.0, 1.0]`; valid dry observations are `0`, fill/cloud are written as `nodata=255` |
-| `quality_mask`    | `pixel ∉ {0,1,30}`                                                      | 1 = valid clear-sky observation (0 = fill or cloud cover)                                                      |
-| `permanent_water` | `pixel == 99`                                                           | 1 = NOAA NormalWater reference (permanent / open reference water)                                              |
-| `cloud_mask`      | `pixel == 30`                                                           | 1 = cloud-covered pixel                                                                                        |
-| `snow_ice`        | `pixel == 20`                                                           | 1 = NOAA Snow_ice class                                                                                        |
-| `shadow`          | `pixel == 50`                                                           | 1 = terrain/cloud shadow (low-confidence observation)                                                          |
+The exact VIIRS layer inventory lives in the canonical
+[VIIRS derived layer reference](../layers.md#layers-viirs-derived). The
+source-specific distinctions worth remembering here are:
+
+- `water_fraction` is broader than `flood_fraction`: it promotes NOAA
+  `NormalWater` (`99`) and the unquantified floodwater code (`15`) to `1.0`;
+- `flood_fraction` only decodes the NOAA `100–200` fraction codes and keeps
+  `99` / `15` at `0.0`;
+- fill/cloud codes become `NaN` in the fraction layers and `1` in
+  `exclusion_mask`;
+- `cloud_mask`, `snow_ice`, and `shadow` remain simple code-specific uint8
+  masks.
+
+> **`reference_water` `0` is "not reference water", not "missing".** The
+> derivation (`viirs/derived.py`) initialises every pixel to `0` and only sets
+> code-99 pixels to `1`; it does **not** consult `exclusion_mask`. Consequently
+> a fill/cloud pixel (codes `0`, `1`, `30`) is also written as `0`, making it
+> **indistinguishable from genuinely-observed dry land** in `reference_water`
+> alone. The GeoTIFF `nodata=0` tag is a shared rendering convention for all
+> binary derived masks (so the background renders transparent), **not** a
+> data-availability flag. On a single date — or with the `peak` strategy — you
+> must pair `reference_water` with `exclusion_mask` (`1` = fill/cloud) to tell
+> "observed non-water" from "couldn't observe." In `aggregate` mode this is
+> partly mitigated: `reference_water` is reduced by `majority` over non-excluded
+> dates only (see [pipeline.md](pipeline.md#aggregate--temporal-composite-mean--mode)).
 
 The authoritative legend lives in the band tag `WaterDetection#TypeDescription`
 inside each NOAA GeoTIFF (verified against a fetched raw tile). Per that tag, code `99 = NormalWater` is the reference-water
-class and is the basis of `permanent_water`; code `20 = Snow_ice` (now surfaced as `snow_ice`),
+class and is the basis of `reference_water`; code `20 = Snow_ice` (now surfaced as `snow_ice`),
 `30 = Cloud` (now `cloud_mask`), and `50 = Shadow` (now `shadow`). Codes `17` (Vegetation) and `20` (Snow_ice)
-are still valid observations — they receive `quality=1` and contribute `0` to `flood_fraction`.
+are still valid observations — they receive `exclusion_mask = 0` and contribute `0` to both fraction layers.
 Fill (`1`; plus `0` from clip/mosaic) and cloud (`30`) pixels remain missing through classification and are only encoded
-as `255` when Atlantis writes the classified `flood_fraction` GeoTIFF.
+as `255` when Atlantis writes the classified fraction GeoTIFFs.
 
 There is no thresholding step inside `_classify_pixels()` in the current pipeline. If you
 need a binary flood mask, apply a downstream threshold to `flood_fraction`.

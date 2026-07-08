@@ -5,9 +5,10 @@ derived-layer definitions live in :mod:`atlantis.fetchers.modis.derived` and are
 imported at the end of this module so a single ``import ...modis.layers``
 populates the full registry (native + derived).
 
-Derived layers (``flood_fraction``, ``quality_mask``, ``permanent_water``,
-``recurring_flood``) are computed from the *selected* flood composite, which the
-processor exposes to derivations under the input key :data:`SELECTED_COMPOSITE`.
+Derived layers (``water_fraction``, ``flood_fraction``, ``reference_water``,
+``exclusion_mask``, ``recurring_flood``) are computed from the *selected* flood
+composite, which the processor exposes to derivations under the input key
+:data:`SELECTED_COMPOSITE`.
 """
 
 from __future__ import annotations

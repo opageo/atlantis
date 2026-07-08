@@ -6,9 +6,9 @@ flood-fraction classes together. The derived-layer definitions live in
 :mod:`atlantis.fetchers.viirs.derived` and are imported at the end of this
 module so a single ``import ...viirs.layers`` populates the full registry.
 
-Derived layers (``flood_fraction``, ``quality_mask``, ``permanent_water``) are
-computed from that single band, which the processor exposes to derivations under
-the input key :data:`SELECTED_BAND`.
+Derived layers (``water_fraction``, ``flood_fraction``, ``reference_water``,
+``exclusion_mask``) are computed from that single band, which the processor
+exposes to derivations under the input key :data:`SELECTED_BAND`.
 """
 
 from __future__ import annotations

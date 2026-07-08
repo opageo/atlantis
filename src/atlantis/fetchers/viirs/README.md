@@ -49,7 +49,7 @@ For each date:
 Mosaic tiles → clip to bbox
   │
   ▼
-Classify: flood_fraction, quality_mask, permanent_water
+Classify: water_fraction, flood_fraction, reference_water, exclusion_mask
   │
   ▼
 Write GeoTIFFs (or return in-memory for peak strategy)

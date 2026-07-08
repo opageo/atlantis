@@ -149,8 +149,8 @@ class Harmoniser:
         Steps:
         1. **Reproject** — resample all variables to the target resolution/CRS.
         2. **Normalise** — scale the flood variable to ``[0, 1]``.
-        3. **Quality mask** — generate or forward quality flags.
-        4. **Permanent water mask** — generate or forward permanent water.
+        3. **Exclusion mask** — generate or forward invalid/excluded pixels.
+        4. **Reference water** — generate or forward reference-water data.
 
         Args:
             dataset: Input xarray Dataset (e.g. from ``VIIRSFetcher.to_dataset()``).
@@ -177,14 +177,14 @@ class Harmoniser:
         # ── Step 2: Normalise flood variable ──────────────────────────
         ds = self.normaliser.normalise(ds, variable=flood_variable)
 
-        # ── Step 3: Quality mask ──────────────────────────────────────
+        # ── Step 3: Exclusion mask ────────────────────────────────────
         if flood_variable in ds.data_vars:
-            qm = self.normaliser.generate_quality_mask(ds, variable=flood_variable)
-            ds["quality_mask"] = qm
+            exclusion = self.normaliser.generate_exclusion_mask(ds, variable=flood_variable)
+            ds["exclusion_mask"] = exclusion
 
-        # ── Step 4: Permanent water mask ──────────────────────────────
-        pw = self.normaliser.generate_permanent_water_mask(ds)
-        ds["permanent_water"] = pw
+        # ── Step 4: Reference water ───────────────────────────────────
+        reference_water = self.normaliser.generate_reference_water(ds)
+        ds["reference_water"] = reference_water
 
         # ── Record provenance ─────────────────────────────────────────
         ds.attrs["source_id"] = source_id

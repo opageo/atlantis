@@ -17,9 +17,10 @@ def processed_tile_to_dataset(
 ) -> "xr.Dataset":
     """Convert a GfmProcessedTile to an rioxarray-backed Dataset.
 
-    Classified mode emits ``flood_fraction``, ``quality_mask``, and
-    ``permanent_water``.  Native / raw mode emits the two native bands
-    ``ensemble_flood_extent`` and ``reference_water_mask``.  The variable set is
+    Classified mode emits ``water_fraction``, ``flood_fraction``,
+    ``reference_water``, and any native-code extras carried on the processed
+    tile. Native / raw mode emits the registered native bands such as
+    ``ensemble_flood_extent`` and ``reference_water_mask``. The variable set is
     driven by the GFM layer registry.
 
     Args:

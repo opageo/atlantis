@@ -29,6 +29,12 @@ def test_flood_fraction_decodes_water_fraction_codes() -> None:
     np.testing.assert_allclose(out, np.array([[0.0, 0.5, 1.0]], dtype="float32"))
 
 
+def test_water_fraction_promotes_reference_and_unquantified_water() -> None:
+    registry = get_source_registry("viirs")
+    out = registry.get_derived("water_fraction").derive(_ctx([[15, 99, 100, 150, 200, 17]]))
+    np.testing.assert_allclose(out, np.array([[1.0, 1.0, 0.0, 0.5, 1.0, 0.0]], dtype="float32"))
+
+
 def test_flood_fraction_nan_for_fill_and_cloud() -> None:
     registry = get_source_registry("viirs")
     out = registry.get_derived("flood_fraction").derive(_ctx([[0, 1, 30, 17]]))
@@ -36,15 +42,15 @@ def test_flood_fraction_nan_for_fill_and_cloud() -> None:
     assert out[0, 3] == 0.0
 
 
-def test_quality_mask_invalidates_fill_and_cloud() -> None:
+def test_exclusion_mask_invalidates_fill_and_cloud() -> None:
     registry = get_source_registry("viirs")
-    out = registry.get_derived("quality_mask").derive(_ctx([[0, 1, 30, 17, 99]]))
-    np.testing.assert_array_equal(out, np.array([[0, 0, 0, 1, 1]], dtype="uint8"))
+    out = registry.get_derived("exclusion_mask").derive(_ctx([[0, 1, 30, 17, 99]]))
+    np.testing.assert_array_equal(out, np.array([[1, 1, 1, 0, 0]], dtype="uint8"))
 
 
-def test_permanent_water_is_code_99() -> None:
+def test_reference_water_is_code_99() -> None:
     registry = get_source_registry("viirs")
-    out = registry.get_derived("permanent_water").derive(_ctx([[99, 20, 17, 0]]))
+    out = registry.get_derived("reference_water").derive(_ctx([[99, 20, 17, 0]]))
     np.testing.assert_array_equal(out, np.array([[1, 0, 0, 0]], dtype="uint8"))
 
 
@@ -69,4 +75,5 @@ def test_classify_routes_new_layers_to_extra_layers() -> None:
     processed = classify_viirs_pixels(data, from_origin(0, 2, 1, 1), "EPSG:4326")
     # Core layers stay on named fields; new layers go to extra_layers.
     assert set(processed.extra_layers) == {"cloud_mask", "snow_ice", "shadow"}
+    assert processed.water_fraction is not None
     assert processed.flood_fraction is not None

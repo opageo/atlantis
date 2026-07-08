@@ -111,7 +111,7 @@ class Reprojector:
             target_resolution: Target resolution in CRS units.
             resampling_method: Default resampling method.
             variable_resampling: Per-variable overrides, e.g.
-                ``{"flood_fraction": "average", "quality_mask": "mode"}``.
+                ``{"flood_fraction": "average", "exclusion_mask": "mode"}``.
             snap_to_global_grid: Snap AOI bounds to the canonical global grid.
             global_grid_origin_lon: Western edge of the global grid (default -180).
             global_grid_origin_lat: Northern edge of the global grid (default +90).

@@ -71,7 +71,7 @@ class TestLegendPatches:
     def test_patches_have_correct_labels(self):
         patches = legend_patches()
         labels = [p.get_label() for p in patches]
-        assert "160: Flood (codes 101–200, ≥60% frac)" in labels
+        assert "100: Flood (codes above 100)" in labels
         assert "99: Permanent water" in labels
         assert "17: Vegetation" in labels
 
@@ -85,7 +85,7 @@ class TestLegendPatches:
 
 class TestViirsCodes:
     def test_expected_codes_present(self):
-        expected_codes = {0, 1, 17, 20, 30, 99, 160}
+        expected_codes = {0, 1, 15, 17, 20, 30, 99, 100}
         assert set(VIIRS_RAW_CODES.keys()) == expected_codes
 
     def test_code_values_are_tuples(self):

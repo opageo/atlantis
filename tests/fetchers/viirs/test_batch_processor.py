@@ -59,7 +59,7 @@ def test_classify_viirs_pixels_nodata_fill():
 
     result = classify_viirs_pixels(data, transform, "EPSG:4326")
     assert np.isnan(result.flood_fraction).all()
-    assert np.all(result.quality_mask == 0)
+    assert np.all(result.exclusion_mask == 1)
     assert result.cloud_fraction == 0.0
 
 

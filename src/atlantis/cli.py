@@ -132,37 +132,54 @@ def _resolution_label(source_id: str) -> str:
     return SOURCE_RESOLUTION_LABELS.get(source_id, "native")
 
 
-def _ds_is_classified(ds) -> bool:
-    """True when a fetched dataset holds derived layers (vs native bands).
+def _ds_is_classified(ds, source_id: str | None = None) -> bool:
+    """True when a fetched dataset holds derived layers for its source.
 
-    Registry-driven: a dataset is classified when it contains any derived layer
-    declared by a source, rather than checking a single hard-coded name.
+    Derived-layer names can overlap with native bands of other sources
+    (e.g. ``exclusion_mask`` is native for GFM but derived for VIIRS/MODIS),
+    so the check is scoped to the dataset's source when known.
     """
+    if source_id is None:
+        source_id = ds.attrs.get("source_id")
+    if source_id is None:
+        # Last-resort fallback: any derived layer from any source.
+        from atlantis.layers import all_registries
+
+        derived_names = {layer.name for registry in all_registries().values() for layer in registry.list_derived()}
+        return any(name in ds.data_vars for name in derived_names)
+
     from atlantis.layers import all_registries
 
-    derived_names = {layer.name for registry in all_registries().values() for layer in registry.list_derived()}
+    registry = all_registries().get(source_id)
+    if registry is None:
+        return False
+    derived_names = {layer.name for layer in registry.list_derived()}
     return any(name in ds.data_vars for name in derived_names)
 
 
 def _date_label(result: FetchResult) -> str:
     """Human-readable date label for a fetch result."""
     if result.date_token:
-        token = result.date_token
-        # Only format as YYYY-MM-DD if the token is an 8-digit date string.
-        # Special tokens like "aggregated" are returned as-is.
-        if len(token) == 8 and token.isdigit():
-            return f"{token[:4]}-{token[4:6]}-{token[6:8]}"
-        return token
+        return _date_label_from_token(result.date_token)
     if result.files:
         return date_from_filename(result.files[0].name)
     return "unknown"
+
+
+def _date_label_from_token(token: str) -> str:
+    """Format an 8-digit date token as YYYY-MM-DD, or return as-is."""
+    if len(token) == 8 and token.isdigit():
+        return f"{token[:4]}-{token[4:6]}-{token[6:8]}"
+    return token
 
 
 # Backwards-compatibility alias used by tests / external tooling.
 _viirs_date_label = _date_label
 
 
-def _report_fetch_writes(source_id: str, fetch_results: list[FetchResult], *, keep_processed: bool) -> None:
+def _report_fetch_writes(
+    source_id: str, fetch_results: list[FetchResult], *, keep_processed: bool, strategy: str = "peak"
+) -> None:
     """Print what a fetcher persisted (disk vs in-memory composite/peak date)."""
     disk_files = sum(len(result.files) for result in fetch_results)
     if disk_files:
@@ -174,6 +191,8 @@ def _report_fetch_writes(source_id: str, fetch_results: list[FetchResult], *, ke
         label = _date_label(fetch_results[0])
         if label == "aggregated":
             info("Aggregated composite: processed in memory (no processed/ GeoTIFFs)")
+        elif strategy == "all" and len(fetch_results) > 1:
+            info(f"{len(fetch_results)} date(s) processed in memory (no processed/ GeoTIFFs)")
         else:
             info(f"Peak-flood date {label}: processed in memory (no processed/ GeoTIFFs)")
 
@@ -391,7 +410,7 @@ def _select_best_result(
     for result in fetch_results:
         ds = fetcher.to_dataset(result)
         date_label = _date_label(result)
-        if _ds_is_classified(ds):
+        if _ds_is_classified(ds, source_id=fetcher.source_id):
             flooded = pixel_stats_classified(ds["flood_fraction"].values, name=date_label)
             if flooded > best_flood_count:
                 best_flood_count = flooded
@@ -399,6 +418,12 @@ def _select_best_result(
                 best_date_label = date_label
         else:
             pixel_stats_raw(ds["raw"].values, name=date_label)
+            raw_vals = ds["raw"].values.ravel()
+            flooded = int(((raw_vals >= 101) & (raw_vals <= 200)).sum())
+            if flooded > best_flood_count:
+                best_flood_count = flooded
+                best_result = result
+                best_date_label = date_label
 
     if best_result is None:
         best_result = fetch_results[0]
@@ -419,7 +444,7 @@ def _plot_source(
     """Save a PNG visualisation of the peak-flood date for any source."""
     pretty = _pretty_source(source_id)
     res = _resolution_label(source_id)
-    if _ds_is_classified(best_ds):
+    if _ds_is_classified(best_ds, source_id=source_id):
         layer_label = _classified_layer_label(source_id)
         plot_classified(
             best_ds["flood_fraction"],
@@ -454,8 +479,8 @@ def _plot_source(
         raw = best_ds["raw"]
         if source_id != "modis":
             # Collapse the continuous flood range (101–200) onto the single
-            # representative code 160 so the categorical legend matches the render.
-            raw = raw.where((raw < 101) | (raw > 200), 160)
+            # representative code 100 so the categorical legend matches the render.
+            raw = raw.where((raw < 101) | (raw > 200), 100)
         plot_raw(
             raw,
             title=f"{event_id}: {pretty} raw composite {date_label} ({res})",
@@ -565,7 +590,7 @@ def _harmonise_source(
     tif_path = harm_dir / f"{event_id}_{date_label}_{source_id}_harmonised.tif"
     png_harm_path = plot_dir / f"{event_id}_{date_label}_{source_id}_harmonised.png"
 
-    if _ds_is_classified(best_ds):
+    if _ds_is_classified(best_ds, source_id=source_id):
         ds_harm = h.harmonise(best_ds, source_id=source_id)
         write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
         if announce:
@@ -590,8 +615,8 @@ def _harmonise_source(
     raw = ds_harm["raw"]
     if source_id != "modis":
         # Collapse the continuous flood range (101–200) onto the single
-        # representative code 160 so the categorical legend matches the render.
-        raw = raw.where((raw < 101) | (raw > 200), 160)
+        # representative code 100 so the categorical legend matches the render.
+        raw = raw.where((raw < 101) | (raw > 200), 100)
     plot_raw(
         raw,
         title=f"{event_id}: {pretty} harmonised raw composite {date_label} (1 arcmin)",
@@ -668,7 +693,7 @@ def _harmonise_gfm(
     plot_dir.mkdir(parents=True, exist_ok=True)
     h = Harmoniser()
 
-    if _ds_is_classified(ds):
+    if _ds_is_classified(ds, source_id="gfm"):
         # Classified mode
         ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
         tif_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.tif"
@@ -836,10 +861,9 @@ def fetch(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, plus"
-        " source-specific extras) computed by Atlantis. Default: on."
+        help="Emit the source's derived layers from the registry-backed layer catalogue. Default: on."
         " Use --no-classify to emit the native source layers untouched (raw codes/bands)."
-        " MODIS adds a recurring_flood derived layer; see `atlantis list-layers`.",
+        " See `atlantis list-layers` for the exact inventory.",
     ),
     stream: bool = typer.Option(
         True,
@@ -925,7 +949,7 @@ def fetch(
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
         modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).
         modis_composite: Which MCDWD composite to fetch (F1, F1C, F2, F3).
-        classify: If True, write flood-fraction/quality-mask/permanent-water layers instead of raw data.
+        classify: If True, write water/flood-fraction plus reference/exclusion layers instead of raw data.
             MODIS adds a recurring_flood layer when classified.
         stream: If True, stream remote tiles without downloading to disk. For MODIS, only
             valid with --modis-backend lance_geotiff.
@@ -1096,7 +1120,7 @@ def fetch(
                 checklist.complete("Fetch tiles", detail=fetch_detail)
 
             if src in ("viirs", "modis"):
-                _report_fetch_writes(src, fetch_results, keep_processed=keep_processed)
+                _report_fetch_writes(src, fetch_results, keep_processed=keep_processed, strategy=strategy)
             else:
                 ok(f"Wrote {written_files} files")
                 all_paths = [path for result in fetch_results for path in result.files]
@@ -1108,8 +1132,14 @@ def fetch(
             ):
                 n_returned = len(fetch_results)
                 parts = []
+                peak_label = ""
+                if fetcher._peak_token:
+                    peak_label = _date_label_from_token(fetcher._peak_token)
                 if effective_days_before > 0 or effective_days_after > 0:
-                    parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
+                    window_desc = f"window: -{effective_days_before}/+{effective_days_after} days around peak"
+                    if peak_label:
+                        window_desc += f" ({peak_label})"
+                    parts.append(window_desc)
                 if max_observations > 0:
                     parts.append(f"max {max_observations} obs (priority={peak_priority})")
                 info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
@@ -1172,8 +1202,7 @@ def fetch_kurosiwo_viirs(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, plus"
-        " VIIRS extras like cloud_mask/snow_ice/shadow) computed by Atlantis. Default: on."
+        help="Emit the VIIRS derived layers from the registry-backed layer catalogue. Default: on."
         " Use --no-classify to emit the native VIIRS band untouched. See `atlantis list-layers`.",
     ),
     stream: bool = typer.Option(
@@ -1216,7 +1245,7 @@ def fetch_kurosiwo_viirs(
         use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
-        classify: If True, write flood-fraction/quality-mask/permanent-water layers instead of raw data.
+        classify: If True, write water/flood-fraction plus reference/exclusion layers instead of raw data.
         stream: If True, stream remote tiles without downloading to disk.
         plot: Save PNG visualisation of the peak-flood date per case.
         plot_dir: Directory for PNG output (default: <output>/plots/).
@@ -1409,8 +1438,9 @@ def fetch_kurosiwo_modis(
     classify: bool = typer.Option(
         True,
         "--classify/--no-classify",
-        help="Emit derived layers (flood_fraction, quality_mask, permanent_water, recurring_flood)"
-        " computed by Atlantis, or --no-classify to emit the native MCDWD composite untouched.",
+        help="Emit the MODIS derived layers from the registry-backed layer catalogue,"
+        " or --no-classify to emit the native MCDWD composite untouched."
+        " See `atlantis list-layers` for the exact inventory.",
     ),
     stream: bool = typer.Option(
         True,
@@ -1451,7 +1481,7 @@ def fetch_kurosiwo_modis(
         use_metadata_range: Use the full metadata temporal range instead of a narrow flood-date window.
         modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).
         modis_composite: Which MCDWD composite to fetch (F1, F1C, F2, F3).
-        classify: If True, write flood-fraction/quality-mask/permanent-water/recurring-flood layers.
+        classify: If True, write water_fraction/flood_fraction/reference_water/exclusion_mask/recurring_flood layers.
         stream: If True, stream remote tiles without downloading (lance_geotiff only).
         plot: Save PNG visualisation of the peak-flood date per case.
         plot_dir: Directory for PNG output (default: <output>/plots/).
