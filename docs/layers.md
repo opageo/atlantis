@@ -98,9 +98,9 @@ Layers Atlantis computes from native inputs (not downloaded).
 
 | Layer | dtype | nodata | Inputs | Resampling | Aggregation | Description |
 | --- | --- | --- | --- | --- | --- | --- |
-| `water_fraction` | float32 | None | `raw` | average | nanmean | Continuous water fraction decoded from codes 100-200 as (code-100)/100, with NOAA reference-water code 99 and unquantified floodwater code 15 forced to 1.0. Fill and cloud pixels are NaN so temporal averaging skips them. |
-| `flood_fraction` | float32 | None | `raw` | average | nanmean | Continuous fraction decoded directly from the NOAA 100-200 fraction codes. Reference-water code 99 and unquantified floodwater code 15 remain 0.0 here; fill and cloud pixels are NaN so temporal averaging skips them. |
-| `exclusion_mask` | uint8 | 0 | `raw` | mode | all_true | Exclusion mask: 1 for fill (0, 1) or cloud (30), 0 otherwise. Pre-existing water classes count as usable observations. |
+| `water_fraction` | float32 | None | `raw` | average | nanmean | Continuous water fraction decoded from codes 100-200 as (code-100)/100, with NOAA reference-water code 99 and unquantified floodwater code 15 forced to 1.0. Fill, cloud, snow/ice, and shadow pixels are NaN so temporal averaging skips them. |
+| `flood_fraction` | float32 | None | `raw` | average | nanmean | Continuous fraction decoded directly from the NOAA 100-200 fraction codes. Reference-water code 99 and unquantified floodwater code 15 remain 0.0 here; fill, cloud, snow/ice, and shadow pixels are NaN so temporal averaging skips them. |
+| `exclusion_mask` | uint8 | 0 | `raw` | mode | all_true | Exclusion mask: 1 for fill (0, 1), cloud (30), snow/ice (20), or shadow (50); 0 otherwise. Pre-existing water classes count as usable observations. |
 | `reference_water` | uint8 | 0 | `raw` | mode | majority | Reference-water mask for NOAA NormalWater (code 99). |
 | `cloud_mask` | uint8 | 0 | `raw` | mode | mode | Cloud mask (code 30): 1 where the pixel is cloud-covered. |
 | `snow_ice` | uint8 | 0 | `raw` | mode | mode | Snow/ice mask (NOAA code 20). |
@@ -141,7 +141,7 @@ Averaging or OR-ing `exclusion_mask` across sources yields garbage on the GFM si
 | `reference_water` | masked_max | mode | majority |
 | `flood_fraction` / `water_fraction` | nanmean | nanmean | nanmean |
 
-An aggregate pipeline that mixes sources applies different per-source logic to the masks. In particular VIIRS is conservative — a pixel is excluded only if **every** observation was fill/cloud, and `reference_water` requires a strict majority of usable observations — while MODIS reduces over all dates. See the per-source operator values in the table above.
+An aggregate pipeline that mixes sources applies different per-source logic to the masks. In particular VIIRS is conservative — a pixel is excluded only if **every** observation was fill/cloud/snow/shadow, and `reference_water` requires a strict majority of usable observations — while MODIS reduces over all dates. See the per-source operator values in the table above.
 
 ### `reference_water` semantics differ
 

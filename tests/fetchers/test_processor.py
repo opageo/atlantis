@@ -172,16 +172,17 @@ class TestViirsRasterProcessor:
         with rasterio.open(paths.reference_water) as src:
             reference = src.read(1)
 
-        expected_water = np.array([[255, 0, 255, 100], [1, 60, 100, 0]], dtype=np.uint8)
+        # Code 20 (snow/ice) is treated as invalid by _invalid_mask → NaN/255
+        expected_water = np.array([[255, 0, 255, 100], [1, 60, 100, 255]], dtype=np.uint8)
         np.testing.assert_array_equal(water, expected_water)
 
         # Flood fraction stored as uint8 percentage: codes 101->1, 160->60,
-        # 200->100; fill/cloud remain nodata=255.
-        expected_flood = np.array([[255, 0, 255, 0], [1, 60, 100, 0]], dtype=np.uint8)
+        # 200->100; fill/cloud/snow-ice remain nodata=255.
+        expected_flood = np.array([[255, 0, 255, 0], [1, 60, 100, 255]], dtype=np.uint8)
         np.testing.assert_array_equal(flood, expected_flood)
 
-        # Exclusion: fill(1) and cloud(30) → 1; others → 0
-        expected_exclusion = np.array([[1, 0, 1, 0], [0, 0, 0, 0]], dtype=np.uint8)
+        # Exclusion: fill(1), cloud(30), and snow/ice(20) → 1; others → 0
+        expected_exclusion = np.array([[1, 0, 1, 0], [0, 0, 0, 1]], dtype=np.uint8)
         np.testing.assert_array_equal(exclusion, expected_exclusion)
 
         # Reference water: code 99 → 1 (per embedded NOAA TIFF legend)
