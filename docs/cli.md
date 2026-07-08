@@ -6,8 +6,9 @@ walkthroughs (Valencia, Harvey, Bihar, …) see
 see [viirs/overview.md](viirs/overview.md), [modis/overview.md](modis/overview.md),
 and [gfm/overview.md](gfm/overview.md).
 
-All commands are invoked through `uv run atlantis <command>` (or simply
-`atlantis <command>` inside an activated environment).
+All commands are invoked through `pixi run atlantis <command>` (or
+`uv run atlantis <command>`, or simply `atlantis <command>` inside an activated
+environment).
 
 ## Contents
 
@@ -23,6 +24,7 @@ All commands are invoked through `uv run atlantis <command>` (or simply
 - [`archive`](#archive) _(placeholder)_
 - [`validate`](#validate) _(placeholder)_
 - [`list-sources`](#list-sources)
+- [`list-layers`](#list-layers)
 - [`list-events`](#list-events) _(placeholder)_
 - [`batch viirs run`](#batch-viirs-run)
 
@@ -37,7 +39,7 @@ These apply to every subcommand and must appear **before** the command name.
 | `--show-completion`    | —       | Print completion script (to copy or customise).       |
 | `--help`               | —       | Show top-level help and exit.                         |
 
-Example: `uv run atlantis --verbose fetch --event ...`
+Example: `pixi run atlantis --verbose fetch --event ...`
 
 ## Command summary
 
@@ -53,6 +55,7 @@ Example: `uv run atlantis --verbose fetch --event ...`
 | `archive`                 | Write harmonised data to Zarr (raw + ML-ready).                         | placeholder |
 | `validate`                | Validate archive integrity (optionally with ML smoke test).             | placeholder |
 | `list-sources`            | List all registered data sources.                                       | implemented |
+| `list-layers`             | List the native and derived layers available per source.                | implemented |
 | `list-events`             | List events in the archive.                                             | placeholder |
 | `batch viirs run`         | Batch-process the VIIRS JPSS catalogue → 1 arcmin COGs on S3 via Dask.  | implemented |
 
@@ -62,7 +65,7 @@ Bootstrap required data assets (VIIRS AOI grid, KuroSiwo catalogue) and
 optionally prompt for missing credentials (e.g. `EARTHDATA_TOKEN`).
 
 ```bash
-uv run atlantis setup [OPTIONS]
+pixi run atlantis setup [OPTIONS]
 ```
 
 | Option              | Default | Description                                                                               |
@@ -81,7 +84,7 @@ Self-contained Valencia 2024 (Spain DANA) end-to-end VIIRS example.
 Convenient smoke test after `setup`.
 
 ```bash
-uv run atlantis demo [OPTIONS]
+pixi run atlantis demo [OPTIONS]
 ```
 
 | Option                       | Default              | Description                                         |
@@ -97,7 +100,7 @@ and a date window. Supports VIIRS, MODIS, GFM (and the planned RFM)
 through a single interface; use `--source` to pick one or `all`.
 
 ```bash
-uv run atlantis fetch [OPTIONS]
+pixi run atlantis fetch [OPTIONS]
 ```
 
 ### Event selection
@@ -116,14 +119,14 @@ no catalogue lookup is implemented for the generic `fetch` command.
 
 ### Output controls (all sources)
 
-| Option                                 | Default                         | Description                                                                                                                                                                                  |
-| -------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--classify/--no-classify`             | `--classify`                    | Classify pixels into flood-fraction / quality-mask / permanent-water layers (MODIS adds recurring-flood). `--no-classify` writes raw integer codes. **Ignored for GFM** (always classified). |
-| `--stream/--no-stream`                 | `--stream`                      | Stream tiles via GDAL `/vsicurl/` vs. download to disk. MODIS: only valid with `--modis-backend lance_geotiff`. **Ignored for GFM** (always streams via STAC/COG).                           |
-| `--plot`                               | off                             | Save a PNG of the peak-flood date (VIIRS / MODIS / GFM).                                                                                                                                     |
-| `--plot-dir`                           | `<output>/<source>/plots/`      | Directory for PNG output.                                                                                                                                                                    |
-| `--harmonise`                          | off (VIIRS/MODIS), **on** (GFM) | Harmonise to 1 arcmin. For GFM this only re-encodes float32→uint8 (no resampling — already on the canonical grid). Always enabled for GFM.                                                   |
-| `--keep-processed/--no-keep-processed` | `--keep-processed`              | Write intermediate processed/ GeoTIFFs. `--no-keep-processed` saves disk.                                                                                                                    |
+| Option                                 | Default                    | Description                                                                                                                                                                                                                                     |
+| -------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--classify/--no-classify`             | `--classify`               | Emit the source's **derived** layers from the registry-backed layer catalogue. `--no-classify` emits the **native** source layer untouched. See the canonical [layer reference](./layers.md) or `atlantis list-layers` for the exact inventory. |
+| `--stream/--no-stream`                 | `--stream`                 | Stream tiles via GDAL `/vsicurl/` vs. download to disk. MODIS: only valid with `--modis-backend lance_geotiff`. **Ignored for GFM** (always streams via STAC/COG).                                                                              |
+| `--plot`                               | off                        | Save a PNG of the peak-flood date (VIIRS / MODIS / GFM).                                                                                                                                                                                        |
+| `--plot-dir`                           | `<output>/<source>/plots/` | Directory for PNG output.                                                                                                                                                                                                                       |
+| `--harmonise`                          | off                        | Reproject the source-resolution `processed/` output (VIIRS 375 m, MODIS 250 m, GFM ~80 m) to the canonical 1-arcmin grid. Classified flood fractions use `average` resampling (uint8 %); native/raw code bands use nearest-neighbour.           |
+| `--keep-processed/--no-keep-processed` | `--keep-processed`         | Write intermediate processed/ GeoTIFFs. `--no-keep-processed` saves disk.                                                                                                                                                                       |
 
 ### Multi-date strategy (VIIRS / MODIS / GFM)
 
@@ -156,10 +159,10 @@ for pixel-level semantics.
 
 ### GFM-specific
 
-| Option                 | Default   | Description                                                                        |
-| ---------------------- | --------- | ---------------------------------------------------------------------------------- |
-| `--gfm-coarsen-factor` | `4`       | Spatial coarsening factor applied before reprojection.                             |
-| `--gfm-resampling`     | `average` | Resampling method for reprojection to EPSG:4326 (any `rasterio.enums.Resampling`). |
+| Option                 | Default   | Description                                                                                                                  |
+| ---------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `--gfm-coarsen-factor` | `4`       | Mean-pool factor for the class masks (classified); also sets the ~80 m processed grid spacing (20 m × factor) in both modes. |
+| `--gfm-resampling`     | `average` | Resampling method for reprojection to EPSG:4326 (any `rasterio.enums.Resampling`).                                           |
 
 ## `fetch-kurosiwo-viirs`
 
@@ -168,7 +171,7 @@ range are auto-resolved from the bundled GeoPackage catalogue (or from a
 precomputed metadata CSV).
 
 ```bash
-uv run atlantis fetch-kurosiwo-viirs [OPTIONS]
+pixi run atlantis fetch-kurosiwo-viirs [OPTIONS]
 ```
 
 ### Case selection
@@ -203,7 +206,7 @@ collected and the process exits non-zero if any case raises.
 Same shape as `fetch-kurosiwo-viirs` but using the MODIS MCDWD product.
 
 ```bash
-uv run atlantis fetch-kurosiwo-modis [OPTIONS]
+pixi run atlantis fetch-kurosiwo-modis [OPTIONS]
 ```
 
 ### Case selection & search window
@@ -214,14 +217,14 @@ Same flags as `fetch-kurosiwo-viirs`: `--metadata`, `--catalogue`,
 
 ### MODIS-specific options
 
-| Option                                 | Default            | Description                                                          |
-| -------------------------------------- | ------------------ | -------------------------------------------------------------------- |
-| `--modis-backend`                      | `lance_geotiff`    | `lance_geotiff` (streamable, NRT) or `laads_hdf4` (download, 2003+). |
-| `--modis-composite`                    | `F2`               | `F1`, `F1C`, `F2`, `F3`.                                             |
-| `--classify/--no-classify`             | `--classify`       | Classify into flood / recurring / permanent / quality layers.        |
-| `--stream/--no-stream`                 | `--stream`         | Stream via `/vsicurl/` (only with `--modis-backend lance_geotiff`).  |
-| `--plot`, `--plot-dir`, `--harmonise`  | —                  | As in `fetch`.                                                       |
-| `--keep-processed/--no-keep-processed` | `--keep-processed` | Keep intermediate processed/ GeoTIFFs.                               |
+| Option                                 | Default            | Description                                                                                                                                              |
+| -------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--modis-backend`                      | `lance_geotiff`    | `lance_geotiff` (streamable, NRT) or `laads_hdf4` (download, 2003+).                                                                                     |
+| `--modis-composite`                    | `F2`               | `F1`, `F1C`, `F2`, `F3`.                                                                                                                                 |
+| `--classify/--no-classify`             | `--classify`       | Emit the MODIS **derived** layers from the canonical [layer reference](./layers.md#layers-modis-derived), or the native `raw` composite codes untouched. |
+| `--stream/--no-stream`                 | `--stream`         | Stream via `/vsicurl/` (only with `--modis-backend lance_geotiff`).                                                                                      |
+| `--plot`, `--plot-dir`, `--harmonise`  | —                  | As in `fetch`.                                                                                                                                           |
+| `--keep-processed/--no-keep-processed` | `--keep-processed` | Keep intermediate processed/ GeoTIFFs.                                                                                                                   |
 
 ## `build-kurosiwo-metadata`
 
@@ -230,7 +233,7 @@ is faster to re-read than the full GeoPackage and is the recommended
 input for repeated `--metadata` runs.
 
 ```bash
-uv run atlantis build-kurosiwo-metadata [OPTIONS]
+pixi run atlantis build-kurosiwo-metadata [OPTIONS]
 ```
 
 | Option        | Default                                  | Description                           |
@@ -242,22 +245,23 @@ uv run atlantis build-kurosiwo-metadata [OPTIONS]
 
 Standalone harmonisation step: reproject + normalise already-fetched
 processed GeoTIFFs to a uniform 1 arcmin grid. Supports VIIRS and MODIS
-inputs (looks for files matching `{event}_*_{source}_flood_fraction.tif`
-or `{event}_*_{source}_raw.tif`).
+inputs. The current file discovery path looks for the default classified
+output (`{event}_*_{source}_flood_fraction.tif`) or the native passthrough
+output (`{event}_*_{source}_raw.tif`).
 
 ```bash
-uv run atlantis harmonise [OPTIONS]
+pixi run atlantis harmonise [OPTIONS]
 ```
 
-| Option                | Required | Default                           | Description                                         |
-| --------------------- | -------- | --------------------------------- | --------------------------------------------------- |
-| `--event`, `-e`       | yes      | —                                 | Flood event ID (used to match input filenames).     |
-| `--source`, `-s`      | yes      | —                                 | Data source ID (`viirs` or `modis`).                |
-| `--input`, `-i`       | no       | `<cache_dir>/raw/<event>/`        | Input directory with fetched/processed data.        |
-| `--output`, `-o`      | no       | `<cache_dir>/harmonised/<event>/` | Output directory for harmonised GeoTIFFs.           |
-| `--target-resolution` | no       | `0.01667` (1 arcmin)              | Target spatial resolution in degrees.               |
-| `--resampling`        | no       | `average`                         | Resampling method for `flood_fraction`.             |
-| `--dry-run`           | no       | off                               | Print what would be done without writing any files. |
+| Option                | Required | Default                           | Description                                                  |
+| --------------------- | -------- | --------------------------------- | ------------------------------------------------------------ |
+| `--event`, `-e`       | yes      | —                                 | Flood event ID (used to match input filenames).              |
+| `--source`, `-s`      | yes      | —                                 | Data source ID (`viirs` or `modis`).                         |
+| `--input`, `-i`       | no       | `<cache_dir>/raw/<event>/`        | Input directory with fetched/processed data.                 |
+| `--output`, `-o`      | no       | `<cache_dir>/harmonised/<event>/` | Output directory for harmonised GeoTIFFs.                    |
+| `--target-resolution` | no       | `0.01667` (1 arcmin)              | Target spatial resolution in degrees.                        |
+| `--resampling`        | no       | `average`                         | Resampling method for the classified `flood_fraction` layer. |
+| `--dry-run`           | no       | off                               | Print what would be done without writing any files.          |
 
 The command searches the standard `…/<source>/processed/` layout first,
 falling back to a broader `rglob` (including the KuroSiwo
@@ -269,7 +273,7 @@ files are found.
 > Placeholder — archive writing is not yet implemented.
 
 ```bash
-uv run atlantis archive [OPTIONS]
+pixi run atlantis archive [OPTIONS]
 ```
 
 | Option            | Default                 | Description                             |
@@ -284,7 +288,7 @@ uv run atlantis archive [OPTIONS]
 > Placeholder — archive validation is not yet implemented.
 
 ```bash
-uv run atlantis validate [OPTIONS]
+pixi run atlantis validate [OPTIONS]
 ```
 
 | Option            | Default                 | Description                                  |
@@ -299,15 +303,30 @@ uv run atlantis validate [OPTIONS]
 List all registered data sources (via the fetcher registry).
 
 ```bash
-uv run atlantis list-sources
+pixi run atlantis list-sources
 ```
+
+## `list-layers`
+
+List the registered native and derived layers for every source, or for a
+single source with `--source`. This is the quickest way to confirm what
+`--classify` and `--no-classify` will emit.
+
+```bash
+pixi run atlantis list-layers
+pixi run atlantis list-layers --source viirs
+```
+
+| Option           | Default | Description                           |
+| ---------------- | ------- | ------------------------------------- |
+| `--source`, `-s` | all     | Restrict the output to one source ID. |
 
 ## `list-events`
 
 > Placeholder — archive event listing is not yet implemented.
 
 ```bash
-uv run atlantis list-events [OPTIONS]
+pixi run atlantis list-events [OPTIONS]
 ```
 
 | Option            | Default                 | Description             |
@@ -322,7 +341,7 @@ Progress is persisted in a SQLite tracker DB so runs can be safely
 interrupted and resumed.
 
 ```bash
-uv run atlantis batch viirs run [OPTIONS]
+pixi run atlantis batch viirs run [OPTIONS]
 ```
 
 | Option             | Default                                                  | Description                                                   |
@@ -342,10 +361,10 @@ uv run atlantis batch viirs run [OPTIONS]
 
 ```bash
 # VM1
-uv run atlantis batch viirs run --partition 0:24464 --db-path tracker_vm1.db
+pixi run atlantis batch viirs run --partition 0:24464 --db-path tracker_vm1.db
 
 # VM2
-uv run atlantis batch viirs run --partition 24464:48928 --db-path tracker_vm2.db
+pixi run atlantis batch viirs run --partition 24464:48928 --db-path tracker_vm2.db
 ```
 
 Pre-flight checks: `--output` must start with `s3://atlantis/`, and the

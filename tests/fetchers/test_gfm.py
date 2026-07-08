@@ -52,14 +52,14 @@ def _make_processed_tile(shape=(100, 100), flood_frac=0.3, perm_frac=0.1) -> Gfm
     h, w = shape
     rng = np.random.default_rng(42)
     flood_fraction = rng.random((h, w), dtype=np.float32) * flood_frac
-    quality_mask = np.ones((h, w), dtype=np.uint8)
-    permanent_water = (rng.random((h, w)) < perm_frac).astype(np.uint8)
+    water_fraction = np.clip(flood_fraction + (rng.random((h, w)) < perm_frac).astype(np.float32), 0.0, 1.0)
+    reference_water = np.where(rng.random((h, w)) < perm_frac, 2, 0).astype(np.uint8)
     transform = from_bounds(10.0, 20.0, 11.0, 21.0, w, h)
 
     return GfmProcessedTile(
+        water_fraction=water_fraction,
         flood_fraction=flood_fraction,
-        quality_mask=quality_mask,
-        permanent_water=permanent_water,
+        reference_water=reference_water,
         transform=transform,
         crs="EPSG:4326",
         shape=shape,
@@ -220,9 +220,9 @@ class TestGfmRasterProcessor:
         from rasterio.transform import from_bounds
 
         tile = GfmProcessedTile(
+            water_fraction=np.zeros((10, 10), dtype=np.float32),
             flood_fraction=np.zeros((10, 10), dtype=np.float32),
-            quality_mask=np.ones((10, 10), dtype=np.uint8),
-            permanent_water=np.zeros((10, 10), dtype=np.uint8),
+            reference_water=np.zeros((10, 10), dtype=np.uint8),
             transform=from_bounds(0, 0, 1, 1, 10, 10),
             crs="EPSG:4326",
             shape=(10, 10),
@@ -243,9 +243,9 @@ class TestGfmRasterProcessor:
         tile2 = _make_processed_tile(shape=(10, 10), flood_frac=0.6)
         result = GfmRasterProcessor.aggregate_tiles([tile1, tile2])
         assert result is not None
+        assert result.water_fraction.shape == (10, 10)
         assert result.flood_fraction.shape == (10, 10)
-        assert result.quality_mask.shape == (10, 10)
-        assert result.permanent_water.shape == (10, 10)
+        assert result.reference_water.shape == (10, 10)
         assert result.crs == "EPSG:4326"
 
 
@@ -336,17 +336,17 @@ class TestGFMFetcherFetch:
         from rasterio.transform import from_bounds
 
         tile_low = GfmProcessedTile(
+            water_fraction=np.zeros((10, 10), dtype=np.float32),
             flood_fraction=np.zeros((10, 10), dtype=np.float32),
-            quality_mask=np.ones((10, 10), dtype=np.uint8),
-            permanent_water=np.zeros((10, 10), dtype=np.uint8),
+            reference_water=np.zeros((10, 10), dtype=np.uint8),
             transform=from_bounds(10, 20, 11, 21, 10, 10),
             crs="EPSG:4326",
             shape=(10, 10),
         )
         tile_high = GfmProcessedTile(
+            water_fraction=np.full((10, 10), 0.8, dtype=np.float32),
             flood_fraction=np.full((10, 10), 0.8, dtype=np.float32),
-            quality_mask=np.ones((10, 10), dtype=np.uint8),
-            permanent_water=np.zeros((10, 10), dtype=np.uint8),
+            reference_water=np.zeros((10, 10), dtype=np.uint8),
             transform=from_bounds(10, 20, 11, 21, 10, 10),
             crs="EPSG:4326",
             shape=(10, 10),
@@ -401,6 +401,89 @@ class TestGFMFetcherFetch:
         assert "20240101" in date_tokens
         assert "20240102" in date_tokens
 
+    def test_keep_processed_writes_only_survivors(self, small_event, tmp_path):
+        """#4: processed/ is written only for dates surviving the peak window.
+
+        Two dates are processed in-memory; ``max_observations=1`` prunes to the
+        peak date before any processed GeoTIFF is persisted, so
+        ``write_processed`` must be invoked exactly once (mirrors VIIRS).
+        """
+        fetcher = GFMFetcher(strategy="all", keep_processed=True, max_observations=1)
+
+        from rasterio.transform import from_bounds
+
+        tile_low = GfmProcessedTile(
+            water_fraction=np.zeros((10, 10), dtype=np.float32),
+            flood_fraction=np.zeros((10, 10), dtype=np.float32),
+            reference_water=np.zeros((10, 10), dtype=np.uint8),
+            transform=from_bounds(10, 20, 11, 21, 10, 10),
+            crs="EPSG:4326",
+            shape=(10, 10),
+        )
+        tile_high = GfmProcessedTile(
+            water_fraction=np.full((10, 10), 0.8, dtype=np.float32),
+            flood_fraction=np.full((10, 10), 0.8, dtype=np.float32),
+            reference_water=np.zeros((10, 10), dtype=np.uint8),
+            transform=from_bounds(10, 20, 11, 21, 10, 10),
+            crs="EPSG:4326",
+            shape=(10, 10),
+        )
+
+        items = [_make_mock_stac_item("item1"), _make_mock_stac_item("item2")]
+        date_groups = {"20240101": [items[0]], "20240102": [items[1]]}
+
+        mock_low = MagicMock()
+        mock_low.processed = tile_low
+        mock_high = MagicMock()
+        mock_high.processed = tile_high
+
+        def mock_process(items_arg, **kwargs):
+            return mock_low if kwargs.get("date_token") == "20240101" else mock_high
+
+        write_spy = MagicMock()
+        with (
+            patch.object(fetcher._backend, "search", return_value=items),
+            patch.object(fetcher._backend, "group_items_by_date", return_value=date_groups),
+            patch(
+                "atlantis.fetchers.gfm.GfmRasterProcessor.process_items",
+                side_effect=mock_process,
+            ),
+            patch(
+                "atlantis.fetchers.gfm.GfmRasterProcessor.write_processed",
+                write_spy,
+            ),
+        ):
+            fetcher.fetch(small_event, tmp_path)
+
+        # Only the surviving (peak) date is persisted to processed/.
+        assert write_spy.call_count == 1
+        assert write_spy.call_args.args[2] == "20240102"
+
+    def test_fetch_keep_processed_returns_file_backed_result(self, small_event, tmp_path):
+        """keep_processed should return the written GFM layer files for disk reload."""
+        fetcher = GFMFetcher(strategy="all", keep_processed=True)
+
+        tile = _make_processed_tile(shape=(10, 10))
+        items = [_make_mock_stac_item("item1")]
+        mock_result = MagicMock()
+        mock_result.processed = tile
+
+        with patch.object(fetcher._backend, "search", return_value=items):
+            with patch.object(fetcher._backend, "group_items_by_date", return_value={"20240101": items}):
+                with patch(
+                    "atlantis.fetchers.gfm.GfmRasterProcessor.process_items",
+                    return_value=mock_result,
+                ):
+                    results = fetcher.fetch(small_event, tmp_path)
+
+        assert len(results) == 1
+        assert results[0].dataset is None
+        assert results[0].files
+        file_names = {path.name for path in results[0].files}
+        assert f"{small_event.event_id}_20240101_gfm_water_fraction.tif" in file_names
+        assert f"{small_event.event_id}_20240101_gfm_flood_fraction.tif" in file_names
+        assert f"{small_event.event_id}_20240101_gfm_reference_water.tif" in file_names
+
 
 # ── ToDataset Tests ───────────────────────────────────────────────────────────
 
@@ -448,3 +531,144 @@ class TestGFMFetcherToDataset:
 
         with pytest.raises(ValueError, match="neither in-memory dataset nor files"):
             fetcher.to_dataset(result)
+
+    def test_to_dataset_from_file_backed_classified_layers(self, tmp_path):
+        from rasterio.transform import from_bounds
+
+        fetcher = GFMFetcher()
+        tile = GfmProcessedTile(
+            water_fraction=np.array([[0.2, 1.0], [0.0, np.nan]], dtype=np.float32),
+            flood_fraction=np.array([[0.1, 0.8], [0.0, np.nan]], dtype=np.float32),
+            reference_water=np.array([[0, 2], [1, 255]], dtype=np.uint8),
+            extra_layers={"exclusion_mask": np.array([[0, 1], [0, 255]], dtype=np.uint8)},
+            transform=from_bounds(0, 0, 1, 1, 2, 2),
+            crs="EPSG:4326",
+            shape=(2, 2),
+        )
+        processor = GfmRasterProcessor(bbox=(0.0, 0.0, 1.0, 1.0))
+        paths = processor.write_processed(tile, "test", "20240101", tmp_path)
+
+        from atlantis.models.metadata import TileMetadata
+
+        result = FetchResult(
+            event_id="test",
+            source_id="gfm",
+            files=[
+                p
+                for p in (
+                    paths.water_fraction,
+                    paths.flood_fraction,
+                    paths.reference_water,
+                    *paths.extra.values(),
+                )
+                if p is not None
+            ],
+            metadata=TileMetadata(
+                event_id="test",
+                source_id="gfm",
+                fetch_timestamp=datetime.now(timezone.utc),
+                bbox=(0, 0, 1, 1),
+            ),
+            dataset=None,
+        )
+
+        out = fetcher.to_dataset(result)
+        assert set(["water_fraction", "flood_fraction", "reference_water", "exclusion_mask"]).issubset(out.data_vars)
+        assert out["water_fraction"].dtype == np.float32
+        assert out["flood_fraction"].dtype == np.float32
+        assert np.isclose(float(out["water_fraction"].values[0, 0]), 0.2)
+        assert np.isnan(out["water_fraction"].values[1, 1])
+        assert int(out["reference_water"].values[0, 1]) == 2
+
+
+# ── Native / raw-mode dataset tests ──────────────────────────────────────────
+
+
+class TestGfmNativeDataset:
+    """Tests for processed_tile_to_dataset in native / raw mode."""
+
+    def _make_native_tile(self, shape=(5, 5)) -> GfmProcessedTile:
+        from rasterio.transform import from_bounds
+
+        from atlantis.fetchers.gfm.processor import GFM_FLOOD, GFM_NODATA
+
+        h, w = shape
+        transform = from_bounds(0.0, 0.0, 1.0, 1.0, w, h)
+        rng = np.random.default_rng(0)
+        efe = rng.choice([0, GFM_FLOOD, GFM_NODATA], size=(h, w)).astype(np.uint8)
+        rwm = rng.choice([0, 1, 2, GFM_NODATA], size=(h, w)).astype(np.uint8)
+        return GfmProcessedTile(
+            ensemble_flood_extent=efe,
+            reference_water_mask=rwm,
+            transform=transform,
+            crs="EPSG:4326",
+            shape=shape,
+            cloud_fraction=0.1,
+        )
+
+    def test_native_dataset_has_correct_variables(self):
+        from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
+
+        tile = self._make_native_tile()
+        ds = processed_tile_to_dataset(tile, event_id="test", source_id="gfm")
+        assert "ensemble_flood_extent" in ds.data_vars
+        assert "reference_water_mask" in ds.data_vars
+        assert "flood_fraction" not in ds.data_vars
+        assert "water_fraction" not in ds.data_vars
+
+    def test_native_dataset_dtypes(self):
+        from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
+
+        tile = self._make_native_tile()
+        ds = processed_tile_to_dataset(tile, event_id="test", source_id="gfm")
+        assert ds["ensemble_flood_extent"].dtype == np.uint8
+        assert ds["reference_water_mask"].dtype == np.uint8
+
+    def test_classified_dataset_has_flood_fraction(self):
+        from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
+
+        tile = _make_processed_tile()
+        ds = processed_tile_to_dataset(tile, event_id="test", source_id="gfm")
+        assert "water_fraction" in ds.data_vars
+        assert "flood_fraction" in ds.data_vars
+        assert "reference_water" in ds.data_vars
+        assert "ensemble_flood_extent" not in ds.data_vars
+
+
+class TestGFMFetcherClassifyParam:
+    """Tests that the classify param is wired through the fetcher correctly."""
+
+    def test_default_classify_true(self):
+        fetcher = GFMFetcher()
+        assert fetcher.classify is True
+
+    def test_classify_false_stored(self):
+        fetcher = GFMFetcher(classify=False)
+        assert fetcher.classify is False
+
+    def test_permanent_water_available_reflects_classify(self):
+        """permanent_water_mask_available should match the classify flag."""
+        from rasterio.transform import from_bounds
+
+        from atlantis.fetchers.gfm.processor import GFM_FLOOD
+
+        # Build a native tile directly and go through _build_fetch_result
+        t = from_bounds(0, 0, 1, 1, 5, 5)
+        native_tile = GfmProcessedTile(
+            ensemble_flood_extent=np.full((5, 5), GFM_FLOOD, dtype=np.uint8),
+            reference_water_mask=np.zeros((5, 5), dtype=np.uint8),
+            transform=t,
+            crs="EPSG:4326",
+            shape=(5, 5),
+        )
+        from datetime import date
+
+        event = FloodEvent(
+            event_id="test",
+            bbox=(0.0, 0.0, 1.0, 1.0),
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 1),
+        )
+        fetcher = GFMFetcher(classify=False)
+        result = fetcher._build_fetch_result(native_tile, event, "20240101")
+        assert result.metadata.permanent_water_mask_available is False

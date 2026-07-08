@@ -19,7 +19,7 @@ class TileMetadata(BaseModel):
         cloud_fraction: Fraction of cloud cover (0.0-1.0).
         snow_flag: Whether snow was detected.
         quality_bitmask: Quality flags as bitmask.
-        permanent_water_mask_available: Whether permanent water mask exists.
+        permanent_water_mask_available: Whether a source-specific reference/permanent water layer exists.
     """
 
     event_id: str

@@ -4,6 +4,9 @@
 dependencies — including GDAL with HDF4 support — from conda-forge. No manual
 compilation or system package management is needed.
 
+> **Disclaimer (Conda):** Atlantis does not officially support Conda-only
+> workflows. We only provide `environment.yml` as a convenience export from
+> `pixi.toml`.
 > **Existing `uv` / `make` users:** the `pixi` path is an alternative. The
 > `pyproject.toml` + `uv sync` workflow remains fully supported.
 
@@ -43,6 +46,18 @@ pixi run verify-gdal
 # Expected: GDAL 3.x.x — HDF4 driver: OK
 ```
 
+### Optional: export a Conda environment file from `pixi.toml`
+
+If you still need Conda, generate `environment.yml` from the Pixi lockfile and
+then create the Conda environment:
+
+```bash
+pixi workspace export conda-environment --environment default --name default --from-lock-file environment.yml
+conda env create -f environment.yml
+conda activate default
+python -m pip install -e . --no-deps
+```
+
 ---
 
 ## 3. Bootstrap credentials & data assets
@@ -64,6 +79,15 @@ See [setup.md](setup.md) for full details on each credential.
 
 ```bash
 pixi run demo
+```
+
+Conda equivalent (after creating/activating `default` and installing editable
+Atlantis with `--no-deps`):
+
+```bash
+eval "$("$HOME"/miniforge3/bin/conda shell.bash hook)"
+conda activate default
+atlantis demo
 ```
 
 Fetches VIIRS inundation data for the Valencia 2024 flood event, harmonises to

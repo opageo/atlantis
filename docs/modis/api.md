@@ -48,6 +48,8 @@ print("MODIS-only layers present:", "recurring_flood" in ds)
 LANCE only retains files for ~1 week. For older dates, use the LAADS
 backend below.
 
+> **Native vs derived layers.** The exact MODIS layer inventory is maintained in the canonical [layer reference](../layers.md#layers-modis) and via `atlantis list-layers --source modis`. With `classify=True`, `to_dataset()` returns the registry-defined derived layers; with `classify=False` it returns the native `raw` composite codes.
+
 ## Download mode (cache tiles locally)
 
 ```python
@@ -114,7 +116,7 @@ print(raw_ds["raw"].dtype, raw_ds["raw"].shape)
 ```
 
 This preserves the original categorical codes (`0/1/2/3/255`) instead of
-deriving the VIIRS-parity layers.
+deriving the VIIRS-parity derived layers.
 
 ## KuroSiwo events
 
@@ -138,15 +140,10 @@ sensor-specific helper command like `fetch-kurosiwo-viirs`.
 ## Harmonisation
 
 The harmoniser is source-aware — its default
-`variable_resampling` already handles all MCDWD layers:
-
-| Variable          | Resampler |
-| ----------------- | --------- |
-| `flood_fraction`  | `average` |
-| `permanent_water` | `mode`    |
-| `recurring_flood` | `mode`    |
-| `quality_mask`    | `mode`    |
-| `raw`             | `nearest` |
+`variable_resampling` already handles all MCDWD layers. The canonical
+per-layer resampler assignments live in the
+[MODIS layer reference](../layers.md#layers-modis-derived) and
+[native MODIS catalogue](../layers.md#layers-modis-native).
 
 ```python
 from atlantis.harmoniser import Harmoniser, write_harmonised_raster
@@ -172,29 +169,29 @@ issues, the LANCE retention window, empty listings, or tile mismatches.
 
 ## MODISFetcher parameters
 
-| Parameter         | Type   | Default           | Description                                                                                                |
-| ----------------- | ------ | ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| `backend`         | `str`  | `"lance_geotiff"` | `"lance_geotiff"` (NRT, streamable) or `"laads_hdf4"` (historical, download)                               |
-| `composite`       | `str`  | `"F2"`            | One of `"F1"` / `"F1C"` / `"F2"` / `"F3"` (1-day, 1-day cloud-shadow screened, 2-day, 3-day)               |
-| `classify`        | `bool` | `False`           | Decode raw codes into VIIRS-parity layers + `recurring_flood`; the CLI turns this on by default            |
-| `stream`          | `bool` | `False`           | `/vsicurl/` streaming. Only valid with `lance_geotiff`; raises otherwise. The CLI turns this on by default |
-| `strategy`        | `str`  | `"peak"`          | Multi-date reduction: `"peak"`, `"aggregate"`, `"all"`                                                     |
-| `keep_processed`  | `bool` | `True`            | Write intermediate processed/ GeoTIFFs                                                                     |
-| `base_url`        | `str`  | per-backend       | Override the backend's primary base URL                                                                    |
-| `backup_base_url` | `str`  | `nrt4` mirror     | LANCE-only: secondary host used as fallback on connection error                                            |
-| `timeout`         | `int`  | `300`             | HTTP request timeout (seconds)                                                                             |
+| Parameter         | Type   | Default           | Description                                                                                                                                                                                  |
+| ----------------- | ------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backend`         | `str`  | `"lance_geotiff"` | `"lance_geotiff"` (NRT, streamable) or `"laads_hdf4"` (historical, download)                                                                                                                 |
+| `composite`       | `str`  | `"F2"`            | One of `"F1"` / `"F1C"` / `"F2"` / `"F3"` (1-day, 1-day cloud-shadow screened, 2-day, 3-day)                                                                                                 |
+| `classify`        | `bool` | `False`           | Emit **derived** layers (`water_fraction`, `flood_fraction`, `reference_water`, `exclusion_mask`, `recurring_flood`) instead of the native `raw` composite; the CLI turns this on by default |
+| `stream`          | `bool` | `False`           | `/vsicurl/` streaming. Only valid with `lance_geotiff`; raises otherwise. The CLI turns this on by default                                                                                   |
+| `strategy`        | `str`  | `"peak"`          | Multi-date reduction: `"peak"`, `"aggregate"`, `"all"`                                                                                                                                       |
+| `keep_processed`  | `bool` | `True`            | Write intermediate processed/ GeoTIFFs                                                                                                                                                       |
+| `base_url`        | `str`  | per-backend       | Override the backend's primary base URL                                                                                                                                                      |
+| `backup_base_url` | `str`  | `nrt4` mirror     | LANCE-only: secondary host used as fallback on connection error                                                                                                                              |
+| `timeout`         | `int`  | `300`             | HTTP request timeout (seconds)                                                                                                                                                               |
+
+Atlantis does not auto-select a MODIS composite from cloudiness or event
+timing. The chosen `composite` is fixed for the whole fetch, and defaults to
+`F2` unless you override it.
 
 ## Output layers (with `--classify` / `classify=True`)
 
-| Variable          | MODIS class                 | Disk encoding                     |
-| ----------------- | --------------------------- | --------------------------------- |
-| `flood_fraction`  | `class == 3`                | uint8 percent (0–100), nodata=255 |
-| `recurring_flood` | `class == 2` (Release 1.1+) | uint8 (0/1), nodata=0             |
-| `permanent_water` | `class == 1`                | uint8 (0/1), nodata=0             |
-| `quality_mask`    | `class != 255`              | uint8 (0/1), nodata=0             |
-
-`flood_fraction` is binary 0/1 in memory — the harmoniser's `average`
-resampling converts that into a true % flooded at 1 arcmin.
+The canonical MODIS layer inventory lives in the
+[derived layer reference](../layers.md#layers-modis-derived). This page only
+adds the on-disk encoding rule: the fraction layers are binary 0/1 in memory
+and are written as uint8 percentages (`0–100`, `nodata=255`), while the
+categorical masks/codes remain uint8 and keep `nodata=0`.
 
 > **Pre-Release-1.1 archives.** Class `2` (recurring flood) is reserved
 > but never populated in beta releases. To compare modern and legacy
@@ -212,11 +209,11 @@ to `255` ("insufficient data") **even if water was detected**. This is
 correct semantics for the product, but it has two consequences for
 downstream code:
 
-1. `quality_mask = (class != 255)` drops HAND-masked pixels — exactly
+1. `exclusion_mask = (class == 255)` flags HAND-masked pixels — exactly
    the behaviour we want for confidence-aware analyses.
-2. **Never** treat `255` as `0` (no flood). Doing so systematically
-   under-reports flood at HAND boundaries. The companion `quality_mask`
-   keeps the distinction explicit.
+2. **Never** treat `255` as `0` (no flood). In the fraction layers,
+   excluded pixels stay `NaN` in memory and are written as `255` on disk.
+   The companion `exclusion_mask` keeps the distinction explicit.
 
 ## Custom backend
 

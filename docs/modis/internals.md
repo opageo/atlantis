@@ -81,10 +81,11 @@ flowchart TD
     end
     E --> F
     subgraph F["5. Classify (optional)"]
-        F1["flood_fraction = (class==3).float32"]
-        F2["recurring_flood = (class==2).uint8"]
-        F3["permanent_water = (class==1).uint8"]
-        F4["quality_mask = (class!=255).uint8"]
+        F1["water_fraction = (class∈{1,2,3}).float32"]
+        F2["flood_fraction = (class==3).float32"]
+        F3["reference_water = (class∈{1,2}).uint8"]
+        F4["exclusion_mask = (class==255).uint8"]
+        F5["recurring_flood = (class==2).uint8"]
     end
     F --> G
     subgraph G["6. Strategy dispatch"]
@@ -165,31 +166,35 @@ the same `rasterio.merge.merge()` call as the LANCE GeoTIFF inputs.
 
 ## Pixel classification
 
-The decoder mirrors the layer mapping in [overview.md](overview.md#suggested-layer-mapping):
+With `--classify` Atlantis computes the **derived** layers below; with
+`--no-classify` it passes the **native** `raw` composite through untouched. The
+per-layer maths is declared in `src/atlantis/fetchers/modis/derived.py` and
+registered on the MODIS layer registry (`modis/layers.py`), so
+`_classify_pixels()` just iterates that registry. Browse the full catalogue with
+`atlantis list-layers --source modis` or in the canonical
+[MODIS derived layer reference](../layers.md#layers-modis-derived).
 
-| Variable          | Rule                   | Meaning                                                                                                |
-| ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------ |
-| `flood_fraction`  | `(class == 3).float32` | Binary unusual-flood mask. Aggregates to true % at 1 arcmin via the harmoniser's `average` resampling. |
-| `recurring_flood` | `(class == 2).uint8`   | MODIS-only seasonal-flood mask (Release 1.1+).                                                         |
-| `permanent_water` | `(class == 1).uint8`   | Surface water from the rolling 5-year MOD44W mask.                                                     |
-| `quality_mask`    | `(class != 255).uint8` | 1 = valid clear-sky observation; 0 = insufficient data **or HAND-masked**.                             |
+Operationally, this stage only needs two rules:
 
-Counts layers (`TotalCounts_*`, `ValidCounts*`, `WaterCounts*`) are
-ignored in v1 but available via `rasterio.open(hdf).subdatasets` for
-custom downstream pipelines.
+- the fraction layers are float32 masks with `class == 255` preserved as `NaN`,
+  so downstream averaging yields true sub-pixel fractions;
+- the categorical layers are simple uint8 class-membership masks, with
+  `recurring_flood` remaining the MODIS-only extra.
+
+The eleven count layers (`TotalCounts_*`, `ValidCounts*`, `WaterCounts*`) are
+catalogued as **native** layers (see `atlantis list-layers --source modis`) but
+not loaded by the default pipeline; they remain available via
+`rasterio.open(hdf).subdatasets` for custom downstream pipelines.
 
 ## Aggregation
 
 `ModisRasterProcessor.aggregate_tiles()` reduces an `(N, H, W)` time stack:
 
-| Layer             | Reduction                   |
-| ----------------- | --------------------------- |
-| `flood_fraction`  | `np.nanmean(stack, axis=0)` |
-| `quality_mask`    | per-pixel mode (uint8)      |
-| `permanent_water` | per-pixel mode (uint8)      |
-| `recurring_flood` | per-pixel mode (uint8)      |
-| `raw`             | per-pixel mode (uint8)      |
-| `cloud_fraction`  | scalar `np.mean`            |
+The reduction policy follows the canonical layer catalogue:
+
+- fraction layers use `np.nanmean(...)`;
+- categorical and native-code layers use per-pixel mode;
+- `cloud_fraction` uses scalar `np.mean`.
 
 Mode is computed via `scipy.stats.mode` when available, with a manual
 `np.bincount` fallback. Ties are broken by the lowest pixel value

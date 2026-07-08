@@ -54,7 +54,7 @@ NOAA S3 granule (375 m GeoTIFF, ~20 MB)
  raw array
   │
   │  classify_viirs_flood_fraction()            ← keep ONLY flood_fraction
-  ▼                                              (discard quality_mask, permanent_water, raw)
+  ▼                                              (discard non-flood derived layers and raw codes)
  flood_fraction (float32, native 375 m)
   │
   │  Harmoniser.harmonise()                     ← reproject + regrid to 1 arcmin

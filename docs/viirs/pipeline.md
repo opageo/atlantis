@@ -25,7 +25,7 @@ flowchart TD
     SAMPLE --> STRATEGY
 
     STRATEGY -->|peak| PEAK["Pick peak flood date"]
-    STRATEGY -->|aggregate| AGG["Aggregate (mean/mode)"]
+    STRATEGY -->|aggregate| AGG["Aggregate (mean + mask-aware reduction)"]
     STRATEGY -->|all| ALL["Keep all dates"]
 
     PEAK --> KEEP_PROC{--keep-processed?}
@@ -66,14 +66,16 @@ _Note: `--harmonise` adds a final `harmonised/_\_harmonised.tif` output for any 
 ## Strategies in detail (pixel-level)
 
 After the per-date "Mosaic & clip" stage, every date in the requested
-window has produced a `ProcessedTile` with three (optionally four) raster
-layers, all on the **same 375 m grid** for the bbox:
+window has produced a `ProcessedTile`, all on the **same 375 m grid** for the
+bbox. The layers depend on the chosen **kind** (see [the layer reference](../layers.md)):
 
-- `flood_fraction` — uint8, **0–100** (% of valid water within the
-  classified pixel), `nodata=255` for cloud/no-data.
-- `quality_mask` — uint8, `0/1` (1 = pixel is good quality).
-- `permanent_water` — uint8, `0/1` (1 = pixel is permanent surface water).
-- `raw` (only with `--no-classify`) — uint8, original VFM codes 0–200.
+The exact native/derived VIIRS inventory is centralised in the canonical
+[layer reference](../layers.md#layers-viirs). At this stage, the important
+encoding distinction is:
+
+- the fraction layers are written as uint8 percentages (`0–100`, `nodata=255`),
+- the categorical masks stay uint8 `0/1`,
+- the native `raw` layer preserves the original VFM codes.
 
 The strategy controls how those `N`-date stacks are reduced to the output
 written under `processed/` (and later `harmonised/`):
@@ -108,21 +110,36 @@ mosaic.
 Implemented in [`ViirsRasterProcessor.aggregate_tiles`](../../src/atlantis/fetchers/viirs/processor.py).
 
 All `N` dates are stacked into a `(N, H, W)` array per layer and reduced
-**element-wise**:
+**element-wise** by [`atlantis.layers.aggregate_layer`](../../src/atlantis/layers/aggregation.py),
+using the operator declared for each layer in the
+[VIIRS layer registry](../layers.md#layers-viirs):
 
-| Layer             | Reduction                 | Rationale                                   |
-| :---------------- | :------------------------ | :------------------------------------------ |
-| `flood_fraction`  | `np.nanmean(stack, 0)`    | Continuous variable → arithmetic mean       |
-| `quality_mask`    | mode (uint8) along axis 0 | Categorical 0/1 → most-frequent value       |
-| `permanent_water` | mode (uint8) along axis 0 | Categorical 0/1 → most-frequent value       |
-| `raw`             | mode (uint8) along axis 0 | Categorical VFM codes → most-frequent value |
-| `cloud_fraction`  | scalar `np.mean`          | Per-tile metadata, not a pixel array        |
+| Layer                                | Operator     | Rationale                                                    |
+| :----------------------------------- | :----------- | :----------------------------------------------------------- |
+| `water_fraction`                     | `nanmean`    | Continuous variable → arithmetic mean                        |
+| `flood_fraction`                     | `nanmean`    | Continuous variable → arithmetic mean                        |
+| `exclusion_mask`                     | `all_true`   | Excluded only if every observation was fill/cloud            |
+| `reference_water`                    | `majority`   | Ignore excluded dates when reducing the reference-water mask |
+| `cloud_mask` / `snow_ice` / `shadow` | `mode`       | Categorical 0/1 derived masks → most-frequent value          |
+| `raw`                                | `mode`       | Categorical VFM codes → most-frequent value                  |
+| `cloud_fraction`                     | scalar       | Per-tile metadata (`np.mean`), not a pixel array             |
+
+> **Why `all_true` / `majority` for VIIRS?** VIIRS is optical, so cloud and
+> fill gaps are common. `exclusion_mask` therefore uses a conservative rule: a
+> pixel is excluded only if **every** date in the stack was fill/cloud. Because
+> those excluded dates should not vote on `reference_water`, it is reduced by a
+> strict majority over usable (non-excluded) observations only.
 
 Important properties:
 
 - **`nanmean`** for `flood_fraction` means cloud/no-data pixels (NaN at
   this stage, encoded as `255` only at write-time) are **skipped per-pixel** —
   a pixel that was clear on 3 of 5 dates averages those 3 dates only.
+- **`exclusion_mask`** is intentionally conservative in aggregate mode: a pixel
+  is marked excluded only if **every** observation in the stack was fill/cloud.
+- **`reference_water`** is reduced only across dates where `exclusion_mask == 0`;
+  ties resolve to `0`, so the aggregate output requires a strict majority of
+  usable observations to mark a pixel as reference water.
 - **Mode** for the categorical layers is computed by
   `_mode_uint8`: a per-pixel `np.bincount` over the time axis, with
   ties broken by the **lowest value** (`argmax` returns the first index).
@@ -145,9 +162,10 @@ equals the number of dates with successful tile coverage.
 Raw tiles (NOAA S3)          uint8   codes 0–200         375 m
         │
         ▼
-Processed (--classify)       uint8   flood pct 0–100     375 m, nodata=255
-                             uint8   quality 0/1         375 m, nodata=0
-                             uint8   perm. water 0/1     375 m, nodata=0
+Processed (--classify)       uint8   water pct 0–100     375 m, nodata=255
+           uint8   flood pct 0–100     375 m, nodata=255
+           uint8   reference water 0/1 375 m, nodata=0
+           uint8   exclusion 0/1       375 m, nodata=0
         │
         ▼
 Harmonised                   uint8   flood pct 0–100     ~1 arcmin, nodata=255
@@ -169,7 +187,7 @@ Harmonised (raw)             uint8   raw codes 0–200     ~1 arcmin, nodata=255
 - **No-keep-processed** skips writing intermediate 375 m files — saves ~100 MB per event.
 - **Raw + harmonise** uses nearest-neighbour resampling (preserves integer codes) but emits a warning that the result is not a continuous flood fraction.
 - The normaliser's `skip_normalise_vars` set includes `"raw"` — raw codes are never min-max normalised even if passed through the full harmonisation pipeline.
-- **Resampling methods** are configured in `variable_resampling`: `flood_fraction → average`, `quality_mask → mode`, `permanent_water → mode`, `raw → nearest`.
+- **Resampling methods** are configured in `variable_resampling`: `water_fraction → average`, `flood_fraction → average`, `reference_water → mode`, `exclusion_mask → mode`, `raw → nearest`.
 - **Global grid alignment** — by default, harmonised AOIs are snapped to
   the canonical 1-arcmin grid (`origin = (-180, +90)`, `res = 1/60°`) so
   every output is a bit-for-bit subset of the same global raster

@@ -28,10 +28,20 @@ from atlantis.fetchers.gfm.processor import GfmProcessedTile
 def flood_pixel_count(processed: GfmProcessedTile) -> int:
     """Return a comparable flood signal for picking the peak inundation date.
 
-    Counts pixels where ``flood_fraction > 0``, ignoring NaN (unobserved).
+    Classified mode: counts pixels where ``flood_fraction > 0``, ignoring NaN.
+    Native mode: counts pixels where ``ensemble_flood_extent == GFM_FLOOD`` (1).
     """
-    ff = processed.flood_fraction
-    return int(np.nansum(ff > 0))
+    from atlantis.fetchers.gfm.processor import GFM_FLOOD, GFM_NODATA
+
+    if processed.flood_fraction is not None:
+        ff = processed.flood_fraction
+        return int(np.nansum(ff > 0))
+
+    if processed.ensemble_flood_extent is not None:
+        efe = processed.ensemble_flood_extent
+        return int(np.sum((efe == GFM_FLOOD) & (efe != GFM_NODATA)))
+
+    return 0
 
 
 def is_better_peak_candidate(count: int, best_count: int) -> bool:

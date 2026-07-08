@@ -92,12 +92,13 @@ class TestViirsRasterProcessor:
         assert paths.raw is not None
         assert paths.raw.exists()
         assert paths.flood_fraction is None
-        assert paths.quality_mask is None
-        assert paths.permanent_water is None
+        assert paths.water_fraction is None
+        assert paths.exclusion_mask is None
+        assert paths.reference_water is None
         assert isinstance(metadata, TileMetadata)
 
     def test_process_tiles_classify(self, tmp_path):
-        """Single tile with classification – should write all three masks."""
+        """Single tile with classification – should write the new core layers."""
         geom = box(105.0, 28.0, 115.0, 38.0)
         processor = ViirsRasterProcessor(area_geometry=geom, classify=True)
 
@@ -111,12 +112,14 @@ class TestViirsRasterProcessor:
         assert result is not None
         paths = result.paths
         assert paths.raw is None
+        assert paths.water_fraction is not None
+        assert paths.water_fraction.exists()
         assert paths.flood_fraction is not None
         assert paths.flood_fraction.exists()
-        assert paths.quality_mask is not None
-        assert paths.quality_mask.exists()
-        assert paths.permanent_water is not None
-        assert paths.permanent_water.exists()
+        assert paths.exclusion_mask is not None
+        assert paths.exclusion_mask.exists()
+        assert paths.reference_water is not None
+        assert paths.reference_water.exists()
 
     def test_mosaic_two_tiles(self, tmp_path):
         """Two adjacent tiles should be mosaicked, then clipped."""
@@ -141,12 +144,13 @@ class TestViirsRasterProcessor:
         geom = box(105.0, 28.0, 115.0, 38.0)
         processor = ViirsRasterProcessor(area_geometry=geom, classify=True)
 
-        # Create tile with mixed codes
+        # Create tile with mixed codes (per the embedded NOAA TIFF legend:
+        # 17=Vegetation, 20=Snow/ice, 30=Cloud, 99=NormalWater/permanent water).
         tile_path = tmp_path / "mixed.tif"
         data = np.array(
             [
-                [1, 17, 30, 99],  # fill, permanent water, cloud, open water
-                [101, 160, 200, 20],  # flood (1%), flood (60%), flood (100%), seasonal water
+                [1, 17, 30, 99],  # fill, vegetation, cloud, permanent water
+                [101, 160, 200, 20],  # flood (1%), flood (60%), flood (100%), snow/ice
             ],
             dtype=np.uint8,
         )
@@ -159,24 +163,31 @@ class TestViirsRasterProcessor:
         paths = result.paths
 
         # Read back and verify
+        with rasterio.open(paths.water_fraction) as src:
+            water = src.read(1)
         with rasterio.open(paths.flood_fraction) as src:
             flood = src.read(1)
-        with rasterio.open(paths.quality_mask) as src:
-            quality = src.read(1)
-        with rasterio.open(paths.permanent_water) as src:
-            water = src.read(1)
+        with rasterio.open(paths.exclusion_mask) as src:
+            exclusion = src.read(1)
+        with rasterio.open(paths.reference_water) as src:
+            reference = src.read(1)
 
-        # Flood fraction stored as uint8 percentage: codes 101->1, 160->60, 200->100; non-flood -> 0
-        expected_flood = np.array([[0, 0, 0, 0], [1, 60, 100, 0]], dtype=np.uint8)
+        # Code 20 (snow/ice) is treated as invalid by _invalid_mask → NaN/255
+        expected_water = np.array([[255, 0, 255, 100], [1, 60, 100, 255]], dtype=np.uint8)
+        np.testing.assert_array_equal(water, expected_water)
+
+        # Flood fraction stored as uint8 percentage: codes 101->1, 160->60,
+        # 200->100; fill/cloud/snow-ice remain nodata=255.
+        expected_flood = np.array([[255, 0, 255, 0], [1, 60, 100, 255]], dtype=np.uint8)
         np.testing.assert_array_equal(flood, expected_flood)
 
-        # Quality: fill(1) and cloud(30) → 0; others → 1
-        expected_quality = np.array([[0, 1, 0, 1], [1, 1, 1, 1]], dtype=np.uint8)
-        np.testing.assert_array_equal(quality, expected_quality)
+        # Exclusion: fill(1), cloud(30), and snow/ice(20) → 1; others → 0
+        expected_exclusion = np.array([[1, 0, 1, 0], [0, 0, 0, 1]], dtype=np.uint8)
+        np.testing.assert_array_equal(exclusion, expected_exclusion)
 
-        # Permanent water: code 17 → 1
-        expected_water = np.array([[0, 1, 0, 0], [0, 0, 0, 0]], dtype=np.uint8)
-        np.testing.assert_array_equal(water, expected_water)
+        # Reference water: code 99 → 1 (per embedded NOAA TIFF legend)
+        expected_reference = np.array([[0, 0, 0, 1], [0, 0, 0, 0]], dtype=np.uint8)
+        np.testing.assert_array_equal(reference, expected_reference)
 
     def test_classify_continuous_fractions(self, tmp_path):
         """All flood codes 101-200 produce continuous fractions; threshold no longer gates output."""
@@ -198,6 +209,39 @@ class TestViirsRasterProcessor:
         # On-disk: uint8 percentage (0–100); codes 101->1, 130->30, 160->60, 200->100
         expected = np.array([[1, 30, 60, 100]], dtype=np.uint8)
         np.testing.assert_array_equal(flood, expected)
+
+    def test_aggregate_tiles_skips_missing_observations(self):
+        """Cloud/fill dates should not dilute aggregated flood_fraction or masks."""
+        transform = rasterio.Affine(1, 0, 0, 0, -1, 1)
+        clear = ProcessedTile(
+            water_fraction=np.array([[0.6]], dtype=np.float32),
+            flood_fraction=np.array([[0.6]], dtype=np.float32),
+            exclusion_mask=np.array([[0]], dtype=np.uint8),
+            reference_water=np.array([[0]], dtype=np.uint8),
+            transform=transform,
+            crs="EPSG:4326",
+            cloud_fraction=0.0,
+        )
+        cloudy = ProcessedTile(
+            water_fraction=np.array([[np.nan]], dtype=np.float32),
+            flood_fraction=np.array([[np.nan]], dtype=np.float32),
+            exclusion_mask=np.array([[1]], dtype=np.uint8),
+            reference_water=np.array([[0]], dtype=np.uint8),
+            transform=transform,
+            crs="EPSG:4326",
+            cloud_fraction=1.0,
+        )
+
+        result = ViirsRasterProcessor.aggregate_tiles([clear, cloudy])
+
+        assert result.water_fraction is not None
+        assert result.flood_fraction is not None
+        assert result.exclusion_mask is not None
+        assert result.reference_water is not None
+        assert result.water_fraction[0, 0] == pytest.approx(0.6, rel=1e-6)
+        assert result.flood_fraction[0, 0] == pytest.approx(0.6, rel=1e-6)
+        assert int(result.exclusion_mask[0, 0]) == 0
+        assert int(result.reference_water[0, 0]) == 0
 
     def test_metadata_building(self, tmp_path):
         """Verify metadata fields populated correctly."""
@@ -247,9 +291,10 @@ class TestProcessedTile:
             cloud_fraction=0.0,
         )
         assert tile.raw is None
+        assert tile.water_fraction is None
         assert tile.flood_fraction is None
-        assert tile.quality_mask is None
-        assert tile.permanent_water is None
+        assert tile.exclusion_mask is None
+        assert tile.reference_water is None
 
     def test_frozen(self):
         tile = ProcessedTile(

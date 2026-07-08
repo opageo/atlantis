@@ -13,6 +13,7 @@ Both require ``EARTHDATA_TOKEN``; see :mod:`atlantis.fetchers.modis.backend`.
 
 from __future__ import annotations
 
+import time as time_module
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
@@ -37,6 +38,7 @@ from atlantis.fetchers.modis.backend import (
 from atlantis.fetchers.modis.dataset import processed_tile_to_dataset
 from atlantis.fetchers.modis.processor import (
     COMPOSITE_TO_HDF_LAYER,
+    INSUFFICIENT_DATA_CODE,
     ModisRasterProcessor,
     OutputPaths,
     ProcessTilesResult,
@@ -163,8 +165,9 @@ class MODISFetcher(AbstractFloodFetcher):
             backup_base_url: Optional ``nrt4`` mirror URL for the
                 ``lance_geotiff`` backend.
             timeout: HTTP request timeout in seconds.
-            classify: Decode raw codes into ``flood_fraction``,
-                ``recurring_flood``, ``permanent_water``, ``quality_mask``.
+            classify: Decode raw codes into ``water_fraction``,
+                ``flood_fraction``, ``reference_water``, ``exclusion_mask``,
+                and ``recurring_flood``.
             stream: Stream remote tiles via GDAL ``/vsicurl/``. Only valid
                 for ``lance_geotiff``; raises ``ValueError`` otherwise.
             strategy: Multi-date reduction (``peak`` / ``aggregate`` / ``all``).
@@ -197,11 +200,13 @@ class MODISFetcher(AbstractFloodFetcher):
             self.backend = get_backend(self.backend_name)
 
         self.timeout = timeout or fc.timeout
+        self.max_retries = fc.max_retries
         self.classify = classify
         self.stream = stream
         self.strategy = strategy
         self.keep_processed = keep_processed
         self.last_diagnostics: ModisSearchDiagnostics | None = None
+        self._peak_token: str | None = None
 
         if self.strategy not in VALID_STRATEGIES:
             raise ValueError(f"Invalid strategy '{self.strategy}'. Expected one of: {sorted(VALID_STRATEGIES)}")
@@ -231,6 +236,77 @@ class MODISFetcher(AbstractFloodFetcher):
         start = datetime.combine(event.start_date, time.min, tzinfo=timezone.utc)
         end = datetime.combine(event.end_date, time.min, tzinfo=timezone.utc)
         return _date_range(start, end)
+
+    @staticmethod
+    def _download_status_code(exc: requests.RequestException) -> int | None:
+        """Return HTTP status code for request exceptions when available."""
+        if isinstance(exc, requests.HTTPError) and exc.response is not None:
+            return exc.response.status_code
+        return None
+
+    @classmethod
+    def _is_retryable_download_error(cls, exc: requests.RequestException) -> bool:
+        """Return True when a download error is likely transient."""
+        if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+            return True
+
+        status_code = cls._download_status_code(exc)
+        if status_code is None:
+            return False
+
+        # Include 401 because LAADS occasionally returns transient auth failures.
+        return status_code in {401, 408, 429, 500, 502, 503, 504}
+
+    def _download_with_retry(
+        self,
+        url: str,
+        output_path: Path,
+        headers: dict[str, str],
+        *,
+        filename: str,
+    ) -> None:
+        """Download one file with bounded retry/backoff and explicit logs."""
+        max_attempts = max(1, self.max_retries + 1)
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                download_file(url, output_path=output_path, headers=headers)
+                if attempt > 1:
+                    logger.info(
+                        "MODIS download recovered for {} on attempt {}/{}",
+                        filename,
+                        attempt,
+                        max_attempts,
+                    )
+                return
+            except HtmlResponseError:
+                # EULA/auth HTML responses are not transient request failures.
+                raise
+            except requests.RequestException as exc:
+                status_code = self._download_status_code(exc)
+                retryable = self._is_retryable_download_error(exc)
+                if attempt >= max_attempts or not retryable:
+                    logger.error(
+                        "MODIS download failed for {} after {}/{} attempt(s) (status={}): {}",
+                        filename,
+                        attempt,
+                        max_attempts,
+                        status_code if status_code is not None else "n/a",
+                        exc,
+                    )
+                    raise
+
+                delay_seconds = min(0.25 * (2 ** (attempt - 1)), 1.0)
+                logger.warning(
+                    "MODIS download retry {}/{} for {} in {:.2f}s (status={}): {}",
+                    attempt + 1,
+                    max_attempts,
+                    filename,
+                    delay_seconds,
+                    status_code if status_code is not None else "n/a",
+                    exc,
+                )
+                time_module.sleep(delay_seconds)
 
     def _intersecting_tiles(self, event: FloodEvent) -> list[tuple[int, int]]:
         return modis_tiles_for_bbox(event.bbox)
@@ -420,7 +496,7 @@ class MODISFetcher(AbstractFloodFetcher):
                         event.event_id,
                         date_token,
                         processed_dir,
-                        write_outputs=self.keep_processed,
+                        write_outputs=False,
                     )
             else:
                 tile_paths_local: list[Path | str] = []
@@ -436,7 +512,12 @@ class MODISFetcher(AbstractFloodFetcher):
                     filename = r.properties["filename"]
                     download_path = raw_dir / filename
                     try:
-                        download_file(r.url, output_path=download_path, headers=headers)
+                        self._download_with_retry(
+                            r.url,
+                            output_path=download_path,
+                            headers=headers,
+                            filename=filename,
+                        )
                     except HtmlResponseError as exc:
                         logger.error(
                             "MODIS download blocked by EULA / auth redirect for {} → {}\n"
@@ -458,7 +539,7 @@ class MODISFetcher(AbstractFloodFetcher):
                     event.event_id,
                     date_token,
                     processed_dir,
-                    write_outputs=self.keep_processed,
+                    write_outputs=False,
                 )
 
             if process_result is not None:
@@ -470,6 +551,12 @@ class MODISFetcher(AbstractFloodFetcher):
         all_processed = self._apply_peak_window(all_processed)
         if not all_processed:
             return []
+
+        # Write processed/ only for surviving dates (after peak-window filter),
+        # mirroring VIIRS — avoids persisting pre-filter dates to disk.
+        if self.keep_processed:
+            for _dt, proc_result in all_processed:
+                processor.write_processed(proc_result.processed, proc_result.paths)
 
         return self._dispatch_strategy(event.event_id, all_processed)
 
@@ -504,6 +591,7 @@ class MODISFetcher(AbstractFloodFetcher):
                 peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t]))
             else:
                 peak_token = None
+            self._peak_token = peak_token
             logger.debug(
                 "MODIS peak-window [-{}, +{}]: {} → {} date(s) (peak={})",
                 self.peak_days_before,
@@ -515,6 +603,7 @@ class MODISFetcher(AbstractFloodFetcher):
         else:
             surviving = list(date_tokens)
             peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t])) if surviving else None
+            self._peak_token = peak_token
 
         if uses_subsample and peak_token is not None and len(surviving) > self.max_observations:
             surviving = subsample_around_peak(
@@ -580,9 +669,10 @@ class MODISFetcher(AbstractFloodFetcher):
             p
             for p in (
                 paths.raw,
+                paths.water_fraction,
                 paths.flood_fraction,
-                paths.quality_mask,
-                paths.permanent_water,
+                paths.exclusion_mask,
+                paths.reference_water,
                 paths.recurring_flood,
             )
             if p is not None
@@ -641,27 +731,25 @@ class MODISFetcher(AbstractFloodFetcher):
         if raw_path:
             variables["raw"] = rxr.open_rasterio(raw_path).squeeze(drop=True).rename("raw")
         else:
-            ff_path = next(path for name, path in files_by_name.items() if name.endswith("_flood_fraction.tif"))
-            qm_path = next(path for name, path in files_by_name.items() if name.endswith("_quality_mask.tif"))
-            pw_path = next(path for name, path in files_by_name.items() if name.endswith("_permanent_water.tif"))
-            rf_path = next(
-                (path for name, path in files_by_name.items() if name.endswith("_recurring_flood.tif")),
-                None,
-            )
+            from atlantis.fetchers.modis.layers import registry
 
-            variables["flood_fraction"] = (
-                rxr.open_rasterio(ff_path).squeeze(drop=True).astype("float32") / 100.0
-            ).rename("flood_fraction")
-            variables["quality_mask"] = (
-                rxr.open_rasterio(qm_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
-            )
-            variables["permanent_water"] = (
-                rxr.open_rasterio(pw_path).squeeze(drop=True).astype("uint8").rename("permanent_water")
-            )
-            if rf_path is not None:
-                variables["recurring_flood"] = (
-                    rxr.open_rasterio(rf_path).squeeze(drop=True).astype("uint8").rename("recurring_flood")
+            for spec in registry.list_derived():
+                layer_path = next(
+                    (path for name, path in files_by_name.items() if name.endswith(f"_{spec.name}.tif")),
+                    None,
                 )
+                if layer_path is None:
+                    continue
+
+                layer = rxr.open_rasterio(layer_path).squeeze(drop=True)
+                if spec.dtype == "float32":
+                    nodata = layer.rio.nodata
+                    if nodata is None:
+                        nodata = INSUFFICIENT_DATA_CODE
+                    layer = layer.astype("float32").where(layer != nodata) / 100.0
+                else:
+                    layer = layer.astype(spec.dtype)
+                variables[spec.name] = layer.rename(spec.name)
 
         dataset = xr.Dataset(variables)
         dataset.attrs["source_id"] = self.source_id

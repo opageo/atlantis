@@ -413,18 +413,12 @@ class LaadsHdf4Backend(ModisBackend):
                 if "HDF4" not in drivers and "HDF4Image" not in drivers:
                     raise RuntimeError("HDF4 driver not registered")
             except Exception as exc:  # pragma: no cover - safety net
-                raise RuntimeError(
-                    "GDAL with HDF4 support is required for the laads_hdf4 backend. "
-                    "Install via conda: `conda install -c conda-forge libgdal-hdf4`."
-                ) from exc
+                raise RuntimeError("GDAL with HDF4 support is required for the laads_hdf4 backend. ") from exc
             return
 
         driver_names = {gdal.GetDriver(i).ShortName for i in range(gdal.GetDriverCount())}
         if "HDF4" not in driver_names and "HDF4Image" not in driver_names:
-            raise RuntimeError(
-                "GDAL with HDF4 support is required for the laads_hdf4 backend. "
-                "Install via conda: `conda install -c conda-forge libgdal-hdf4`."
-            )
+            raise RuntimeError("GDAL with HDF4 support is required for the laads_hdf4 backend. ")
 
     def get_listing_location(self, base_url: str, event_date: datetime, composite: str) -> ListingLocation:
         """Pick the LAADS shortname (``MCDWD_L3`` vs ``MCDWD_L3_NRT``) and build the locator."""

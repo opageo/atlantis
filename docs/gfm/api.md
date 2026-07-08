@@ -27,8 +27,20 @@ print(ds.data_vars)
 print(float(ds["flood_fraction"].max()))
 ```
 
-`GFMFetcher()` defaults to `strategy="aggregate"` in Python. The CLI exposes
-the same strategies but defaults to `peak`.
+This example opts into `strategy="aggregate"` explicitly. `GFMFetcher()`
+itself defaults to `strategy="peak"`, matching the CLI.
+
+## Native / raw mode
+
+Pass `classify=False` to emit the native SAR band codes without any derivation:
+
+```python
+fetcher = GFMFetcher(classify=False)
+results = fetcher.fetch(event, Path("data/Valencia_2024/gfm"))
+
+ds = fetcher.to_dataset(results[0])
+print(list(ds.data_vars))  # ['ensemble_flood_extent', 'reference_water_mask']
+```
 
 ## Search before fetch
 
@@ -87,7 +99,7 @@ fetcher = GFMFetcher(
 ```
 
 Use `coarsen_factor` to trade spatial detail for speed and speckle reduction.
-`resampling` is applied during reprojection onto the canonical 1-arcmin grid.
+`resampling` is applied during reprojection onto the ~80 m processed grid.
 
 ## Harmonisation
 
@@ -99,39 +111,52 @@ ds_harm = harmoniser.harmonise(ds, source_id="gfm")
 write_harmonised_raster(ds_harm["flood_fraction"], Path("harmonised/gfm_output.tif"))
 ```
 
-The processor already snaps GFM results to the canonical global grid. The
-harmoniser writes the usual uint8 percentage raster for downstream analysis.
+The processor already snaps fetched GFM results to the canonical global grid.
+At the default settings, harmonisation mainly re-encodes `flood_fraction` into
+the usual uint8 percentage raster for downstream analysis. The written
+harmonised GeoTIFF contains the flood layer only; the companion derived and
+native-code layers remain available in the in-memory dataset.
 
 ## Dataset variables
 
-`GFMFetcher.to_dataset()` returns an `xarray.Dataset` with these variables:
+`GFMFetcher.to_dataset()` returns an `xarray.Dataset` whose variables depend on
+the `classify` flag. `flood_fraction` is a **derived** layer (built from
+observation counts, not a raw code); the native bands are passed through
+untouched. The exact inventory lives in the canonical
+[GFM layer reference](../layers.md#layers-gfm-derived) and
+[native GFM catalogue](../layers.md#layers-gfm-native).
 
-| Variable          | Dtype     | Meaning                                                 |
-| ----------------- | --------- | ------------------------------------------------------- |
-| `flood_fraction`  | `float32` | Fraction of valid observations classified as flood      |
-| `quality_mask`    | `uint8`   | `1` where at least one valid observation exists         |
-| `permanent_water` | `uint8`   | `1` where permanent water exceeds 50% of valid coverage |
+In practice, `classify=True` returns the derived fractions plus any
+code-preserving companion layers documented there; `classify=False` returns the
+registered native GFM bands untouched.
 
 ## GFMFetcher parameters
 
-| Parameter          | Type         | Default              | Description                                      |
-| ------------------ | ------------ | -------------------- | ------------------------------------------------ | -------------------------- |
-| `api_url`          | `str         | None`                | EODC STAC endpoint                               | Override the STAC API root |
-| `coarsen_factor`   | `int`        | `4`                  | Max-pool factor before reprojection              |
-| `resampling`       | `Resampling` | `Resampling.average` | Reprojection resampling method                   |
-| `strategy`         | `str`        | `"aggregate"`        | One of `peak`, `aggregate`, or `all`             |
-| `keep_processed`   | `bool`       | `True`               | Write intermediate processed GeoTIFFs            |
-| `peak_days_before` | `int`        | `0`                  | Window filter before the peak date               |
-| `peak_days_after`  | `int`        | `0`                  | Window filter after the peak date                |
-| `max_observations` | `int`        | `0`                  | Cap the number of returned dates after windowing |
-| `peak_priority`    | `str`        | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`   |
+| Parameter          | Type            | Default              | Description                                                                                                                                                                                                 |
+| ------------------ | --------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api_url`          | `Optional[str]` | `None`               | Override the default EODC STAC endpoint                                                                                                                                                                     |
+| `coarsen_factor`   | `int`           | `4`                  | Mean-pool factor for the class masks (classified); also sets the processed grid spacing (~20 m × factor) in both modes                                                                                      |
+| `resampling`       | `Resampling`    | `Resampling.average` | Reprojection resampling method (classified mode only)                                                                                                                                                       |
+| `classify`         | `bool`          | `True`               | `True` = emit the derived GFM layers from the canonical [layer reference](../layers.md#layers-gfm-derived); `False` = emit the native GFM bands from the [native catalogue](../layers.md#layers-gfm-native) |
+| `strategy`         | `str`           | `"peak"`             | One of `peak`, `aggregate`, or `all`                                                                                                                                                                        |
+| `keep_processed`   | `bool`          | `True`               | Write processed GeoTIFFs to `processed/`                                                                                                                                                                    |
+| `peak_days_before` | `int`           | `0`                  | Window filter before the peak date                                                                                                                                                                          |
+| `peak_days_after`  | `int`           | `0`                  | Window filter after the peak date                                                                                                                                                                           |
+| `max_observations` | `int`           | `0`                  | Cap the number of returned dates after windowing                                                                                                                                                            |
+| `peak_priority`    | `str`           | `"post"`             | Subsampling bias: `post`, `pre`, or `balanced`                                                                                                                                                              |
 
 ## Notes
 
-- GFM has no separate raw-mode toggle today. The public Python surface always
-  returns the classified layers documented above.
-- GFM also has no download-versus-stream option like VIIRS or MODIS. It always
+- GFM has no download-versus-stream option like VIIRS or MODIS. It always
   loads Cloud-Optimised GeoTIFF assets via STAC discovery and `odc.stac`.
+- Atlantis now loads the registered native GFM band set:
+  `ensemble_flood_extent`, `ensemble_water_extent`, `reference_water_mask`,
+  `exclusion_mask`, `ensemble_likelihood`, and `advisory_flags`.
+- In classified mode Atlantis derives `water_fraction` / `flood_fraction`
+  from observation counts and carries `reference_water`, `exclusion_mask`,
+  `ensemble_likelihood`, and `advisory_flags` alongside them. These extra
+  codes are passed through as companion layers rather than collapsed into a
+  single validity mask.
 - For implementation details behind `search()`, `fetch()`, and `to_dataset()`, see
   [internals.md](internals.md) and the code in
   [src/atlantis/fetchers/gfm/**init**.py](../../src/atlantis/fetchers/gfm/__init__.py).

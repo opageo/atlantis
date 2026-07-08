@@ -42,6 +42,18 @@ class _FakeDataArray:
     def max(self):
         return self._arr.max()
 
+    def where(self, cond, other):
+        return _FakeDataArray(np.where(cond.values, self._arr, other))
+
+    def __lt__(self, other):
+        return _FakeDataArray(self._arr < other)
+
+    def __gt__(self, other):
+        return _FakeDataArray(self._arr > other)
+
+    def __or__(self, other):
+        return _FakeDataArray(self._arr | other.values)
+
 
 class _FakeDataset:
     """Minimal stand-in for ``xr.DataArray`` / dict-like Dataset.
@@ -721,6 +733,8 @@ class TestSelectBestResult:
         ds_map = {r1.files[0]: ds1, r2.files[0]: ds2, r3.files[0]: ds3}
 
         class _Fetcher:
+            source_id = "viirs"
+
             def to_dataset(self, result):
                 return ds_map[result.files[0]]
 
@@ -743,7 +757,7 @@ class TestSelectBestResult:
 class TestPlotViirs:
     """Tests for ``_plot_viirs``."""
 
-    def test_calls_plot_classified_for_flood_extent(self, tmp_path, monkeypatch):
+    def test_calls_plot_classified_for_flood_fraction(self, tmp_path, monkeypatch):
         calls: list[dict] = []
 
         def _capture(da, *, title, output_path, announce=True):
@@ -754,14 +768,14 @@ class TestPlotViirs:
         out = tmp_path / "plot.png"
         _plot_viirs(ds, "Ev", "2020-07-22", output_png_path=out)
         assert len(calls) == 1
-        assert "flood extent" in calls[0]["title"]
+        assert "flood fraction" in calls[0]["title"]
         assert "375 m" in calls[0]["title"]
         assert calls[0]["path"] == out
 
     def test_calls_plot_raw_when_no_flood(self, tmp_path, monkeypatch):
         calls: list[dict] = []
 
-        def _capture(da, *, title, output_path, announce=True):
+        def _capture(da, *, title, output_path, announce=True, **kwargs):
             calls.append({"da": da, "title": title, "path": output_path})
 
         monkeypatch.setattr("atlantis.cli.plot_raw", _capture)
@@ -783,6 +797,50 @@ def _make_fetcher_ds_map(tmp_path, event_id="Yangtze_2020", date_token="20200722
         source_id="viirs",
         files=[],
         metadata=fetch_result.metadata,
+        date_token=date_token,
+        dataset=ds,  # type: ignore[arg-type]
+    )
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def fetch(self, event, output_dir):
+            if self.kwargs.get("keep_processed", True):
+                return [fetch_result]
+            return [in_memory_result]
+
+        def to_dataset(self, result):
+            if result.dataset is not None:
+                return result.dataset
+            return ds
+
+    return DummyFetcher, fetch_result, ds
+
+
+def _make_gfm_fetcher_ds_map(tmp_path, event_id="Valencia_2024", date_token="20241031"):
+    """Return (DummyFetcher, ds_dict) for use in GFM fetch tests."""
+    bbox = (-1.5, 38.8, 0.5, 40.0)
+    tif_path = tmp_path / f"{event_id}_{date_token}_gfm_flood_fraction.tif"
+    metadata = TileMetadata(
+        event_id=event_id,
+        source_id="gfm",
+        fetch_timestamp=datetime.now(timezone.utc),
+        bbox=bbox,
+    )
+    fetch_result = FetchResult(
+        event_id=event_id,
+        source_id="gfm",
+        files=[tif_path],
+        metadata=metadata,
+        date_token=date_token,
+    )
+    ds = _FakeDataset({"flood_fraction": np.ones((4, 4), dtype=np.float32) * 0.5})
+    in_memory_result = FetchResult(
+        event_id=event_id,
+        source_id="gfm",
+        files=[],
+        metadata=metadata,
         date_token=date_token,
         dataset=ds,  # type: ignore[arg-type]
     )
@@ -1243,8 +1301,8 @@ def test_gfm_warns_on_no_stream():
         assert "GFM always streams" in result.output
 
 
-def test_gfm_warns_on_no_classify():
-    """GFM should warn when --no-classify is passed."""
+def test_gfm_native_mode_info_on_no_classify():
+    """GFM should print a native-mode info message when --no-classify is passed."""
     from unittest.mock import patch
 
     with patch("atlantis.cli.get_fetcher") as mock_get:
@@ -1269,11 +1327,11 @@ def test_gfm_warns_on_no_classify():
                 "--no-classify",
             ],
         )
-        assert "GFM always produces classified layers" in result.output
+        assert "native mode" in result.output
 
 
-def test_gfm_harmonise_always_enabled():
-    """GFM should emit info that harmonise is enabled by default when not explicitly passed."""
+def test_gfm_harmonise_info_on_classify():
+    """GFM (classified) should emit the harmonise hint when --harmonise is not passed."""
     from unittest.mock import patch
 
     with patch("atlantis.cli.get_fetcher") as mock_get:
@@ -1297,4 +1355,245 @@ def test_gfm_harmonise_always_enabled():
                 "2024-01-02",
             ],
         )
-        assert "harmonised output enabled by default" in result.output
+        assert "--harmonise" in result.output
+
+
+def test_gfm_fetch_without_plot_or_harmonise_skips_harmonised_outputs(monkeypatch, tmp_path):
+    """GFM without `--plot` or `--harmonise` should not write extra preview outputs."""
+    DummyFetcher, _, _ = _make_gfm_fetcher_ds_map(tmp_path)
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: DummyFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not (tmp_path / "gfm" / "harmonised").exists()
+    assert not (tmp_path / "gfm" / "plots").exists()
+
+
+def test_gfm_fetch_with_plot_saves_png_without_harmonised_dir(monkeypatch, tmp_path):
+    """GFM `--plot` should save a PNG preview without creating harmonised output."""
+    DummyFetcher, _, _ = _make_gfm_fetcher_ds_map(tmp_path)
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: DummyFetcher)
+
+    plot_calls: list = []
+    monkeypatch.setattr(
+        "atlantis.cli.plot_classified",
+        lambda da, *, title, output_path, announce=True: plot_calls.append(output_path),
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+            "--plot",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert any(str(p).endswith("_gfm.png") for p in plot_calls)
+    assert not (tmp_path / "gfm" / "harmonised").exists()
+
+
+def test_gfm_fetch_with_harmonise_saves_tif_and_png(monkeypatch, tmp_path):
+    """GFM `--harmonise` should save the harmonised TIFF and its PNG preview."""
+    DummyFetcher, _, _ = _make_gfm_fetcher_ds_map(tmp_path)
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _s: DummyFetcher)
+
+    harm_ds = _FakeDataset({"flood_fraction": np.ones((4, 4), dtype=np.float32) * 0.5})
+
+    mock_harmoniser_cls = MagicMock()
+    mock_harmoniser_cls.return_value.harmonise.return_value = harm_ds
+    monkeypatch.setattr("atlantis.harmoniser.Harmoniser", mock_harmoniser_cls)
+
+    write_calls: list = []
+    monkeypatch.setattr(
+        "atlantis.cli.write_harmonised_raster",
+        lambda da, path: write_calls.append(path),
+    )
+
+    plot_calls: list = []
+    monkeypatch.setattr(
+        "atlantis.cli.plot_classified",
+        lambda da, *, title, output_path, announce=True: plot_calls.append(output_path),
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Valencia_2024",
+            "--source",
+            "gfm",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "-1.5 38.8 0.5 40.0",
+            "--start-date",
+            "2024-10-29",
+            "--end-date",
+            "2024-11-04",
+            "--harmonise",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert len(write_calls) == 1
+    assert any(str(p).endswith("_gfm_harmonised.png") for p in plot_calls)
+
+
+# ── Native harmonise + error handling (#1, #2) ────────────────────────────────
+
+
+def test_harmonise_source_native_writes_raw_codes(tmp_path):
+    """#1: a native dataset (only ``raw``) harmonises without a flood_fraction.
+
+    Previously ``--no-classify --harmonise`` raised ``KeyError: 'flood_fraction'``.
+    The native branch must NN-reproject the raw codes to the 1-arcmin grid and
+    write them as-is (discrete uint8 codes preserved, no interpolation).
+    """
+    import rioxarray  # noqa: F401
+    import xarray as xr
+
+    from atlantis.cli import _harmonise_source
+
+    width = height = 60
+    res = 0.004
+    west, north = 20.0, 35.4
+    rng = np.random.default_rng(0)
+    # VIIRS pixel codes: fill(1), veg(17), cloud(30), permanent water(99), flood(160).
+    codes = rng.choice([1, 17, 30, 99, 160], size=(height, width)).astype(np.uint8)
+    ds = xr.Dataset(
+        {"raw": xr.DataArray(codes, dims=["y", "x"])},
+        coords={
+            "x": west + (np.arange(width) + 0.5) * res,
+            "y": north - (np.arange(height) + 0.5) * res,
+        },
+    )
+    ds.rio.write_crs("EPSG:4326", inplace=True)
+
+    harm_dir = tmp_path / "harm"
+    plot_dir = tmp_path / "png"
+
+    # Must not raise (regression for the missing flood_fraction KeyError).
+    _harmonise_source(
+        ds,
+        "evt",
+        "20240101",
+        source_id="viirs",
+        harm_dir=harm_dir,
+        plot_dir=plot_dir,
+        announce=False,
+    )
+
+    tif = harm_dir / "evt_20240101_viirs_harmonised.tif"
+    png = plot_dir / "evt_20240101_viirs_harmonised.png"
+    assert tif.exists()
+    assert png.exists()
+
+    import rasterio
+
+    with rasterio.open(str(tif)) as dsr:
+        assert dsr.dtypes[0] == "uint8"
+        assert dsr.nodata == 0
+        values = set(np.unique(dsr.read(1)).tolist())
+    # Nearest-neighbour reprojection preserves the discrete codes — only the
+    # source codes plus the uncovered-border fill (0) may
+    # appear. No averaged intermediates (e.g. 50, 130) are introduced.
+    assert values <= {0, 1, 17, 30, 99, 160}
+    assert 255 not in values
+    # At least one genuine flood/feature code survived the reprojection.
+    assert values & {1, 17, 30, 99, 160}
+
+
+def test_harmonise_source_modis_raw_preserves_255_nodata(tmp_path):
+    """MODIS raw harmonisation must keep 255 as nodata, not create 0 borders."""
+    import rioxarray  # noqa: F401
+    import xarray as xr
+
+    from atlantis.cli import _harmonise_source
+
+    width = height = 60
+    res = 0.004
+    west, north = 20.0, 35.4
+    codes = np.ones((height, width), dtype=np.uint8)
+    ds = xr.Dataset(
+        {"raw": xr.DataArray(codes, dims=["y", "x"])},
+        coords={
+            "x": west + (np.arange(width) + 0.5) * res,
+            "y": north - (np.arange(height) + 0.5) * res,
+        },
+    )
+    ds.rio.write_crs("EPSG:4326", inplace=True)
+
+    harm_dir = tmp_path / "harm"
+    plot_dir = tmp_path / "png"
+    _harmonise_source(
+        ds,
+        "evt",
+        "20240101",
+        source_id="modis",
+        harm_dir=harm_dir,
+        plot_dir=plot_dir,
+        announce=False,
+    )
+
+    tif = harm_dir / "evt_20240101_modis_harmonised.tif"
+    assert tif.exists()
+
+    import rasterio
+
+    with rasterio.open(str(tif)) as dsr:
+        assert dsr.dtypes[0] == "uint8"
+        assert dsr.nodata == 255
+        values = set(np.unique(dsr.read(1)).tolist())
+    assert values <= {1, 255}
+    assert 0 not in values
+    assert 255 in values
+
+
+def test_fetch_unknown_source_reports_unknown():
+    """#2: an unrecognised --source is reported as 'Unknown source', not a traceback."""
+    result = runner.invoke(cli, ["fetch", "--event", "X", "--source", "bogus"])
+    assert "Unknown source 'bogus'" in result.stdout
+
+
+def test_fetch_real_keyerror_not_mislabeled_as_unknown_source(monkeypatch):
+    """#2: a genuine downstream KeyError must surface, not be hidden as 'Unknown source'."""
+
+    class BoomFetcher:
+        def __init__(self, **kwargs):
+            raise KeyError("downstream boom")
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: BoomFetcher)
+
+    result = runner.invoke(cli, ["fetch", "--event", "X", "--source", "viirs"])
+
+    assert "Unknown source" not in result.stdout
+    assert isinstance(result.exception, KeyError)

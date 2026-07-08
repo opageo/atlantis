@@ -20,7 +20,12 @@ from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResu
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.fetchers.viirs.backend import get_backend, list_backends
 from atlantis.fetchers.viirs.dataset import processed_tile_to_dataset
-from atlantis.fetchers.viirs.processor import OutputPaths, ProcessTilesResult, ViirsRasterProcessor
+from atlantis.fetchers.viirs.processor import (
+    CLASSIFIED_FLOOD_NODATA,
+    OutputPaths,
+    ProcessTilesResult,
+    ViirsRasterProcessor,
+)
 from atlantis.fetchers.viirs.selection import flood_pixel_count, select_peak_window, subsample_around_peak
 from atlantis.fetchers.viirs.selection import is_better_peak_candidate as is_better_peak_candidate
 from atlantis.models.event import FloodEvent
@@ -187,6 +192,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         self.strategy = strategy
         self.keep_processed = keep_processed
         self.last_diagnostics: SearchDiagnostics | None = None
+        self._peak_token: str | None = None
 
         if self.strategy not in {"peak", "aggregate", "all"}:
             raise ValueError(f"Invalid strategy '{self.strategy}'. Expected 'peak', 'aggregate', or 'all'.")
@@ -305,6 +311,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
                 peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t]))
             else:
                 peak_token = None
+            self._peak_token = peak_token
             logger.debug(
                 "Peak-window [{}, +{}]: {} → {} date(s) (peak={})",
                 -self.peak_days_before,
@@ -316,6 +323,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         else:
             surviving = list(date_tokens)
             peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t])) if surviving else None
+            self._peak_token = peak_token
 
         if uses_subsample and peak_token is not None and len(surviving) > self.max_observations:
             surviving = subsample_around_peak(
@@ -518,9 +526,14 @@ class VIIRSFetcher(AbstractFloodFetcher):
                 base_name = f"{event.event_id}_{date_token}_viirs"
                 if self.classify:
                     paths = OutputPaths(
+                        water_fraction=processed_dir / f"{base_name}_water_fraction.tif",
                         flood_fraction=processed_dir / f"{base_name}_flood_fraction.tif",
-                        quality_mask=processed_dir / f"{base_name}_quality_mask.tif",
-                        permanent_water=processed_dir / f"{base_name}_permanent_water.tif",
+                        exclusion_mask=processed_dir / f"{base_name}_exclusion_mask.tif",
+                        reference_water=processed_dir / f"{base_name}_reference_water.tif",
+                        extra={
+                            name: processed_dir / f"{base_name}_{name}.tif"
+                            for name in proc_result.processed.extra_layers
+                        },
                     )
                 else:
                     paths = OutputPaths(raw=processed_dir / f"{base_name}_raw.tif")
@@ -573,7 +586,16 @@ class VIIRSFetcher(AbstractFloodFetcher):
             event_id=event_id,
             source_id="viirs",
             files=[
-                p for p in (paths.raw, paths.flood_fraction, paths.quality_mask, paths.permanent_water) if p is not None
+                p
+                for p in (
+                    paths.raw,
+                    paths.water_fraction,
+                    paths.flood_fraction,
+                    paths.exclusion_mask,
+                    paths.reference_water,
+                    *paths.extra.values(),
+                )
+                if p is not None
             ],
             metadata=process_result.metadata,
             date_token=date_token,
@@ -625,21 +647,25 @@ class VIIRSFetcher(AbstractFloodFetcher):
         if raw_path:
             variables["raw"] = rxr.open_rasterio(raw_path).squeeze(drop=True).rename("raw")
         else:
-            obs_path = next(path for name, path in files_by_name.items() if name.endswith("_flood_fraction.tif"))
-            quality_path = next(path for name, path in files_by_name.items() if name.endswith("_quality_mask.tif"))
-            permanent_water_path = next(
-                path for name, path in files_by_name.items() if name.endswith("_permanent_water.tif")
-            )
+            from atlantis.fetchers.viirs.layers import registry
 
-            variables["flood_fraction"] = (
-                rxr.open_rasterio(obs_path).squeeze(drop=True).astype("float32") / 100.0
-            ).rename("flood_fraction")
-            variables["quality_mask"] = (
-                rxr.open_rasterio(quality_path).squeeze(drop=True).astype("uint8").rename("quality_mask")
-            )
-            variables["permanent_water"] = (
-                rxr.open_rasterio(permanent_water_path).squeeze(drop=True).astype("uint8").rename("permanent_water")
-            )
+            for spec in registry.list_derived():
+                layer_path = next(
+                    (path for name, path in files_by_name.items() if name.endswith(f"_{spec.name}.tif")),
+                    None,
+                )
+                if layer_path is None:
+                    continue
+
+                layer = rxr.open_rasterio(layer_path).squeeze(drop=True)
+                if spec.dtype == "float32":
+                    nodata = layer.rio.nodata
+                    if nodata is None:
+                        nodata = CLASSIFIED_FLOOD_NODATA
+                    layer = layer.astype("float32").where(layer != nodata) / 100.0
+                else:
+                    layer = layer.astype(spec.dtype)
+                variables[spec.name] = layer.rename(spec.name)
 
         dataset = xr.Dataset(variables)
         dataset.attrs["source_id"] = self.source_id

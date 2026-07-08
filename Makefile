@@ -31,8 +31,8 @@
 # observations split symmetrically (balanced) before/after the peak.
 PEAK_FLAGS    := --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced
 COMMON_FLAGS  := --plot --harmonise --no-keep-processed
-# Note: --harmonise is always enabled for GFM (re-encode only); explicit flag
-# is kept here so the same COMMON_FLAGS works across all three sources.
+# Note: --harmonise is explicitly included in COMMON_FLAGS so the same flag set
+# works uniformly across VIIRS, MODIS and GFM without source-specific handling.
 
 # MODIS backend selection (see header note).
 MODIS_HIST    := --modis-backend laads_hdf4 --modis-composite F2
@@ -267,3 +267,7 @@ dev-install:  ## Install with dev dependencies
 
 version:  ## Show current version
 	@python -c "import atlantis; print(f'Current version: {atlantis.__version__}')"
+
+### docker
+docker-build:  ## Build Docker image
+	cd docker build -t atlantis:latest .

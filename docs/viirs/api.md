@@ -29,6 +29,8 @@ print(int((flood > 0).sum().item()), "pixels with non-zero flood fraction")
 
 `VIIRSFetcher()` itself defaults to `classify=False` and `stream=False`; the CLI enables both by default.
 
+> **Native vs derived layers.** The exact VIIRS layer inventory is maintained in the canonical [layer reference](../layers.md#layers-viirs) and via `atlantis list-layers --source viirs`. With `classify=True`, `to_dataset()` returns the registry-defined derived layers; with `classify=False` it returns the native `raw` band.
+
 ## Raw mode (no classification)
 
 ```python
@@ -85,10 +87,10 @@ from matplotlib.patches import Patch
 
 viirs_codes = {
     1:   ("Fill / No data",   "#000000"),
-    17:  ("Permanent water",  "#1f77b4"),
-    20:  ("Seasonal water",   "#17becf"),
+    17:  ("Vegetation",       "#2ca02c"),
+    20:  ("Snow / ice",       "#17becf"),
     30:  ("Cloud",            "#cccccc"),
-    99:  ("Open water",       "#4682B4"),
+    99:  ("Permanent water",  "#1f77b4"),
     130: ("Flood (30% frac)", "#ffeb3b"),
     160: ("Flood (60% frac)", "#FF9800"),
     200: ("Flood (100%)",     "#FF0000"),
@@ -112,14 +114,14 @@ plt.show()
 
 ## VIIRSFetcher parameters
 
-| Parameter        | Type   | Default     | Description                                                                                                     |
-| ---------------- | ------ | ----------- | --------------------------------------------------------------------------------------------------------------- |
-| `stream`         | `bool` | `False`     | Stream tiles via `/vsicurl/` instead of downloading; the CLI turns this on by default                           |
-| `classify`       | `bool` | `False`     | Decode raw codes into `flood_fraction`, `quality_mask`, and `permanent_water`; the CLI turns this on by default |
-| `strategy`       | `str`  | `"peak"`    | Multi-date reduction: `"peak"`, `"aggregate"`, or `"all"`                                                       |
-| `keep_processed` | `bool` | `True`      | Write intermediate `processed/` GeoTIFFs when classified or raw outputs are materialised                        |
-| `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)                                                                    |
-| `data_format`    | `str`  | `"tif"`     | Remote format to query; only `"tif"` is currently implemented                                                   |
+| Parameter        | Type   | Default     | Description                                                                                                                                                              |
+| ---------------- | ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `stream`         | `bool` | `False`     | Stream tiles via `/vsicurl/` instead of downloading; the CLI turns this on by default                                                                                    |
+| `classify`       | `bool` | `False`     | Emit the derived VIIRS layers from the canonical [layer reference](../layers.md#layers-viirs-derived) instead of the native `raw` band; the CLI turns this on by default |
+| `strategy`       | `str`  | `"peak"`    | Multi-date reduction: `"peak"`, `"aggregate"`, or `"all"`                                                                                                                |
+| `keep_processed` | `bool` | `True`      | Write intermediate `processed/` GeoTIFFs when classified or raw outputs are materialised                                                                                 |
+| `backend`        | `str`  | `"noaa_s3"` | Data backend (`"noaa_s3"` or `"gmu_legacy"`)                                                                                                                             |
+| `data_format`    | `str`  | `"tif"`     | Remote format to query; only `"tif"` is currently implemented                                                                                                            |
 
 > See [overview.md § Backends](overview.md#backends) for a detailed comparison of the two
 > sources (host, compositing window, tile naming, AOI grid, coverage years and

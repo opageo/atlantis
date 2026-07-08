@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from upath import UPath
 
 from atlantis.fetchers.modis.backend import (
     LaadsHdf4Backend,
@@ -22,6 +23,7 @@ from atlantis.fetchers.modis.backend import (
     list_backends,
     parse_prod_timestamp,
 )
+from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env, strict_reference_bytes_enabled
 
 
 @pytest.fixture
@@ -255,3 +257,74 @@ class TestRegistry:
     def test_get_backend_unknown_raises(self):
         with pytest.raises(ValueError):
             get_backend("nonexistent")
+
+
+## ---- End-to-end: Harvey 2017, LAADS HDF4 backend --------------------------
+# Mirrors `make example-harvey-modis`:
+#   uv run atlantis --verbose fetch \
+#       --event Harvey_2017 --source modis \
+#       --bbox "-97.27 28.24 -95.54 29.80" \
+#       --start-date 2017-08-28 --end-date 2017-08-31 \
+#       --modis-backend laads_hdf4 --modis-composite F2 \
+#       --strategy all --peak-window-days 2 --max-observations 3 \
+#       --peak-priority balanced --plot --harmonise --no-keep-processed \
+#       --output ./data/Harvey_2017
+#
+# Requires: EARTHDATA_TOKEN env var, network access to LAADS + AWS S3.
+# Run with:
+#   uv run python -m pytest tests/fetchers/modis/test_backend.py -v -k e2e
+#   ATLANTIS_E2E_STRICT_REFERENCE_BYTES=1 uv run python -m pytest tests/fetchers/modis/test_backend.py -v -k e2e
+
+S3_REFERENCE_BASE = "s3://atlantis/reference/Harvey_2017/modis/harmonised"
+STRICT_REFERENCE_BYTES = strict_reference_bytes_enabled()
+
+HARVEY_EVENT_ID = "Harvey_2017"
+HARVEY_BBOX = "-97.27 28.24 -95.54 29.80"
+HARVEY_START = "2017-08-28"
+HARVEY_END = "2017-08-31"
+
+MODIS_EXTRA_ARGS = ["--modis-backend", "laads_hdf4", "--modis-composite", "F2", "--plot"]
+
+
+def _run_modis_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
+    """Run the MODIS fetch pipeline via the CLI app and return harmonised TIF paths."""
+    return run_pipeline(
+        "modis",
+        event_id=HARVEY_EVENT_ID,
+        bbox=HARVEY_BBOX,
+        start_date=HARVEY_START,
+        end_date=HARVEY_END,
+        strategy=strategy,
+        output_dir=output_dir,
+        extra_args=MODIS_EXTRA_ARGS,
+    )
+
+
+@pytest.mark.e2e
+class TestModisHdf4E2E:
+    """End-to-end test: MODIS LAADS HDF4 pipeline for Harvey 2017 (strategy=all)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, tmp_path):
+        self.tmp_path = tmp_path
+
+    def test_all_strategy_matches_reference(self):
+        """Pipeline output matches the S3 reference rasters, optionally by exact bytes."""
+        output_dir = UPath(self.tmp_path / "output")
+        tifs = _run_modis_pipeline("all", output_dir)
+
+        with s3_rasterio_env():
+            ref_dir = UPath(S3_REFERENCE_BASE)
+            ref_tifs = sorted(ref_dir.glob("*_modis_harmonised.tif"))
+            assert ref_tifs, f"No reference TIFs found at {S3_REFERENCE_BASE}"
+
+            for ref_tif in ref_tifs:
+                produced = None
+                for tif in tifs:
+                    if tif.name == ref_tif.name:
+                        produced = tif
+                        break
+                assert produced is not None, (
+                    f"Reference file {ref_tif.name} not found in produced outputs: {[t.name for t in tifs]}"
+                )
+                compare_rasters(produced, ref_tif, require_byte_identity=STRICT_REFERENCE_BYTES)

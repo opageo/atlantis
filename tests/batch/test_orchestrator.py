@@ -2,7 +2,9 @@
 
 import pytest
 
-from atlantis.batch import BatchConfig, TaskResult, run_batch
+pytest.importorskip("dask.distributed", reason="batch extras (dask/distributed) not installed")
+
+from atlantis.batch import BatchConfig, TaskResult, run_batch  # noqa: E402
 
 
 def _succeed(task: dict) -> TaskResult:

@@ -29,6 +29,19 @@ from rasterio.merge import merge
 from rasterio.transform import from_bounds
 from shapely.geometry.base import BaseGeometry
 
+# Pixel-code constants and the layer registry live in ``layers.py`` (the single
+# source of truth). They are re-exported here so existing
+# ``from ...modis.processor import INSUFFICIENT_DATA_CODE`` imports keep working.
+from atlantis.fetchers.modis.layers import (  # noqa: F401 — re-exported for backwards compatibility
+    INSUFFICIENT_DATA_CODE,
+    NO_WATER_CODE,
+    RECURRING_FLOOD_CODE,
+    SELECTED_COMPOSITE,
+    SURFACE_WATER_CODE,
+    UNUSUAL_FLOOD_CODE,
+    registry,
+)
+from atlantis.layers import DerivationContext, aggregate_layer
 from atlantis.models.metadata import TileMetadata
 
 if TYPE_CHECKING:
@@ -37,13 +50,6 @@ if TYPE_CHECKING:
 
 # Type alias: a tile location can be a local file path or a /vsicurl/ URL.
 TilePath = Union[Path, str]
-
-#: MCDWD pixel codes (Release 1.1, Dec 2025).
-NO_WATER_CODE = 0
-SURFACE_WATER_CODE = 1
-RECURRING_FLOOD_CODE = 2
-UNUSUAL_FLOOD_CODE = 3
-INSUFFICIENT_DATA_CODE = 255
 
 #: Native MCDWD raster size (one tile is 4800×4800 at 0.002083333° = 1/480°).
 MODIS_TILE_PIXELS = 4800
@@ -158,16 +164,27 @@ class ProcessedTile:
     Attributes:
         transform: Affine transform for the processed (clipped) raster.
         crs: Coordinate reference system (EPSG:4326).
-        cloud_fraction: Fraction of pixels coded as ``255`` (insufficient
-            data — includes cloud, terrain shadow, and HAND-masked terrain)
-            within the AOI.
+        cloud_fraction: Fraction of pixels coded as ``255`` ("Insufficient
+            data", per NASA MCDWD User Guide Rev F Table 7) within the AOI.
+            The field name is historical and a misnomer: code ``255`` is a
+            catch-all sentinel and what feeds into it depends on the composite.
+            The embedded LANCE TIFF ``description`` tag is authoritative for a
+            given file; e.g. F2 says ``no clouds removed; terrain shadow pixels
+            masked; HAND pixels masked``, while F1C also removes cloud shadow.
+            Treat this value as "fraction of insufficient-data pixels", not
+            literal cloud cover.
         raw: Original uint8 codes when ``--no-classify`` is used.
+        water_fraction: Binary float32 mask covering classes 1/2/3.
+            Pixels coded as ``255`` are stored as ``NaN`` so downstream
+            averaging ignores insufficient data instead of treating it as dry
+            land.
         flood_fraction: Binary float32 mask ``(class == 3).astype(float32)``.
-            Drives the harmoniser ``average`` resampling to a true % flooded
-            at coarser resolution.
-        quality_mask: ``(class != 255).astype(uint8)`` — 1 = valid clear-sky
-            observation, 0 = insufficient data or HAND-masked terrain.
-        permanent_water: ``(class == 1).astype(uint8)``.
+            Pixels coded as ``255`` are stored as ``NaN`` so downstream
+            averaging ignores insufficient data instead of treating it as dry
+            land.
+        exclusion_mask: ``(class == 255).astype(uint8)`` — 1 = excluded or
+            invalid, 0 = usable classification.
+        reference_water: ``isin(class, [1, 2]).astype(uint8)``.
         recurring_flood: ``(class == 2).astype(uint8)`` — MODIS-only.
             Always ``None`` when ``--no-classify`` is used.
     """
@@ -176,10 +193,16 @@ class ProcessedTile:
     crs: str
     cloud_fraction: float
     raw: np.ndarray | None = None
+    water_fraction: np.ndarray | None = None
     flood_fraction: np.ndarray | None = None
-    quality_mask: np.ndarray | None = None
-    permanent_water: np.ndarray | None = None
+    exclusion_mask: np.ndarray | None = None
+    reference_water: np.ndarray | None = None
     recurring_flood: np.ndarray | None = None
+
+    @property
+    def is_classified(self) -> bool:
+        """True when derived layers are present rather than the raw band."""
+        return self.raw is None
 
 
 @dataclass(frozen=True)
@@ -187,9 +210,10 @@ class OutputPaths:
     """Paths for the output GeoTIFFs (``None`` means: don't write)."""
 
     raw: Path | None = None
+    water_fraction: Path | None = None
     flood_fraction: Path | None = None
-    quality_mask: Path | None = None
-    permanent_water: Path | None = None
+    exclusion_mask: Path | None = None
+    reference_water: Path | None = None
     recurring_flood: Path | None = None
 
 
@@ -233,12 +257,18 @@ def find_hdf4_subdataset(hdf_path: Path, composite: str) -> str:
             "Install GDAL with HDF4 support and reinstall the GDAL Python bindings."
         ) from exc
 
+    if _gdal.GetDriverByName("HDF4") is None:
+        raise RuntimeError("GDAL was compiled without HDF4 support; cannot read MCDWD .hdf files")
+
     layer_suffix = COMPOSITE_TO_HDF_LAYER[composite.upper()]
     ds = _gdal.Open(str(hdf_path))
     if ds is None:
-        raise FileNotFoundError(f"GDAL could not open {hdf_path}. Ensure GDAL was compiled with HDF4 support.")
+        raise FileNotFoundError(
+            f"GDAL could not open {hdf_path}. Is it a valid HDF4 file? Ensure the authentication layer "
+            f"did not respond with an HTML page instead of the binary data."
+        )
     subdatasets = ds.GetSubDatasets()  # list of (uri, description) tuples
-    ds = None  # close
+    ds.Close()  # close
     uris = [uri for uri, _desc in subdatasets]
     for uri in uris:
         if uri.endswith(":" + layer_suffix):
@@ -257,7 +287,7 @@ def open_hdf4_tile(hdf_path: Path, composite: str) -> "DatasetReader":
     bundled GDAL lacks HDF4 support (e.g. the PyPI wheel).
 
     Falls back to assigning the affine from ``tile_bounds_from_hv`` when
-    GDAL fails to parse the HDF-EOS Grid metadata (older builds).
+    GDAL fails to parse the HDF-EOS Grid metadata.
     """
     try:
         from osgeo import gdal as _gdal  # type: ignore[import-not-found]
@@ -386,9 +416,10 @@ class ModisRasterProcessor:
         base_name = f"{event_id}_{date_token}_modis"
         if self.classify:
             paths = OutputPaths(
+                water_fraction=output_dir / f"{base_name}_water_fraction.tif",
                 flood_fraction=output_dir / f"{base_name}_flood_fraction.tif",
-                quality_mask=output_dir / f"{base_name}_quality_mask.tif",
-                permanent_water=output_dir / f"{base_name}_permanent_water.tif",
+                exclusion_mask=output_dir / f"{base_name}_exclusion_mask.tif",
+                reference_water=output_dir / f"{base_name}_reference_water.tif",
                 recurring_flood=output_dir / f"{base_name}_recurring_flood.tif",
             )
         else:
@@ -397,7 +428,7 @@ class ModisRasterProcessor:
         if write_outputs:
             self._write_outputs(processed, paths)
 
-        ref_array = processed.raw if processed.raw is not None else processed.flood_fraction
+        ref_array = processed.raw if processed.raw is not None else processed.water_fraction
         height, width = ref_array.shape  # type: ignore[union-attr]
         metadata = self._build_metadata(event_id, processed, width=width, height=height)
         return ProcessTilesResult(paths=paths, metadata=metadata, processed=processed)
@@ -483,31 +514,37 @@ class ModisRasterProcessor:
         )
 
     def _classify_pixels(self, data: np.ndarray, transform: rasterio.Affine, crs: str) -> ProcessedTile:
-        """Decode MCDWD codes 0/1/2/3/255 into VIIRS-parity layers."""
-        flood_mask = data == UNUSUAL_FLOOD_CODE
-        recurring_flood = (data == RECURRING_FLOOD_CODE).astype(np.uint8)
-        permanent_water = (data == SURFACE_WATER_CODE).astype(np.uint8)
-        # quality_mask: 1 = valid observation, 0 = insufficient data or HAND-masked.
-        # Note: HAND-masked terrain reports as 255 — preserve that distinction.
-        quality_mask = (data != INSUFFICIENT_DATA_CODE).astype(np.uint8)
+        """Decode MCDWD codes 0/1/2/3/255 into VIIRS-parity layers.
 
-        flood_fraction = flood_mask.astype(np.float32)
-
+        Delegates the per-layer maths to the MODIS layer registry so the
+        derivation logic lives in one declarative place
+        (:mod:`atlantis.fetchers.modis.derived`).
+        """
+        ctx = DerivationContext(arrays={SELECTED_COMPOSITE: data})
         valid = data != INSUFFICIENT_DATA_CODE
         cloud_fraction = float(1.0 - valid.sum() / valid.size) if valid.size else 0.0
 
+        water_fraction = registry.get_derived("water_fraction").derive(ctx)
+        flood_fraction = registry.get_derived("flood_fraction").derive(ctx)
+        exclusion_mask = registry.get_derived("exclusion_mask").derive(ctx)
+        reference_water = registry.get_derived("reference_water").derive(ctx)
+        recurring_flood = registry.get_derived("recurring_flood").derive(ctx)
+
         logger.debug(
-            "Classification: {} flood, {} recurring, {} permanent-water, {} insufficient (cloud-like fraction {:.1f}%)",
-            int(flood_mask.sum()),
+            "Classification: {} water, {} flood, {} recurring,"
+            " {} reference-water, {} insufficient (255 fraction {:.1f}%)",
+            int(np.nansum(water_fraction)),
+            int(np.nansum(flood_fraction)),
             int(recurring_flood.sum()),
-            int(permanent_water.sum()),
+            int(reference_water.sum()),
             int((~valid).sum()),
             cloud_fraction * 100,
         )
         return ProcessedTile(
+            water_fraction=water_fraction,
             flood_fraction=flood_fraction,
-            quality_mask=quality_mask,
-            permanent_water=permanent_water,
+            exclusion_mask=exclusion_mask,
+            reference_water=reference_water,
             recurring_flood=recurring_flood,
             transform=transform,
             crs=crs,
@@ -516,8 +553,16 @@ class ModisRasterProcessor:
 
     # ── Output writing ──────────────────────────────────────────────────
 
+    def write_processed(self, processed: ProcessedTile, paths: OutputPaths) -> None:
+        """Write processed-tile layers to ``paths`` (public wrapper for callers).
+
+        Used by the fetcher to defer writing processed/ GeoTIFFs until after
+        peak-window filtering, so only surviving dates are persisted.
+        """
+        self._write_outputs(processed, paths)
+
     def _write_outputs(self, processed: ProcessedTile, paths: OutputPaths) -> None:
-        ref_shape = processed.raw.shape if processed.raw is not None else processed.flood_fraction.shape
+        ref_shape = processed.raw.shape if processed.raw is not None else processed.water_fraction.shape
         base_meta = {
             "driver": "GTiff",
             "height": ref_shape[0],
@@ -532,22 +577,31 @@ class ModisRasterProcessor:
             with rasterio.open(paths.raw, "w", **base_meta, dtype="uint8", nodata=INSUFFICIENT_DATA_CODE) as dst:
                 dst.write(processed.raw, 1)
 
+        if paths.water_fraction is not None and processed.water_fraction is not None:
+            pct = np.full(processed.water_fraction.shape, INSUFFICIENT_DATA_CODE, dtype=np.uint8)
+            valid = np.isfinite(processed.water_fraction)
+            pct[valid] = np.round(np.clip(processed.water_fraction[valid], 0.0, 1.0) * 100).astype(np.uint8)
+            with rasterio.open(paths.water_fraction, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(pct, 1)
+
         if paths.flood_fraction is not None and processed.flood_fraction is not None:
             # Store as uint8 percent (0–100) with nodata=255 to mirror VIIRS.
-            pct = np.round(processed.flood_fraction * 100).astype(np.uint8)
+            pct = np.full(processed.flood_fraction.shape, INSUFFICIENT_DATA_CODE, dtype=np.uint8)
+            valid = np.isfinite(processed.flood_fraction)
+            pct[valid] = np.round(np.clip(processed.flood_fraction[valid], 0.0, 1.0) * 100).astype(np.uint8)
             with rasterio.open(paths.flood_fraction, "w", **base_meta, dtype="uint8", nodata=255) as dst:
                 dst.write(pct, 1)
 
-        if paths.quality_mask is not None and processed.quality_mask is not None:
-            with rasterio.open(paths.quality_mask, "w", **base_meta, dtype="uint8", nodata=0) as dst:
-                dst.write(processed.quality_mask, 1)
+        if paths.exclusion_mask is not None and processed.exclusion_mask is not None:
+            with rasterio.open(paths.exclusion_mask, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(processed.exclusion_mask, 1)
 
-        if paths.permanent_water is not None and processed.permanent_water is not None:
-            with rasterio.open(paths.permanent_water, "w", **base_meta, dtype="uint8", nodata=0) as dst:
-                dst.write(processed.permanent_water, 1)
+        if paths.reference_water is not None and processed.reference_water is not None:
+            with rasterio.open(paths.reference_water, "w", **base_meta, dtype="uint8", nodata=255) as dst:
+                dst.write(processed.reference_water, 1)
 
         if paths.recurring_flood is not None and processed.recurring_flood is not None:
-            with rasterio.open(paths.recurring_flood, "w", **base_meta, dtype="uint8", nodata=0) as dst:
+            with rasterio.open(paths.recurring_flood, "w", **base_meta, dtype="uint8", nodata=255) as dst:
                 dst.write(processed.recurring_flood, 1)
 
     def _build_metadata(self, event_id: str, processed: ProcessedTile, width: int, height: int) -> TileMetadata:
@@ -564,7 +618,7 @@ class ModisRasterProcessor:
             bbox=(min(west, east), min(south, north), max(west, east), max(south, north)),
             cloud_fraction=processed.cloud_fraction,
             quality_bitmask=0,
-            permanent_water_mask_available=processed.permanent_water is not None,
+            permanent_water_mask_available=processed.reference_water is not None,
         )
 
     # ── Aggregation ─────────────────────────────────────────────────────
@@ -573,9 +627,10 @@ class ModisRasterProcessor:
     def aggregate_tiles(tiles: list[ProcessedTile]) -> ProcessedTile:
         """Aggregate ``ProcessedTile`` instances across time.
 
-        - ``flood_fraction``: nan-mean across the time axis.
-        - ``recurring_flood`` / ``permanent_water`` / ``quality_mask`` / ``raw``: per-pixel mode.
-        - ``cloud_fraction``: arithmetic mean of per-tile values.
+        Dispatches each layer to the shared :func:`~atlantis.layers.aggregate_layer`
+        engine using the per-layer aggregation declared in the MODIS registry.
+        Fraction layers are nan-meaned; categorical masks are reduced by mode.
+        ``cloud_fraction`` remains a scalar mean of per-tile values.
         """
         if not tiles:
             raise ValueError("Cannot aggregate an empty list of tiles")
@@ -584,22 +639,34 @@ class ModisRasterProcessor:
 
         ref = tiles[0]
 
-        flood_arrays = [t.flood_fraction for t in tiles if t.flood_fraction is not None]
-        flood_fraction = np.nanmean(np.stack(flood_arrays, axis=0), axis=0).astype(np.float32) if flood_arrays else None
-
-        def _mode_layer(attr: str) -> np.ndarray | None:
-            arrays = [getattr(t, attr) for t in tiles if getattr(t, attr) is not None]
+        layer_names = [
+            "raw",
+            "water_fraction",
+            "flood_fraction",
+            "exclusion_mask",
+            "reference_water",
+            "recurring_flood",
+        ]
+        reduced: dict[str, np.ndarray | None] = {}
+        for name in layer_names:
+            arrays = [getattr(t, name) for t in tiles if getattr(t, name) is not None]
             if not arrays:
-                return None
-            stack = np.stack(arrays, axis=0).astype(np.uint8)
-            return _mode_uint8(stack)
+                reduced[name] = None
+                continue
+            spec = registry.get(name)
+            reduced[name] = aggregate_layer(
+                np.stack(arrays, axis=0),
+                spec.aggregation,  # type: ignore[arg-type]
+                nodata=spec.nodata,
+            )
 
         return ProcessedTile(
-            raw=_mode_layer("raw"),
-            flood_fraction=flood_fraction,
-            quality_mask=_mode_layer("quality_mask"),
-            permanent_water=_mode_layer("permanent_water"),
-            recurring_flood=_mode_layer("recurring_flood"),
+            raw=reduced["raw"],
+            water_fraction=reduced["water_fraction"],
+            flood_fraction=reduced["flood_fraction"],
+            exclusion_mask=reduced["exclusion_mask"],
+            reference_water=reduced["reference_water"],
+            recurring_flood=reduced["recurring_flood"],
             transform=ref.transform,
             crs=ref.crs,
             cloud_fraction=float(np.mean([t.cloud_fraction for t in tiles])),

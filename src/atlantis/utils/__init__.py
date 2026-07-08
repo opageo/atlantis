@@ -13,7 +13,10 @@ from atlantis.utils.kurosiwo import (
     write_kurosiwo_metadata_csv,
 )
 from atlantis.utils.plot import (
-    VIIRS_CODES,
+    GFM_ENSEMBLE_FLOOD_EXTENT_CODES,
+    GFM_REFERENCE_WATER_MASK_CODES,
+    MODIS_RAW_CODES,
+    VIIRS_RAW_CODES,
     date_from_filename,
     legend_patches,
     pixel_stats_classified,
@@ -38,7 +41,10 @@ __all__ = [
     "write_kurosiwo_metadata_csv",
     "build_kurosiwo_flood_events",
     "build_kurosiwo_flood_events_from_catalogue",
-    "VIIRS_CODES",
+    "VIIRS_RAW_CODES",
+    "GFM_ENSEMBLE_FLOOD_EXTENT_CODES",
+    "GFM_REFERENCE_WATER_MASK_CODES",
+    "MODIS_RAW_CODES",
     "date_from_filename",
     "legend_patches",
     "pixel_stats_raw",

@@ -11,7 +11,7 @@ from rasterio.transform import from_bounds
 
 def _make_fixture_tif(tmp_path, rows=200, cols=200) -> str:
     """Write a synthetic VIIRS-coded uint8 GeoTIFF and return its path."""
-    data = np.zeros((rows, cols), dtype=np.uint8)
+    data = np.full((rows, cols), 17, dtype=np.uint8)
     # Flood fraction codes: 101–200 → fraction (code-100)/100
     data[10:50, 10:50] = 150  # 50% flood fraction
     data[60:80, 60:80] = 30  # cloud
@@ -38,7 +38,7 @@ def test_classify_viirs_pixels_flood_fraction():
     from atlantis.fetchers.viirs.processor import classify_viirs_pixels
 
     rows, cols = 100, 100
-    data = np.zeros((rows, cols), dtype=np.uint8)
+    data = np.full((rows, cols), 17, dtype=np.uint8)
     data[0:50, 0:50] = 150  # code 150 → 50% flood
     transform = from_bounds(-10.0, -5.0, 0.0, 5.0, cols, rows)
 
@@ -58,7 +58,8 @@ def test_classify_viirs_pixels_nodata_fill():
     transform = from_bounds(-10.0, -5.0, 0.0, 5.0, cols, rows)
 
     result = classify_viirs_pixels(data, transform, "EPSG:4326")
-    assert np.all(result.quality_mask == 0)
+    assert np.isnan(result.flood_fraction).all()
+    assert np.all(result.exclusion_mask == 1)
     assert result.cloud_fraction == 0.0
 
 
