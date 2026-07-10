@@ -17,10 +17,11 @@ The registry is a GeoDataFrame with one row per bookmark:
 
 * ``event_id`` — unique bookmark name (str).
 * ``geometry`` — the bbox as a ``shapely`` box polygon (CRS ``EPSG:4326``).
-* ``start_date`` / ``end_date`` — inclusive date range, ISO ``YYYY-MM-DD`` strings.
-* ``sources`` — comma-joined default source list (may be empty).
+* ``start_date`` / ``end_date`` — inclusive date range, stored as ``date`` values.
+* ``sources`` — list of default sources (may be empty), stored as a
+  ``list<string>`` column.
 * ``label`` — optional human-readable description.
-* ``updated_at`` — ISO timestamp of the last write.
+* ``updated_at`` — timestamp of the last write.
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ __all__ = [
     "save_bookmarks",
     "list_bookmarks",
     "get_bookmark",
+    "sources_from_cell",
     "add_bookmark",
     "remove_bookmark",
 ]
@@ -177,16 +179,35 @@ def _as_date(value: Any) -> Any:
     return date.fromisoformat(str(value))
 
 
+def sources_from_cell(value: Any) -> list[str]:
+    """Normalise a stored ``sources`` cell to a plain ``list[str]``.
+
+    Parquet round-trips a ``list<string>`` column back as a ``numpy.ndarray``
+    (or occasionally a plain ``list``) per cell, and an empty/missing entry may
+    come back as ``None`` or ``NaN``. Handle all of these — and the legacy
+    comma-joined string form, for backwards compatibility with older bookmark
+    files — uniformly.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [s for s in value.split(",") if s]
+    if isinstance(value, float) and pd.isna(value):
+        return []
+    try:
+        return [str(s) for s in value]
+    except TypeError:
+        return []
+
+
 def _row_to_event(row: Any) -> FloodEvent:
     bbox = tuple(round(float(v), 6) for v in row.geometry.bounds)
-    sources_raw = row.get("sources") or ""
-    sources = [s for s in str(sources_raw).split(",") if s]
     return FloodEvent(
         event_id=row["event_id"],
         bbox=bbox,  # type: ignore[arg-type]
         start_date=_as_date(row["start_date"]),
         end_date=_as_date(row["end_date"]),
-        sources=sources,
+        sources=sources_from_cell(row.get("sources")),
     )
 
 
@@ -258,7 +279,7 @@ def add_bookmark(
         crs="EPSG:4326",
     )
     gdf = gdf[gdf["event_id"] != event.event_id]
-    gdf = pd.concat([gdf, new_row], ignore_index=True)
+    gdf = new_row if gdf.empty else pd.concat([gdf, new_row], ignore_index=True)
     dest = save_bookmarks(gdf, path=path, storage_options=storage_options)
     logger.info(f"Bookmark '{event.event_id}' saved → {dest}")
     return dest

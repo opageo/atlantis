@@ -2856,7 +2856,7 @@ cli.add_typer(bookmarks_app, name="bookmarks")
 @bookmarks_app.command("list")
 def bookmarks_list() -> None:
     """List all registered event bookmarks."""
-    from atlantis.bookmarks import load_bookmarks
+    from atlantis.bookmarks import load_bookmarks, sources_from_cell
 
     command_header("bookmarks list")
     gdf = load_bookmarks()
@@ -2869,7 +2869,7 @@ def bookmarks_list() -> None:
             row["event_id"],
             "{:.4f} {:.4f} {:.4f} {:.4f}".format(*row.geometry.bounds),
             f"{row['start_date']} → {row['end_date']}",
-            row.get("sources") or "(all)",
+            ", ".join(sources_from_cell(row.get("sources"))) or "(all)",
             row.get("label") or "",
         ]
         for _, row in gdf.sort_values("event_id").iterrows()
