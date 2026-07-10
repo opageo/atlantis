@@ -110,14 +110,26 @@ class HarmoniseConfig(BaseSettings):
 
 
 class ArchiveConfig(BaseSettings):
-    """Configuration for archive paths and settings.
+    """Configuration for the consolidated Zarr datacube archive.
+
+    The archive is a single sharded Zarr store with one group per source,
+    co-registered on the canonical global 1-arcmin grid. It lives locally or on
+    S3 (``ATLANTIS_ARCHIVE_ROOT=s3://bucket/prefix``).
 
     Attributes:
-        archive_root: Root directory for archive storage.
-        raw_subdir: Subdirectory for raw (unprocessed) data.
-        ml_subdir: Subdirectory for ML-ready data.
+        archive_root: Root location for archive storage (local path or ``s3://`` URI).
+        storage_options: fsspec options for remote roots (credentials, ``anon``, ...).
+        store: Name of the consolidated datacube store under the archive root.
         checkpoint_dir: Subdirectory for checkpoint markers.
-        default_chunk_size: Default chunk size for Zarr storage.
+        chunk_size: Spatial inner-chunk size (pixels) — the data-loader read
+            granularity. 256 is power-of-two and ``/32``-friendly for U-Nets and
+            still efficient for large-window analysis reads.
+        shard_size: Spatial shard size (pixels) — the storage-object granularity;
+            must be a multiple of ``chunk_size``. One shard bundles many inner
+            chunks into a single (cloud) object.
+        scale_factor: CF ``scale_factor`` for ``flood_fraction`` so the uint8
+            ``[0, 100]`` storage decodes to float ``[0, 1]`` (CMF-comparable).
+        time_epoch: CF epoch (``YYYY-MM-DD``) for the integer ``time`` axis.
     """
 
     model_config = SettingsConfigDict(
@@ -127,11 +139,14 @@ class ArchiveConfig(BaseSettings):
         extra="ignore",
     )
 
-    archive_root: Path = Field(default_factory=lambda: Path.home() / "atlantis-data")
-    raw_subdir: str = "raw"
-    ml_subdir: str = "ml-ready"
+    archive_root: str = Field(default_factory=lambda: str(Path.home() / "atlantis-data"))
+    storage_options: dict[str, Any] = Field(default_factory=dict)
+    store: str = "datacube.zarr"
     checkpoint_dir: str = ".checkpoints"
-    default_chunk_size: int = 224
+    chunk_size: int = 256
+    shard_size: int = 2048
+    scale_factor: float = 0.01
+    time_epoch: str = "2020-01-01"
 
 
 class FetcherConfig(BaseSettings):
@@ -177,6 +192,77 @@ class FetcherConfig(BaseSettings):
     modis_laads_base_url: str | None = None
 
 
+class StacConfig(BaseSettings):
+    """Configuration for the STAC layer over the Zarr datacube.
+
+    The STAC layer is a static catalog (``Catalog → one Collection per source →
+    one Item per populated date``) that indexes the consolidated ``datacube.zarr``.
+    Collections/items use the datacube extension and reference the Zarr store via
+    an asset carrying the xarray-assets ``xarray:open_kwargs`` (so an item can be
+    opened directly with xpystac/xarray).
+
+    Attributes:
+        catalog_id: Root catalog id; per-source collections are ``{id}-{source}``.
+        catalog_title: Human-readable catalog title.
+        catalog_description: Catalog description.
+        catalog_root: Default destination for the written catalog (local dir or
+            ``s3://`` URI).
+        zarr_media_type: Media type used for the Zarr asset.
+        compute_item_bbox: If True, compute each item's bbox from the populated
+            (non-fill) pixels of that date; otherwise reuse the source extent.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="ATLANTIS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    catalog_id: str = "atlantis-datacube"
+    catalog_title: str = "Atlantis flood datacube"
+    catalog_description: str = (
+        "STAC catalog over the consolidated Atlantis Zarr datacube — one collection "
+        "per source, one item per populated date."
+    )
+    catalog_root: str = Field(default_factory=lambda: str(Path.home() / "atlantis-data" / "stac"))
+    zarr_media_type: str = "application/vnd+zarr"
+    compute_item_bbox: bool = True
+
+
+class VizConfig(BaseSettings):
+    """Configuration for the local HoloViz visualization server.
+
+    Attributes:
+        variable: Default data variable to render.
+        cmap: Default colormap name.
+        host: Bind address for the local Panel server.
+        port: Port for the local Panel server.
+        basemap: Overlay coastlines & country borders (vector features drawn on
+            top of the data; requires ``geoviews``/``cartopy``).
+        tiles: Add an OSM web-tile basemap under the data (requires ``geoviews``).
+        rasterize: Server-side rasterise via datashader (recommended for large
+            windows; requires ``datashader``).
+        frame_width: Plot frame width in pixels.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="ATLANTIS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    variable: str = "flood_fraction"
+    cmap: str = "Blues"
+    host: str = "localhost"
+    port: int = 5006
+    basemap: bool = False
+    tiles: bool = False
+    rasterize: bool = True
+    frame_width: int = 700
+
+
 class AtlantisConfig(BaseSettings):
     """Main configuration for Atlantis.
 
@@ -193,6 +279,8 @@ class AtlantisConfig(BaseSettings):
     harmonise: HarmoniseConfig = Field(default_factory=HarmoniseConfig)
     archive: ArchiveConfig = Field(default_factory=ArchiveConfig)
     fetcher: FetcherConfig = Field(default_factory=FetcherConfig)
+    stac: StacConfig = Field(default_factory=StacConfig)
+    viz: VizConfig = Field(default_factory=VizConfig)
 
     # Global settings
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"

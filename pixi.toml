@@ -45,6 +45,7 @@ ipympl = ">=0.10.0"
 plotly = ">=6.7.0"
 rasterstats = ">=0.21.0"
 odc-stac = ">=0.4"
+cartopy = ">0.22"
 
 # --- Geo extras (mirrors pyproject.toml [project.optional-dependencies].geo) ---
 xarray = ">=2024.1"
@@ -138,6 +139,29 @@ cartopy = ">=0.22"
 metview-python = "*"
 
 # ============================================================================
+# Feature: stac (STAC layer over the Zarr datacube)
+# ============================================================================
+
+[feature.stac.dependencies]
+pystac = ">=1.9"
+
+[feature.stac.pypi-dependencies]
+stac-geoparquet = ">=0.6"
+xpystac = ">=0.1"
+
+# ============================================================================
+# Feature: viz (local HoloViz dashboard server)
+# ============================================================================
+
+[feature.viz.dependencies]
+hvplot = ">=0.10"
+holoviews = ">=1.18"
+panel = ">=1.4"
+datashader = ">=0.16"
+geoviews = ">=1.11"
+bokeh = ">=3.0"
+
+# ============================================================================
 # Environments
 # ============================================================================
 
@@ -146,6 +170,8 @@ default = { features = ["dev"], solve-group = "default" }
 ml = { features = ["dev", "ml"], solve-group = "default" }
 notebooks = { features = ["dev", "ml", "notebooks"], solve-group = "default" }
 batch = { features = ["dev", "batch"], solve-group = "default" }
+stac = { features = ["dev", "stac"] }
+viz = { features = ["dev", "viz"] }
 
 # ============================================================================
 # Tasks

@@ -92,7 +92,11 @@ def run_batch(
         client.register_plugin(_build_loguru_worker_plugin())
         logger.info("Dashboard: {}", client.dashboard_link)
 
-        futures = client.map(process_fn, pending_tasks, retries=cfg.retries, pure=False)
+        # Scatter first so client.map() references small future keys instead of
+        # embedding every task dict as a literal graph argument (avoids the
+        # "Sending large graph" warning for large catalogues).
+        scattered = client.scatter(pending_tasks)
+        futures = client.map(process_fn, scattered, retries=cfg.retries, pure=False)
 
         done_count = already_done
         fail_count = 0
