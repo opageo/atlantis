@@ -21,7 +21,11 @@ layers Atlantis computes from them.
 
 - [Zarr datacube spec](./archive/zarr-spec.md) - Consolidated Zarr archive
   schema and data-flow diagrams (review brief for the ML team).
-- [STAC + Visualization layer](./stac_zarr.md) - STAC discovery layer over the
+- [Cube build guide](./archive/cube-build.md) - Building the Zarr datacube from
+  VIIRS granules (batch pipeline, resume-safe, streaming).
+- [COG build guide](./archive/cog-build.md) - Building per-granule Cloud-Optimised
+  GeoTIFFs from VIIRS granules (batch pipeline, one COG per granule on S3).
+- [STAC + Visualization layer](./archive/stac-and-viz.md) - STAC discovery layer over the
   Zarr datacube (collection per source, item per date) and the local
   hvplot/Panel visualization demo.
 - [Layers](./layers.md) - Per-source catalogue of native and derived layers
