@@ -2875,7 +2875,7 @@ def viz_serve(
         tiles=tiles or config.viz.tiles,
         cmap=config.viz.cmap,
         rasterize=config.viz.rasterize,
-        frame_width=config.viz.frame_width,
+        # frame_width=config.viz.frame_width,
         storage_options=config.archive.storage_options or None,
         host=host,
         port=port,
