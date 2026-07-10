@@ -236,7 +236,7 @@ format = "ruff format ."
 format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
 verify-gdal = """python -c "from osgeo import gdal; assert gdal.GetDriverByName('HDF4'), 'HDF4 driver missing'; print('GDAL', gdal.__version__, '— HDF4 driver: OK')" """
-web = "atlantis web launch --host 0.0.0.0 --port 8080"
+web = "PYTHONPATH=src python -m atlantis.cli web launch --host 0.0.0.0 --port 8080"
 
 # ============================================================================
 # VIIRS examples
