@@ -25,13 +25,21 @@ The registry is a GeoDataFrame with one row per bookmark:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
+import fsspec
+import geopandas as gpd
+import pandas as pd
 from loguru import logger
+from shapely.geometry import box
 
+from atlantis.archive._store import is_remote
+from atlantis.config import get_config
 from atlantis.models.event import FloodEvent
+from atlantis.utils.parquet import pyarrow_filesystem_for
 
 if TYPE_CHECKING:
     import geopandas as gpd
@@ -60,8 +68,6 @@ def bookmark_path(config: "BookmarksConfig | None" = None) -> str:
     Returns:
         A local path or ``s3://...`` URI to the bookmarks file.
     """
-    from atlantis.archive._store import is_remote
-    from atlantis.config import get_config
 
     config = config or get_config().bookmarks
     root = config.bookmarks_root
@@ -72,12 +78,9 @@ def bookmark_path(config: "BookmarksConfig | None" = None) -> str:
 
 def _exists(path: str, storage_options: dict[str, Any] | None) -> bool:
     """Return True if a file already exists at *path* (local or remote)."""
-    from urllib.parse import urlparse
 
     if urlparse(path).scheme in ("", "file"):
         return Path(path).exists()
-
-    import fsspec
 
     fs, fpath = fsspec.core.url_to_fs(path, **(storage_options or {}))
     return fs.exists(fpath)
@@ -85,8 +88,6 @@ def _exists(path: str, storage_options: dict[str, Any] | None) -> bool:
 
 def _empty_frame() -> "gpd.GeoDataFrame":
     """Build an empty, correctly-typed bookmarks GeoDataFrame."""
-    import geopandas as gpd
-    import pandas as pd
 
     return gpd.GeoDataFrame(
         {col: pd.Series([], dtype="object") for col in _COLUMNS},
@@ -96,7 +97,6 @@ def _empty_frame() -> "gpd.GeoDataFrame":
 
 
 def _resolved_storage_options(storage_options: dict[str, Any] | None) -> dict[str, Any] | None:
-    from atlantis.config import get_config
 
     if storage_options is not None:
         return storage_options
@@ -141,15 +141,21 @@ def save_bookmarks(
     Returns:
         The destination path.
     """
-    from atlantis.utils.parquet import pyarrow_filesystem_for
 
     path = path or bookmark_path()
     storage_options = _resolved_storage_options(storage_options)
 
-    write_path, filesystem = pyarrow_filesystem_for(path, storage_options)
+    _write_path, filesystem = pyarrow_filesystem_for(path, storage_options)
+    write_path = Path(_write_path)
     if filesystem is None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-    gdf.to_parquet(write_path, filesystem=filesystem)
+    gdf.to_parquet(
+        write_path,
+        filesystem=filesystem,
+        schema_version="1.1.0",
+        write_covering_bbox=True,
+        index=False,
+    )
     return path
 
 
@@ -163,7 +169,6 @@ def list_bookmarks(
 
 
 def _as_date(value: Any) -> Any:
-    from datetime import date
 
     if isinstance(value, datetime):
         return value.date()
@@ -234,9 +239,6 @@ def add_bookmark(
     Raises:
         ValueError: If the bookmark already exists and ``overwrite`` is False.
     """
-    import geopandas as gpd
-    import pandas as pd
-    from shapely.geometry import box
 
     gdf = load_bookmarks(path=path, storage_options=storage_options)
     exists = bool((gdf["event_id"] == event.event_id).any())
@@ -246,11 +248,11 @@ def add_bookmark(
     new_row = gpd.GeoDataFrame(
         {
             "event_id": [event.event_id],
-            "start_date": [event.start_date.isoformat()],
-            "end_date": [event.end_date.isoformat()],
-            "sources": [",".join(event.sources)],
+            "start_date": [event.start_date],
+            "end_date": [event.end_date],
+            "sources": [event.sources],
             "label": [label or ""],
-            "updated_at": [datetime.now(tz=timezone.utc).isoformat()],
+            "updated_at": [datetime.now(tz=timezone.utc)],
         },
         geometry=[box(*event.bbox)],
         crs="EPSG:4326",

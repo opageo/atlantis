@@ -90,6 +90,7 @@ dev = [
   "atlantis[geo]",
   "atlantis[viz]",
   "atlantis[stac]",
+  "geoparquet-io",
 ]
 
 [tool.uv]
