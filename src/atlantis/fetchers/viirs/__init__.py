@@ -192,6 +192,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         self.strategy = strategy
         self.keep_processed = keep_processed
         self.last_diagnostics: SearchDiagnostics | None = None
+        self._peak_token: str | None = None
 
         if self.strategy not in {"peak", "aggregate", "all"}:
             raise ValueError(f"Invalid strategy '{self.strategy}'. Expected 'peak', 'aggregate', or 'all'.")
@@ -310,6 +311,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
                 peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t]))
             else:
                 peak_token = None
+            self._peak_token = peak_token
             logger.debug(
                 "Peak-window [{}, +{}]: {} → {} date(s) (peak={})",
                 -self.peak_days_before,
@@ -321,6 +323,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
         else:
             surviving = list(date_tokens)
             peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t])) if surviving else None
+            self._peak_token = peak_token
 
         if uses_subsample and peak_token is not None and len(surviving) > self.max_observations:
             surviving = subsample_around_peak(

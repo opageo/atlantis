@@ -139,6 +139,7 @@ class GFMFetcher(AbstractFloodFetcher):
         self.max_retries = max_retries if max_retries is not None else FetcherConfig().max_retries
         self._backend = GfmStacBackend(api_url=self.api_url)
         self.last_diagnostics: GfmSearchDiagnostics | None = None
+        self._peak_token: str | None = None
 
         if peak_days_before < 0:
             raise ValueError(f"peak_days_before must be non-negative, got {peak_days_before}")
@@ -307,6 +308,7 @@ class GFMFetcher(AbstractFloodFetcher):
                 peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t]))
             else:
                 peak_token = None
+            self._peak_token = peak_token
             logger.debug(
                 "GFM peak-window [-{}, +{}]: {} → {} date(s) (peak={})",
                 self.peak_days_before,
@@ -318,6 +320,7 @@ class GFMFetcher(AbstractFloodFetcher):
         else:
             surviving = list(date_tokens)
             peak_token = max(surviving, key=lambda t: flood_pixel_count(processed_map[t])) if surviving else None
+            self._peak_token = peak_token
 
         if uses_subsample and peak_token is not None and len(surviving) > self.max_observations:
             surviving = subsample_around_peak(

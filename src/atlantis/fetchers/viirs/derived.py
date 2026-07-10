@@ -25,7 +25,7 @@ from atlantis.layers import DerivationContext
 
 def _invalid_mask(data: np.ndarray) -> np.ndarray:
     """Return True where the VIIRS code should be excluded from fractions."""
-    return np.isin(data, list(FILL_CODES | CLOUD_CODES))
+    return np.isin(data, list(FILL_CODES | CLOUD_CODES | SNOW_ICE_CODES | SHADOW_CODES))
 
 
 def _decode_fraction_codes(data: np.ndarray) -> np.ndarray:
@@ -84,8 +84,8 @@ def flood_fraction(ctx: DerivationContext) -> np.ndarray:
     dtype="uint8",
     nodata=0,
     description=(
-        "Exclusion mask: 1 for fill (0, 1) or cloud (30), 0 otherwise. "
-        "Pre-existing water classes count as usable observations."
+        "Exclusion mask: 1 for fill (0, 1), cloud (30), snow/ice (20), or shadow (50); "
+        "0 otherwise. Pre-existing water classes count as usable observations."
     ),
     resampling="mode",
     aggregation="all_true",

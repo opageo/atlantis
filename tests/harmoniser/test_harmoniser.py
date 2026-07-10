@@ -210,26 +210,107 @@ class TestTiler:
         with pytest.raises(ValueError, match="overlap must be non-negative"):
             Tiler(tile_size=224, overlap=-1)
 
-    def test_tile_dataset_not_implemented(self):
+    def test_tile_dataset_no_spatial_dims_raises(self):
         import xarray as xr
 
         t = Tiler()
+        # Dataset with no recognised spatial dimension names
         ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((100, 100)))})
-        with pytest.raises(NotImplementedError, match="Tiling not yet implemented"):
+        with pytest.raises(ValueError, match="spatial dimensions"):
             t.tile_dataset(ds)
 
-    def test_count_tiles_not_implemented(self):
+    def test_count_tiles_exact_multiple(self):
         import xarray as xr
 
-        t = Tiler()
-        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((100, 100)))})
-        with pytest.raises(NotImplementedError, match="Tile counting not yet implemented"):
-            t.count_tiles(ds)
+        t = Tiler(tile_size=50)
+        y = np.arange(100, dtype="float32")
+        x = np.arange(200, dtype="float32")
+        ds = xr.Dataset({"v": xr.DataArray(np.zeros((100, 200)), dims=["y", "x"], coords={"y": y, "x": x})})
+        n_rows, n_cols = t.count_tiles(ds)
+        assert n_rows == 2
+        assert n_cols == 4
 
-    def test_get_tile_bbox_not_implemented(self):
+    def test_count_tiles_non_multiple(self):
         import xarray as xr
 
-        t = Tiler()
-        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((100, 100)))})
-        with pytest.raises(NotImplementedError, match="Tile bbox calculation not yet implemented"):
-            t.get_tile_bbox(0, 0, ds)
+        t = Tiler(tile_size=60)
+        y = np.arange(100, dtype="float32")
+        x = np.arange(100, dtype="float32")
+        ds = xr.Dataset({"v": xr.DataArray(np.zeros((100, 100)), dims=["y", "x"], coords={"y": y, "x": x})})
+        n_rows, n_cols = t.count_tiles(ds)
+        # ceil(100/60) = 2
+        assert n_rows == 2
+        assert n_cols == 2
+
+    def test_tile_dataset_returns_correct_count(self):
+        import xarray as xr
+
+        t = Tiler(tile_size=50)
+        y = np.arange(100, dtype="float32")
+        x = np.arange(200, dtype="float32")
+        ds = xr.Dataset({"v": xr.DataArray(np.zeros((100, 200)), dims=["y", "x"], coords={"y": y, "x": x})})
+        tiles = t.tile_dataset(ds)
+        # 2 rows × 4 cols
+        assert len(tiles) == 8
+
+    def test_tile_dataset_metadata_keys(self):
+        import xarray as xr
+
+        t = Tiler(tile_size=50)
+        y = np.arange(100, dtype="float32")
+        x = np.arange(100, dtype="float32")
+        ds = xr.Dataset({"v": xr.DataArray(np.zeros((100, 100)), dims=["y", "x"], coords={"y": y, "x": x})})
+        tiles = t.tile_dataset(ds)
+        _, meta = tiles[0]
+        assert set(meta.keys()) >= {"row", "col", "bbox", "valid_pixels"}
+
+    def test_tile_dataset_covers_full_extent(self):
+        """All pixels in the source dataset must appear in exactly one tile."""
+        import xarray as xr
+
+        tile_size = 32
+        t = Tiler(tile_size=tile_size)
+        h, w = 64, 96
+        y = np.arange(h, dtype="float32")
+        x = np.arange(w, dtype="float32")
+        data = np.arange(h * w, dtype="float32").reshape(h, w)
+        ds = xr.Dataset({"v": xr.DataArray(data, dims=["y", "x"], coords={"y": y, "x": x})})
+
+        tiles = t.tile_dataset(ds)
+        # Reconstruct from tiles
+        reconstructed = np.full((h, w), np.nan)
+        for tile_ds, meta in tiles:
+            row, col = meta["row"], meta["col"]
+            y_s = row * tile_size
+            x_s = col * tile_size
+            vals = tile_ds["v"].values
+            reconstructed[y_s : y_s + vals.shape[0], x_s : x_s + vals.shape[1]] = vals
+
+        np.testing.assert_array_equal(reconstructed, data)
+
+    def test_get_tile_bbox_first_tile(self):
+        import xarray as xr
+
+        t = Tiler(tile_size=50)
+        y = np.linspace(0.5, 49.5, 50)
+        x = np.linspace(0.5, 49.5, 50)
+        ds = xr.Dataset({"v": xr.DataArray(np.zeros((50, 50)), dims=["y", "x"], coords={"y": y, "x": x})})
+        bbox = t.get_tile_bbox(0, 0, ds)
+        assert len(bbox) == 4
+        west, south, east, north = bbox
+        assert west < east
+        assert south < north
+
+    def test_get_tile_bbox_out_of_bounds_raises(self):
+        import xarray as xr
+
+        t = Tiler(tile_size=50)
+        y = np.arange(100, dtype="float32")
+        x = np.arange(100, dtype="float32")
+        ds = xr.Dataset({"v": xr.DataArray(np.zeros((100, 100)), dims=["y", "x"], coords={"y": y, "x": x})})
+        with pytest.raises(IndexError):
+            t.get_tile_bbox(99, 0, ds)
+
+    def test_overlap_greater_than_tile_size_raises(self):
+        with pytest.raises(ValueError, match="overlap must be less than tile_size"):
+            Tiler(tile_size=32, overlap=32)
