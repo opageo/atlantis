@@ -323,7 +323,7 @@ requires-dist = [
     { name = "bokeh", marker = "extra == 'viz'", specifier = ">=3.0" },
     { name = "boto3" },
     { name = "cartopy", marker = "extra == 'notebooks'", specifier = ">=0.22" },
-    { name = "dask", extras = ["distributed"], marker = "extra == 'batch'", specifier = ">=2024.10" },
+    { name = "dask", extras = ["distributed"], marker = "extra == 'batch'", specifier = ">=2026.7.0" },
     { name = "datashader", marker = "extra == 'viz'", specifier = ">=0.19" },
     { name = "earthkit-data", marker = "extra == 'notebooks'" },
     { name = "gdal", specifier = "==3.13.0" },
