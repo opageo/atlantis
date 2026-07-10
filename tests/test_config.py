@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from atlantis.config import (
     ArchiveConfig,
     AtlantisConfig,
+    BookmarksConfig,
     FetcherConfig,
     HarmoniseConfig,
     get_config,
@@ -70,6 +71,21 @@ class TestArchiveConfig:
         assert cfg.chunk_size == 128
 
 
+class TestBookmarksConfig:
+    def test_default_values(self):
+        cfg = BookmarksConfig()
+        assert cfg.bookmarks_root == str(Path.home() / "atlantis-data")
+        assert cfg.bookmarks_file == "bookmarks.parquet"
+        assert cfg.storage_options == {}
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv("ATLANTIS_BOOKMARKS_ROOT", "s3://atlantis/bookmarks")
+        monkeypatch.setenv("ATLANTIS_BOOKMARKS_FILE", "events.parquet")
+        cfg = BookmarksConfig()
+        assert cfg.bookmarks_root == "s3://atlantis/bookmarks"
+        assert cfg.bookmarks_file == "events.parquet"
+
+
 class TestFetcherConfig:
     def test_default_values(self):
         cfg = FetcherConfig()
@@ -100,6 +116,7 @@ class TestAtlantisConfig:
         assert cfg.verbose is False
         assert isinstance(cfg.harmonise, HarmoniseConfig)
         assert isinstance(cfg.archive, ArchiveConfig)
+        assert isinstance(cfg.bookmarks, BookmarksConfig)
         assert isinstance(cfg.fetcher, FetcherConfig)
 
     def test_log_level_env_override(self, monkeypatch):

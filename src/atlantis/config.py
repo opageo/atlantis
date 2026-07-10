@@ -149,6 +149,36 @@ class ArchiveConfig(BaseSettings):
     time_epoch: str = "2020-01-01"
 
 
+class BookmarksConfig(BaseSettings):
+    """Configuration for the static event-bookmark registry.
+
+    Bookmarks are named shortcuts (e.g. ``Harvey_2017``) for a bbox + date-range
+    (and optionally a default source list), stored as a small GeoParquet file so
+    ``atlantis fetch --event NAME`` can resolve ``--bbox``/``--start-date``/
+    ``--end-date`` without repeating them. This is a curated, user-managed
+    registry (via ``atlantis bookmarks add/remove``) — distinct from the
+    data-driven ``atlantis_events`` bookmarks recorded per-source inside the
+    Zarr archive by ``ArchiveWriter.write(..., event=...)``.
+
+    Attributes:
+        bookmarks_root: Root location for the bookmarks file (local path or
+            ``s3://`` URI).
+        bookmarks_file: Filename of the GeoParquet registry under the root.
+        storage_options: fsspec options for a remote root (credentials, ``anon``, ...).
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="ATLANTIS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    bookmarks_root: str = Field(default_factory=lambda: str(Path.home() / "atlantis-data"))
+    bookmarks_file: str = "bookmarks.parquet"
+    storage_options: dict[str, Any] = Field(default_factory=dict)
+
+
 class FetcherConfig(BaseSettings):
     """Configuration for data fetchers.
 
@@ -278,6 +308,7 @@ class AtlantisConfig(BaseSettings):
 
     harmonise: HarmoniseConfig = Field(default_factory=HarmoniseConfig)
     archive: ArchiveConfig = Field(default_factory=ArchiveConfig)
+    bookmarks: BookmarksConfig = Field(default_factory=BookmarksConfig)
     fetcher: FetcherConfig = Field(default_factory=FetcherConfig)
     stac: StacConfig = Field(default_factory=StacConfig)
     viz: VizConfig = Field(default_factory=VizConfig)
