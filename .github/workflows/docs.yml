@@ -16,7 +16,7 @@ jobs:
       image: ghcr.io/osgeo/gdal:ubuntu-full-3.13.0
       options: --user root
     steps:
-      - run: apt-get update && apt-get install -y git
+      - run: apt-get update && apt-get install -y git g++
 
       - uses: actions/checkout@v4
 

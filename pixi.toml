@@ -187,8 +187,8 @@ viz = { features = ["dev", "viz"] }
 
 [tasks]
 setup = "PYTHONPATH=src python scripts/setup.py"
-docs = "mkdocs serve"
-docs-build = "mkdocs build --strict"
+docs = { cmd = "mkdocs serve", env = { PYTHONPATH = "src" } }
+docs-build = { cmd = "mkdocs build --strict", env = { PYTHONPATH = "src" } }
 demo = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source viirs \
   --bbox "-1.5 38.8 0.5 40.0" \
