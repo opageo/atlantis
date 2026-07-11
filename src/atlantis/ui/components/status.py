@@ -102,7 +102,7 @@ def diagnostic_card(diagnostics) -> None:
         return
 
     with ui.card().classes("bg-amber-50 border border-amber-300 mt-4 p-4 w-full"):
-        ui.label("No results found").classes("text-lg font-bold text-amber-800")
+        ui.label("No results found").classes("text-xl font-bold text-amber-800")
         with ui.column().classes("gap-2 mt-2"):
             miss = getattr(diagnostics, "missing_aoi_coverage", False)
             if miss:

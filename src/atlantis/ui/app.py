@@ -13,42 +13,46 @@ def create_app():
     Called once per process in ``launch()``. Sets up the page router,
     layout shell, and shared styles.
     """
-    # Load .env so EARTHDATA_TOKEN etc. are available to fetchers.
     from pathlib import Path
 
     from dotenv import load_dotenv
 
     load_dotenv(Path(__file__).resolve().parent.parent.parent.parent / ".env", override=False)
 
-    # Enable Atlantis logging so users see fetch progress in the terminal.
     from loguru import logger
 
     logger.enable("atlantis")
 
-    # Pre-load available sources for form dropdowns
     try:
         from atlantis.fetchers.registry import list_fetchers
         from atlantis.layers.registry import load_source_registries
 
         load_source_registries()
-        list_fetchers()  # triggers import of fetcher modules
+        list_fetchers()
     except Exception:
         pass
 
     @ui.page("/")
     def _index():
-        _render_shell()
-        fetch_page()
-
-    # The @ui.page decorators register routes on the global ui module.
-    # The caller then starts the server with ui.run(host=..., port=...).
+        _render_fetch_page()
 
 
-def _render_shell() -> None:
-    """Render shared layout: header bar."""
+def _render_fetch_page() -> None:
+    """Render the page shell with header, left drawer, and main content.
+
+    The header's waves icon toggles the drawer open/closed. The drawer
+    holds the fetch form; the main area shows results, progress, and log.
+    """
+    drawer_ref = {}
+
     with ui.header(elevated=True).classes("bg-cyan-700 text-white").style("position: sticky; top: 0; z-index: 1000"):
         with ui.row().classes("items-center w-full px-4 py-2"):
-            ui.icon("water", size="md")
+            ui.button(icon="water", on_click=lambda: drawer_ref.get("toggle", lambda: None)()).props("flat round")
             ui.label("Atlantis Flood Dashboard").classes("text-xl font-bold")
             ui.space()
             ui.label("ML-ready satellite flood observations").classes("text-sm opacity-80")
+
+    with ui.left_drawer(value=True, elevated=True).classes("bg-gray-50").props("width=360") as drawer:
+        drawer_ref["toggle"] = drawer.toggle
+
+    fetch_page(drawer)

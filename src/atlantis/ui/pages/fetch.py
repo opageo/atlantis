@@ -58,10 +58,10 @@ def _render_results(response: FetchResponse) -> None:
         return
 
     with ui.column().classes("gap-4 w-full mt-4"):
-        ui.label(f"Results for {response.event_id} ({response.source_id})").classes("text-lg font-bold")
+        ui.label(f"Results for {response.event_id} ({response.source_id})").classes("text-xl font-bold")
 
         if response.files:
-            ui.label(f"{len(response.files)} file(s) written").classes("text-sm text-gray-600")
+            ui.label(f"{len(response.files)} file(s) written").classes("text-base text-gray-600")
 
         # Show plot in a clickable card — opens a large dialog on click.
         if response.plot_path and response.plot_path.exists():
@@ -111,7 +111,7 @@ def _render_plot_card(response: FetchResponse) -> None:
     """Render a plot card with a button to open the large dialog."""
     with ui.card().classes("w-full p-3"):
         with ui.row().classes("w-full items-center justify-between mb-2"):
-            ui.label("Peak-flood map").classes("text-sm font-semibold")
+            ui.label("Peak-flood map").classes("text-base font-semibold")
             ui.button(
                 "Enlarge",
                 icon="open_in_full",
@@ -188,9 +188,8 @@ def _apply_preset(preset: dict, storage: dict) -> None:
     )
 
 
-def fetch_page() -> None:
-    """Render the Fetch page with form on the left and results on the right."""
-    # Initialize session state with Valencia flood defaults.
+def _init_storage() -> None:
+    """Seed session storage with default values on first visit."""
     defaults: dict[str, object] = {
         "event_id": "Valencia_2024",
         "source": "viirs",
@@ -214,84 +213,105 @@ def fetch_page() -> None:
         if key not in app.storage.user:
             app.storage.user[key] = val
 
-    ui.label("Flood Data Fetcher").classes("text-2xl font-bold mb-4")
 
-    with ui.splitter(value=35).classes("w-full h-full") as splitter:
-        with splitter.after:
-            progress_area = ui.column()
-            results_area = ui.column()
-            log_widget = ActivityLogWidget(title="Fetch Log")
-            log_widget.create()
+def fetch_page(drawer=None) -> None:
+    """Render the Fetch page with form in left drawer and results in main area.
 
-        with splitter.before:
+    Args:
+        drawer: A ``ui.left_drawer`` element whose context hosts the form.
+            The main content (progress, results, log) renders outside it.
+    """
+    _init_storage()
 
-            async def _on_submit() -> None:
-                """Async handler for the Start Fetch button."""
-                request = _build_request()
+    # Mutable containers so the async submit callback can reach UI elements
+    # that are created after the form button.
+    state: dict[str, object] = {"progress": None, "results": None, "log": None, "fetch_btn": None}
 
-                if not request.event_id or not request.start_date or not request.end_date:
-                    ui.notify("Please fill in Event ID, Start Date, and End Date.", type="warning")
-                    return
+    async def _on_submit() -> None:
+        request = _build_request()
 
+        if not request.event_id or not request.start_date or not request.end_date:
+            ui.notify("Please fill in Event ID, Start Date, and End Date.", type="warning")
+            return
+
+        btn = state["fetch_btn"]
+        try:
+            if btn:
+                btn.enabled = False
+                btn.text = "Fetching..."
+        except Exception:
+            pass
+
+        try:
+            progress_area = state["progress"]
+            results_area = state["results"]
+            log_widget = state["log"]
+
+            progress_area.clear()
+            results_area.clear()
+
+            log_widget.log(f"Starting fetch for {request.event_id} ({request.source})")
+            ui.notify(
+                f"Fetching {request.event_id} via {request.source}...",
+                position="top",
+                type="info",
+                spinner=True,
+            )
+
+            with progress_area:
+                progress_bar_area = ui.column()
+
+            def update_progress(p: FetchProgress) -> None:
                 try:
-                    fetch_btn.enabled = False
-                    fetch_btn.text = "Fetching..."
+                    progress_bar_area.clear()
+                    with progress_bar_area:
+                        fetch_progress_bar(p)
+                    if p.message:
+                        log_widget.log(p.message, level="info" if p.stage != "error" else "error")
                 except Exception:
                     pass
 
-                try:
-                    progress_area.clear()
-                    results_area.clear()
+            update_progress(FetchProgress(stage="searching", message="Initialising..."))
 
-                    log_widget.log(f"Starting fetch for {request.event_id} ({request.source})")
-                    ui.notify(
-                        f"Fetching {request.event_id} via {request.source}...",
-                        position="top",
-                        type="info",
-                        spinner=True,
-                    )
+            try:
+                response = await run_fetch(request, update_progress)
+            except Exception as exc:
+                import traceback
 
-                    with progress_area:
-                        progress_bar_area = ui.column()
+                traceback.print_exc()
+                log_widget.log(f"Fetch failed: {exc}", level="error")
+                with results_area:
+                    error_banner(f"Fetch failed: {exc}")
+                update_progress(FetchProgress(stage="error", error=str(exc)))
+                ui.notify(f"Fetch failed: {exc}", type="negative")
+                return
 
-                    def update_progress(p: FetchProgress) -> None:
-                        try:
-                            progress_bar_area.clear()
-                            with progress_bar_area:
-                                fetch_progress_bar(p)
-                            if p.message:
-                                log_widget.log(p.message, level="info" if p.stage != "error" else "error")
-                        except Exception:
-                            pass
+            log_widget.log(f"Complete: {len(response.files)} file(s) written", level="success")
+            ui.notify("Fetch complete!", type="positive")
 
-                    update_progress(FetchProgress(stage="searching", message="Initialising..."))
+            with results_area:
+                _render_results(response)
+        finally:
+            try:
+                if btn:
+                    btn.enabled = True
+                    btn.text = "Start Fetch"
+            except Exception:
+                pass
 
-                    try:
-                        response = await run_fetch(request, update_progress)
-                    except Exception as exc:
-                        import traceback
+    # --- Drawer: fetch form ---
+    if drawer is not None:
+        with drawer:
+            state["fetch_btn"] = _render_form(on_submit=_on_submit)
 
-                        traceback.print_exc()
-                        log_widget.log(f"Fetch failed: {exc}", level="error")
-                        with results_area:
-                            error_banner(f"Fetch failed: {exc}")
-                        update_progress(FetchProgress(stage="error", error=str(exc)))
-                        ui.notify(f"Fetch failed: {exc}", type="negative")
-                        return
-
-                    log_widget.log(f"Complete: {len(response.files)} file(s) written", level="success")
-                    ui.notify("Fetch complete!", type="positive")
-
-                    with results_area:
-                        _render_results(response)
-                finally:
-                    try:
-                        fetch_btn.enabled = True
-                        fetch_btn.text = "Start Fetch"
-                    except Exception:
-                        pass
-
-            fetch_btn = _render_form(on_submit=_on_submit)
+    # --- Main content area ---
+    with ui.column().classes("gap-4 p-4 w-full"):
+        ui.label("Flood Data Fetcher").classes("text-3xl font-bold mb-2")
+        state["progress"] = ui.column()
+        state["results"] = ui.column()
+        log_widget = ActivityLogWidget(title="Fetch Log")
+        log_widget.create()
+        state["log"] = log_widget
 
 
 def _render_form(on_submit) -> None:
