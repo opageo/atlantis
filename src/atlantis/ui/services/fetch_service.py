@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import queue
-import time as _time
 from datetime import date
 from pathlib import Path
 from typing import Callable
