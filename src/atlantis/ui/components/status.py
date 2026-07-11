@@ -80,6 +80,9 @@ def fetch_progress_bar(progress: FetchProgress) -> None:
             if i < current_idx:
                 ui.icon("check_circle", color="green").classes("text-sm")
                 ui.label(label).classes("text-green-700 text-xs")
+            elif i == current_idx and progress.stage == "done":
+                ui.icon("check_circle", color="green").classes("text-sm")
+                ui.label(label).classes("text-green-700 text-xs")
             elif i == current_idx and progress.stage != "done":
                 ui.spinner(size="sm").classes("text-sm")
                 ui.label(label).classes("text-blue-600 text-xs font-bold")
@@ -87,10 +90,8 @@ def fetch_progress_bar(progress: FetchProgress) -> None:
                 ui.icon("radio_button_unchecked", color="gray").classes("text-sm")
                 ui.label(label).classes("text-gray-400 text-xs")
 
-        if progress.stage == "done":
-            ui.icon("check_circle", color="green").classes("text-lg ml-4")
-            if progress.message:
-                ui.label(progress.message).classes("text-green-700 text-sm")
+        if progress.stage == "done" and progress.message:
+            ui.label(progress.message).classes("text-green-700 text-sm")
 
 
 def diagnostic_card(diagnostics) -> None:

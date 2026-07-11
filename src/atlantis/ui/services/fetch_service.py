@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import queue
+import time as _time
 from datetime import date
 from pathlib import Path
 from typing import Callable
 
 import requests
+from loguru import logger as loguru_logger
 from rasterio.enums import Resampling
 
 from atlantis.config import get_config
@@ -50,16 +53,20 @@ def _date_label(result) -> str:
 async def run_fetch(
     request: FetchRequest,
     progress_callback: Callable[[FetchProgress], None],
+    log_callback: Callable[[str, str], None] | None = None,
 ) -> FetchResponse:
     """Run the full fetch pipeline asynchronously.
 
     All blocking I/O (search, fetch, harmonise, plot) runs inside
     ``asyncio.to_thread`` so the NiceGUI event loop stays responsive.
-    Progress is reported via *progress_callback*.
+    Progress is reported via *progress_callback*. Live fetcher log messages
+    are streamed via *log_callback* (``(level, text)``) when provided.
 
     Args:
         request: The validated fetch request from the web form.
         progress_callback: Called with updated FetchProgress after each stage.
+        log_callback: Optional callback receiving ``(level, message_text)``
+            from fetcher-internal loguru messages captured during the fetch.
 
     Returns:
         FetchResponse with paths to generated files and any diagnostics.
@@ -108,7 +115,35 @@ async def run_fetch(
     fetcher_kwargs: dict = _build_fetcher_kwargs(request)
     fetcher = await asyncio.to_thread(lambda: fetcher_cls(**fetcher_kwargs))
 
-    # ── Fetch ────────────────────────────────────────────────────────────
+    # ── Fetch (with live log capture) ─────────────────────────────────────
+    _log_queue: queue.Queue = queue.Queue()
+
+    def _log_sink(message) -> None:
+        record = message.record
+        _log_queue.put((record["level"].name.lower(), record["message"]))
+
+    _handler_id: int | None = None
+    _drain_task: asyncio.Task | None = None
+
+    async def _drain_log_messages() -> None:
+        loop = asyncio.get_event_loop()
+        while True:
+            try:
+                level, text = await loop.run_in_executor(None, _log_queue.get, True, 0.3)
+                if log_callback:
+                    log_callback(level, text)
+            except queue.Empty:
+                pass
+
+    if log_callback:
+        _handler_id = loguru_logger.add(
+            _log_sink,
+            level="DEBUG",
+            filter="atlantis",
+            format="{message}",
+        )
+        _drain_task = asyncio.create_task(_drain_log_messages())
+
     update(
         "searching",
         message=f"Searching {request.source.upper()} for {request.event_id} "
@@ -124,6 +159,15 @@ async def run_fetch(
             output_dir=output_dir,
             error=f"Network error: {exc}",
         )
+    finally:
+        if _drain_task is not None:
+            _drain_task.cancel()
+            try:
+                await _drain_task
+            except asyncio.CancelledError:
+                pass
+        if _handler_id is not None:
+            loguru_logger.remove(_handler_id)
 
     if not fetch_results:
         diagnostics = getattr(fetcher, "last_diagnostics", None)

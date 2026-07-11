@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from nicegui import ui
 
 from atlantis.ui.pages.fetch import fetch_page
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 def create_app():
@@ -13,11 +17,9 @@ def create_app():
     Called once per process in ``launch()``. Sets up the page router,
     layout shell, and shared styles.
     """
-    from pathlib import Path
-
     from dotenv import load_dotenv
 
-    load_dotenv(Path(__file__).resolve().parent.parent.parent.parent / ".env", override=False)
+    load_dotenv(_PROJECT_ROOT / ".env", override=False)
 
     from loguru import logger
 
@@ -32,7 +34,7 @@ def create_app():
     except Exception:
         pass
 
-    @ui.page("/")
+    @ui.page("/", title="Atlantis")
     def _index():
         _render_fetch_page()
 

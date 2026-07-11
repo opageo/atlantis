@@ -76,24 +76,24 @@ def bbox_input() -> tuple[ui.number, ui.number, ui.number, ui.number]:
     with ui.element("div").classes("w-full"):
         with ui.grid(columns=4).classes("w-full gap-1"):
             west = (
-                ui.number(label="W", value=-1.5, min=-180, max=180, format="%.3f")
-                .props("outlined dense")
-                .classes("w-full")
+                ui.number(label="W", value=-1.5, min=-180, max=180, format="%.2f")
+                .props("outlined dense size=sm")
+                .classes("w-full text-xs")
             )
             east = (
-                ui.number(label="E", value=0.5, min=-180, max=180, format="%.3f")
-                .props("outlined dense")
-                .classes("w-full")
+                ui.number(label="E", value=0.5, min=-180, max=180, format="%.2f")
+                .props("outlined dense size=sm")
+                .classes("w-full text-xs")
             )
             south = (
-                ui.number(label="S", value=38.8, min=-90, max=90, format="%.3f")
-                .props("outlined dense")
-                .classes("w-full")
+                ui.number(label="S", value=38.8, min=-90, max=90, format="%.2f")
+                .props("outlined dense size=sm")
+                .classes("w-full text-xs")
             )
             north = (
-                ui.number(label="N", value=40.0, min=-90, max=90, format="%.3f")
-                .props("outlined dense")
-                .classes("w-full")
+                ui.number(label="N", value=40.0, min=-90, max=90, format="%.2f")
+                .props("outlined dense size=sm")
+                .classes("w-full text-xs")
             )
     return west, south, east, north
 

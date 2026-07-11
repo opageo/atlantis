@@ -274,7 +274,11 @@ def fetch_page(drawer=None) -> None:
             update_progress(FetchProgress(stage="searching", message="Initialising..."))
 
             try:
-                response = await run_fetch(request, update_progress)
+                response = await run_fetch(
+                    request,
+                    update_progress,
+                    log_callback=lambda level, text: log_widget.log(text, level=level),
+                )
             except Exception as exc:
                 import traceback
 
