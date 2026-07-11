@@ -233,7 +233,8 @@ demo-gfm-raw = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
   --no-classify --plot --harmonise --no-keep-processed \
   --output ./data/Valencia_2024"""
-test = { cmd = "pytest -n auto tests/", env = { PYTHONPATH = "src" } }
+test = { cmd = "pytest -n auto tests/ -m 'not slow'", env = { PYTHONPATH = "src" } }
+test-all = { cmd = "pytest -n auto tests/", env = { PYTHONPATH = "src" } }
 lint = "ruff check ."
 lint-fix = "ruff check . --fix"
 format = "ruff format ."
