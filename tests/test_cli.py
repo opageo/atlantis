@@ -253,11 +253,38 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
     assert "VIIRS backend: noaa_s3" in result.stdout
 
 
-def test_archive_command():
-    """Test archive command with required event argument."""
-    result = runner.invoke(cli, ["archive", "--event", "Valencia_2024"])
-    assert result.exit_code == 0
-    assert "Archiving event: Valencia_2024" in result.stdout
+def test_archive_command(tmp_path):
+    """Archive harmonised GeoTIFFs into the consolidated datacube."""
+    import numpy as np
+    import rioxarray  # noqa: F401
+    import xarray as xr
+
+    from atlantis.archive import grid
+
+    row0, col0, h, w = 4000, 10000, 40, 50
+    y = grid.global_y_coords()[row0 : row0 + h]
+    x = grid.global_x_coords()[col0 : col0 + w]
+    da = xr.DataArray(np.full((h, w), 50, dtype="uint8"), dims=["y", "x"], coords={"y": y, "x": x})
+    da.rio.write_crs("EPSG:4326", inplace=True)
+    harm_dir = tmp_path / "data" / "Valencia_2024" / "viirs" / "harmonised"
+    harm_dir.mkdir(parents=True)
+    da.rio.to_raster(harm_dir / "Valencia_2024_2020-01-01_viirs_harmonised.tif")
+
+    archive_root = tmp_path / "archive"
+    result = runner.invoke(
+        cli,
+        [
+            "archive",
+            "--event",
+            "Valencia_2024",
+            "--input",
+            str(tmp_path / "data" / "Valencia_2024"),
+            "--archive",
+            str(archive_root),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert (archive_root / "datacube.zarr").exists()
 
 
 def test_fetch_kurosiwo_viirs_command(monkeypatch, tmp_path):

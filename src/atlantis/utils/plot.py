@@ -220,15 +220,23 @@ def plot_classified(
     *,
     announce: bool = True,
 ) -> None:
-    """Render a classified flood raster (binary 0/1 or flood fraction 0–1)."""
+    """Render a classified flood raster (binary 0/1 or flood fraction 0–1).
+
+    Zero-valued pixels (no flood) are forced to render as pure white rather
+    than the pale-blue tint that colormaps like ``"Blues"`` use at their low
+    end, so they can't be mistaken for a faint flood signal and read the same
+    as NaN (no-data) pixels.
+    """
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
     vmax = float(da.max())
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_under("white")
     da.plot(
         ax=ax,
-        cmap=cmap,
-        vmin=0.0,
+        cmap=cmap_obj,
+        vmin=1e-6,
         vmax=max(vmax, 0.01),
         add_colorbar=True,
         cbar_kwargs={"label": "Flood", "shrink": 0.8},

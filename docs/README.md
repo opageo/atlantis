@@ -19,6 +19,11 @@ layers Atlantis computes from them.
 
 ## Architecture and Design
 
+- [Zarr datacube spec](./archive/zarr-spec.md) - Consolidated Zarr archive
+  schema and data-flow diagrams (review brief for the ML team).
+- [STAC + Visualization layer](./stac_zarr.md) - STAC discovery layer over the
+  Zarr datacube (collection per source, item per date) and the local
+  hvplot/Panel visualization demo.
 - [Layers](./layers.md) - Per-source catalogue of native and derived layers
   (auto-generated from the layer registries; regenerate with
   `python scripts/generate_layer_docs.py` or view via `atlantis list-layers`).

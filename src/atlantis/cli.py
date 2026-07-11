@@ -160,22 +160,26 @@ def _ds_is_classified(ds, source_id: str | None = None) -> bool:
 def _date_label(result: FetchResult) -> str:
     """Human-readable date label for a fetch result."""
     if result.date_token:
-        token = result.date_token
-        # Only format as YYYY-MM-DD if the token is an 8-digit date string.
-        # Special tokens like "aggregated" are returned as-is.
-        if len(token) == 8 and token.isdigit():
-            return f"{token[:4]}-{token[4:6]}-{token[6:8]}"
-        return token
+        return _date_label_from_token(result.date_token)
     if result.files:
         return date_from_filename(result.files[0].name)
     return "unknown"
+
+
+def _date_label_from_token(token: str) -> str:
+    """Format an 8-digit date token as YYYY-MM-DD, or return as-is."""
+    if len(token) == 8 and token.isdigit():
+        return f"{token[:4]}-{token[4:6]}-{token[6:8]}"
+    return token
 
 
 # Backwards-compatibility alias used by tests / external tooling.
 _viirs_date_label = _date_label
 
 
-def _report_fetch_writes(source_id: str, fetch_results: list[FetchResult], *, keep_processed: bool) -> None:
+def _report_fetch_writes(
+    source_id: str, fetch_results: list[FetchResult], *, keep_processed: bool, strategy: str = "peak"
+) -> None:
     """Print what a fetcher persisted (disk vs in-memory composite/peak date)."""
     disk_files = sum(len(result.files) for result in fetch_results)
     if disk_files:
@@ -187,6 +191,8 @@ def _report_fetch_writes(source_id: str, fetch_results: list[FetchResult], *, ke
         label = _date_label(fetch_results[0])
         if label == "aggregated":
             info("Aggregated composite: processed in memory (no processed/ GeoTIFFs)")
+        elif strategy == "all" and len(fetch_results) > 1:
+            info(f"{len(fetch_results)} date(s) processed in memory (no processed/ GeoTIFFs)")
         else:
             info(f"Peak-flood date {label}: processed in memory (no processed/ GeoTIFFs)")
 
@@ -412,6 +418,12 @@ def _select_best_result(
                 best_date_label = date_label
         else:
             pixel_stats_raw(ds["raw"].values, name=date_label)
+            raw_vals = ds["raw"].values.ravel()
+            flooded = int(((raw_vals >= 101) & (raw_vals <= 200)).sum())
+            if flooded > best_flood_count:
+                best_flood_count = flooded
+                best_result = result
+                best_date_label = date_label
 
     if best_result is None:
         best_result = fetch_results[0]
@@ -1108,7 +1120,7 @@ def fetch(
                 checklist.complete("Fetch tiles", detail=fetch_detail)
 
             if src in ("viirs", "modis"):
-                _report_fetch_writes(src, fetch_results, keep_processed=keep_processed)
+                _report_fetch_writes(src, fetch_results, keep_processed=keep_processed, strategy=strategy)
             else:
                 ok(f"Wrote {written_files} files")
                 all_paths = [path for result in fetch_results for path in result.files]
@@ -1120,8 +1132,14 @@ def fetch(
             ):
                 n_returned = len(fetch_results)
                 parts = []
+                peak_label = ""
+                if fetcher._peak_token:
+                    peak_label = _date_label_from_token(fetcher._peak_token)
                 if effective_days_before > 0 or effective_days_after > 0:
-                    parts.append(f"window: -{effective_days_before}/+{effective_days_after} days around peak")
+                    window_desc = f"window: -{effective_days_before}/+{effective_days_after} days around peak"
+                    if peak_label:
+                        window_desc += f" ({peak_label})"
+                    parts.append(window_desc)
                 if max_observations > 0:
                     parts.append(f"max {max_observations} obs (priority={peak_priority})")
                 info(f"Peak filter applied — {n_returned} result(s) returned. {'; '.join(parts)}")
@@ -1787,35 +1805,101 @@ def harmonise(
 def archive(
     event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
     source: str | None = typer.Option(None, "--source", "-s", help="Data source (default: all available)"),
-    archive_root: Path | None = typer.Option(None, "--archive", "-a", help="Archive root directory"),
-    raw_only: bool = typer.Option(False, "--raw-only", help="Only write raw archive (skip ML-ready)"),
+    input_dir: Path | None = typer.Option(
+        None, "--input", "-i", help="Harmonised data directory (default: ./data/<event>)"
+    ),
+    archive_root: str | None = typer.Option(None, "--archive", "-a", help="Archive root (local path or s3:// URI)"),
+    ensure_masks: bool = typer.Option(
+        False, "--ensure-masks", help="Synthesise quality/permanent-water masks if absent in the input"
+    ),
 ) -> None:
-    """Write harmonised data to Zarr archive (raw + ML-ready).
+    """Write harmonised GeoTIFFs into the consolidated Zarr datacube.
+
+    Reads harmonised rasters from ``<input>/<source>/harmonised/*.tif`` and
+    region-writes each into the per-source group of the consolidated global
+    1-arcmin datacube.
 
     Args:
         event: Flood event ID to archive.
-        source: Data source (default: all available).
-        archive_root: Root directory for archive storage.
-        raw_only: Skip ML-ready archive (write raw only).
+        source: Data source (default: all sources found under the input dir).
+        input_dir: Harmonised data directory (default: ``./data/<event>``).
+        archive_root: Archive root — local path or ``s3://`` URI.
+        ensure_masks: Generate quality/permanent-water masks when the input lacks them.
     """
+    import re
+
+    import rioxarray as rxr
+
+    from atlantis.archive.writer import ArchiveWriter
+
     config = get_config()
-    archive_root = archive_root or config.archive.archive_root
+    root = archive_root or config.archive.archive_root
+    in_dir = input_dir or (Path("data") / event)
 
     command_header("archive", subtitle=f"{event} · {source or 'all'}")
-    console.print(f"[bold]Archiving event:[/bold] {event}")
-    console.print(f"[bold]Archive root:[/bold] {archive_root}")
+    console.print(f"[bold]Event:[/bold] {event}")
+    console.print(f"[bold]Input:[/bold] {in_dir}")
+    console.print(f"[bold]Archive root:[/bold] {root}")
 
-    if source:
-        console.print(f"[bold]Source:[/bold] {source}")
-    else:
-        console.print("[bold]Source:[/bold] all available")
+    if not in_dir.exists():
+        fail(f"Input directory not found: {in_dir}")
+        raise typer.Exit(code=1)
 
-    if raw_only:
-        info("Writing raw archive only")
-    else:
-        info("Writing raw + ML-ready archives")
+    sources = (
+        [source] if source else sorted(p.name for p in in_dir.iterdir() if p.is_dir() and (p / "harmonised").is_dir())
+    )
+    if not sources:
+        fail(f"No harmonised data found under {in_dir}")
+        raise typer.Exit(code=1)
 
-    warn("Archive writing not yet implemented")
+    date_re = re.compile(r"(\d{4})-(\d{2})-(\d{2})|(\d{8})")
+
+    def _parse_date(name: str) -> date | None:
+        m = date_re.search(name)
+        if not m:
+            return None
+        if m.group(4):
+            token = m.group(4)
+            return date(int(token[:4]), int(token[4:6]), int(token[6:8]))
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+    # ── Collect harmonised rasters + derive event extent ──────────────────
+    items: list[tuple[str, "object", date | None, tuple[float, float, float, float]]] = []
+    for src in sources:
+        for tif in sorted((in_dir / src / "harmonised").glob("*.tif")):
+            da = rxr.open_rasterio(tif).squeeze(drop=True)
+            ds = da.to_dataset(name="flood_fraction")
+            items.append((src, ds, _parse_date(tif.name), tuple(da.rio.bounds())))
+
+    if not items:
+        fail("No harmonised .tif files found to archive.")
+        raise typer.Exit(code=1)
+
+    dates = sorted({d for _, _, d, _ in items if d is not None})
+    start = dates[0] if dates else date.today()
+    end = dates[-1] if dates else start
+    west = min(b[0] for *_, b in items)
+    south = min(b[1] for *_, b in items)
+    east = max(b[2] for *_, b in items)
+    north = max(b[3] for *_, b in items)
+
+    flood_event = FloodEvent(
+        event_id=event,
+        bbox=(float(west), float(south), float(east), float(north)),
+        start_date=start,
+        end_date=end,
+        sources=sources,
+    )
+
+    writer = ArchiveWriter(root, config.archive)
+    info(f"Writing datacube ({len(items)} raster(s)){' + generated masks' if ensure_masks else ''}")
+    with make_progress() as progress:
+        task = progress.add_task("[cyan]Archiving[/cyan]", total=len(items))
+        for src, ds, d, _ in items:
+            writer.write(ds, src, time=d or start, ensure_masks=ensure_masks, event=flood_event)
+            progress.advance(task)
+
+    ok(f"Archived {len(items)} raster(s) from {len(sources)} source(s) into datacube at {root}")
 
 
 @cli.command()
@@ -2402,6 +2486,7 @@ def batch_viirs(
         VM2: atlantis batch viirs run --partition 24464:48928 --db-path tracker_vm2.db
     """
     from atlantis.batch import BatchConfig, run_batch
+    from atlantis.batch.tracker import get_pending, init_db, stats
     from atlantis.fetchers.viirs.batch_processor import process_granule
     from atlantis.fetchers.viirs.inventory import load_inventory, slice_partition, to_tasks
     from atlantis.utils.setup import AWS_PROFILES
@@ -2428,6 +2513,22 @@ def batch_viirs(
         f"  [bold]{len(tasks)}[/bold] granules to process" + (f"  (partition {partition})" if partition else "")
     )
 
+    # ── Resume status ─────────────────────────────────────────────────────
+    # The engine logs this via loguru, which is not shown on the CLI, so a
+    # fully-completed tracker would otherwise look like a silent exit. Surface
+    # it on the console and stop early with an actionable hint.
+    init_db(db_path)
+    pending = get_pending(db_path, {t["task_id"] for t in tasks})
+    already_done = len(tasks) - len(pending)
+    if already_done:
+        info(f"{already_done} of {len(tasks)} already marked DONE in '{db_path}' (resume) — {len(pending)} pending.")
+    if not pending:
+        warn(
+            f"Nothing to do — all {len(tasks)} tasks are already DONE in '{db_path}'. "
+            "Use a different --db-path (or delete this one) to reprocess."
+        )
+        raise typer.Exit(code=0)
+
     cfg = BatchConfig(
         db_path=db_path,
         workers_min=workers_min,
@@ -2440,6 +2541,346 @@ def batch_viirs(
 
     # ── Run ───────────────────────────────────────────────────────────────
     run_batch(tasks, process_fn=process_granule, cfg=cfg)
+    final = stats(db_path)
+    ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {final.get('total', 0)} → {output}")
+
+
+# ── VIIRS cube subcommand (resume-safe Zarr datacube build) ───────────────────
+
+viirs_cube_app = typer.Typer(help="Build the VIIRS 1-arcmin Zarr datacube (resume-safe, streaming).")
+viirs_batch_app.add_typer(viirs_cube_app, name="cube")
+
+_VIIRS_CATALOGUE = "s3://atlantis/assets/viirs/viirs_archive_catalog.parquet"
+
+
+@viirs_cube_app.command("run")
+def batch_viirs_cube(
+    inventory: str = typer.Option(
+        _VIIRS_CATALOGUE,
+        "--inventory",
+        help="Path or S3 URI to the VIIRS JPSS catalogue Parquet file.",
+    ),
+    archive: str = typer.Option(
+        "s3://atlantis/zarr/viirs_2020_cube",
+        "--archive",
+        "-a",
+        help="Datacube root — a local directory or an s3:// URI.",
+    ),
+    partition: str | None = typer.Option(
+        None,
+        "--partition",
+        help="Row slice of the catalogue to process, e.g. '0:1000'. None = full catalogue.",
+    ),
+    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+    memory_limit: str = typer.Option("6GB", "--memory-limit", help="Memory cap per worker."),
+    dashboard_port: int = typer.Option(8787, "--dashboard-port", help="Dask dashboard port."),
+    db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
+    retries: int = typer.Option(3, "--retries", help="Dask retry count per granule."),
+    log_every: int = typer.Option(100, "--log-every", help="Log a progress line every N completions."),
+) -> None:
+    """Build the VIIRS datacube from the catalogue — resume-safe and streaming.
+
+    Dask harmonises granules in parallel while a single coordinator streams each
+    result into the consolidated Zarr cube (bounded memory — no giant in-RAM
+    accumulation). Every finished granule is recorded in --db-path, so the run
+    can be interrupted and resumed (already-DONE tasks are skipped on re-run).
+
+    Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
+
+        tmux new -s cube
+        atlantis batch viirs cube run --partition 0:1000
+
+    Check progress at any time — even after a disconnect — with::
+
+        atlantis batch viirs cube status --partition 0:1000
+    """
+    from atlantis.archive.cube_batch import run_viirs_cube_batch
+    from atlantis.batch import BatchConfig
+    from atlantis.fetchers.viirs.inventory import load_inventory, slice_partition, to_tasks
+    from atlantis.utils.setup import AWS_PROFILES
+
+    command_header("batch viirs cube", subtitle=archive)
+
+    # ── Resolve S3 endpoint for the cube store (local roots need none) ────
+    storage_options = None
+    if archive.startswith("s3://"):
+        ecmwf_profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+        if ecmwf_profile is None or not ecmwf_profile.endpoint_url:
+            fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+            raise typer.Exit(code=1)
+        storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
+
+    # ── Load & slice catalogue ────────────────────────────────────────────
+    info(f"Loading catalogue from {inventory} …")
+    df = slice_partition(load_inventory(inventory), partition)
+    tasks = to_tasks(df)
+    console.print(
+        f"  [bold]{len(tasks)}[/bold] granules → {archive}" + (f"  (partition {partition})" if partition else "")
+    )
+    console.print(f"  [bold]tracker:[/bold] {db_path}")
+    warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
+
+    cfg = BatchConfig(
+        db_path=db_path,
+        workers_min=workers_min,
+        workers_max=workers_max,
+        memory_limit_per_worker=memory_limit,
+        dashboard_port=dashboard_port,
+        retries=retries,
+        log_every=log_every,
+    )
+
+    # ── Run ───────────────────────────────────────────────────────────────
+    final = run_viirs_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
+
+
+@viirs_cube_app.command("status")
+def batch_viirs_cube_status(
+    db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
+    inventory: str = typer.Option(
+        _VIIRS_CATALOGUE,
+        "--inventory",
+        help="Catalogue used to compute the expected total.",
+    ),
+    partition: str | None = typer.Option(None, "--partition", help="Row slice the run used, if any."),
+) -> None:
+    """Report cube-build completion from the tracker — works offline / after a disconnect.
+
+    Reads only the local --db-path (plus the catalogue, to compute the expected
+    total), so it is safe to run while a build is in progress or after the
+    coordinator has exited.
+    """
+    from atlantis.batch.tracker import get_pending, init_db, stats
+    from atlantis.fetchers.viirs.inventory import load_inventory, slice_partition, to_tasks
+
+    command_header("batch viirs cube status", subtitle=str(db_path))
+    init_db(db_path)
+    s = stats(db_path)
+    done = s.get("DONE", 0)
+    failed = s.get("FAILED", 0)
+
+    total: int
+    remaining: int | None
+    try:
+        df = slice_partition(load_inventory(inventory), partition)
+        tasks = to_tasks(df)
+        total = len(tasks)
+        remaining = len(get_pending(db_path, {t["task_id"] for t in tasks}))
+    except Exception as exc:  # noqa: BLE001 - catalogue may be unreachable offline
+        warn(f"Could not load catalogue ({exc}); showing tracker counts only.")
+        total = done + failed
+        remaining = None
+
+    pct = f"{100 * done / total:.1f}%" if total else "—"
+    rows = [
+        ["Total (catalogue)", str(total)],
+        ["DONE", str(done)],
+        ["FAILED (retried on resume)", str(failed)],
+        ["Remaining", "—" if remaining is None else str(remaining)],
+        ["Complete", pct],
+    ]
+    console.print(summary_table("VIIRS cube — build status", ["Metric", "Count"], rows))
+    if remaining == 0 and failed == 0 and total:
+        ok("All tasks complete.")
+    elif remaining:
+        info(f"{remaining} task(s) remaining — re-run `batch viirs cube run` to resume.")
+
+
+# ── STAC subcommand ───────────────────────────────────────────────────────────
+
+stac_app = typer.Typer(help="STAC catalog over the consolidated Zarr datacube.")
+cli.add_typer(stac_app, name="stac")
+
+
+@stac_app.command("build")
+def stac_build(
+    archive: str | None = typer.Option(None, "--archive", "-a", help="Datacube root (local dir or s3:// URI)."),
+    output: str | None = typer.Option(None, "--output", "-o", help="Catalog destination (local dir or s3:// URI)."),
+    source: list[str] | None = typer.Option(None, "--source", "-s", help="Limit to these source groups (repeatable)."),
+    no_compute_bbox: bool = typer.Option(
+        False, "--no-compute-bbox", help="Use the source extent for every item instead of per-date populated extents."
+    ),
+) -> None:
+    """Build a static STAC catalog over the datacube and write it to --output.
+
+    One collection per source group, one item per populated date. Collections and
+    items carry the datacube extension and a Zarr asset (xarray-assets
+    ``open_kwargs``) so they can be opened directly with xpystac/xarray.
+    """
+    from atlantis.stac import BuildProgress, build_datacube_catalog, write_catalog
+
+    config = get_config()
+    archive = archive or config.archive.archive_root
+    output = output or config.stac.catalog_root
+    stac_config = config.stac.model_copy(update={"compute_item_bbox": not no_compute_bbox})
+    storage_options = config.archive.storage_options or None
+
+    command_header("stac build", subtitle=str(archive))
+    info("Building catalog from the datacube …")
+
+    tasks: dict[str, int] = {}
+    with make_progress() as bar:
+
+        def on_sources(sources: list[str]) -> None:
+            if sources:
+                info(f"Discovered {len(sources)} source(s): {', '.join(sources)}")
+
+        def on_source_start(src: str) -> None:
+            tasks[src] = bar.add_task(f"{src} · reading + scanning…", total=None)
+
+        def on_source_total(src: str, total: int) -> None:
+            bar.update(tasks[src], total=total, description=f"{src} · building items")
+
+        def on_item(src: str) -> None:
+            bar.advance(tasks[src])
+
+        def on_source_done(src: str, total: int) -> None:
+            task_id = tasks.get(src)
+            if task_id is None:
+                return
+            if total:
+                bar.update(task_id, total=total, completed=total, description=f"{src} · {total} item(s)")
+            else:
+                bar.update(task_id, total=1, completed=1, description=f"{src} · skipped (empty)")
+
+        catalog = build_datacube_catalog(
+            archive,
+            sources=source or None,
+            storage_options=storage_options,
+            archive_config=config.archive,
+            stac_config=stac_config,
+            progress=BuildProgress(
+                on_sources=on_sources,
+                on_source_start=on_source_start,
+                on_source_total=on_source_total,
+                on_item=on_item,
+                on_source_done=on_source_done,
+            ),
+        )
+
+    children = list(catalog.get_children())
+    if not children:
+        warn("No populated source groups found in the datacube — nothing to build.")
+        raise typer.Exit(code=0)
+
+    n_items = sum(1 for _ in catalog.get_items(recursive=True))
+    with step_status(f"Writing catalog → {output} …"):
+        dest = write_catalog(catalog, output, storage_options=storage_options)
+    rows = [[c.id, str(sum(1 for _ in c.get_items()))] for c in children]
+    console.print(summary_table("STAC collections", ["Collection", "Items"], rows))
+    ok(f"Catalog written → {dest}  ({len(children)} collection(s), {n_items} item(s))")
+
+
+@stac_app.command("validate")
+def stac_validate(
+    catalog: str = typer.Argument(..., help="Path or URL to the catalog root (dir or catalog.json)."),
+) -> None:
+    """Validate a STAC catalog (structure + JSON schema when jsonschema is available)."""
+    import pystac
+
+    command_header("stac validate", subtitle=catalog)
+    href = catalog if catalog.rstrip("/").endswith(".json") else catalog.rstrip("/") + "/catalog.json"
+    try:
+        cat = pystac.Catalog.from_file(href)
+    except Exception as exc:  # noqa: BLE001 - surface a clean CLI error
+        fail(f"Could not open catalog at {href}: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    n_children = sum(1 for _ in cat.get_children())
+    n_items = sum(1 for _ in cat.get_items(recursive=True))
+    info(f"{n_children} collection(s), {n_items} item(s).")
+    try:
+        validated = cat.validate_all()
+        ok(f"Valid — {validated} object(s) passed JSON-schema validation.")
+    except Exception as exc:  # noqa: BLE001 - jsonschema optional / schema fetch may fail
+        fail(f"Validation failed: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@stac_app.command("export-geoparquet")
+def stac_export_geoparquet(
+    catalog: str = typer.Argument(..., help="Path or URL to the catalog root (dir or catalog.json)."),
+    output: str = typer.Option(..., "--output", "-o", help="Destination .parquet path (local or s3://)."),
+) -> None:
+    """Export all catalog items to a stac-geoparquet index (serverless search at scale)."""
+    import pystac
+
+    from atlantis.stac.geoparquet import export_items_to_geoparquet
+    from atlantis.stac.io import FsspecStacIO
+
+    config = get_config()
+    storage_options = config.archive.storage_options or None
+
+    command_header("stac export-geoparquet", subtitle=output)
+    href = catalog if catalog.rstrip("/").endswith(".json") else catalog.rstrip("/") + "/catalog.json"
+    cat = pystac.Catalog.from_file(href, stac_io=FsspecStacIO(storage_options))
+    items = list(cat.get_items(recursive=True))
+    if not items:
+        warn("Catalog has no items — nothing to export.")
+        raise typer.Exit(code=0)
+    dest = export_items_to_geoparquet(items, output, storage_options=storage_options)
+    ok(f"Exported {len(items)} item(s) → {dest}")
+
+
+# ── Viz subcommand ────────────────────────────────────────────────────────────
+
+viz_app = typer.Typer(help="Local visualization server for the Zarr datacube.")
+cli.add_typer(viz_app, name="viz")
+
+
+@viz_app.command("serve")
+def viz_serve(
+    source: str = typer.Argument(..., help="Source group to visualize (e.g. 'viirs')."),
+    archive: str | None = typer.Option(None, "--archive", "-a", help="Datacube root (local dir or s3:// URI)."),
+    stac: str | None = typer.Option(
+        None, "--stac", help="Discover via a STAC catalog/collection root instead of reading the archive directly."
+    ),
+    var: str | None = typer.Option(None, "--var", help="Data variable to render."),
+    bbox: str | None = typer.Option(None, "--bbox", help="AOI 'west south east north' (degrees)."),
+    start: str | None = typer.Option(None, "--start", help="Inclusive start date (YYYY-MM-DD)."),
+    end: str | None = typer.Option(None, "--end", help="Inclusive end date (YYYY-MM-DD)."),
+    basemap: bool = typer.Option(
+        True, "--basemap", help="Overlay coastlines & country borders (requires geoviews/cartopy)."
+    ),
+    tiles: bool = typer.Option(
+        False, "--tiles", help="Add an OSM web-tile basemap under the data (requires geoviews)."
+    ),
+    port: int | None = typer.Option(None, "--port", help="Local server port."),
+    host: str | None = typer.Option(None, "--host", help="Bind address."),
+    no_show: bool = typer.Option(False, "--no-show", help="Do not auto-open a browser tab."),
+) -> None:
+    """Serve an interactive hvplot/panel dashboard of the datacube (with a time slider)."""
+    from atlantis.viz import serve_dashboard
+
+    config = get_config()
+    archive = archive or config.archive.archive_root
+    var = var or config.viz.variable
+    bbox_t = _parse_bbox(bbox) if bbox else None
+    port = port or config.viz.port
+    host = host or config.viz.host
+
+    command_header("viz serve", subtitle=f"{source} @ {stac or archive}")
+    info(f"Serving dashboard on http://{host}:{port}  (Ctrl-C to stop) …")
+    serve_dashboard(
+        source,
+        archive_root=archive,
+        stac=stac,
+        var=var,
+        bbox=bbox_t,
+        start=start,
+        end=end,
+        basemap=basemap or config.viz.basemap,
+        tiles=tiles or config.viz.tiles,
+        cmap=config.viz.cmap,
+        rasterize=config.viz.rasterize,
+        # frame_width=config.viz.frame_width,
+        storage_options=config.archive.storage_options or None,
+        host=host,
+        port=port,
+        show=not no_show,
+    )
 
 
 if __name__ == "__main__":
