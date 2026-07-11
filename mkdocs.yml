@@ -1,0 +1,103 @@
+site_name: Atlantis
+site_description: ML-ready archive of satellite-derived flood inundation observations
+site_url: https://opageo.github.io/atlantis
+repo_url: https://github.com/opageo/atlantis
+repo_name: opageo/atlantis
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            members_order: source
+            separate_signature: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+  - pymdownx.tabbed
+  - pymdownx.details
+  - pymdownx.emoji
+  - attr_list
+  - md_in_html
+
+hooks:
+  - scripts/gen_docs_hook.py
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - "Pixi Setup (Newcomers)": pixi-setup.md
+      - "Credentials & Setup": setup.md
+      - "Manual GDAL Installation": gdal-install.md
+  - Architecture: architecture.md
+  - Data Sources:
+      - Overview: sources.md
+      - "Layer Catalog": layers.md
+      - VIIRS:
+          - Overview: viirs/overview.md
+          - Pipeline: viirs/pipeline.md
+          - "API Usage": viirs/api.md
+          - Internals: viirs/internals.md
+      - MODIS:
+          - Overview: modis/overview.md
+          - Pipeline: modis/pipeline.md
+          - "API Usage": modis/api.md
+          - Internals: modis/internals.md
+      - GFM:
+          - Overview: gfm/overview.md
+          - Pipeline: gfm/pipeline.md
+          - "API Usage": gfm/api.md
+          - Internals: gfm/internals.md
+      - KuroSiwo:
+          - "STAC Design": kurosiwo/stac-design.md
+  - CLI:
+      - "Full Reference": cli.md
+      - "End-to-End Examples": cli-examples.md
+  - "Batch Processing":
+      - "VIIRS JPSS": batch/viirs/jpss.md
+  - Development: development.md
+  - API Reference:
+      - Config: api/config.md
+      - Models: api/models.md
+      - Fetchers: api/fetchers.md
+      - Harmoniser: api/harmoniser.md
+      - Layers: api/layers.md
+      - Utils: api/utils.md
+      - Batch: api/batch.md

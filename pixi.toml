@@ -139,6 +139,15 @@ cartopy = ">=0.22"
 metview-python = "*"
 
 # ============================================================================
+# Feature: docs (MkDocs + Material for site generation)
+# ============================================================================
+
+[feature.docs.dependencies]
+python = ">=3.11,<3.15"
+
+[feature.docs.pypi-dependencies]
+mkdocs-material = ">=9.0"
+mkdocstrings = { version = ">=0.25", extras = ["python"] }
 # Feature: stac (STAC layer over the Zarr datacube)
 # ============================================================================
 
@@ -172,15 +181,16 @@ default = { features = ["dev"], solve-group = "default" }
 ml = { features = ["dev", "ml"], solve-group = "default" }
 notebooks = { features = ["dev", "ml", "notebooks"], solve-group = "default" }
 batch = { features = ["dev", "batch"], solve-group = "default" }
-stac = { features = ["dev", "stac"] }
+docs = { features = ["docs"], solve-group = "default" }
 viz = { features = ["dev", "viz"] }
 
 # ============================================================================
-# Tasks
 # ============================================================================
 
 [tasks]
 setup = "PYTHONPATH=src python scripts/setup.py"
+docs = { cmd = "mkdocs serve", env = { PYTHONPATH = "src" } }
+docs-build = { cmd = "mkdocs build --strict", env = { PYTHONPATH = "src" } }
 demo = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source viirs \
   --bbox "-1.5 38.8 0.5 40.0" \
@@ -225,7 +235,8 @@ demo-gfm-raw = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
   --no-classify --plot --harmonise --no-keep-processed \
   --output ./data/Valencia_2024"""
-test = { cmd = "pytest -n auto tests/", env = { PYTHONPATH = "src" } }
+test = { cmd = "pytest -n auto tests/ -m 'not slow'", env = { PYTHONPATH = "src" } }
+test-all = { cmd = "pytest -n auto tests/", env = { PYTHONPATH = "src" } }
 lint = "ruff check ."
 lint-fix = "ruff check . --fix"
 format = "ruff format ."

@@ -91,6 +91,10 @@ dev = [
   "atlantis[viz]",
   "atlantis[stac]",
 ]
+docs = [
+  "mkdocs-material>=9.0",
+  "mkdocstrings[python]>=0.25",
+]
 
 [tool.uv]
 default-groups = ["dev"]
