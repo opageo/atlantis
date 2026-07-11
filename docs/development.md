@@ -167,8 +167,8 @@ uv run jupyter lab
 ### KuroSiwo catalogue
 
 The KuroSiwo draft notebooks
-([`kurosiwo_eda.ipynb`](../notebooks/drafts/kurosiwo_eda.ipynb),
-[`kurosiwo_viirs_showcase_cli.ipynb`](../notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb))
+([`kurosiwo_eda.ipynb`](https://github.com/opageo/atlantis/blob/main/notebooks/drafts/kurosiwo_eda.ipynb),
+[`kurosiwo_viirs_showcase_cli.ipynb`](https://github.com/opageo/atlantis/blob/main/notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb))
 require the KuroSiwo catalogue (~500 MB):
 
 ```bash
