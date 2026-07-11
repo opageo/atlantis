@@ -1,22 +1,17 @@
 <div align="center">
 
-# Project: Atlantis
+# Atlantis
 
 <img src="docs/assets/logo.png" alt="Project Atlantis Logo" width="320">
-
-</div>
 
 ML-ready archive of satellite-derived flood inundation observations
 (ECMWF Code for Earth 2026).
 
-> **New to Atlantis?** Start with the onboarding guide:
-> [docs/pixi-setup.md](docs/pixi-setup.md) — single-command setup with GDAL + HDF4 out of the box.
->
-> **Contributor?** See [docs/development.md](docs/development.md) for `uv` setup, devcontainers, testing and CI.
-
 [![Python versions][python-badge]][python-url]
 [![Ruff][ruff-badge]][ruff-url]
 [![Gitleaks status][gitleaks-badge]][gitleaks-url]
+
+</div>
 
 [python-badge]: https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue
 [python-url]: https://github.com/opageo/atlantis
@@ -37,7 +32,9 @@ pixi run setup     # bootstrap credentials & data assets
 pixi run demo      # run the Valencia 2024 flood example
 ```
 
-See [docs/pixi-setup.md](docs/pixi-setup.md) for the full guide.
+**New to Atlantis?** Start with [docs/pixi-setup.md](docs/pixi-setup.md) — single-command setup with GDAL + HDF4 out of the box.
+
+**Contributor?** See [docs/development.md](docs/development.md) for `uv` setup, devcontainers, testing and CI.
 
 > **`uv` users:** `uv` is also fully supported. See
 > [docs/development.md](docs/development.md) for the contributor workflow,
