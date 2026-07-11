@@ -37,7 +37,7 @@ This resolves and installs:
 - GDAL **with the HDF4 driver** (`libgdal-hdf4` from conda-forge) — no manual
   build required
 - Dev tools (pytest, ruff, pre-commit, …)
-- The `atlantis` package itself (editable install)
+- The `atlantis` package itself (available via `PYTHONPATH=src`)
 
 Verify the GDAL/HDF4 stack:
 
@@ -75,40 +75,52 @@ See [setup.md](setup.md) for full details on each credential.
 
 ---
 
-## 4. Run the demo
+## 4. Run the demos
+
+All demos fetch Valencia 2024 flood data, harmonise to 1 arcmin, and produce
+plots under `./data/Valencia_2024/`.
 
 ```bash
-pixi run demo
+pixi run demo             # VIIRS — default (flood-classified)
+pixi run demo-modis       # MODIS — requires EARTHDATA_TOKEN
+pixi run demo-gfm         # Sentinel-1 GFM — anonymous public STAC
 ```
 
-Conda equivalent (after creating/activating `default` and installing editable
-Atlantis with `--no-deps`):
+**Raw variants** (skip flood classification, keep original pixel codes):
 
 ```bash
-eval "$("$HOME"/miniforge3/bin/conda shell.bash hook)"
-conda activate default
-atlantis demo
+pixi run demo-raw         # VIIRS raw
+pixi run demo-modis-raw   # MODIS raw
+pixi run demo-gfm-raw     # GFM raw
 ```
 
-Fetches VIIRS inundation data for the Valencia 2024 flood event, harmonises to
-1 arcmin, and produces plots under `./data/Valencia_2024/`.
+MODIS demos require a NASA Earthdata token (run `pixi run setup` first).
+GFM doesn't set `--no-stream` or `--no-classify` — these flags are ignored for
+SAR data.
 
 ---
 
-## 5. Development tasks
+## 5. Running other examples
 
-| Command                | Description                                |
-| ---------------------- | ------------------------------------------ |
-| `pixi run test`        | Run test suite (parallel via pytest-xdist) |
-| `pixi run lint`        | Lint with ruff                             |
-| `pixi run format`      | Auto-format with ruff                      |
-| `pixi run precommit`   | Run all pre-commit hooks                   |
-| `pixi run verify-gdal` | Confirm GDAL HDF4 driver is available      |
-
-For per-event examples (Harvey, Bihar, Vamco, etc.) use the CLI directly:
+Pre-built tasks exist for all event/source combinations:
 
 ```bash
-pixi run atlantis --verbose fetch \
+pixi run example-harvey-viirs       # VIIRS: Hurricane Harvey 2017
+pixi run example-bihar-gfm          # GFM: Bihar floods 2019
+pixi run example-vamco-modis        # MODIS: Typhoon Vamco 2020
+pixi run example-westafrica-gfm     # GFM: West Africa floods 2020
+```
+
+List all available tasks:
+
+```bash
+pixi task list
+```
+
+For custom fetch commands, use the module path with `PYTHONPATH=src`:
+
+```bash
+PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --event Harvey_2017 --source viirs \
   --bbox "-97.27 28.24 -95.54 29.80" \
   --start-date 2017-08-28 --end-date 2017-08-31 \
@@ -117,24 +129,19 @@ pixi run atlantis --verbose fetch \
   --output ./data/Harvey_2017
 ```
 
-Or activate an interactive shell and use `make`:
-
-```bash
-pixi shell
-make example-harvey-viirs
-```
-
 ---
 
 ## 6. Optional environments
 
-Beyond the default (geo + dev), three opt-in environments are available:
+Beyond the default (geo + dev), several opt-in environments are available:
 
 | Environment | Adds                                         | Activate with             |
 | ----------- | -------------------------------------------- | ------------------------- |
 | `ml`        | PyTorch (CPU), NumPy, scikit-learn           | `pixi shell -e ml`        |
 | `notebooks` | earthkit-data, cartopy, metview¹             | `pixi shell -e notebooks` |
 | `batch`     | Dask distributed, bokeh dashboard, rio-cogeo | `pixi shell -e batch`     |
+| `docs`      | MkDocs Material, mkdocstrings                | `pixi run -e docs docs`   |
+| `viz`       | HoloViz dashboard stack (panel, hvplot, …)   | `pixi shell -e viz`       |
 
 ¹ `metview-python` is only available on `linux-64`. On macOS (osx-arm64) the
 notebooks environment installs everything except metview.
@@ -149,6 +156,23 @@ pixi run -e notebooks python notebooks/ecmwf/Extract_VIIRS_inundation.ipynb
 ---
 
 ## 7. Troubleshooting
+
+### Cleaning up to free disk space
+
+Pixi caches packages and environments which can grow to several GB. To reclaim
+space:
+
+```bash
+# Remove unused packages from the global conda cache
+pixi clean cache
+
+# Remove ALL environments and reinstall (nuclear option)
+rm -rf .pixi
+pixi install
+```
+
+The global package cache lives at `~/.cache/rattler/`. The per-project
+environment and lockfile cache lives in `.pixi/`.
 
 ### Regenerating the lockfile
 
@@ -198,4 +222,6 @@ git commit -m "chore: bump <package> in pixi.toml"
 
 - [setup.md](setup.md) — credential and data-access setup (shared with `uv` path)
 - [gdal-install.md](gdal-install.md) — manual GDAL build (only needed if **not** using pixi)
+- [cli.md](cli.md) — full CLI reference with all flags and sensor options
+- [development.md](development.md) — `uv` setup, devcontainers, testing and CI
 - [../README.md](../README.md) — project overview and quick start
