@@ -672,3 +672,23 @@ class TestGFMFetcherClassifyParam:
         fetcher = GFMFetcher(classify=False)
         result = fetcher._build_fetch_result(native_tile, event, "20240101")
         assert result.metadata.permanent_water_mask_available is False
+
+
+class TestGfmSearchDiagnostics:
+    """Tests for GFM search diagnostics properties."""
+
+    def test_network_unreachable(self) -> None:
+        from atlantis.fetchers.gfm import GfmSearchDiagnostics
+
+        d = GfmSearchDiagnostics(api_url="https://test", network_failure=True)
+        assert d.network_unreachable is True
+        d2 = GfmSearchDiagnostics(api_url="https://test")
+        assert d2.network_unreachable is False
+
+    def test_no_items_found(self) -> None:
+        from atlantis.fetchers.gfm import GfmSearchDiagnostics
+
+        d = GfmSearchDiagnostics(api_url="https://test", items_found=0)
+        assert d.no_items_found is True
+        d2 = GfmSearchDiagnostics(api_url="https://test", network_failure=True, items_found=0)
+        assert d2.no_items_found is False

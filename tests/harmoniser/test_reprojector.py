@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import PropertyMock
+
 import numpy as np
 import pytest
 from rasterio.transform import from_bounds
@@ -337,3 +339,63 @@ class TestReprojectorIdempotentFastPath:
         ds_out = r.reproject(ds)
         # Output shape should differ (coarser grid).
         assert ds_out["flood_fraction"].shape != ds["flood_fraction"].shape
+
+
+class TestReprojectorHelpers:
+    """Tests for reprojector utility functions."""
+
+    def test_rio_available_false_on_exception(self) -> None:
+        """_rio_available returns False when .rio.crs raises."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser.reprojector import _rio_available
+
+        ds = MagicMock()
+        type(ds.rio).crs = PropertyMock(side_effect=RuntimeError("no rio"))
+        assert _rio_available(ds) is False
+
+    def test_get_dataset_bounds_no_rio_falls_back_to_xy(self) -> None:
+        """Falls back to x/y coords when rio is unavailable."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser.reprojector import _get_dataset_bounds
+
+        ds = MagicMock()
+        ds.coords = {"x": MagicMock(), "y": MagicMock()}
+        ds.coords["x"].values = np.array([10.0, 20.0])
+        ds.coords["y"].values = np.array([30.0, 40.0])
+        type(ds.rio).crs = PropertyMock(side_effect=RuntimeError)
+
+        result = _get_dataset_bounds(ds)
+        assert result == (10.0, 30.0, 20.0, 40.0)
+
+    def test_get_dataset_bounds_lon_lat_fallback(self) -> None:
+        """Falls back to lon/lat coords when x/y aren't present."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser.reprojector import _get_dataset_bounds
+
+        ds = MagicMock()
+        ds.coords = {"lon": MagicMock(), "lat": MagicMock()}
+        ds.coords["lon"].values = np.array([-10.0, 10.0])
+        ds.coords["lat"].values = np.array([-20.0, 20.0])
+        type(ds.rio).crs = PropertyMock(side_effect=RuntimeError)
+
+        result = _get_dataset_bounds(ds)
+        assert result == (-10.0, -20.0, 10.0, 20.0)
+
+    def test_get_dataset_bounds_rio_exception_falls_back(self) -> None:
+        """When rio.bounds() raises, falls back to coordinates."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser.reprojector import _get_dataset_bounds
+
+        ds = MagicMock()
+        ds.coords = {"x": MagicMock(), "y": MagicMock()}
+        ds.coords["x"].values = np.array([1.0, 2.0])
+        ds.coords["y"].values = np.array([3.0, 4.0])
+        type(ds.rio).crs = PropertyMock(return_value="EPSG:4326")
+        ds.rio.bounds.side_effect = RuntimeError
+
+        result = _get_dataset_bounds(ds)
+        assert result == (1.0, 3.0, 2.0, 4.0)

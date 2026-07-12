@@ -255,3 +255,4 @@ tmp/
 *.db
 *.db-journal
 .kilo/
+.nicegui/

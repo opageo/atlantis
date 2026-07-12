@@ -314,3 +314,207 @@ class TestTiler:
     def test_overlap_greater_than_tile_size_raises(self):
         with pytest.raises(ValueError, match="overlap must be less than tile_size"):
             Tiler(tile_size=32, overlap=32)
+
+
+class TestDiscoverNodata:
+    """Tests for discover_nodata and _integer_nodata utilities."""
+
+    def test_from_fill_value_attr(self) -> None:
+        """Returns float from _FillValue attribute."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser import discover_nodata
+
+        da = MagicMock()
+        da.attrs = {"_FillValue": -9999}
+        assert discover_nodata(da) == -9999.0
+
+    def test_from_nodata_attr(self) -> None:
+        """Returns float from nodata attribute when _FillValue is absent."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser import discover_nodata
+
+        da = MagicMock()
+        da.attrs = {"nodata": "255"}
+        assert discover_nodata(da) == 255.0
+
+    def test_from_missing_value_attr(self) -> None:
+        """Returns float from missing_value attribute."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser import discover_nodata
+
+        da = MagicMock()
+        da.attrs = {"missing_value": -32768}
+        assert discover_nodata(da) == -32768.0
+
+    def test_non_float_value_skipped(self) -> None:
+        """Value that cannot be cast to float is skipped — falls through to rio."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser import discover_nodata
+
+        da = MagicMock()
+        da.attrs = {"nodata": "N/A"}
+        da.rio.nodata = None
+        assert discover_nodata(da) is None
+
+    def test_rio_nodata_fallback(self) -> None:
+        """rio.nodata is used when attrs have no nodata sentinel."""
+        from unittest.mock import MagicMock, PropertyMock
+
+        from atlantis.harmoniser import discover_nodata
+
+        da = MagicMock()
+        da.attrs = {}
+        type(da.rio).nodata = PropertyMock(return_value=-9999)
+        result = discover_nodata(da)
+        assert result == -9999.0
+
+    def test_rio_nodata_none(self) -> None:
+        """None from rio.nodata yields None."""
+        from unittest.mock import MagicMock, PropertyMock
+
+        from atlantis.harmoniser import discover_nodata
+
+        da = MagicMock()
+        da.attrs = {}
+        type(da.rio).nodata = PropertyMock(return_value=None)
+        assert discover_nodata(da) is None
+
+    def test_rio_nodata_exception(self) -> None:
+        """Exception from rio.nodata is caught, returns None."""
+        from unittest.mock import MagicMock, PropertyMock
+
+        from atlantis.harmoniser import discover_nodata
+
+        da = MagicMock()
+        da.attrs = {}
+        type(da.rio).nodata = PropertyMock(side_effect=RuntimeError("boom"))
+        assert discover_nodata(da) is None
+
+    def test_integer_nodata_fallback(self) -> None:
+        """_integer_nodata returns HARMONISED_NODATA when none discovered."""
+        from unittest.mock import MagicMock, PropertyMock
+
+        from atlantis.harmoniser import HARMONISED_NODATA, _integer_nodata
+
+        da = MagicMock()
+        da.attrs = {}
+        type(da.rio).nodata = PropertyMock(return_value=None)
+        assert _integer_nodata(da) == HARMONISED_NODATA
+
+    def test_integer_nodata_nan_fallback(self) -> None:
+        """_integer_nodata returns HARMONISED_NODATA when discovered is NaN."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser import HARMONISED_NODATA, _integer_nodata
+
+        da = MagicMock()
+        da.attrs = {"_FillValue": float("nan")}
+        assert _integer_nodata(da) == HARMONISED_NODATA
+
+    def test_integer_nodata_uses_discovered(self) -> None:
+        """_integer_nodata returns discovered value cast to int."""
+        from unittest.mock import MagicMock
+
+        from atlantis.harmoniser import _integer_nodata
+
+        da = MagicMock()
+        da.attrs = {"nodata": "0"}
+        assert _integer_nodata(da) == 0
+
+
+class TestNormaliserBranches:
+    """Tests for Normaliser branches not exercised by integration tests."""
+
+    def test_exclusion_mask_from_existing(self) -> None:
+        """When dataset already has exclusion_mask, it is forwarded."""
+        import numpy as np
+        import xarray as xr
+
+        from atlantis.harmoniser.normaliser import Normaliser, NormaliserConfig
+
+        n = Normaliser(config=NormaliserConfig())
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((3, 3), dtype=np.float32), dims=["y", "x"])})
+        ds["exclusion_mask"] = xr.DataArray(np.ones((3, 3), dtype=np.uint8), dims=["y", "x"])
+        result = n.generate_exclusion_mask(ds)
+        assert result is not None
+
+    def test_reference_water_from_existing(self) -> None:
+        """When dataset already has reference_water, it is forwarded."""
+        import numpy as np
+        import xarray as xr
+
+        from atlantis.harmoniser.normaliser import Normaliser, NormaliserConfig
+
+        n = Normaliser(config=NormaliserConfig())
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.zeros((3, 3), dtype=np.float32), dims=["y", "x"])})
+        ds["reference_water"] = xr.DataArray(np.zeros((3, 3), dtype=np.uint8), dims=["y", "x"])
+        result = n.generate_reference_water(ds)
+        assert result is not None
+
+    def test_exclusion_mask_with_fill_value(self) -> None:
+        """Integer data uses fill_value to build exclusion mask."""
+        import numpy as np
+        import xarray as xr
+
+        from atlantis.harmoniser.normaliser import Normaliser, NormaliserConfig
+
+        cfg = NormaliserConfig(fill_value=0)
+        n = Normaliser(config=cfg)
+        ds = xr.Dataset({"flood_fraction": xr.DataArray(np.array([[0, 1], [2, 0]], dtype=np.int32), dims=["y", "x"])})
+        result = n.generate_exclusion_mask(ds)
+        assert result is not None
+
+
+class TestTilerBranches:
+    """Tests for Tiler branches not covered by existing tests."""
+
+    def test_pixel_resolution_fallback(self) -> None:
+        """Single-element coordinate array returns fallback."""
+        import numpy as np
+
+        from atlantis.harmoniser.tiler import _pixel_resolution
+
+        assert _pixel_resolution(np.array([5.0]), fallback=0.0) == 0.0
+        assert _pixel_resolution(np.array([5.0]), fallback=10.0) == 10.0
+
+    def test_count_valid_pixels_non_float_variable(self) -> None:
+        """Non-float variables count all pixels as valid."""
+        import numpy as np
+        import xarray as xr
+
+        from atlantis.harmoniser.tiler import Tiler
+
+        t = Tiler(tile_size=5)
+        ds = xr.Dataset({"mask": xr.DataArray(np.ones((3, 3), dtype=np.uint8), dims=["y", "x"])})
+        count = t._count_valid_pixels(ds)
+        assert count == 9
+
+    def test_get_tile_bbox_out_of_bounds_col(self) -> None:
+        """Col out of bounds raises IndexError."""
+        import numpy as np
+        import xarray as xr
+
+        from atlantis.harmoniser.tiler import Tiler
+
+        t = Tiler(tile_size=50)
+        ds = xr.Dataset(
+            {"v": xr.DataArray(np.zeros((50, 50)), dims=["y", "x"], coords={"y": np.arange(50), "x": np.arange(50)})}
+        )
+        with pytest.raises(IndexError):
+            t.get_tile_bbox(0, 5, ds)
+
+    def test_compute_bbox_no_coords_fallback(self) -> None:
+        """When tile has no spatial dim coords, falls back to pixel indices."""
+        import numpy as np
+        import xarray as xr
+
+        from atlantis.harmoniser.tiler import Tiler
+
+        t = Tiler(tile_size=5)
+        ds = xr.Dataset({"v": xr.DataArray(np.zeros((5, 5)), dims=["y", "x"])})
+        bbox = t._compute_bbox(ds, "y", "x", 0.0, 0.0, 0, 5, 0, 5)
+        assert bbox == (0.0, 0.0, 5.0, 5.0)

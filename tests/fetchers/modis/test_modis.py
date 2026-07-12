@@ -533,3 +533,94 @@ class TestLaadsDownloadRetry:
 
         assert download_mock.call_count == 1
         sleep_mock.assert_not_called()
+
+
+class TestMODISDiagnostics:
+    """Tests for MODIS search diagnostics properties."""
+
+    def test_year_coverage_gap(self) -> None:
+        from atlantis.fetchers.modis import ModisSearchDiagnostics
+
+        d = ModisSearchDiagnostics(backend="test", composite="F2")
+        assert d.year_coverage_gap is False
+        d.skipped_years = {2020}
+        d.requested_years = {2020}
+        assert d.year_coverage_gap is True
+
+    def test_listings_all_empty(self) -> None:
+        from atlantis.fetchers.modis import ModisSearchDiagnostics
+
+        d = ModisSearchDiagnostics(backend="t", composite="F2", dates_probed=3, dates_with_listings=0)
+        assert d.listings_all_empty is True
+        d2 = ModisSearchDiagnostics(backend="t", composite="F2", dates_probed=0)
+        assert d2.listings_all_empty is False
+
+    def test_no_tile_match_in_listings(self) -> None:
+        from atlantis.fetchers.modis import ModisSearchDiagnostics
+
+        d = ModisSearchDiagnostics(backend="t", composite="F2", dates_with_listings=2, dates_with_matches=0)
+        assert d.no_tile_match_in_listings is True
+        d2 = ModisSearchDiagnostics(backend="t", composite="F2", dates_with_listings=0)
+        assert d2.no_tile_match_in_listings is False
+
+    def test_network_unreachable(self) -> None:
+        from atlantis.fetchers.modis import ModisSearchDiagnostics
+
+        d = ModisSearchDiagnostics(backend="t", composite="F2", dates_probed=2, network_failures=2)
+        assert d.network_unreachable is True
+        d2 = ModisSearchDiagnostics(backend="t", composite="F2", dates_probed=0)
+        assert d2.network_unreachable is False
+
+
+class TestMODISHelpers:
+    """Tests for MODIS static helper methods."""
+
+    def test_download_status_code_none(self) -> None:
+        from atlantis.fetchers.modis import MODISFetcher
+
+        exc = requests.RequestException()
+        assert MODISFetcher._download_status_code(exc) is None
+
+    def test_is_retryable_connection_error(self) -> None:
+        from atlantis.fetchers.modis import MODISFetcher
+
+        assert MODISFetcher._is_retryable_download_error(requests.ConnectionError()) is True
+
+    def test_is_retryable_timeout(self) -> None:
+        from atlantis.fetchers.modis import MODISFetcher
+
+        assert MODISFetcher._is_retryable_download_error(requests.Timeout()) is True
+
+    def test_is_retryable_non_http_error_returns_false(self) -> None:
+        from atlantis.fetchers.modis import MODISFetcher
+
+        exc = requests.RequestException()
+        assert MODISFetcher._is_retryable_download_error(exc) is False
+
+
+class TestMODISConstructorValidation:
+    """Tests for MODIS fetcher constructor validation branches."""
+
+    def test_peak_days_before_negative_raises(self) -> None:
+        from atlantis.fetchers.modis import MODISFetcher
+
+        with pytest.raises(ValueError, match="peak_days_before must be non-negative"):
+            MODISFetcher(peak_days_before=-1)
+
+    def test_peak_days_after_negative_raises(self) -> None:
+        from atlantis.fetchers.modis import MODISFetcher
+
+        with pytest.raises(ValueError, match="peak_days_after must be non-negative"):
+            MODISFetcher(peak_days_after=-1)
+
+    def test_max_observations_negative_raises(self) -> None:
+        from atlantis.fetchers.modis import MODISFetcher
+
+        with pytest.raises(ValueError, match="max_observations must be non-negative"):
+            MODISFetcher(max_observations=-1)
+
+    def test_invalid_peak_priority_raises(self) -> None:
+        from atlantis.fetchers.modis import MODISFetcher
+
+        with pytest.raises(ValueError, match="Invalid peak_priority"):
+            MODISFetcher(peak_priority="bogus")
