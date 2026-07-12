@@ -112,8 +112,11 @@ def test_version():
 def _no_bookmark(*_args, **_kwargs):
     """Force `get_bookmark` to behave as if nothing is registered.
 
-    Used to isolate tests from any real ``~/atlantis-data/bookmarks.parquet``
-    that may exist on the host running the test suite.
+    Used to isolate tests from the real shared ``s3://atlantis/assets/bookmarks.parquet``
+    registry (the default `BookmarksConfig.bookmarks_root`), which may contain
+    entries for common event names. `cli.py` imports `get_bookmark` at module
+    scope, so the patch target is `atlantis.cli.get_bookmark`, not
+    `atlantis.bookmarks.get_bookmark`.
     """
     raise KeyError("not found")
 
@@ -122,7 +125,7 @@ def test_verbose_flag_configures_loguru(monkeypatch):
     """Test --verbose enables loguru with the CLI format."""
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr("atlantis.bookmarks.get_bookmark", _no_bookmark)
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
     monkeypatch.setattr("atlantis.cli.logger.remove", lambda: calls.__setitem__("removed", True))
     monkeypatch.setattr(
         "atlantis.cli.logger.disable",
@@ -154,7 +157,7 @@ def test_no_verbose_keeps_loguru_disabled(monkeypatch):
     """Test that without --verbose, no loguru sink is added."""
     calls: dict[str, object] = {"added": False}
 
-    monkeypatch.setattr("atlantis.bookmarks.get_bookmark", _no_bookmark)
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
     monkeypatch.setattr("atlantis.cli.logger.remove", lambda: calls.__setitem__("removed", True))
     monkeypatch.setattr(
         "atlantis.cli.logger.disable",
@@ -196,8 +199,8 @@ def test_verbose_sink_suppresses_fetcher_logs_during_checklist() -> None:
 
 def test_fetch_command(monkeypatch):
     """Test fetch command with required event argument."""
-    monkeypatch.setattr("atlantis.bookmarks.get_bookmark", _no_bookmark)
-    result = runner.invoke(cli, ["fetch", "--event", "Valencia_2024"])
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
+    result = runner.invoke(cli, ["fetch", "--event", "Valencia_2024", "--source", "viirs"])
     assert result.exit_code == 0
     assert "Valencia_2024" in result.stdout
     assert "sources=" in result.stdout

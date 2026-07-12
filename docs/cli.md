@@ -123,10 +123,12 @@ neither is available, the source is skipped with a warning.
 ### Event bookmarks
 
 A **bookmark** is a named shortcut (e.g. `Harvey_2017`) for a bbox + inclusive
-date range, stored in a small GeoParquet registry (`atlantis.bookmarks`,
-local or `s3://`, configurable via `ATLANTIS_BOOKMARKS_ROOT` /
-`ATLANTIS_BOOKMARKS_FILE`). It lets `fetch --event NAME` work without
-repeating `--bbox`/`--start-date`/`--end-date` every time.
+date range, stored in a small GeoParquet registry (`atlantis.bookmarks`). The
+**source of truth** is `s3://atlantis/assets/bookmarks.parquet` (the default
+`ATLANTIS_BOOKMARKS_ROOT` / `ATLANTIS_BOOKMARKS_FILE` — the same ECMWF
+object-store bucket used for other shared assets); override those env vars to
+point at a local path for offline development/tests. It lets `fetch --event
+NAME` work without repeating `--bbox`/`--start-date`/`--end-date` every time.
 
 This is a **static, curated** registry, distinct from the data-driven
 `atlantis_events` bookmarks recorded per-source inside the Zarr archive by

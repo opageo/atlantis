@@ -6,6 +6,13 @@ date range + optional default sources) stored as a small **GeoParquet** file so
 ``--end-date`` without repeating them on every invocation. Entries are managed
 via ``atlantis bookmarks add/remove`` (or the functions below).
 
+The **source of truth** is the shared registry at
+``s3://atlantis/assets/bookmarks.parquet`` (``BookmarksConfig``'s default) — the
+same ECMWF object-store bucket used for other shared assets (e.g. the VIIRS
+JPSS catalogue). Override ``ATLANTIS_BOOKMARKS_ROOT`` (and, if pointing
+somewhere other than the ``atlantis`` bucket, ``storage_options``) for
+local/offline development and tests.
+
 This is **not** the same thing as the ``atlantis_events`` registry recorded per
 source inside the Zarr archive by ``ArchiveWriter.write(..., event=...)`` (see
 ``atlantis.archive.writer``/``atlantis.archive.reader``): that registry is
@@ -60,6 +67,13 @@ __all__ = [
 
 _COLUMNS = ("event_id", "start_date", "end_date", "sources", "label", "updated_at")
 
+# The `atlantis` bucket lives on ECMWF's S3-compatible object store, not AWS —
+# s3fs needs the custom endpoint explicitly (it is not reliably picked up from
+# the `default` `~/.aws/config` profile written by `atlantis setup`). Mirrors
+# the same constant in `atlantis.fetchers.viirs.inventory`/`batch_processor`.
+_ATLANTIS_S3_ENDPOINT = "https://object-store.os-api.cci1.ecmwf.int"
+_ATLANTIS_BUCKET_PREFIX = "s3://atlantis/"
+
 
 def bookmark_path(config: "BookmarksConfig | None" = None) -> str:
     """Resolve the bookmarks GeoParquet path from *config* (or the global config).
@@ -98,11 +112,21 @@ def _empty_frame() -> "gpd.GeoDataFrame":
     )
 
 
-def _resolved_storage_options(storage_options: dict[str, Any] | None) -> dict[str, Any] | None:
+def _resolved_storage_options(path: str, storage_options: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Resolve fsspec ``storage_options`` for *path*.
 
+    Precedence: an explicitly-passed value wins, then ``BookmarksConfig.storage_options``,
+    then — only for the well-known ``s3://atlantis/...`` bucket — the ECMWF object
+    store endpoint, so the default registry works without extra configuration.
+    """
     if storage_options is not None:
         return storage_options
-    return get_config().bookmarks.storage_options or None
+    configured = get_config().bookmarks.storage_options
+    if configured:
+        return configured
+    if path.startswith(_ATLANTIS_BUCKET_PREFIX):
+        return {"client_kwargs": {"endpoint_url": _ATLANTIS_S3_ENDPOINT}}
+    return None
 
 
 def load_bookmarks(
@@ -119,11 +143,10 @@ def load_bookmarks(
         A GeoDataFrame with columns ``event_id, geometry, start_date, end_date,
         sources, label, updated_at``.
     """
-    import geopandas as gpd
-
     path = path or bookmark_path()
-    storage_options = _resolved_storage_options(storage_options)
+    storage_options = _resolved_storage_options(path, storage_options)
     if not _exists(path, storage_options):
+        logger.warning("Bookmarks file not found at {path}; returning empty registry.", path=path)
         return _empty_frame()
     return gpd.read_parquet(path)
 
@@ -145,7 +168,7 @@ def save_bookmarks(
     """
 
     path = path or bookmark_path()
-    storage_options = _resolved_storage_options(storage_options)
+    storage_options = _resolved_storage_options(path, storage_options)
 
     _write_path, filesystem = pyarrow_filesystem_for(path, storage_options)
     write_path = Path(_write_path)

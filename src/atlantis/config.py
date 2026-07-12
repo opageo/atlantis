@@ -160,11 +160,19 @@ class BookmarksConfig(BaseSettings):
     data-driven ``atlantis_events`` bookmarks recorded per-source inside the
     Zarr archive by ``ArchiveWriter.write(..., event=...)``.
 
+    The **source of truth** is the shared registry at
+    ``s3://atlantis/assets/bookmarks.parquet`` (the default below) — the same
+    ECMWF object-store bucket used for other shared assets (e.g. the VIIRS JPSS
+    catalogue). Override ``bookmarks_root`` (e.g. via ``ATLANTIS_BOOKMARKS_ROOT``)
+    for local/offline development and tests.
+
     Attributes:
         bookmarks_root: Root location for the bookmarks file (local path or
             ``s3://`` URI).
         bookmarks_file: Filename of the GeoParquet registry under the root.
         storage_options: fsspec options for a remote root (credentials, ``anon``, ...).
+            Left empty by default — ``atlantis.bookmarks`` auto-supplies the ECMWF
+            object-store endpoint when *bookmarks_root* is the ``atlantis`` bucket.
     """
 
     model_config = SettingsConfigDict(
@@ -174,7 +182,7 @@ class BookmarksConfig(BaseSettings):
         extra="ignore",
     )
 
-    bookmarks_root: str = Field(default_factory=lambda: str(Path.home() / "atlantis-data"))
+    bookmarks_root: str = "s3://atlantis/assets"
     bookmarks_file: str = "bookmarks.parquet"
     storage_options: dict[str, Any] = Field(default_factory=dict)
 

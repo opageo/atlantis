@@ -74,7 +74,7 @@ class TestArchiveConfig:
 class TestBookmarksConfig:
     def test_default_values(self):
         cfg = BookmarksConfig()
-        assert cfg.bookmarks_root == str(Path.home() / "atlantis-data")
+        assert cfg.bookmarks_root == "s3://atlantis/assets"
         assert cfg.bookmarks_file == "bookmarks.parquet"
         assert cfg.storage_options == {}
 

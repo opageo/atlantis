@@ -5,7 +5,9 @@ from datetime import date
 import pytest
 
 from atlantis.bookmarks import (
+    _resolved_storage_options,
     add_bookmark,
+    bookmark_path,
     get_bookmark,
     list_bookmarks,
     load_bookmarks,
@@ -118,3 +120,22 @@ class TestRemove:
         assert list_bookmarks(path=bookmarks_path) == []
         with pytest.raises(KeyError):
             get_bookmark("Harvey_2017", path=bookmarks_path)
+
+
+class TestDefaultLocation:
+    def test_bookmark_path_defaults_to_atlantis_bucket(self):
+        assert bookmark_path() == "s3://atlantis/assets/bookmarks.parquet"
+
+    def test_explicit_storage_options_win(self):
+        explicit = {"anon": True}
+        assert _resolved_storage_options("s3://atlantis/assets/bookmarks.parquet", explicit) is explicit
+
+    def test_atlantis_bucket_gets_ecmwf_endpoint_by_default(self):
+        opts = _resolved_storage_options("s3://atlantis/assets/bookmarks.parquet", None)
+        assert opts == {"client_kwargs": {"endpoint_url": "https://object-store.os-api.cci1.ecmwf.int"}}
+
+    def test_non_atlantis_remote_path_gets_no_default_options(self):
+        assert _resolved_storage_options("s3://some-other-bucket/bookmarks.parquet", None) is None
+
+    def test_local_path_gets_no_default_options(self, bookmarks_path):
+        assert _resolved_storage_options(bookmarks_path, None) is None

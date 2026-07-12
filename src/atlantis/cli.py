@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from loguru import logger
 from rasterio.enums import Resampling
 
+from atlantis.bookmarks import get_bookmark
+
 # Load credentials from .env at the repo root so fetchers that consult
 # os.environ directly (e.g. MODIS EARTHDATA_TOKEN) see them. Existing
 # environment variables take precedence (override=False).
@@ -1025,8 +1027,6 @@ def fetch(
         # No explicit bbox/dates — fall back to a registered bookmark (static
         # bbox/date-range shortcut, see `atlantis bookmarks`). Explicit flags
         # above always take precedence over a bookmark.
-        from atlantis.bookmarks import get_bookmark
-
         try:
             bookmark = get_bookmark(event)
         except KeyError:
@@ -1102,7 +1102,10 @@ def fetch(
             }
         fetcher = fetcher_cls(**fetcher_kwargs)
         if flood_event is None:
-            warn("Event catalogue lookup not yet implemented; provide --bbox/--start-date/--end-date")
+            warn(
+                f"Unknown event '{event}' — no bookmark found. Provide "
+                "--bbox/--start-date/--end-date, or register one with `atlantis bookmarks add`."
+            )
             continue
 
         step_names = _fetch_step_names(src)
