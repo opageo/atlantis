@@ -60,6 +60,11 @@ markdown_extensions:
 hooks:
   - scripts/gen_docs_hook.py
 
+watch:
+  - README.md
+  - src/README.md
+  - CLI_Examples.md
+
 nav:
   - Home: index.md
   - Getting Started:
