@@ -42,9 +42,9 @@ geo = ["pyproj>=3.6", "shapely>=2.0"]
 ml = ["torch>=2.12.0", "scikit-learn>=1.9.0"]
 batch = [
   "atlantis[geo]",
-  "dask[distributed]>=2024.10", # LocalCluster + Client + as_completed
-  "bokeh>=3.0",                 # enables the Dask dashboard at :8787
-  "rio-cogeo>=5.0",             # `rio cogeo validate` for verification
+  "dask[distributed]>=2026.7.0", # LocalCluster + Client + as_completed
+  "bokeh>=3.0",                  # enables the Dask dashboard at :8787
+  "rio-cogeo>=5.0",              # `rio cogeo validate` for verification
 ]
 stac = [
   "atlantis[geo]",
@@ -72,6 +72,7 @@ notebooks = [
   "requests>=2.34.2",
   "metview>=1.16",
 ]
+ui = ["nicegui>=2.0"]
 
 [dependency-groups]
 dev = [
@@ -92,6 +93,7 @@ dev = [
   "atlantis[stac]",
   "geoparquet-io",
 ]
+docs = ["mkdocs-material>=9.0", "mkdocstrings[python]>=0.25"]
 
 [tool.uv]
 default-groups = ["dev"]

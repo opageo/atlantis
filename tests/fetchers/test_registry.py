@@ -106,3 +106,11 @@ class TestFetcherRegistry:
         assert "gfm" in list_fetchers()
         assert "viirs" in list_fetchers()
         assert "rfm" in list_fetchers()
+
+    def test_clear_registry(self):
+        """Test that clear_registry empties the fetcher registry."""
+        from atlantis.fetchers.registry import clear_registry
+
+        assert len(list_fetchers()) > 0
+        clear_registry()
+        assert len(list_fetchers()) == 0

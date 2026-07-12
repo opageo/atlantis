@@ -171,8 +171,14 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
+# MkDocs documentation
 /site
+
+# MkDocs generated files (built from sources outside docs/)
+docs/index.md
+docs/architecture.md
+docs/cli-examples.md
+docs/sources.md
 
 # mypy
 .mypy_cache/
@@ -249,3 +255,4 @@ tmp/
 *.db
 *.db-journal
 .kilo/
+.nicegui/
