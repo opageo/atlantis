@@ -225,3 +225,46 @@ class TestDownloadFileHtmlGuard:
         assert result == destination
         assert destination.read_bytes() == b"\x89HDFbinary tail"
         assert get_etag(destination) == '"abc"'
+
+
+class TestValidateNotHtml:
+    """Tests for the HTML-content guard utility."""
+
+    def test_raises_for_doctype_html(self) -> None:
+        from atlantis.utils.io import DownloadContentError, _validate_not_html
+
+        with pytest.raises(DownloadContentError):
+            _validate_not_html(b"  <!DOCTYPE html><html>", "https://example.com")
+
+    def test_raises_for_html_tag(self) -> None:
+        from atlantis.utils.io import DownloadContentError, _validate_not_html
+
+        with pytest.raises(DownloadContentError):
+            _validate_not_html(b" <HTML><head>", "https://example.com")
+
+    def test_passes_for_binary_data(self) -> None:
+        from atlantis.utils.io import _validate_not_html
+
+        _validate_not_html(b"\x89HDF\x0d\x0a", "https://example.com")
+
+    def test_passes_for_short_non_html(self) -> None:
+        from atlantis.utils.io import _validate_not_html
+
+        _validate_not_html(b"not-html", "https://example.com")
+
+
+class TestDownloadFileCacheHit:
+    """Tests for the cached-file fast path in download_file."""
+
+    def test_returns_cached_file_when_exists(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        destination = tmp_path / "cached.tif"
+        destination.write_bytes(b"pre-cached")
+
+        import requests as real_requests
+
+        fake = _FakeResponse(content_type="application/x-hdf", chunks=(b"fresh",))
+        monkeypatch.setattr(real_requests, "get", lambda *_a, **_k: fake)
+
+        result = download_file("https://example.test/data.tif", output_path=destination)
+        assert result == destination
+        assert destination.read_bytes() == b"pre-cached"

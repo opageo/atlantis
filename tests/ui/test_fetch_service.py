@@ -435,6 +435,82 @@ class TestRunFetchErrorPaths:
             resp = asyncio.new_event_loop().run_until_complete(_run())
             assert resp.error is not None
 
+    def test_successful_fetch_minimal(self) -> None:
+        """A fetch that returns results with no harmonise/plot options."""
+        import asyncio
+
+        from atlantis.ui.services.fetch_service import run_fetch
+
+        with patch("atlantis.ui.services.fetch_service.get_config") as mock_cfg:
+            mock_cfg.return_value = MagicMock()
+            mock_cfg.return_value.fetcher.cache_dir = Path("/tmp")
+
+            mock_fetcher_cls = MagicMock()
+            mock_fetcher = MagicMock()
+            mock_fetcher.source_id = "viirs"
+            mock_fetcher_cls.return_value = mock_fetcher
+
+            fake_result = MagicMock()
+            fake_file = Path("/tmp/fake.tif")
+            fake_result.files = [fake_file]
+            mock_fetcher.fetch.return_value = [fake_result]
+
+            calls = []
+
+            with patch("atlantis.ui.services.fetch_service.get_fetcher", return_value=mock_fetcher_cls):
+                req = FetchRequest(
+                    event_id="test",
+                    bbox="0 0 1 1",
+                    start_date="2024-01-01",
+                    end_date="2024-01-02",
+                    source="viirs",
+                    harmonise=False,
+                    plot=False,
+                )
+
+                async def _run():
+                    return await run_fetch(req, calls.append)
+
+                resp = asyncio.new_event_loop().run_until_complete(_run())
+                assert resp.error is None
+                assert resp.event_id == "test"
+                assert resp.source_id == "viirs"
+                assert len(calls) >= 2  # searching + done progress updates
+
+    def test_empty_results_with_diagnostics(self) -> None:
+        """When fetch returns empty and fetcher has diagnostics, they are included."""
+        import asyncio
+
+        from atlantis.ui.services.fetch_service import run_fetch
+
+        with patch("atlantis.ui.services.fetch_service.get_config") as mock_cfg:
+            mock_cfg.return_value = MagicMock()
+            mock_cfg.return_value.fetcher.cache_dir = Path("/tmp")
+
+            mock_fetcher_cls = MagicMock()
+            mock_fetcher = MagicMock()
+            mock_fetcher.source_id = "viirs"
+            mock_fetcher.last_diagnostics = type("D", (), {"no_items_found": True})()
+            mock_fetcher.fetch.return_value = []
+            mock_fetcher_cls.return_value = mock_fetcher
+
+            with patch("atlantis.ui.services.fetch_service.get_fetcher", return_value=mock_fetcher_cls):
+                req = FetchRequest(
+                    event_id="test_empty",
+                    bbox="0 0 1 1",
+                    start_date="2024-01-01",
+                    end_date="2024-01-02",
+                    source="viirs",
+                )
+
+                async def _run():
+                    return await run_fetch(req, lambda p: None)
+
+                resp = asyncio.new_event_loop().run_until_complete(_run())
+                assert resp.error is None
+                assert resp.diagnostics is not None
+                assert resp.diagnostics.no_items_found is True
+
 
 class TestPlotSource:
     """Tests for the _plot_source function."""

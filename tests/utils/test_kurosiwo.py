@@ -123,3 +123,86 @@ def test_build_kurosiwo_flood_events_from_catalogue(monkeypatch, tmp_path):
     assert len(events) == 1
     assert events[0].event_id == "KuroSiwo_470"
     assert events[0].start_date.isoformat() == "2020-10-14"
+
+
+def test_is_lfs_pointer_detects_pointer(tmp_path):
+    from atlantis.utils.kurosiwo import is_lfs_pointer
+
+    f = tmp_path / "pointer.gpkg"
+    f.write_text("version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 123\n", encoding="utf-8")
+    assert is_lfs_pointer(f) is True
+
+
+def test_is_lfs_pointer_not_a_pointer(tmp_path):
+    from atlantis.utils.kurosiwo import is_lfs_pointer
+
+    f = tmp_path / "real.gpkg"
+    f.write_bytes(b"\x89PNG\x0d\x0a\x1a\x0a")
+    assert is_lfs_pointer(f) is False
+
+
+def test_is_lfs_pointer_missing_file(tmp_path):
+    from atlantis.utils.kurosiwo import is_lfs_pointer
+
+    assert is_lfs_pointer(tmp_path / "missing.gpkg") is False
+
+
+def test_load_kurosiwo_catalogue_missing_file():
+    from pathlib import Path
+
+    import pytest
+
+    from atlantis.utils.kurosiwo import load_kurosiwo_catalogue
+
+    with pytest.raises(FileNotFoundError, match="KuroSiwo catalogue not found"):
+        load_kurosiwo_catalogue(Path("/nonexistent/path.gpkg"))
+
+
+def test_load_kurosiwo_catalogue_lfs_pointer(tmp_path):
+    from atlantis.utils.kurosiwo import load_kurosiwo_catalogue
+
+    f = tmp_path / "pointer.gpkg"
+    f.write_text("version https://git-lfs.github.com/spec/v1\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Git LFS pointer"):
+        load_kurosiwo_catalogue(f)
+
+
+def test_load_kurosiwo_metadata_missing_file():
+    from pathlib import Path
+
+    from atlantis.utils.kurosiwo import load_kurosiwo_metadata
+
+    with pytest.raises(FileNotFoundError, match="KuroSiwo metadata CSV not found"):
+        load_kurosiwo_metadata(Path("/nonexistent/metadata.csv"))
+
+
+def test_load_kurosiwo_metadata_missing_columns(tmp_path):
+    from atlantis.utils.kurosiwo import load_kurosiwo_metadata
+
+    csv = tmp_path / "partial.csv"
+    csv.write_text(
+        "flood_case,date_start,date_end\nKuroSiwo_001,2020-01-01,2020-01-02\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="missing required columns"):
+        load_kurosiwo_metadata(csv)
+
+
+def test_build_kurosiwo_flood_events_invalid_limit(monkeypatch, tmp_path):
+    from atlantis.utils.kurosiwo import build_kurosiwo_flood_events_from_dataframe
+
+    metadata_path = tmp_path / "kurosiwo.csv"
+    metadata_path.write_text(
+        "flood_case,date_start,date_end,lat_min,lat_max,lon_min,lon_max\n"
+        "KuroSiwo_470,2020-04-29,2020-10-14,8.2639,11.7312,-0.8627,1.9947\n",
+        encoding="utf-8",
+    )
+
+    from atlantis.utils.kurosiwo import load_kurosiwo_metadata
+
+    df = load_kurosiwo_metadata(metadata_path)
+    with pytest.raises(ValueError, match="limit must be"):
+        build_kurosiwo_flood_events_from_dataframe(df, limit=0)
+
+    with pytest.raises(ValueError, match="limit must be"):
+        build_kurosiwo_flood_events_from_dataframe(df, limit=-1)
