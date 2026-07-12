@@ -131,6 +131,7 @@ rio-cogeo = ">=5.0"
 # ============================================================================
 
 [feature.notebooks.dependencies]
+jupyterlab = ">=4.0"
 earthkit-data = "*"
 affine = ">=2.4"
 cartopy = ">=0.22"
