@@ -364,10 +364,9 @@ class TestRunFetchErrorPaths:
 
     def test_invalid_bbox_returns_error(self) -> None:
         """An unparseable bbox yields an error FetchResponse immediately."""
-        from atlantis.ui.services.fetch_service import run_fetch
-        from atlantis.ui.models import FetchProgress
-
         import asyncio
+
+        from atlantis.ui.services.fetch_service import run_fetch
 
         req = FetchRequest(
             event_id="bad",
@@ -389,9 +388,9 @@ class TestRunFetchErrorPaths:
 
     def test_unknown_source_returns_error(self) -> None:
         """An unrecognized source id yields an error FetchResponse."""
-        from atlantis.ui.services.fetch_service import run_fetch
-
         import asyncio
+
+        from atlantis.ui.services.fetch_service import run_fetch
 
         with patch("atlantis.ui.services.fetch_service.get_config") as mock_cfg:
             mock_cfg.return_value = MagicMock()
@@ -414,9 +413,9 @@ class TestRunFetchErrorPaths:
 
     def test_invalid_date_returns_error(self) -> None:
         """An invalid date string yields an error FetchResponse."""
-        from atlantis.ui.services.fetch_service import run_fetch
-
         import asyncio
+
+        from atlantis.ui.services.fetch_service import run_fetch
 
         with patch("atlantis.ui.services.fetch_service.get_config") as mock_cfg:
             mock_cfg.return_value = MagicMock()
@@ -490,4 +489,3 @@ class TestPlotSource:
         with patch("atlantis.ui.services.fetch_service.plot_raw") as mock_plot:
             _plot_source(ds, "ViirsEvent", "20241029", source_id="viirs", output_png_path=png)
             mock_plot.assert_called_once()
-

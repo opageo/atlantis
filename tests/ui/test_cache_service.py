@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from atlantis.ui.services.cache_service import (
     _extract_date_token,
     _get_cache_dir,

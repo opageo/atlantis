@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from atlantis.ui.components.status import STAGE_LABELS, STAGE_ORDER, ActivityLogWidget
 from atlantis.ui.models import FetchProgress
 
