@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from atlantis.archive import grid
-from atlantis.archive.cube_batch import _payload_to_dataset, _to_date, run_cube_batch
+from atlantis.archive.cube_batch import _VIIRS_CUBE_VARS, _payload_to_dataset, _to_date, run_cube_batch
 from atlantis.archive.reader import ArchiveReader
 from atlantis.archive.writer import ArchiveWriter
 from atlantis.batch import BatchConfig
@@ -96,14 +96,23 @@ class TestHelpers:
     def test_to_date_from_datetime64(self):
         assert _to_date(np.datetime64("2020-01-01")) == date(2020, 1, 1)
 
-    def test_payload_to_dataset_builds_flood_fraction(self):
+    def test_payload_to_dataset_builds_all_vars(self):
         payload = {
-            "scaled": np.full((4, 5), 30, dtype="uint8"),
+            "task_id": "g000",
+            "date": "2020-01-01",
+            "aoi_id": 0,
+            "dest_key": "viirs/g000.tif",
             "y": np.arange(4.0),
             "x": np.arange(5.0),
+            "water_fraction": np.full((4, 5), 30, dtype="uint8"),
+            "exclusion_mask": np.full((4, 5), 0, dtype="uint8"),
+            "reference_water": np.full((4, 5), 1, dtype="uint8"),
+            "cloud_mask": np.full((4, 5), 0, dtype="uint8"),
+            "snow_ice": np.full((4, 5), 0, dtype="uint8"),
+            "shadow": np.full((4, 5), 0, dtype="uint8"),
         }
         ds = _payload_to_dataset(payload)
-        assert ds["flood_fraction"].dims == ("y", "x")
+        assert set(ds.data_vars) == set(_VIIRS_CUBE_VARS)
         assert ds.sizes == {"y": 4, "x": 5}
 
 
@@ -114,7 +123,8 @@ def _fake_payload_produce(task: dict) -> dict:
     """Module-level (picklable) fake producer — builds a synthetic AOI payload.
 
     Each ``aoi_id`` maps to a distinct, non-overlapping 16-row band on the global
-    grid, with a constant uint8 flood-fraction percent derived from the id.
+    grid, with a constant uint8 water-fraction percent derived from the id and
+    matching 0/1 mask channels.
     """
     import numpy as np
 
@@ -125,12 +135,19 @@ def _fake_payload_produce(task: dict) -> dict:
     col0 = 10000
     y = np.asarray(grid.global_y_coords()[row0 : row0 + h], dtype="float64")
     x = np.asarray(grid.global_x_coords()[col0 : col0 + w], dtype="float64")
-    scaled = np.full((h, w), (int(task["aoi_id"]) + 1) * 10, dtype="uint8")
+    water_fraction = np.full((h, w), (int(task["aoi_id"]) + 1) * 10, dtype="uint8")
+    mask_val = np.full((h, w), int(task["aoi_id"]) % 2, dtype="uint8")
     return {
         "task_id": task["task_id"],
         "date": task["date"],
         "aoi_id": int(task["aoi_id"]),
-        "scaled": scaled,
+        "dest_key": f"viirs/{task['task_id']}.tif",
+        "water_fraction": water_fraction,
+        "exclusion_mask": mask_val,
+        "reference_water": mask_val,
+        "cloud_mask": mask_val,
+        "snow_ice": mask_val,
+        "shadow": mask_val,
         "y": y,
         "x": x,
     }
@@ -166,7 +183,7 @@ def _run(tmp_path, cfg, tasks):
     """Wire the fake producer to a real writer session (mirrors run_viirs_cube_batch)."""
     archive_root = str(tmp_path / "cube")
     writer = ArchiveWriter(archive_root)
-    with writer.session("viirs", ("flood_fraction",)) as session:
+    with writer.session("viirs", _VIIRS_CUBE_VARS) as session:
 
         def consume(payload):
             session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
@@ -186,9 +203,10 @@ def test_cube_batch_streams_writes_and_tracks(tmp_path, cfg):
 
     reader = ArchiveReader(archive_root)
     assert reader.list_sources() == ["viirs"]
-    # A specific AOI band round-trips to its expected decoded value.
+    # A specific AOI band round-trips to its expected raw uint8 percent
+    # (water_fraction has no scale_factor in the cube, so it is raw uint8).
     band = reader.read("viirs", bbox=_aoi_bbox(2))
-    np.testing.assert_allclose(float(band["flood_fraction"].mean()), 0.30, atol=1e-6)
+    np.testing.assert_allclose(float(band["water_fraction"].mean()), 30.0, atol=1e-6)
 
 
 @pytest.mark.slow

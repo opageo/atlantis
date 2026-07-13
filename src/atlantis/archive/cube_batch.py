@@ -26,6 +26,16 @@ from loguru import logger
 from atlantis.batch.config import BatchConfig
 from atlantis.batch.tracker import get_pending, init_db, mark_done, mark_failed, stats
 
+#: VIIRS derived layers written to the cube (flood_fraction excluded — pending deprecation).
+_VIIRS_CUBE_VARS = (
+    "water_fraction",
+    "exclusion_mask",
+    "reference_water",
+    "cloud_mask",
+    "snow_ice",
+    "shadow",
+)
+
 
 def run_cube_batch(
     tasks: list[dict[str, Any]],
@@ -147,8 +157,8 @@ def run_viirs_cube_batch(
     Wires the VIIRS produce step (:func:`harmonise_granule_payload`, run on Dask
     workers) to a single held-open :meth:`~atlantis.archive.writer.ArchiveWriter.session`
     on the coordinator: each harmonised granule is region-written into the
-    ``flood_fraction`` channel as it arrives, and the store is consolidated once
-    when the session closes.
+    six VIIRS derived-layer channels (:data:`_VIIRS_CUBE_VARS`) as it arrives,
+    and the store is consolidated once when the session closes.
 
     Args:
         tasks: VIIRS task dicts (from
@@ -166,7 +176,7 @@ def run_viirs_cube_batch(
     from atlantis.fetchers.viirs.batch_processor import harmonise_granule_payload
 
     writer = ArchiveWriter(archive_root, archive_config, storage_options=storage_options)
-    with writer.session(source_id, ("flood_fraction",)) as session:
+    with writer.session(source_id, _VIIRS_CUBE_VARS) as session:
 
         def consume(payload: dict[str, Any]) -> str:
             session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
@@ -176,13 +186,12 @@ def run_viirs_cube_batch(
 
 
 def _payload_to_dataset(payload: dict[str, Any]):
-    """Build a 2-D ``flood_fraction`` dataset from a harmonised granule payload."""
+    """Build a multi-variable dataset from a harmonised granule payload."""
     import xarray as xr
 
-    return xr.Dataset(
-        {"flood_fraction": (("y", "x"), payload["scaled"])},
-        coords={"y": payload["y"], "x": payload["x"]},
-    )
+    skip = {"task_id", "date", "aoi_id", "dest_key", "y", "x"}
+    data_vars = {k: (("y", "x"), v) for k, v in payload.items() if k not in skip}
+    return xr.Dataset(data_vars, coords={"y": payload["y"], "x": payload["x"]})
 
 
 def _to_date(value: Any) -> date:

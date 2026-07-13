@@ -38,7 +38,7 @@ from rasterio.io import MemoryFile
 
 from atlantis.batch import TaskResult
 from atlantis.config import HarmoniseConfig
-from atlantis.fetchers.viirs.processor import classify_viirs_flood_fraction
+from atlantis.fetchers.viirs.processor import classify_viirs_flood_fraction, classify_viirs_pixels
 from atlantis.harmoniser import HARMONISED_NODATA, Harmoniser
 
 #: ECMWF object store endpoint.
@@ -220,26 +220,14 @@ def process_granule(task: dict) -> TaskResult:
 
 
 def harmonise_granule_payload(task: dict) -> dict:
-    """Download + classify + harmonise a granule, returning the result in-memory.
+    """Download + classify + harmonise a granule, returning all derived layers in-memory.
 
-    A *produce-only* sibling of :func:`process_granule`: it runs the identical
-    pipeline (download → classify → harmonise → scale to uint8 [0, 100]) but,
-    instead of writing a COG to S3, returns the harmonised array plus its
-    global-grid coordinates. This enables a **parallel-produce / serial-write**
-    pattern for the consolidated Zarr datacube: Dask workers run the expensive
-    per-granule work concurrently, while a single coordinator region-writes the
-    payloads into the cube — so cube writes stay lock-free (no two workers touch
-    shared Zarr metadata or the same chunk).
-
-    Args:
-        task: Task dict (``task_id``, ``source_uri``, ``dest_key``, ``date``,
-            ``aoi_id``) as produced by ``inventory.to_tasks``.
-
-    Returns:
-        Dict with ``task_id``, ``date``, ``aoi_id``, ``dest_key``, ``scaled``
-        (uint8 [0, 100] / 255 nodata), and ``y`` / ``x`` global-grid pixel
-        centres for the harmonised AOI window.
+    Full-classification sibling of :func:`process_granule`: runs the identical
+    download → classify → harmonise pipeline but uses :func:`classify_viirs_pixels`
+    (all 7 derived layers) instead of the flood-only fast path, and returns every
+    layer (except flood_fraction) as a uint8 array plus its global-grid coordinates.
     """
+    import rioxarray  # noqa: F401 — registers .rio on xarray objects
     import xarray as xr
 
     src_path: Path | None = None
@@ -251,32 +239,67 @@ def harmonise_granule_payload(task: dict) -> dict:
             transform = src.transform
             crs = src.crs.to_string() if src.crs else "EPSG:4326"
 
-        flood_fraction = classify_viirs_flood_fraction(data)
+        # Full classification — all derived layers at native 375 m
+        processed = classify_viirs_pixels(data, transform, crs)
         del data
 
-        da = _flood_fraction_dataarray(flood_fraction, transform, crs)
-        ds = xr.Dataset({"flood_fraction": da})
-        del flood_fraction, da
+        height, width = processed.water_fraction.shape
+        x_coords = transform.c + (np.arange(width) + 0.5) * transform.a
+        y_coords = transform.f + (np.arange(height) + 0.5) * transform.e
 
+        layers = {
+            "water_fraction": processed.water_fraction,
+            "exclusion_mask": processed.exclusion_mask,
+            "reference_water": processed.reference_water,
+        }
+        layers.update(processed.extra_layers)  # cloud_mask, snow_ice, shadow
+
+        ds = xr.Dataset(
+            {name: (("y", "x"), arr) for name, arr in layers.items()},
+            coords={"y": y_coords, "x": x_coords},
+        )
+        ds.rio.write_crs(crs, inplace=True)
+        ds.rio.write_transform(transform, inplace=True)
+        # source_id is required so the reprojector resolves per-variable
+        # resampling for cloud_mask/snow_ice/shadow via the VIIRS registry.
+        ds.attrs["source_id"] = "viirs"
+        del processed
+
+        # Reproject all layers to 1-arcmin global grid.
+        # Call reprojector.reproject() directly: harmoniser.harmonise() would
+        # call normaliser.normalise(ds, variable="flood_fraction"), which
+        # raises KeyError because flood_fraction is intentionally excluded
+        # from this payload. The reprojector alone preserves every VIIRS
+        # derived layer with correct per-variable resampling (average for
+        # fractions, mode for masks).
         harmoniser = Harmoniser(HarmoniseConfig())
-        ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="flood_fraction")
+        ds_harm = harmoniser.reprojector.reproject(ds)
         del ds
 
-        harm_da = ds_harm["flood_fraction"]
-        arr = harm_da.values
-        scaled = np.full(arr.shape, HARMONISED_NODATA, dtype=np.uint8)
-        valid = np.isfinite(arr)
-        scaled[valid] = np.round(arr[valid] * 100).clip(0, 100).astype(np.uint8)
+        y = np.asarray(ds_harm["y"].values, dtype="float64")
+        x = np.asarray(ds_harm["x"].values, dtype="float64")
 
-        return {
+        payload = {
             "task_id": task["task_id"],
             "date": task["date"],
             "aoi_id": task["aoi_id"],
             "dest_key": task["dest_key"],
-            "scaled": scaled,
-            "y": np.asarray(harm_da["y"].values, dtype="float64"),
-            "x": np.asarray(harm_da["x"].values, dtype="float64"),
+            "y": y,
+            "x": x,
         }
+        for name in ds_harm.data_vars:
+            if str(name) == "crs":
+                continue
+            arr = np.asarray(ds_harm[name].values)
+            if np.issubdtype(arr.dtype, np.floating):
+                scaled = np.full(arr.shape, HARMONISED_NODATA, dtype=np.uint8)
+                valid = np.isfinite(arr)
+                scaled[valid] = np.round(arr[valid] * 100).clip(0, 100).astype(np.uint8)
+                payload[str(name)] = scaled
+            else:
+                payload[str(name)] = arr.astype(np.uint8)
+        del ds_harm
+        return payload
     finally:
         if src_path is not None:
             src_path.unlink(missing_ok=True)
