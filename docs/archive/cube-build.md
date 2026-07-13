@@ -5,13 +5,13 @@
 
 **Source of truth**
 
-| Concern                     | Module                                                                            |
-| --------------------------- | --------------------------------------------------------------------------------- |
-| Cube batch engine           | [`src/atlantis/archive/cube_batch.py`](../../src/atlantis/archive/cube_batch.py)  |
-| Granule processor (VIIRS)   | [`src/atlantis/fetchers/viirs/batch_processor.py`](../../src/atlantis/fetchers/viirs/batch_processor.py) |
-| Inventory loader + tasks    | [`src/atlantis/fetchers/viirs/inventory.py`](../../src/atlantis/fetchers/viirs/inventory.py) |
-| CLI (`batch viirs cube …`)  | [`src/atlantis/cli.py`](../../src/atlantis/cli.py#L2556)                          |
-| Underlying store layout     | [`zarr-spec.md`](./zarr-spec.md)                                                  |
+| Concern                    | Module                                                                                                   |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Cube batch engine          | [`src/atlantis/archive/cube_batch.py`](../../src/atlantis/archive/cube_batch.py)                         |
+| Granule processor (VIIRS)  | [`src/atlantis/fetchers/viirs/batch_processor.py`](../../src/atlantis/fetchers/viirs/batch_processor.py) |
+| Inventory loader + tasks   | [`src/atlantis/fetchers/viirs/inventory.py`](../../src/atlantis/fetchers/viirs/inventory.py)             |
+| CLI (`batch viirs cube …`) | [`src/atlantis/cli.py`](../../src/atlantis/cli.py#L2556)                                                 |
+| Underlying store layout    | [`zarr-spec.md`](./zarr-spec.md)                                                                         |
 
 > After building the cube, use the [STAC + Visualization guide](./stac-and-viz.md) to
 > catalogue and explore it interactively.
@@ -24,13 +24,13 @@ The batch pipeline converts a catalogue of NOAA VIIRS granules into a **single
 Zarr v3 datacube** (`datacube.zarr`) co-registered on the canonical global
 1-arcmin grid. The pipeline is:
 
-| Property           | How it works                                                                     |
-| ------------------ | -------------------------------------------------------------------------------- |
-| **Parallel**        | Dask `LocalCluster` (2–6 adaptive workers). Each worker downloads, classifies, and harmonises one granule at a time. |
-| **Resume-safe**     | SQLite tracker records every `(task_id, status, output_uri)`. Re-running skips already-`DONE` tasks. |
-| **Streaming**       | `as_completed()` feeds results into a single coordinator that writes to Zarr — no giant in-RAM accumulation. |
-| **Crash-proof**     | Run in `tmux` / `nohup`. Kill at any time; re-run to resume from the tracker.    |
-| **Dataset-agnostic**| Same engine (`run_cube_batch`) drives VIIRS, MODIS, or any future source by plugging in a different inventory loader and per-task processor. |
+| Property             | How it works                                                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Parallel**         | Dask `LocalCluster` (2–6 adaptive workers). Each worker downloads, classifies, and harmonises one granule at a time.                         |
+| **Resume-safe**      | SQLite tracker records every `(task_id, status, output_uri)`. Re-running skips already-`DONE` tasks.                                         |
+| **Streaming**        | `as_completed()` feeds results into a single coordinator that writes to Zarr — no giant in-RAM accumulation.                                 |
+| **Crash-proof**      | Run in `tmux` / `nohup`. Kill at any time; re-run to resume from the tracker.                                                                |
+| **Dataset-agnostic** | Same engine (`run_cube_batch`) drives VIIRS, MODIS, or any future source by plugging in a different inventory loader and per-task processor. |
 
 ---
 
@@ -73,20 +73,21 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
   --log-every 50
 ```
 
-| Flag | Default | Purpose |
-|---|---|---|
-| `--partition` | full catalogue | Row slice `start:stop` (e.g. `0:1000`) |
-| `--archive` / `-a` | `s3://atlantis/zarr/viirs_2020_cube` | Cube root — a local dir or `s3://` URI |
-| `--log-every` | `100` | Progress line every N completions |
-| `--workers-min/max` | `2` / `6` | Dask worker count (adaptive) |
-| `--memory-limit` | `6GB` | Memory cap per worker |
-| `--db-path` | `cube_tracker.db` | SQLite resume database |
-| `--retries` | `3` | Retries per granule |
+| Flag                | Default                              | Purpose                                |
+| ------------------- | ------------------------------------ | -------------------------------------- |
+| `--partition`       | full catalogue                       | Row slice `start:stop` (e.g. `0:1000`) |
+| `--archive` / `-a`  | `s3://atlantis/zarr/viirs_2020_cube` | Cube root — a local dir or `s3://` URI |
+| `--log-every`       | `100`                                | Progress line every N completions      |
+| `--workers-min/max` | `2` / `6`                            | Dask worker count (adaptive)           |
+| `--memory-limit`    | `4GB`                                | Memory cap per worker                  |
+| `--db-path`         | `cube_tracker.db`                    | SQLite resume database                 |
+| `--retries`         | `3`                                  | Retries per granule                    |
 
 The `--archive` value is the **parent** of the Zarr store — the engine creates
 `datacube.zarr` underneath it.
 
 > Always run detached. An SSH disconnect kills the coordinator:
+>
 > ```bash
 > tmux new -s cube
 > PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
@@ -144,8 +145,7 @@ to compute the row bounds for your date range up front.
 
 ### 4.1 Query the row range for a date span
 
-```bash
-PYTHONPATH=src pixi run -e batch python -c "
+```python
 from atlantis.fetchers.viirs.inventory import load_inventory
 df = load_inventory('s3://atlantis/assets/viirs/viirs_archive_catalog.parquet')
 df = df.sort_values(['date', 'aoi_id']).reset_index(drop=True)
@@ -155,18 +155,17 @@ subset = df[mask]
 start = subset.index[0]
 stop = subset.index[-1] + 1   # iloc slice end is exclusive
 print(f'Oct-Nov 2024: {len(subset)} granules · partition {start}:{stop}')
-"
 ```
 
 ### 4.2 Pre-computed date ranges (VIIRS JPSS 2020 catalogue, 174,252 rows)
 
-| Period | Granules | Partition |
-|---|---|---|
-| Oct 2024 | ~4,442 | `109152:113594` |
-| Nov 2024 | ~4,413 | `113594:118007` |
-| Oct–Nov 2024 | ~8,855 | `109152:118007` |
-| Full 2024 | ~53,287 | `75968:129255` |
-| Full 2020 | ~47,721 | `0:47721` |
+| Period       | Granules | Partition       |
+| ------------ | -------- | --------------- |
+| Oct 2024     | ~4,442   | `109152:113594` |
+| Nov 2024     | ~4,413   | `113594:118007` |
+| Oct–Nov 2024 | ~8,855   | `109152:118007` |
+| Full 2024    | ~53,287  | `75968:129255`  |
+| Full 2020    | ~47,721  | `0:47721`       |
 
 ---
 
@@ -194,10 +193,10 @@ rm -rf ./data/stac_my_cube
 The cube build is split into two layers so Zarr metadata consistency is
 guaranteed while granule processing stays parallel:
 
-| Layer | Runs on | Responsibility |
-|---|---|---|
-| **Produce** (`harmonise_granule_payload`) | Dask workers (parallel) | Download NOAA granule → classify → harmonise → return payload dict |
-| **Consume** (`ArchiveWriter.session`) | Coordinator (serial) | Receive payload → region-write into Zarr → mark task `DONE` in SQLite |
+| Layer                                     | Runs on                 | Responsibility                                                        |
+| ----------------------------------------- | ----------------------- | --------------------------------------------------------------------- |
+| **Produce** (`harmonise_granule_payload`) | Dask workers (parallel) | Download NOAA granule → classify → harmonise → return payload dict    |
+| **Consume** (`ArchiveWriter.session`)     | Coordinator (serial)    | Receive payload → region-write into Zarr → mark task `DONE` in SQLite |
 
 ```text
 Catalogue (Parquet)
@@ -223,13 +222,13 @@ kilobytes each), so the 2–6 workers typically keep it fed.
 
 ## 7. Runtime estimates
 
-| Granules | Approx. runtime (6 workers, ~5–15 min / 100 granules) |
-|---|---|
-| 100 | 5–15 min |
-| 1,000 | 50 min – 2.5 hr |
-| 8,855 (Oct–Nov 2024) | 7–22 hr |
-| 53,287 (full 2024) | 44–133 hr |
-| 174,252 (entire catalogue) | 145–436 hr |
+| Granules                   | Approx. runtime (6 workers, ~5–15 min / 100 granules) |
+| -------------------------- | ----------------------------------------------------- |
+| 100                        | 5–15 min                                              |
+| 1,000                      | 50 min – 2.5 hr                                       |
+| 8,855 (Oct–Nov 2024)       | 7–22 hr                                               |
+| 53,287 (full 2024)         | 44–133 hr                                             |
+| 174,252 (entire catalogue) | 145–436 hr                                            |
 
 > Runtime is dominated by NOAA HTTPS download speed (source TIFFs are uncompressed
 > one-row strips — pathological for range reads, so each ~20 MB granule is

@@ -24,7 +24,7 @@ class BatchConfig:
     db_path: Path
     workers_min: int = 2
     workers_max: int = 6
-    memory_limit_per_worker: str = "6GB"
+    memory_limit_per_worker: str = "4GB"
     dashboard_port: int = 8787
     retries: int = 3
     log_every: int = 100
