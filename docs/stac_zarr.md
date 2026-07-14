@@ -130,7 +130,7 @@ Attached to the `zarr` asset so a client can open it directly as xarray:
 
 ---
 
-## 5. The Zarr asset
+## 5.1 The Zarr asset
 
 Each Collection and Item exposes a single `zarr` asset pointing at the shared
 store. The Item describes a _time slice_ of that store; the client opens the
@@ -152,6 +152,26 @@ group and selects the item's `datetime`.
   }
 }
 ```
+
+## 5.2 Key benefits of the STAC layer
+
+1. **Fast discovery without opening data.** STAC Items/Collections are lightweight JSON with bbox + datetime + variable metadata. Clients can filter "which dates/regions have flood data for VIIRS in this bbox between these dates?" by reading small metadata files (or a `stac-geoparquet` index), instead of opening the Zarr store and scanning `time`/`y`/`x` coordinates — critical since the underlying cube is a **sparse global grid** where most of it is empty.
+
+2. **Meaningful spatial extents on a sparse cube.** Populated-extent computation (§6) gives each Item a real bbox (the actual flooded/observed area for that day), not the meaningless full `[-180,-90,180,90]` grid extent — so bbox search actually narrows results.
+
+3. **Serverless, cloud-native scaling.** Static JSON tree → S3, plus `stac-geoparquet` for columnar bbox/datetime search with geopandas/DuckDB — no database or API server needed, matching the "no infra" design goal, while still scaling to many items.
+
+4. **Decouples discovery from data access.** STAC only filters metadata; actual reads still happen through xarray/Zarr with its own chunking/sharding. This cleanly separates "what to load" from "how to load efficiently" — you can swap/scale the discovery layer without touching the storage layer.
+
+### Benefits specifically from the `datacube` + `xarray-assets` extensions
+
+- **`datacube` extension (`cube:dimensions` / `cube:variables`)** — makes the Zarr's dimensional structure (x/y/time extents, resolution/step, CRS) and its channels (`flood_fraction`, `quality_mask`, etc., with units/dtype intent) **queryable and self-describing** directly in STAC metadata. Tools that understand the datacube extension (or generic STAC clients) can reason about temporal/spatial resolution and available variables _before_ touching the array data — useful for catalog browsers, cross-dataset search, or automated pipeline validation.
+
+- **`xarray-assets` extension (`xarray:open_kwargs`, `xarray:storage_options`)** — makes each asset **directly openable** via `xarray.open_dataset(asset, engine="stac")` (via `xpystac`) without the client needing to know the group name, consolidation flag, decode options, or S3 credentials in advance. This turns STAC into a genuine "handoff" layer: discover an Item → hand its asset straight to xarray → get a ready-to-use lazy Dataset, with zero manual wiring of Zarr open parameters.
+
+Together, these two extensions mean a STAC search result isn't just "here's a file" — it's "here's a fully self-describing, directly-openable xarray view of exactly the data you searched for," bridging catalog search and analysis-ready access in one step.
+
+---
 
 `href` resolution ([`_store_href`](../src/atlantis/stac/datacube_catalog.py)):
 an absolute local path for filesystem roots, or `…/datacube.zarr` for `s3://`
