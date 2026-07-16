@@ -79,7 +79,7 @@ def ensure_source_group(
         var_names: Data variables to create (uint8, fill ``255``).
         chunk: Spatial chunk size (pixels) for ``y`` and ``x``.
         shard: Spatial shard size (pixels), or ``None`` to disable sharding.
-        scale_factor: CF ``scale_factor`` applied to ``flood_fraction``.
+        scale_factor: CF ``scale_factor`` applied to ``water_fraction``.
         time_units: CF time units string for the ``time`` coordinate.
 
     Returns:
@@ -140,8 +140,8 @@ def _ensure_data_arrays(
             dimension_names=("time", "y", "x"),
         )
         attrs: dict[str, Any] = {"_FillValue": NODATA, "grid_mapping": "crs"}
-        if name == "flood_fraction":
-            attrs.update({"scale_factor": scale_factor, "add_offset": 0.0, "long_name": "flood fraction", "units": "1"})
+        if name == "water_fraction":
+            attrs.update({"scale_factor": scale_factor, "add_offset": 0.0, "long_name": "water fraction", "units": "1"})
         else:
             attrs["long_name"] = name.replace("_", " ")
         arr.attrs.update(attrs)

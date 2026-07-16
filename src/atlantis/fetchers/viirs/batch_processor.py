@@ -10,16 +10,21 @@ Pipeline per granule:
      — pathological for HTTP range reads. The tempfile is deleted in a
      ``finally`` block so peak disk = workers × 20 MB ≈ 120 MB total.
   2. Classify at native 375 m → keep ``flood_fraction`` only (skip the
-      auxiliary ``water_fraction`` / ``reference_water`` / ``exclusion_mask`` allocations).
+       auxiliary ``water_fraction`` / ``reference_water`` / ``exclusion_mask`` allocations).
   3. Harmonise to 1-arcmin global grid via Harmoniser.
   4. Scale float32 [0, 1] → uint8 [0, 100], NaN → 255.
   5. Write a true COG into an in-memory MemoryFile (output is ~2-3 KB).
   6. Upload bytes to s3://atlantis/{dest_key}.
   7. Drop large intermediates and call ``gc.collect()`` so the worker
-     returns memory between tasks instead of accumulating fragmentation.
+      returns memory between tasks instead of accumulating fragmentation.
 
 The COG output stays in-memory because each result is tiny; only the
 ~20 MB input warrants local staging.
+
+``harmonise_granule_payload`` is the cube-batch variant: download, derive
+``water_fraction`` via registry, harmonise (which generates ``exclusion_mask``
+and ``reference_water``), encode to uint8, and return everything in-memory
+so the coordinator can stream into the Zarr cube.
 """
 
 from __future__ import annotations
@@ -38,8 +43,10 @@ from rasterio.io import MemoryFile
 
 from atlantis.batch import TaskResult
 from atlantis.config import HarmoniseConfig
+from atlantis.fetchers.viirs.layers import SELECTED_BAND, registry
 from atlantis.fetchers.viirs.processor import classify_viirs_flood_fraction
 from atlantis.harmoniser import HARMONISED_NODATA, Harmoniser
+from atlantis.layers import DerivationContext
 
 #: ECMWF object store endpoint.
 _S3_ENDPOINT = "https://object-store.os-api.cci1.ecmwf.int"
@@ -98,29 +105,23 @@ def _download_to_tempfile(url: str, suffix: str = ".tif") -> Path:
     return Path(tmp_path)
 
 
-def _flood_fraction_dataarray(
-    flood_fraction: np.ndarray,
+def _water_fraction_dataarray(
+    water_fraction: np.ndarray,
     transform: rasterio.Affine,
     crs: str,
 ):
-    """Wrap a flood_fraction array into a georeferenced rioxarray DataArray.
-
-    Inlined here (instead of using :func:`processed_tile_to_dataset`) so
-    the batch path never allocates the unused ``water_fraction`` /
-    ``reference_water`` / ``exclusion_mask`` arrays.
-    """
+    """Wrap a water_fraction array into a georeferenced rioxarray DataArray."""
     import rioxarray  # noqa: F401 — registers .rio on xarray objects
     import xarray as xr
 
-    height, width = flood_fraction.shape
-    # Pixel-centre coordinates so the harmoniser sees a fully-georeferenced array.
+    height, width = water_fraction.shape
     x_coords = transform.c + (np.arange(width) + 0.5) * transform.a
     y_coords = transform.f + (np.arange(height) + 0.5) * transform.e
     da = xr.DataArray(
-        flood_fraction,
+        water_fraction,
         dims=("y", "x"),
         coords={"y": y_coords, "x": x_coords},
-        name="flood_fraction",
+        name="water_fraction",
     )
     da.rio.write_crs(crs, inplace=True)
     da.rio.write_transform(transform, inplace=True)
@@ -163,7 +164,7 @@ def process_granule(task: dict) -> TaskResult:
         # Build a minimal xarray Dataset with just flood_fraction.
         import xarray as xr
 
-        da = _flood_fraction_dataarray(flood_fraction, transform, crs)
+        da = _water_fraction_dataarray(flood_fraction, transform, crs)
         ds = xr.Dataset({"flood_fraction": da})
         del flood_fraction, da
 
@@ -220,24 +221,25 @@ def process_granule(task: dict) -> TaskResult:
 
 
 def harmonise_granule_payload(task: dict) -> dict:
-    """Download + classify + harmonise a granule, returning the result in-memory.
+    """Download + derive + harmonise a granule, returning all cube layers in-memory.
 
-    A *produce-only* sibling of :func:`process_granule`: it runs the identical
-    pipeline (download → classify → harmonise → scale to uint8 [0, 100]) but,
-    instead of writing a COG to S3, returns the harmonised array plus its
-    global-grid coordinates. This enables a **parallel-produce / serial-write**
-    pattern for the consolidated Zarr datacube: Dask workers run the expensive
-    per-granule work concurrently, while a single coordinator region-writes the
-    payloads into the cube — so cube writes stay lock-free (no two workers touch
-    shared Zarr metadata or the same chunk).
+    A *produce-only* sibling of :func:`process_granule`: download raw VIIRS
+    codes, derive ``water_fraction`` via the VIIRS layer registry, harmonise
+    (which also generates ``exclusion_mask`` and ``reference_water``), encode
+    all layers to uint8, and return them with global-grid coordinates. This
+    enables a **parallel-produce / serial-write** pattern for the consolidated
+    Zarr datacube: Dask workers run the expensive per-granule work concurrently,
+    while a single coordinator region-writes the payloads into the cube — so
+    cube writes stay lock-free.
 
     Args:
         task: Task dict (``task_id``, ``source_uri``, ``dest_key``, ``date``,
             ``aoi_id``) as produced by ``inventory.to_tasks``.
 
     Returns:
-        Dict with ``task_id``, ``date``, ``aoi_id``, ``dest_key``, ``scaled``
-        (uint8 [0, 100] / 255 nodata), and ``y`` / ``x`` global-grid pixel
+        Dict with ``task_id``, ``date``, ``aoi_id``, ``dest_key``,
+        ``water_fraction`` (uint8 [0, 100]), ``exclusion_mask`` (uint8 [0, 1]),
+        ``reference_water`` (uint8 [0, 1]), and ``y`` / ``x`` global-grid pixel
         centres for the harmonised AOI window.
     """
     import xarray as xr
@@ -251,33 +253,46 @@ def harmonise_granule_payload(task: dict) -> dict:
             transform = src.transform
             crs = src.crs.to_string() if src.crs else "EPSG:4326"
 
-        flood_fraction = classify_viirs_flood_fraction(data)
+        ctx = DerivationContext(arrays={SELECTED_BAND: data})
+        water_fraction = registry.get_derived("water_fraction").derive(ctx)
         del data
 
-        da = _flood_fraction_dataarray(flood_fraction, transform, crs)
-        ds = xr.Dataset({"flood_fraction": da})
-        del flood_fraction, da
+        da = _water_fraction_dataarray(water_fraction, transform, crs)
+        ds = xr.Dataset({"water_fraction": da})
+        del water_fraction, da
 
         harmoniser = Harmoniser(HarmoniseConfig())
-        ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="flood_fraction")
+        ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="water_fraction")
         del ds
 
-        harm_da = ds_harm["flood_fraction"]
-        arr = harm_da.values
-        scaled = np.full(arr.shape, HARMONISED_NODATA, dtype=np.uint8)
-        valid = np.isfinite(arr)
-        scaled[valid] = np.round(arr[valid] * 100).clip(0, 100).astype(np.uint8)
+        wf = _encode_uint8_values(ds_harm["water_fraction"].values)
+        em = _encode_uint8_values(ds_harm["exclusion_mask"].values)
+        rw = _encode_uint8_values(ds_harm["reference_water"].values)
 
         return {
             "task_id": task["task_id"],
             "date": task["date"],
             "aoi_id": task["aoi_id"],
             "dest_key": task["dest_key"],
-            "scaled": scaled,
-            "y": np.asarray(harm_da["y"].values, dtype="float64"),
-            "x": np.asarray(harm_da["x"].values, dtype="float64"),
+            "water_fraction": wf,
+            "exclusion_mask": em,
+            "reference_water": rw,
+            "y": np.asarray(ds_harm["y"].values, dtype="float64"),
+            "x": np.asarray(ds_harm["x"].values, dtype="float64"),
         }
     finally:
         if src_path is not None:
             src_path.unlink(missing_ok=True)
         gc.collect()
+
+
+def _encode_uint8_values(values: np.ndarray) -> np.ndarray:
+    """Encode a 2-D slice to uint8 storage.
+
+    Float in [0, 1] → [0, 100] (percent), NaN → 255 nodata.
+    Integer masks pass through.
+    Mirrors :func:`atlantis.archive.writer._encode_uint8`.
+    """
+    if np.issubdtype(values.dtype, np.floating):
+        return np.where(np.isnan(values), HARMONISED_NODATA, np.clip(np.round(values * 100), 0, 100)).astype("uint8")
+    return values.astype("uint8")
