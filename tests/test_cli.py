@@ -1749,8 +1749,9 @@ def test_harmonise_source_modis_raw_preserves_255_nodata(tmp_path):
     assert 255 in values
 
 
-def test_fetch_unknown_source_reports_unknown():
+def test_fetch_unknown_source_reports_unknown(monkeypatch):
     """#2: an unrecognised --source is reported as 'Unknown source', not a traceback."""
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
     result = runner.invoke(cli, ["fetch", "--event", "X", "--source", "bogus"])
     assert "Unknown source 'bogus'" in result.stdout
 
@@ -1762,6 +1763,7 @@ def test_fetch_real_keyerror_not_mislabeled_as_unknown_source(monkeypatch):
         def __init__(self, **kwargs):
             raise KeyError("downstream boom")
 
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
     monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: BoomFetcher)
 
     result = runner.invoke(cli, ["fetch", "--event", "X", "--source", "viirs"])
