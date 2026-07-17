@@ -329,6 +329,24 @@ pixi run atlantis list-events [OPTIONS]
 | ----------------- | ----------------------- | ----------------------- |
 | `--archive`, `-a` | `<config.archive_root>` | Archive root directory. |
 
+## `batch viirs catalog`
+
+Build a GeoParquet catalog of available VIIRS JPSS tiles from the NOAA public
+S3 bucket (no credentials required). Schema: `date, aoi_id, s3_key, geometry`.
+
+```bash
+pixi run atlantis batch viirs catalog [OPTIONS]
+```
+
+| Option      | Default                            | Description                              |
+| ----------- | ----------------------------------- | ----------------------------------------- |
+| `--output`, `-o` | `viirs_archive_catalog.parquet` | Output Parquet path (local or S3 URI).    |
+| `--start`   | *(required)*                        | Start date `YYYY-MM-DD` (inclusive).      |
+| `--end`     | *(required)*                        | End date `YYYY-MM-DD` (inclusive).        |
+
+See [archive/cube-build.md](archive/cube-build.md#3-building-or-refreshing-a-catalogue)
+for the full catalogue-build/extend workflow (including the MODIS equivalent).
+
 ## `batch viirs run`
 
 Batch-process the VIIRS JPSS 2020 catalogue into 1-arcmin uint8
@@ -347,7 +365,7 @@ pixi run atlantis batch viirs run [OPTIONS]
 | `--partition`      | full catalogue                                           | Row slice of the catalogue, e.g. `0:24464`.                   |
 | `--workers-min`    | `2`                                                      | Minimum Dask worker processes.                                |
 | `--workers-max`    | `6`                                                      | Maximum Dask worker processes (adaptive).                     |
-| `--memory-limit`   | `6GB`                                                    | Memory cap per worker.                                        |
+| `--memory-limit`   | `4GB`                                                    | Memory cap per worker.                                        |
 | `--dashboard-port` | `8787`                                                   | Dask dashboard port.                                          |
 | `--db-path`        | `tracker.db`                                             | SQLite resume database path.                                  |
 | `--retries`        | `3`                                                      | Dask retry count per granule.                                 |
@@ -387,7 +405,7 @@ pixi run atlantis batch viirs cube run [OPTIONS]
 | `--partition`      | full catalogue                                   | Row slice of the catalogue, e.g. `0:1000`.                     |
 | `--workers-min`    | `2`                                              | Minimum Dask worker processes.                                 |
 | `--workers-max`    | `6`                                              | Maximum Dask worker processes (adaptive).                      |
-| `--memory-limit`   | `6GB`                                            | Memory cap per worker.                                         |
+| `--memory-limit`   | `4GB`                                            | Memory cap per worker.                                         |
 | `--dashboard-port` | `8787`                                           | Dask dashboard port.                                           |
 | `--db-path`        | `cube_tracker.db`                                | SQLite resume database path.                                   |
 | `--retries`        | `3`                                              | Dask retry count per granule.                                  |
@@ -436,3 +454,60 @@ pixi run atlantis batch viirs cube status [OPTIONS]
 | `--db-path`   | `cube_tracker.db`                                | SQLite resume database path.              |
 | `--inventory` | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Catalogue used to compute the expected total. |
 | `--partition` | —                                                | Row slice the run used, if any.           |
+
+## `batch modis catalog`
+
+Build a Parquet catalog of available MODIS MCDWD tiles from the LAADS
+archive. Requires `EARTHDATA_TOKEN` (run `atlantis setup`). Schema:
+`date, h, v, task_id, source_uri`.
+
+```bash
+pixi run atlantis batch modis catalog [OPTIONS]
+```
+
+| Option      | Default                            | Description                              |
+| ----------- | ----------------------------------- | ----------------------------------------- |
+| `--output`, `-o` | `modis_archive_catalog.parquet` | Output Parquet path (local or S3 URI).    |
+| `--start`   | *(required)*                        | Start date `YYYY-MM-DD` (inclusive).      |
+| `--end`     | *(required)*                        | End date `YYYY-MM-DD` (inclusive).        |
+
+## `batch modis cube run`
+
+Build a consolidated Zarr v3 datacube (`datacube.zarr`) from the MODIS
+catalog. Same resume-safe, streaming engine as `batch viirs cube run` —
+see [archive/cube-build.md](archive/cube-build.md) for the shared-archive
+workflow and why the defaults below diverge from VIIRS's.
+
+```bash
+pixi run atlantis batch modis cube run [OPTIONS]
+```
+
+| Option             | Default                                          | Description                                                   |
+| ------------------ | ------------------------------------------------- | -------------------------------------------------------------- |
+| `--inventory`, `-i` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Path or S3 URI to the MODIS catalog Parquet file. |
+| `--archive`, `-a`  | `s3://atlantis/zarr/modis_cube`                   | Cube root — a local directory or an `s3://` URI.               |
+| `--partition`      | full catalog                                      | Row slice of the catalog, e.g. `0:10000`.                       |
+| `--composite`      | `None` (→ config default, `F2`)                   | MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`).              |
+| `--backend`        | `None` (→ `ATLANTIS_MODIS_BACKEND`)               | Informational only — the catalog's URLs determine the source.  |
+| `--workers-min`    | `2`                                               | Minimum Dask worker processes.                                  |
+| `--workers-max`    | `6`                                               | Maximum Dask worker processes (adaptive).                       |
+| `--memory-limit`   | `2.5GB`                                           | Memory cap per worker (lower than VIIRS — MODIS tiles are physically smaller). |
+| `--dashboard-port` | `8788`                                            | Dask dashboard port (distinct from VIIRS's `8787`).             |
+| `--db-path`        | `cube_tracker.db`                                 | SQLite resume database path — use a different path than VIIRS when sharing an archive. |
+| `--retries`        | `3`                                               | Dask retry count per tile.                                      |
+| `--log-every`      | `50`                                              | Log a progress line every N completions.                        |
+
+## `batch modis cube status`
+
+Report MODIS cube-build completion from the SQLite tracker — works offline /
+after a disconnect, mirroring `batch viirs cube status`.
+
+```bash
+pixi run atlantis batch modis cube status [OPTIONS]
+```
+
+| Option        | Default                                                    | Description                                   |
+| ------------- | ------------------------------------------------------------ | ---------------------------------------------- |
+| `--db-path`   | `cube_tracker.db`                                          | SQLite resume database path.                   |
+| `--inventory` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Catalog used to compute the expected total.    |
+| `--partition` | —                                                           | Row slice the run used, if any.                |

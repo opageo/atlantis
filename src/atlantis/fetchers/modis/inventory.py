@@ -3,7 +3,9 @@
 Reads the Parquet catalogue produced by
 :func:`atlantis.fetchers.modis.catalog.build_catalog` (a local file or an
 ``s3://`` URI) and converts it to the task dicts consumed by the cube batch
-engine.
+engine. The load/slice mechanics are shared with every other source via
+:mod:`atlantis.batch.catalog` — this module only supplies the MODIS-specific
+default URI, sort keys, and task schema.
 """
 
 from __future__ import annotations
@@ -12,11 +14,14 @@ from pathlib import Path
 
 import pandas as pd
 
+from atlantis.batch.catalog import load_catalogue
+from atlantis.batch.catalog import slice_partition as _slice_partition
+
 #: Default S3 location of the MODIS MCDWD tile catalog.
 DEFAULT_CATALOGUE_URI = "s3://atlantis/assets/modis/modis_archive_catalog.parquet"
 
-#: ECMWF object store endpoint (used for reading catalogue Parquet from S3).
-_S3_ENDPOINT = "https://object-store.os-api.cci1.ecmwf.int"
+#: Sort keys that make row partitions contiguous for MODIS's catalogue.
+_SORT_KEYS = ("date", "h", "v")
 
 
 def load_inventory(uri: str | Path = DEFAULT_CATALOGUE_URI) -> pd.DataFrame:
@@ -33,14 +38,7 @@ def load_inventory(uri: str | Path = DEFAULT_CATALOGUE_URI) -> pd.DataFrame:
     Returns:
         DataFrame with columns: ``date``, ``h``, ``v``, ``task_id``, ``source_uri``.
     """
-    uri_str = str(uri)
-    if uri_str.startswith("s3://"):
-        import s3fs
-
-        fs = s3fs.S3FileSystem(endpoint_url=_S3_ENDPOINT)
-        with fs.open(uri_str, "rb") as f:
-            return pd.read_parquet(f, engine="pyarrow")
-    return pd.read_parquet(uri_str, engine="pyarrow")
+    return load_catalogue(uri)
 
 
 def slice_partition(df: pd.DataFrame, partition: str | None) -> pd.DataFrame:
@@ -62,17 +60,7 @@ def slice_partition(df: pd.DataFrame, partition: str | None) -> pd.DataFrame:
     Raises:
         ValueError: If *partition* cannot be parsed or indices are out of range.
     """
-    df = df.sort_values(["date", "h", "v"], ignore_index=True)
-    if partition is None:
-        return df
-    try:
-        start_str, stop_str = partition.split(":")
-        start, stop = int(start_str), int(stop_str)
-    except (ValueError, AttributeError) as exc:
-        raise ValueError(f"partition must be 'start:stop' (e.g. '0:24464'), got: {partition!r}") from exc
-    if start < 0 or stop > len(df) or start >= stop:
-        raise ValueError(f"partition '{partition}' out of range for DataFrame of length {len(df)}")
-    return df.iloc[start:stop].reset_index(drop=True)
+    return _slice_partition(df, partition, _SORT_KEYS)
 
 
 def to_tasks(df: pd.DataFrame) -> list[dict]:

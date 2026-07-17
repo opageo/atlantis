@@ -2449,6 +2449,49 @@ viirs_batch_app = typer.Typer(help="Batch-process VIIRS granules to 1-arcmin COG
 batch_app.add_typer(viirs_batch_app, name="viirs")
 
 
+@viirs_batch_app.command("catalog", help="Build the VIIRS JPSS tile catalog from the NOAA S3 archive.")
+def viirs_build_catalog(
+    output: str = typer.Option(
+        "viirs_archive_catalog.parquet",
+        "--output",
+        "-o",
+        help="Output Parquet path (local or S3 URI).",
+    ),
+    start: str = typer.Option(
+        ...,
+        "--start",
+        help="Start date YYYY-MM-DD (inclusive).",
+    ),
+    end: str = typer.Option(
+        ...,
+        "--end",
+        help="End date YYYY-MM-DD (inclusive).",
+    ),
+) -> None:
+    """Build a GeoParquet catalog of available VIIRS JPSS tiles from NOAA S3.
+
+    Queries the NOAA public S3 bucket listing for each date in the range and
+    writes a GeoParquet file with columns: date, aoi_id, s3_key, geometry.
+
+    No credentials required — the NOAA JPSS bucket is public.
+    """
+    from atlantis.fetchers.viirs.catalog import build_catalog
+    from atlantis.utils.setup import AWS_PROFILES
+
+    command_header("batch viirs catalog", subtitle=f"{start} → {end}")
+
+    storage_options = None
+    if output.startswith("s3://"):
+        ecmwf_profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+        if ecmwf_profile is None or not ecmwf_profile.endpoint_url:
+            fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+            raise typer.Exit(code=1)
+        storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
+
+    build_catalog(start=start, end=end, output=output, storage_options=storage_options, on_progress=info)
+    ok(f"Catalog written → {output}")
+
+
 @viirs_batch_app.command("run")
 def batch_viirs(
     inventory: str = typer.Option(
@@ -2721,9 +2764,19 @@ def modis_build_catalog(
     Requires EARTHDATA_TOKEN in the environment (run `atlantis setup`).
     """
     from atlantis.fetchers.modis.catalog import build_catalog
+    from atlantis.utils.setup import AWS_PROFILES
 
     command_header("batch modis catalog build", subtitle=f"{start} → {end}")
-    build_catalog(start=start, end=end, output=Path(output))
+
+    storage_options = None
+    if output.startswith("s3://"):
+        ecmwf_profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+        if ecmwf_profile is None or not ecmwf_profile.endpoint_url:
+            fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+            raise typer.Exit(code=1)
+        storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
+
+    build_catalog(start=start, end=end, output=output, storage_options=storage_options, on_progress=info)
     ok(f"Catalog written → {output}")
 
 

@@ -8,8 +8,8 @@ a local file or an S3 URI.
 from __future__ import annotations
 
 import re
-import time
-from datetime import date, timedelta
+from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ import pandas as pd
 import requests
 from loguru import logger
 
+from atlantis.batch.catalog import iter_dates, log_progress, retry_request, write_catalogue
 from atlantis.fetchers.modis.backend import earthdata_auth_headers
 
 _LAADS_BASE_URL = "https://ladsweb.modaps.eosdis.nasa.gov"
@@ -49,26 +50,21 @@ def _list_tiles_for_date(
     url = _laads_directory_url(date_str)
     logger.debug("Listing {} …", url)
 
-    for attempt in range(_MAX_RETRIES):
-        try:
-            resp = requests.get(url, headers=headers, timeout=timeout)
-            if resp.status_code == 404:
-                return []
-            resp.raise_for_status()
-            break
-        except requests.RequestException as exc:
-            if attempt == _MAX_RETRIES - 1:
-                raise
-            wait = _BACKOFF_BASE * (2**attempt)
-            logger.warning(
-                "LAADS listing failed for {} (attempt {}/{}): {}. Retrying in {:.0f}s …",
-                date_str,
-                attempt + 1,
-                _MAX_RETRIES,
-                exc,
-                wait,
-            )
-            time.sleep(wait)
+    def _get() -> requests.Response:
+        response = requests.get(url, headers=headers, timeout=timeout)
+        if response.status_code != 404:
+            response.raise_for_status()
+        return response
+
+    resp = retry_request(
+        _get,
+        max_retries=_MAX_RETRIES,
+        backoff_base=_BACKOFF_BASE,
+        exceptions=(requests.RequestException,),
+        label=f"LAADS listing for {date_str}",
+    )
+    if resp.status_code == 404:
+        return []
 
     matches = re.findall(r'href="([^"]*MCDWD_L3[^"]*\.hdf)"', resp.text, flags=re.IGNORECASE)
     seen: set[str] = set()
@@ -111,7 +107,8 @@ def build_catalog(
     output: str | Path,
     *,
     storage_options: dict[str, Any] | None = None,
-) -> Path:
+    on_progress: Callable[[str], None] | None = None,
+) -> Path | None:
     """Build the MODIS MCDWD tile catalog and write it to *output*.
 
     Args:
@@ -119,6 +116,10 @@ def build_catalog(
         end: End date ``YYYY-MM-DD`` (inclusive).
         output: Output destination — a local path or ``s3://`` URI.
         storage_options: fsspec options for S3 writes.
+        on_progress: Optional sink for periodic progress messages (see
+            :func:`atlantis.batch.catalog.log_progress`). The CLI passes
+            ``atlantis.utils.ui.info`` so progress is visible without
+            ``--verbose``; left unset it falls back to loguru.
 
     Returns:
         Path of the written Parquet file (local), or ``None`` when written to
@@ -128,17 +129,16 @@ def build_catalog(
         RuntimeError: If ``EARTHDATA_TOKEN`` is not set.
     """
     headers = earthdata_auth_headers()
-    start_date = date.fromisoformat(start)
-    end_date = date.fromisoformat(end)
-    days = (end_date - start_date).days + 1
 
+    days = list(iter_dates(start, end))
     rows: list[dict[str, Any]] = []
-    for i in range(days):
-        day = (start_date + timedelta(days=i)).isoformat()
+    for i, day in enumerate(days):
+        day_str = day.isoformat()
         try:
-            rows.extend(_list_tiles_for_date(day, headers))
+            rows.extend(_list_tiles_for_date(day_str, headers))
         except requests.RequestException as exc:
-            logger.warning("Failed to list {}: {}", day, exc)
+            logger.warning("Failed to list {}: {}", day_str, exc)
+        log_progress(i, len(days), label="MODIS catalog", on_progress=on_progress)
 
     if not rows:
         logger.error("No MODIS tiles found in range {} – {}", start, end)
@@ -147,16 +147,4 @@ def build_catalog(
     df = pd.DataFrame(rows, columns=["date", "h", "v", "task_id", "source_uri"])
     logger.info("Catalog: {} tiles across {} dates", len(df), df["date"].nunique())
 
-    output_str = str(output)
-    if output_str.startswith("s3://"):
-        import s3fs
-
-        fs = s3fs.S3FileSystem(**(storage_options or {}))
-        with fs.open(output_str, "wb") as f:
-            df.to_parquet(f, engine="pyarrow", index=False)
-    else:
-        local_path = Path(output_str)
-        local_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(local_path, engine="pyarrow", index=False)
-    logger.info("Wrote catalog → {}", output_str)
-    return Path(output_str) if not output_str.startswith("s3://") else None
+    return write_catalogue(df, output, storage_options=storage_options)
