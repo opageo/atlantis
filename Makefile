@@ -17,7 +17,7 @@
 # ============================================================================
 
 .PHONY: help setup demo demo-viirs demo-modis demo-gfm test lint lint-fix format-fix precommit build clean \
-	dev-install version \
+	dev-install version seed-bookmarks \
 	example-harvey-viirs example-bihar-viirs example-vamco-viirs \
 	example-westafrica-viirs examples-viirs \
 	example-harvey-modis example-bihar-modis example-vamco-modis \
@@ -101,6 +101,20 @@ demo-gfm:  ## Quick demo: Valencia 2024 flood — GFM, verbose + peak-window
 		--start-date $(VALENCIA_START) --end-date $(VALENCIA_END) \
 		$(PEAK_FLAGS) $(COMMON_FLAGS) \
 		--output ./data/Valencia_2024
+
+seed-bookmarks:  ## Register example event bookmarks (Harvey, Bihar, Vamco, Valencia)
+	uv run atlantis bookmarks add Harvey_2017 \
+		--bbox "$(HARVEY_BBOX)" --start-date $(HARVEY_START) --end-date $(HARVEY_END) \
+		--label "Hurricane Harvey, Texas USA — Aug 2017" --force
+	uv run atlantis bookmarks add Bihar_2019 \
+		--bbox "$(BIHAR_BBOX)" --start-date $(BIHAR_START) --end-date $(BIHAR_END) \
+		--label "South Asian monsoon, Bihar/Nepal — Sept 2019" --force
+	uv run atlantis bookmarks add Vamco_2020 \
+		--bbox "$(VAMCO_BBOX)" --start-date $(VAMCO_START) --end-date $(VAMCO_END) \
+		--label "Typhoon Vamco, Luzon Philippines — Nov 2020" --force
+	uv run atlantis bookmarks add Valencia_2024 \
+		--bbox "$(VALENCIA_BBOX)" --start-date $(VALENCIA_START) --end-date $(VALENCIA_END) \
+		--label "Valencia floods, Spain — Oct–Nov 2024" --force
 
 # ============================================================================
 # VIIRS examples — historical bbox + date range, no credentials required

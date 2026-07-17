@@ -9,7 +9,7 @@ def test_defaults(tmp_path):
     cfg = BatchConfig(db_path=tmp_path / "test.db")
     assert cfg.workers_min == 2
     assert cfg.workers_max == 6
-    assert cfg.memory_limit_per_worker == "6GB"
+    assert cfg.memory_limit_per_worker == "4GB"
     assert cfg.dashboard_port == 8787
     assert cfg.retries == 3
     assert cfg.log_every == 100

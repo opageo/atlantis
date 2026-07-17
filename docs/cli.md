@@ -114,12 +114,40 @@ pixi run atlantis fetch [OPTIONS]
 | `--event`, `-e`  | yes      | Flood event ID (free-form string used in output filenames).          |
 | `--source`, `-s` | no       | `gfm`, `viirs`, `modis`, `rfm`, or `all` (default: `all`).           |
 | `--output`, `-o` | no       | Output directory for raw data (default: `<cache_dir>/raw/<event>/`). |
-| `--bbox`         | yes\*    | Bounding box `"west south east north"` (space-separated, EPSG:4326). |
-| `--start-date`   | yes\*    | Start date `YYYY-MM-DD`.                                             |
-| `--end-date`     | yes\*    | End date `YYYY-MM-DD`.                                               |
+| `--bbox`         | no\*     | Bounding box `"west south east north"` (space-separated, EPSG:4326). |
+| `--start-date`   | no\*     | Start date `YYYY-MM-DD`.                                             |
+| `--end-date`     | no\*     | End date `YYYY-MM-DD`.                                               |
 
-\* `--bbox`, `--start-date`, and `--end-date` must be provided together;
-no catalogue lookup is implemented for the generic `fetch` command.
+\* `--bbox`, `--start-date`, and `--end-date` must be provided together
+when given. If all three are omitted, `fetch` looks up `--event` in the
+[event bookmark registry](#event-bookmarks) and uses its bbox/date-range
+instead. Explicit flags always take precedence over a matching bookmark. If
+neither is available, the source is skipped with a warning.
+
+### Event bookmarks
+
+A **bookmark** is a named shortcut (e.g. `Harvey_2017`) for a bbox + inclusive
+date range, stored in a small GeoParquet registry (`atlantis.bookmarks`). The
+**source of truth** is `s3://atlantis/assets/bookmarks.parquet` (the default
+`ATLANTIS_BOOKMARKS_ROOT` / `ATLANTIS_BOOKMARKS_FILE` — the same ECMWF
+object-store bucket used for other shared assets); override those env vars to
+point at a local path for offline development/tests. It lets `fetch --event
+NAME` work without repeating `--bbox`/`--start-date`/`--end-date` every time.
+
+This is a **static, curated** registry, distinct from the data-driven
+`atlantis_events` bookmarks recorded per-source inside the Zarr archive by
+`atlantis archive` (see [`stac_zarr.md`](./stac_zarr.md)) — that one only
+knows about events for which data has actually been archived.
+
+```bash
+uv run atlantis bookmarks add EVENT_ID --bbox "W S E N" --start-date YYYY-MM-DD --end-date YYYY-MM-DD [--source SRC ...] [--label TEXT] [--force]
+uv run atlantis bookmarks list
+uv run atlantis bookmarks show EVENT_ID
+uv run atlantis bookmarks remove EVENT_ID [--yes]
+```
+
+`make seed-bookmarks` registers the events used by the Makefile's example
+targets (Harvey_2017, Bihar_2019, Vamco_2020, Valencia_2024).
 
 ### Output controls (all sources)
 

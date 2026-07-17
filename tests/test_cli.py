@@ -109,10 +109,23 @@ def test_version():
     assert __version__ == "0.1.0"
 
 
+def _no_bookmark(*_args, **_kwargs):
+    """Force `get_bookmark` to behave as if nothing is registered.
+
+    Used to isolate tests from the real shared ``s3://atlantis/assets/bookmarks.parquet``
+    registry (the default `BookmarksConfig.bookmarks_root`), which may contain
+    entries for common event names. `cli.py` imports `get_bookmark` at module
+    scope, so the patch target is `atlantis.cli.get_bookmark`, not
+    `atlantis.bookmarks.get_bookmark`.
+    """
+    raise KeyError("not found")
+
+
 def test_verbose_flag_configures_loguru(monkeypatch):
     """Test --verbose enables loguru with the CLI format."""
     calls: dict[str, object] = {}
 
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
     monkeypatch.setattr("atlantis.cli.logger.remove", lambda: calls.__setitem__("removed", True))
     monkeypatch.setattr(
         "atlantis.cli.logger.disable",
@@ -144,6 +157,7 @@ def test_no_verbose_keeps_loguru_disabled(monkeypatch):
     """Test that without --verbose, no loguru sink is added."""
     calls: dict[str, object] = {"added": False}
 
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
     monkeypatch.setattr("atlantis.cli.logger.remove", lambda: calls.__setitem__("removed", True))
     monkeypatch.setattr(
         "atlantis.cli.logger.disable",
@@ -183,12 +197,14 @@ def test_verbose_sink_suppresses_fetcher_logs_during_checklist() -> None:
         assert _should_emit_verbose_log(external_record) is True
 
 
-def test_fetch_command():
+def test_fetch_command(monkeypatch):
     """Test fetch command with required event argument."""
-    result = runner.invoke(cli, ["fetch", "--event", "Valencia_2024"])
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
+    result = runner.invoke(cli, ["fetch", "--event", "Valencia_2024", "--source", "viirs"])
     assert result.exit_code == 0
     assert "Valencia_2024" in result.stdout
     assert "sources=" in result.stdout
+    assert "no bookmark found" in result.stdout
 
 
 def test_fetch_command_with_bbox(monkeypatch, tmp_path):
@@ -251,6 +267,161 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert "Wrote 2 files" in result.stdout
     assert "VIIRS backend: noaa_s3" in result.stdout
+
+
+def test_fetch_command_resolves_bookmark(monkeypatch, tmp_path):
+    """`fetch --event NAME` (no --bbox/--start-date/--end-date) resolves via a bookmark."""
+    from atlantis.bookmarks import add_bookmark
+
+    bookmarks_file = tmp_path / "bookmarks.parquet"
+    monkeypatch.setattr("atlantis.bookmarks.bookmark_path", lambda config=None: str(bookmarks_file))
+    add_bookmark(
+        FloodEvent(
+            event_id="Harvey_2017",
+            bbox=(-97.27, 28.24, -95.54, 29.80),
+            start_date=date(2017, 8, 28),
+            end_date=date(2017, 8, 31),
+        ),
+        path=str(bookmarks_file),
+    )
+
+    seen: dict[str, object] = {}
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            pass
+
+        def fetch(self, event, output_dir):
+            seen["event"] = event
+            return []
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+
+    result = runner.invoke(
+        cli,
+        ["fetch", "--event", "Harvey_2017", "--source", "viirs", "--output", str(tmp_path / "out")],
+    )
+
+    assert result.exit_code == 0
+    assert "Resolved bookmark 'Harvey_2017'" in result.stdout
+    assert seen["event"].bbox == (-97.27, 28.24, -95.54, 29.80)
+    assert seen["event"].start_date == date(2017, 8, 28)
+    assert seen["event"].end_date == date(2017, 8, 31)
+
+
+def test_fetch_command_explicit_bbox_overrides_bookmark(monkeypatch, tmp_path):
+    """Explicit --bbox/--start-date/--end-date always win over a matching bookmark."""
+    from atlantis.bookmarks import add_bookmark
+
+    bookmarks_file = tmp_path / "bookmarks.parquet"
+    monkeypatch.setattr("atlantis.bookmarks.bookmark_path", lambda config=None: str(bookmarks_file))
+    add_bookmark(
+        FloodEvent(
+            event_id="Harvey_2017",
+            bbox=(-97.27, 28.24, -95.54, 29.80),
+            start_date=date(2017, 8, 28),
+            end_date=date(2017, 8, 31),
+        ),
+        path=str(bookmarks_file),
+    )
+
+    seen: dict[str, object] = {}
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            pass
+
+        def fetch(self, event, output_dir):
+            seen["event"] = event
+            return []
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Harvey_2017",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path / "out"),
+            "--bbox",
+            "1 2 3 4",
+            "--start-date",
+            "2020-01-01",
+            "--end-date",
+            "2020-01-02",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Resolved bookmark" not in result.stdout
+    assert seen["event"].bbox == (1.0, 2.0, 3.0, 4.0)
+
+
+def test_bookmarks_add_list_show_remove(monkeypatch, tmp_path):
+    """Round-trip the `atlantis bookmarks` CRUD commands."""
+    bookmarks_file = tmp_path / "bookmarks.parquet"
+    monkeypatch.setattr("atlantis.bookmarks.bookmark_path", lambda config=None: str(bookmarks_file))
+
+    result = runner.invoke(
+        cli,
+        [
+            "bookmarks",
+            "add",
+            "Harvey_2017",
+            "--bbox",
+            "-97.27 28.24 -95.54 29.80",
+            "--start-date",
+            "2017-08-28",
+            "--end-date",
+            "2017-08-31",
+            "--label",
+            "Hurricane Harvey, Texas USA",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "saved" in result.stdout
+
+    result = runner.invoke(
+        cli,
+        [
+            "bookmarks",
+            "add",
+            "Harvey_2017",
+            "--bbox",
+            "1 2 3 4",
+            "--start-date",
+            "2020-01-01",
+            "--end-date",
+            "2020-01-02",
+        ],
+    )
+    assert result.exit_code == 1
+
+    result = runner.invoke(cli, ["bookmarks", "list"])
+    assert result.exit_code == 0
+    assert "Harvey_2017" in result.stdout
+
+    result = runner.invoke(cli, ["bookmarks", "show", "Harvey_2017"])
+    assert result.exit_code == 0
+    assert "-97.27" in result.stdout
+
+    result = runner.invoke(cli, ["bookmarks", "show", "nope"])
+    assert result.exit_code == 1
+
+    result = runner.invoke(cli, ["bookmarks", "remove", "Harvey_2017", "--yes"])
+    assert result.exit_code == 0
+    assert "removed" in result.stdout
+
+    result = runner.invoke(cli, ["bookmarks", "list"])
+    assert result.exit_code == 0
+    assert "No bookmarks registered" in result.stdout
+
+    result = runner.invoke(cli, ["bookmarks", "remove", "Harvey_2017", "--yes"])
+    assert result.exit_code == 1
 
 
 def test_archive_command(tmp_path):
@@ -1578,8 +1749,9 @@ def test_harmonise_source_modis_raw_preserves_255_nodata(tmp_path):
     assert 255 in values
 
 
-def test_fetch_unknown_source_reports_unknown():
+def test_fetch_unknown_source_reports_unknown(monkeypatch):
     """#2: an unrecognised --source is reported as 'Unknown source', not a traceback."""
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
     result = runner.invoke(cli, ["fetch", "--event", "X", "--source", "bogus"])
     assert "Unknown source 'bogus'" in result.stdout
 
@@ -1591,6 +1763,7 @@ def test_fetch_real_keyerror_not_mislabeled_as_unknown_source(monkeypatch):
         def __init__(self, **kwargs):
             raise KeyError("downstream boom")
 
+    monkeypatch.setattr("atlantis.cli.get_bookmark", _no_bookmark)
     monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: BoomFetcher)
 
     result = runner.invoke(cli, ["fetch", "--event", "X", "--source", "viirs"])
