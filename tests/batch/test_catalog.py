@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from atlantis.batch.catalog import (
+    DEFAULT_S3_ENDPOINT,
     iter_dates,
     load_catalogue,
     log_progress,
@@ -91,6 +92,127 @@ def test_load_catalogue_local(tmp_path):
     df.to_parquet(output)
     loaded = load_catalogue(output)
     assert len(loaded) == 3
+
+
+def test_load_catalogue_s3(monkeypatch):
+    """load_catalogue should read from s3:// via s3fs with the given endpoint."""
+    df = pd.DataFrame({"a": [1, 2, 3]})
+    buf = io.BytesIO()
+    df.to_parquet(buf, engine="pyarrow", index=False)
+    buf.seek(0)
+
+    mock_fs = MagicMock()
+    mock_file = MagicMock()
+    mock_file.__enter__ = MagicMock(return_value=buf)
+    mock_file.__exit__ = MagicMock(return_value=False)
+    mock_fs.open.return_value = mock_file
+
+    import s3fs
+
+    monkeypatch.setattr(s3fs, "S3FileSystem", lambda endpoint_url: mock_fs)
+
+    loaded = load_catalogue("s3://atlantis/catalog.parquet", s3_endpoint="https://custom.test")
+    assert len(loaded) == 3
+    mock_fs.open.assert_called_once_with("s3://atlantis/catalog.parquet", "rb")
+
+
+def test_load_catalogue_s3_default_endpoint(monkeypatch):
+    """load_catalogue should use DEFAULT_S3_ENDPOINT when none is passed."""
+    buf = io.BytesIO()
+    pd.DataFrame({"a": [1]}).to_parquet(buf, engine="pyarrow", index=False)
+    buf.seek(0)
+
+    mock_fs = MagicMock()
+    mock_file = MagicMock()
+    mock_file.__enter__ = MagicMock(return_value=buf)
+    mock_file.__exit__ = MagicMock(return_value=False)
+    mock_fs.open.return_value = mock_file
+
+    import s3fs
+
+    captured = {}
+
+    def fake_s3fs(endpoint_url):
+        captured["endpoint_url"] = endpoint_url
+        return mock_fs
+
+    monkeypatch.setattr(s3fs, "S3FileSystem", fake_s3fs)
+
+    load_catalogue("s3://atlantis/catalog.parquet")
+    assert captured["endpoint_url"] == DEFAULT_S3_ENDPOINT
+
+
+def test_write_catalogue_s3_no_storage_options(monkeypatch):
+    """write_catalogue should handle s3:// with no storage_options dict."""
+    df = pd.DataFrame({"a": [1, 2, 3]})
+    with patch("s3fs.S3FileSystem") as mock_fs_cls:
+        mock_fs = MagicMock()
+        mock_fs.open.return_value.__enter__.return_value = io.BytesIO()
+        mock_fs_cls.return_value = mock_fs
+        result = write_catalogue(df, "s3://atlantis/x.parquet")
+
+    mock_fs_cls.assert_called_once_with()
+    assert result is None
+
+
+def test_iter_dates_reverse_range():
+    """iter_dates with start > end yields nothing (zero days)."""
+    days = list(iter_dates("2024-01-05", "2024-01-01"))
+    assert days == []
+
+
+def test_slice_partition_start_equals_stop(sample_df):
+    """A partition with start == stop is invalid (empty slice) and should raise."""
+    with pytest.raises(ValueError, match="out of range"):
+        slice_partition(sample_df, "5:5", ("date", "aoi_id"))
+
+
+def test_slice_partition_negative_start(sample_df):
+    """A negative start index is invalid."""
+    with pytest.raises(ValueError, match="out of range"):
+        slice_partition(sample_df, "-1:5", ("date", "aoi_id"))
+
+
+def test_slice_partition_reset_index(sample_df):
+    """slice_partition should reset the index so the result starts at 0."""
+    result = slice_partition(sample_df, "5:10", ("date", "aoi_id"))
+    assert list(result.index) == [0, 1, 2, 3, 4]
+
+
+def test_retry_request_label_in_warning(monkeypatch):
+    """retry_request should include the label in its warning log."""
+    monkeypatch.setattr("atlantis.batch.catalog.time.sleep", lambda _: None)
+    warnings = []
+    monkeypatch.setattr(
+        "atlantis.batch.catalog.logger.warning",
+        lambda *args: warnings.append(args),
+    )
+
+    def fn():
+        raise ValueError("transient")
+
+    with pytest.raises(ValueError):
+        retry_request(fn, max_retries=2, backoff_base=0.01, label="my-label")
+    assert len(warnings) == 1
+    assert "my-label" in warnings[0]
+
+
+def test_log_progress_single_item():
+    """log_progress with total=1 should emit on the first (and only) item."""
+    sink = []
+    log_progress(0, 1, every=30, label="solo", on_progress=sink.append)
+    assert sink == ["solo: 1/1 (100.0%)"]
+
+
+def test_log_progress_custom_every():
+    """log_progress should emit at the custom every interval and on the last item."""
+    sink = []
+    for i in range(10):
+        log_progress(i, 10, every=5, label="t", on_progress=sink.append)
+    # Emits at 5 (every=5) and 10 (last item)
+    assert len(sink) == 2
+    assert "5/10" in sink[0]
+    assert "10/10" in sink[1]
 
 
 def test_retry_request_succeeds_first_try():
