@@ -334,6 +334,11 @@ pixi run atlantis list-events [OPTIONS]
 Build a GeoParquet catalog of available VIIRS JPSS tiles from the NOAA public
 S3 bucket (no credentials required). Schema: `date, aoi_id, s3_key, geometry`.
 
+Runs as a plain sequential day-by-day loop — no Dask parallelism, no resume
+tracker — so large ranges can take hours. Progress prints automatically
+(e.g. `VIIRS catalog: 2400/8597 (27.9%)` every ~30 days) without needing
+`--verbose`.
+
 ```bash
 pixi run atlantis batch viirs catalog [OPTIONS]
 ```
@@ -460,6 +465,9 @@ pixi run atlantis batch viirs cube status [OPTIONS]
 Build a Parquet catalog of available MODIS MCDWD tiles from the LAADS
 archive. Requires `EARTHDATA_TOKEN` (run `atlantis setup`). Schema:
 `date, h, v, task_id, source_uri`.
+
+Same runtime characteristics as `batch viirs catalog` above — sequential,
+network-bound, no resume tracker, automatic progress lines every ~30 days.
 
 ```bash
 pixi run atlantis batch modis catalog [OPTIONS]

@@ -107,6 +107,28 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis catalog \
   --output s3://atlantis/assets/modis/modis_archive_catalog.parquet
 ```
 
+> **Unlike the cube build, the catalogue builder is a plain sequential,
+> network-bound loop** — one HTTP request per calendar day, no Dask workers,
+> and **no SQLite resume tracker**. If it's interrupted, that run's progress
+> is gone and you restart from `--start`. Building MODIS's full history
+> (2003–2026, ~8,600 days) can take **hours**; run it detached
+> (`tmux`/`nohup`) exactly like the cube build:
+>
+> ```bash
+> tmux new -s modis_catalog
+> PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis catalog \
+>   --start 2003-01-01 --end 2026-07-15 \
+>   --output s3://atlantis/assets/modis/modis_archive_catalog.parquet
+> ```
+>
+> Progress prints automatically — a line like `MODIS catalog: 2400/8597
+> (27.9%)` every ~30 processed dates — with **no `--verbose` flag needed**
+> (it's routed through the CLI's console output, not `loguru`, which the CLI
+> disables by default). To confirm a detached run is still alive and
+> actually making requests rather than stuck: `pgrep -af "batch modis
+> catalog"` and `ss -tnp | grep <pid>` (look for an `ESTABLISHED` connection
+> to the source host).
+
 Both default `--output` to a **bare local filename**, not the canonical S3
 path — pass `-o s3://atlantis/assets/<source>/...` explicitly once you are
 ready to publish the refreshed catalogue.
