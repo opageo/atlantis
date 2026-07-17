@@ -54,12 +54,41 @@ class _FakeFuture:
         return self._result  # type: ignore[return-value]
 
 
+class _FakeWorkerPlugin:
+    """Stand-in base class for ``distributed.diagnostics.plugin.WorkerPlugin``."""
+
+    name = "worker_plugin"
+
+
+def _install_fake_distributed_package(monkeypatch) -> None:
+    """Inject a fake ``distributed`` package tree into ``sys.modules``.
+
+    ``_build_loguru_worker_plugin`` does a genuine
+    ``from distributed.diagnostics.plugin import WorkerPlugin`` import
+    (separate from the ``dask.distributed`` compatibility shim), which fails
+    in environments where the real ``distributed`` package is not installed
+    (only ``dask`` is). Providing a minimal fake here keeps these tests
+    independent of whether the optional ``[batch]`` extras are installed.
+    """
+    fake_distributed = types.ModuleType("distributed")
+    fake_diagnostics = types.ModuleType("distributed.diagnostics")
+    fake_plugin_mod = types.ModuleType("distributed.diagnostics.plugin")
+    fake_plugin_mod.WorkerPlugin = _FakeWorkerPlugin
+
+    monkeypatch.setitem(sys.modules, "distributed", fake_distributed)
+    monkeypatch.setitem(sys.modules, "distributed.diagnostics", fake_diagnostics)
+    monkeypatch.setitem(sys.modules, "distributed.diagnostics.plugin", fake_plugin_mod)
+
+
 def _install_fake_dask(monkeypatch, futures: list[_FakeFuture]):
-    """Inject a fake ``dask.distributed`` module into ``sys.modules``.
+    """Inject fake ``dask.distributed`` and ``distributed`` modules into ``sys.modules``.
 
     ``run_batch`` does ``from dask.distributed import Client, LocalCluster,
-    as_completed, wait`` lazily, so we only need to provide those names.
+    as_completed, wait`` lazily, so we only need to provide those names. It
+    also calls ``_build_loguru_worker_plugin``, which separately imports from
+    the real ``distributed`` package — see ``_install_fake_distributed_package``.
     """
+    _install_fake_distributed_package(monkeypatch)
 
     fake_mod = types.ModuleType("dask.distributed")
 
@@ -128,8 +157,11 @@ def test_run_batch_nothing_to_do(cfg, monkeypatch):
     assert s.get("FAILED", 0) == 0
 
 
-def test_run_batch_empty_task_list(cfg):
+def test_run_batch_empty_task_list(cfg, monkeypatch):
     """An empty task list should be a no-op (nothing to do)."""
+    # The dask import happens before the pending-tasks check, so a fake
+    # module must still be importable even though it's never used.
+    _install_fake_dask(monkeypatch, [])
     run_batch([], process_fn=_succeed, cfg=cfg)
     s = stats(cfg.db_path)
     assert s == {"total": 0}
@@ -283,8 +315,9 @@ def test_run_batch_registers_worker_plugin(cfg, monkeypatch):
     fake_client_instance.register_plugin.assert_called_once()
 
 
-def test_build_loguru_worker_plugin():
+def test_build_loguru_worker_plugin(monkeypatch):
     """The worker plugin factory returns a plugin with a setup method."""
+    _install_fake_distributed_package(monkeypatch)
     from atlantis.batch.orchestrator import _build_loguru_worker_plugin
 
     plugin = _build_loguru_worker_plugin()

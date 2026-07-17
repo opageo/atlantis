@@ -24,7 +24,7 @@ def _aligned(value: float, row0: int, col0: int, h: int, w: int):
     x = grid.global_x_coords()[col0 : col0 + w]
     data = np.full((h, w), value, dtype="float32")
     return xr.Dataset(
-        {"flood_fraction": xr.DataArray(data, dims=["y", "x"], coords={"y": y, "x": x})},
+        {"water_fraction": xr.DataArray(data, dims=["y", "x"], coords={"y": y, "x": x})},
         attrs={"crs": "EPSG:4326"},
     )
 
@@ -44,12 +44,12 @@ def test_from_stac_matches_reader(catalog_dir):
 
     root, dest = catalog_dir
     ds = from_stac(dest, "viirs")
-    assert "flood_fraction" in ds
+    assert "water_fraction" in ds
     assert ds.sizes["time"] == 2
 
     ref = ArchiveReader(root).read("viirs")
-    stac_max = float(ds["flood_fraction"].sel(time="2020-01-01").max().values)
-    ref_max = float(ref["flood_fraction"].sel(time="2020-01-01").max().values)
+    stac_max = float(ds["water_fraction"].sel(time="2020-01-01").max().values)
+    ref_max = float(ref["water_fraction"].sel(time="2020-01-01").max().values)
     assert np.isclose(stac_max, ref_max)
 
 

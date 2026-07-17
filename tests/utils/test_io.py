@@ -1,6 +1,7 @@
 """Tests for I/O utility functions."""
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -268,3 +269,69 @@ class TestDownloadFileCacheHit:
         result = download_file("https://example.test/data.tif", output_path=destination)
         assert result == destination
         assert destination.read_bytes() == b"pre-cached"
+
+
+class TestEarthdataSession:
+    """Tests for _EarthdataSession.rebuild_auth (NASA redirect auth preservation)."""
+
+    def _make_prepared(self, url: str, auth: str = "Bearer token"):
+        """Build a PreparedRequest + Response pair for rebuild_auth."""
+        import requests
+
+        prepared = requests.PreparedRequest()
+        prepared.prepare(method="GET", url=url, headers={"Authorization": auth})
+        resp = MagicMock()
+        resp.request = requests.PreparedRequest()
+        resp.request.url = url
+        return prepared, resp
+
+    def test_keeps_auth_between_nasa_hosts(self):
+        from atlantis.utils.io import _EarthdataSession
+
+        session = _EarthdataSession()
+        prepared, resp = self._make_prepared("https://ladsweb.modaps.eosdis.nasa.gov/archive/data.hdf")
+        # Simulate redirect to urs.earthdata.nasa.gov
+        prepared.url = "https://urs.earthdata.nasa.gov/oauth/token"
+        session.rebuild_auth(prepared, resp)
+        # Auth header should still be present (not stripped)
+        assert "Authorization" in prepared.headers
+
+    def test_strips_auth_for_non_nasa_redirect(self):
+        from atlantis.utils.io import _EarthdataSession
+
+        session = _EarthdataSession()
+        prepared, resp = self._make_prepared("https://ladsweb.modaps.eosdis.nasa.gov/archive/data.hdf")
+        # Redirect to a non-NASA host
+        prepared.url = "https://evil.example.com/steal"
+        session.rebuild_auth(prepared, resp)
+        # The super() call strips the Authorization header for cross-domain redirects
+        assert "Authorization" not in prepared.headers
+
+    def test_raises_on_oauth_authorize_redirect(self):
+        from atlantis.utils.io import DownloadContentError, _EarthdataSession
+
+        session = _EarthdataSession()
+        prepared, resp = self._make_prepared("https://ladsweb.modaps.eosdis.nasa.gov/archive/data.hdf")
+        prepared.url = "https://urs.earthdata.nasa.gov/oauth/authorize?client_id=xxx"
+        with pytest.raises(DownloadContentError, match="rejected the Bearer token"):
+            session.rebuild_auth(prepared, resp)
+
+    def test_keeps_auth_between_eosdis_subdomains(self):
+        from atlantis.utils.io import _EarthdataSession
+
+        session = _EarthdataSession()
+        prepared, resp = self._make_prepared("https://ladsweb.modaps.eosdis.nasa.gov/archive/data.hdf")
+        prepared.url = "https://nrt3.modaps.eosdis.nasa.gov/archive/data.hdf"
+        session.rebuild_auth(prepared, resp)
+        assert "Authorization" in prepared.headers
+
+    def test_no_auth_header_passes_through(self):
+        """When there's no Authorization header, rebuild_auth is a no-op."""
+        from atlantis.utils.io import _EarthdataSession
+
+        session = _EarthdataSession()
+        prepared, resp = self._make_prepared("https://example.com/data", auth="")
+        prepared.headers.pop("Authorization", None)
+        session.rebuild_auth(prepared, resp)
+        # Should not raise, should not add any headers
+        assert "Authorization" not in prepared.headers
