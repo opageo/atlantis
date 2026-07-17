@@ -96,25 +96,41 @@ class TestHelpers:
     def test_to_date_from_datetime64(self):
         assert _to_date(np.datetime64("2020-01-01")) == date(2020, 1, 1)
 
-    def test_payload_to_dataset_builds_water_fraction(self):
+    def test_payload_to_dataset_builds_all_viirs_layers(self):
         payload = {
-            "water_fraction": np.full((4, 5), 30, dtype="uint8"),
+            "task_id": "g000",
+            "date": "2020-01-01",
+            "aoi_id": 0,
             "y": np.arange(4.0),
             "x": np.arange(5.0),
+            "water_fraction": np.full((4, 5), 30, dtype="uint8"),
+            "exclusion_mask": np.full((4, 5), 0, dtype="uint8"),
+            "reference_water": np.full((4, 5), 1, dtype="uint8"),
+            "cloud_mask": np.full((4, 5), 0, dtype="uint8"),
+            "snow_ice": np.full((4, 5), 0, dtype="uint8"),
+            "shadow": np.full((4, 5), 0, dtype="uint8"),
         }
         ds = _payload_to_dataset(payload)
-        assert ds["water_fraction"].dims == ("y", "x")
+        assert set(ds.data_vars) == set(_VIIRS_LAYERS)
+        for name in _VIIRS_LAYERS:
+            assert ds[name].dims == ("y", "x")
         assert ds.sizes == {"y": 4, "x": 5}
 
 
 # ── Dask cube batch (slow integration) ────────────────────────────────────────
+
+#: The full set of VIIRS derived layers written by
+#: :func:`atlantis.fetchers.viirs.batch_processor.harmonise_granule_payload`
+#: and streamed into the cube by :func:`atlantis.archive.cube_batch.run_viirs_cube_batch`.
+_VIIRS_LAYERS = ("water_fraction", "exclusion_mask", "reference_water", "cloud_mask", "snow_ice", "shadow")
 
 
 def _fake_payload_produce(task: dict) -> dict:
     """Module-level (picklable) fake producer — builds a synthetic AOI payload.
 
     Each ``aoi_id`` maps to a distinct, non-overlapping 16-row band on the global
-    grid, with a constant uint8 water-fraction percent derived from the id.
+    grid, with a constant uint8 water-fraction percent derived from the id and
+    matching 0/1 mask channels for every other VIIRS derived layer.
     """
     import numpy as np
 
@@ -126,11 +142,17 @@ def _fake_payload_produce(task: dict) -> dict:
     y = np.asarray(grid.global_y_coords()[row0 : row0 + h], dtype="float64")
     x = np.asarray(grid.global_x_coords()[col0 : col0 + w], dtype="float64")
     water_fraction = np.full((h, w), (int(task["aoi_id"]) + 1) * 10, dtype="uint8")
+    mask_val = np.full((h, w), int(task["aoi_id"]) % 2, dtype="uint8")
     return {
         "task_id": task["task_id"],
         "date": task["date"],
         "aoi_id": int(task["aoi_id"]),
         "water_fraction": water_fraction,
+        "exclusion_mask": mask_val,
+        "reference_water": mask_val,
+        "cloud_mask": mask_val,
+        "snow_ice": mask_val,
+        "shadow": mask_val,
         "y": y,
         "x": x,
     }
@@ -166,7 +188,7 @@ def _run(tmp_path, cfg, tasks):
     """Wire the fake producer to a real writer session (mirrors run_viirs_cube_batch)."""
     archive_root = str(tmp_path / "cube")
     writer = ArchiveWriter(archive_root)
-    with writer.session("viirs", ("water_fraction",)) as session:
+    with writer.session("viirs", _VIIRS_LAYERS) as session:
 
         def consume(payload):
             session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
@@ -188,8 +210,17 @@ def test_cube_batch_streams_writes_and_tracks(tmp_path, cfg):
     reader = ArchiveReader(archive_root)
     assert reader.list_sources() == ["viirs"]
     # A specific AOI band round-trips to its expected decoded value.
+    # aoi_id=2 → water_fraction=(2+1)*10=30 (CF-scaled to 0.30); masks=2%2=0 (raw, unscaled).
     band = reader.read("viirs", bbox=_aoi_bbox(2))
+    assert set(_VIIRS_LAYERS) <= set(band.data_vars)
     np.testing.assert_allclose(float(band["water_fraction"].mean()), 0.30, atol=1e-6)
+    for name in ("exclusion_mask", "reference_water", "cloud_mask", "snow_ice", "shadow"):
+        np.testing.assert_allclose(float(band[name].mean()), 0.0, atol=1e-6)
+
+    # aoi_id=3 → masks=3%2=1 (raw, unscaled) confirms the odd/even mask values round-trip too.
+    odd_band = reader.read("viirs", bbox=_aoi_bbox(3))
+    for name in ("exclusion_mask", "reference_water", "cloud_mask", "snow_ice", "shadow"):
+        np.testing.assert_allclose(float(odd_band[name].mean()), 1.0, atol=1e-6)
 
 
 @pytest.mark.slow
