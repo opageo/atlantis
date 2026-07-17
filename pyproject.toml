@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12, <3.15"
 authors = [{ name = "Stylianos Lagaras" }, { name = "Ioannis Kalfas" }]
 dependencies = [
-  "typer>=0.26.8",
+  "typer>=0.27.0",
   "loguru>=0.7.0",
   "rich>=13.0.0",
   "boto3",
@@ -28,7 +28,7 @@ dependencies = [
   "xarray",
   "zarr>=3.2",
   "requests>=2.34.2",
-  "gdal==3.13.0",
+  "gdal==3.13.1",
   "pystac>=1.15.1",
   "pystac-client>=0.7",
   "beautifulsoup4>=4.12",
@@ -50,7 +50,7 @@ stac = [
   "atlantis[geo]",
   "pystac>=1.9",
   "pystac-client>=0.7",   # pystac, pystac-client, xarray, zarr
-  "stac-geoparquet>=0.6", # serverless columnar item index (scale path)
+  "stac-geoparquet>=0.8.1", # serverless columnar item index (scale path)
   "xpystac>=0.1",         # open a STAC Item/Asset/Collection as xarray (Zarr)
 ]
 viz = [
@@ -82,7 +82,7 @@ dev = [
   "pytest-cov>=6.0.0",
   "pytest-timeout>=2.3.0",
   "pytest-xdist>=3.2.0",
-  "ruff>=0.15.21",
+  "ruff>=0.15.22",
   "pre-commit>=4.2.0",
   "ipython>=9.15.0",
   "ipykernel>=7.3.0",
