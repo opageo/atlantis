@@ -34,7 +34,7 @@ def _make_tasks(n: int) -> list[dict]:
     return [{"task_id": f"task_{i:04d}", "source_uri": f"s3://test/{i}", "dest_key": f"test/{i}.tif"} for i in range(n)]
 
 
-@pytest.mark.slow
+@pytest.mark.e2e
 def test_run_batch_all_succeed(cfg):
     tasks = _make_tasks(20)
     run_batch(tasks, process_fn=_succeed, cfg=cfg)
@@ -46,7 +46,7 @@ def test_run_batch_all_succeed(cfg):
     assert s.get("FAILED", 0) == 0
 
 
-@pytest.mark.slow
+@pytest.mark.e2e
 def test_run_batch_resume_skips_done(cfg):
     tasks = _make_tasks(10)
     # Pre-seed 5 tasks as done.
@@ -64,7 +64,7 @@ def test_run_batch_resume_skips_done(cfg):
     assert s.get("DONE", 0) == 10
 
 
-@pytest.mark.slow
+@pytest.mark.e2e
 def test_run_batch_all_fail(cfg):
     tasks = _make_tasks(5)
     run_batch(tasks, process_fn=_fail_once, cfg=cfg)

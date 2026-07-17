@@ -198,7 +198,7 @@ def _run(tmp_path, cfg, tasks):
     return archive_root, final
 
 
-@pytest.mark.slow
+@pytest.mark.e2e
 def test_cube_batch_streams_writes_and_tracks(tmp_path, cfg):
     pytest.importorskip("dask.distributed", reason="batch extras (dask/distributed) not installed")
     tasks = _make_tasks(6)
@@ -223,7 +223,7 @@ def test_cube_batch_streams_writes_and_tracks(tmp_path, cfg):
         np.testing.assert_allclose(float(odd_band[name].mean()), 1.0, atol=1e-6)
 
 
-@pytest.mark.slow
+@pytest.mark.e2e
 def test_cube_batch_resume_skips_done(tmp_path, cfg):
     pytest.importorskip("dask.distributed", reason="batch extras (dask/distributed) not installed")
     from atlantis.batch.tracker import init_db, mark_done, stats
@@ -239,7 +239,7 @@ def test_cube_batch_resume_skips_done(tmp_path, cfg):
     assert s.get("DONE", 0) == 4  # 2 pre-seeded + 2 newly streamed
 
 
-@pytest.mark.slow
+@pytest.mark.e2e
 def test_cube_batch_all_done_is_noop(tmp_path, cfg):
     pytest.importorskip("dask.distributed", reason="batch extras (dask/distributed) not installed")
     from atlantis.batch.tracker import init_db, mark_done

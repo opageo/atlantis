@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from loguru import logger
 from rasterio.enums import Resampling
 
+from atlantis.bookmarks import get_bookmark
+
 # Load credentials from .env at the repo root so fetchers that consult
 # os.environ directly (e.g. MODIS EARTHDATA_TOKEN) see them. Existing
 # environment variables take precedence (override=False).
@@ -1021,6 +1023,23 @@ def fetch(
             end_date=_parse_date(end_date, "end-date"),
             sources=sources,
         )
+    else:
+        # No explicit bbox/dates — fall back to a registered bookmark (static
+        # bbox/date-range shortcut, see `atlantis bookmarks`). Explicit flags
+        # above always take precedence over a bookmark.
+        try:
+            bookmark = get_bookmark(event)
+        except KeyError:
+            bookmark = None
+        if bookmark is not None:
+            flood_event = FloodEvent(
+                event_id=event,
+                bbox=bookmark.bbox,
+                start_date=bookmark.start_date,
+                end_date=bookmark.end_date,
+                sources=sources,
+            )
+            info(f"Resolved bookmark '{event}' → bbox={bookmark.bbox}, {bookmark.start_date} → {bookmark.end_date}")
 
     for src in sources:
         try:
@@ -1083,7 +1102,10 @@ def fetch(
             }
         fetcher = fetcher_cls(**fetcher_kwargs)
         if flood_event is None:
-            warn("Event catalogue lookup not yet implemented; provide --bbox/--start-date/--end-date")
+            warn(
+                f"Unknown event '{event}' — no bookmark found. Provide "
+                "--bbox/--start-date/--end-date, or register one with `atlantis bookmarks add`."
+            )
             continue
 
         step_names = _fetch_step_names(src)
@@ -3070,6 +3092,108 @@ def stac_export_geoparquet(
         raise typer.Exit(code=0)
     dest = export_items_to_geoparquet(items, output, storage_options=storage_options)
     ok(f"Exported {len(items)} item(s) → {dest}")
+
+
+# ── Bookmarks subcommand ──────────────────────────────────────────────────────
+# Static, curated bbox/date-range shortcuts for `fetch --event`. Distinct from
+# the data-driven `atlantis_events` registry recorded per-source inside the
+# Zarr archive (see atlantis.archive.writer/reader) — see atlantis.bookmarks
+# module docstring for the full rationale.
+
+bookmarks_app = typer.Typer(help="Static event bookmarks — bbox/date-range shortcuts for `fetch --event`.")
+cli.add_typer(bookmarks_app, name="bookmarks")
+
+
+@bookmarks_app.command("list")
+def bookmarks_list() -> None:
+    """List all registered event bookmarks."""
+    from atlantis.bookmarks import load_bookmarks, sources_from_cell
+
+    command_header("bookmarks list")
+    gdf = load_bookmarks()
+    if gdf.empty:
+        warn("No bookmarks registered yet. Add one with `atlantis bookmarks add`.")
+        raise typer.Exit(code=0)
+
+    rows = [
+        [
+            row["event_id"],
+            "{:.4f} {:.4f} {:.4f} {:.4f}".format(*row.geometry.bounds),
+            f"{row['start_date']} → {row['end_date']}",
+            ", ".join(sources_from_cell(row.get("sources"))) or "(all)",
+            row.get("label") or "",
+        ]
+        for _, row in gdf.sort_values("event_id").iterrows()
+    ]
+    console.print(summary_table("Event bookmarks", ["Event", "BBox (w s e n)", "Dates", "Sources", "Label"], rows))
+
+
+@bookmarks_app.command("show")
+def bookmarks_show(
+    event_id: str = typer.Argument(..., help="Bookmark name."),
+) -> None:
+    """Show the bbox/date-range/sources for a single bookmark."""
+    from atlantis.bookmarks import get_bookmark
+
+    command_header("bookmarks show", subtitle=event_id)
+    try:
+        event = get_bookmark(event_id)
+    except KeyError as exc:
+        fail(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[bold]BBox:[/bold] {event.bbox}")
+    console.print(f"[bold]Dates:[/bold] {event.start_date} → {event.end_date}")
+    console.print(f"[bold]Sources:[/bold] {', '.join(event.sources) or '(all)'}")
+
+
+@bookmarks_app.command("add")
+def bookmarks_add(
+    event_id: str = typer.Argument(..., help="Bookmark name (e.g. Harvey_2017)."),
+    bbox: str = typer.Option(..., "--bbox", help="Bounding box as 'west south east north'."),
+    start_date: str = typer.Option(..., "--start-date", help="Start date in YYYY-MM-DD format."),
+    end_date: str = typer.Option(..., "--end-date", help="End date in YYYY-MM-DD format."),
+    source: list[str] | None = typer.Option(None, "--source", "-s", help="Default source(s) (repeatable)."),
+    label: str | None = typer.Option(None, "--label", help="Human-readable description."),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing bookmark with the same name."),
+) -> None:
+    """Register a new event bookmark (or replace one with --force)."""
+    from atlantis.bookmarks import add_bookmark
+
+    command_header("bookmarks add", subtitle=event_id)
+    flood_event = FloodEvent(
+        event_id=event_id,
+        bbox=_parse_bbox(bbox),
+        start_date=_parse_date(start_date, "start-date"),
+        end_date=_parse_date(end_date, "end-date"),
+        sources=source or [],
+    )
+    try:
+        dest = add_bookmark(flood_event, label=label, overwrite=force)
+    except ValueError as exc:
+        fail(str(exc))
+        raise typer.Exit(code=1) from exc
+    ok(f"Bookmark '{event_id}' saved → {dest}")
+
+
+@bookmarks_app.command("remove")
+def bookmarks_remove(
+    event_id: str = typer.Argument(..., help="Bookmark name to remove."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Remove an event bookmark."""
+    from atlantis.bookmarks import remove_bookmark
+
+    command_header("bookmarks remove", subtitle=event_id)
+    if not yes and not typer.confirm(f"Remove bookmark '{event_id}'?"):
+        info("Aborted.")
+        raise typer.Exit(code=0)
+    try:
+        dest = remove_bookmark(event_id)
+    except KeyError as exc:
+        fail(str(exc))
+        raise typer.Exit(code=1) from exc
+    ok(f"Bookmark '{event_id}' removed → {dest}")
 
 
 # ── Viz subcommand ────────────────────────────────────────────────────────────

@@ -45,21 +45,21 @@ Example: `pixi run atlantis --verbose fetch --event ...`
 
 ## Command summary
 
-| Command                   | Purpose                                                                 | Status      |
-| ------------------------- | ----------------------------------------------------------------------- | ----------- |
-| `setup`                   | Bootstrap data assets and credentials.                                  | implemented |
-| `demo`                    | Run the Valencia 2024 end-to-end VIIRS example.                         | implemented |
-| `fetch`                   | Fetch raw inundation data for an explicit `--bbox` + date window.       | implemented |
-| `fetch-kurosiwo-viirs`    | Fetch VIIRS for KuroSiwo cases (catalogue or precomputed metadata CSV). | implemented |
-| `fetch-kurosiwo-modis`    | Fetch MODIS for KuroSiwo cases (catalogue or precomputed metadata CSV). | implemented |
-| `build-kurosiwo-metadata` | Derive the KuroSiwo metadata CSV from the GeoPackage catalogue.         | implemented |
-| `harmonise`               | Resample fetched outputs to a uniform 1 arcmin grid with normalisation. | implemented |
-| `archive`                 | Write harmonised data to Zarr (raw + ML-ready).                         | placeholder |
-| `validate`                | Validate archive integrity (optionally with ML smoke test).             | placeholder |
-| `list-sources`            | List all registered data sources.                                       | implemented |
-| `list-layers`             | List the native and derived layers available per source.                | implemented |
-| `list-events`             | List events in the archive.                                             | placeholder |
-| `batch viirs run`         | Batch-process the VIIRS JPSS catalogue → 1 arcmin COGs on S3 via Dask.  | implemented |
+| Command                   | Purpose                                                                  | Status      |
+| ------------------------- | ------------------------------------------------------------------------ | ----------- |
+| `setup`                   | Bootstrap data assets and credentials.                                   | implemented |
+| `demo`                    | Run the Valencia 2024 end-to-end VIIRS example.                          | implemented |
+| `fetch`                   | Fetch raw inundation data for an explicit `--bbox` + date window.        | implemented |
+| `fetch-kurosiwo-viirs`    | Fetch VIIRS for KuroSiwo cases (catalogue or precomputed metadata CSV).  | implemented |
+| `fetch-kurosiwo-modis`    | Fetch MODIS for KuroSiwo cases (catalogue or precomputed metadata CSV).  | implemented |
+| `build-kurosiwo-metadata` | Derive the KuroSiwo metadata CSV from the GeoPackage catalogue.          | implemented |
+| `harmonise`               | Resample fetched outputs to a uniform 1 arcmin grid with normalisation.  | implemented |
+| `archive`                 | Write harmonised data to Zarr (raw + ML-ready).                          | placeholder |
+| `validate`                | Validate archive integrity (optionally with ML smoke test).              | placeholder |
+| `list-sources`            | List all registered data sources.                                        | implemented |
+| `list-layers`             | List the native and derived layers available per source.                 | implemented |
+| `list-events`             | List events in the archive.                                              | placeholder |
+| `batch viirs run`         | Batch-process the VIIRS JPSS catalogue → 1 arcmin COGs on S3 via Dask.   | implemented |
 | `batch viirs cube run`    | Build a consolidated Zarr v3 datacube from VIIRS granules (resume-safe). | implemented |
 | `batch viirs cube status` | Report cube-build progress from the SQLite tracker (works offline).      | implemented |
 
@@ -114,12 +114,40 @@ pixi run atlantis fetch [OPTIONS]
 | `--event`, `-e`  | yes      | Flood event ID (free-form string used in output filenames).          |
 | `--source`, `-s` | no       | `gfm`, `viirs`, `modis`, `rfm`, or `all` (default: `all`).           |
 | `--output`, `-o` | no       | Output directory for raw data (default: `<cache_dir>/raw/<event>/`). |
-| `--bbox`         | yes\*    | Bounding box `"west south east north"` (space-separated, EPSG:4326). |
-| `--start-date`   | yes\*    | Start date `YYYY-MM-DD`.                                             |
-| `--end-date`     | yes\*    | End date `YYYY-MM-DD`.                                               |
+| `--bbox`         | no\*     | Bounding box `"west south east north"` (space-separated, EPSG:4326). |
+| `--start-date`   | no\*     | Start date `YYYY-MM-DD`.                                             |
+| `--end-date`     | no\*     | End date `YYYY-MM-DD`.                                               |
 
-\* `--bbox`, `--start-date`, and `--end-date` must be provided together;
-no catalogue lookup is implemented for the generic `fetch` command.
+\* `--bbox`, `--start-date`, and `--end-date` must be provided together
+when given. If all three are omitted, `fetch` looks up `--event` in the
+[event bookmark registry](#event-bookmarks) and uses its bbox/date-range
+instead. Explicit flags always take precedence over a matching bookmark. If
+neither is available, the source is skipped with a warning.
+
+### Event bookmarks
+
+A **bookmark** is a named shortcut (e.g. `Harvey_2017`) for a bbox + inclusive
+date range, stored in a small GeoParquet registry (`atlantis.bookmarks`). The
+**source of truth** is `s3://atlantis/assets/bookmarks.parquet` (the default
+`ATLANTIS_BOOKMARKS_ROOT` / `ATLANTIS_BOOKMARKS_FILE` — the same ECMWF
+object-store bucket used for other shared assets); override those env vars to
+point at a local path for offline development/tests. It lets `fetch --event
+NAME` work without repeating `--bbox`/`--start-date`/`--end-date` every time.
+
+This is a **static, curated** registry, distinct from the data-driven
+`atlantis_events` bookmarks recorded per-source inside the Zarr archive by
+`atlantis archive` (see [`stac_zarr.md`](./stac_zarr.md)) — that one only
+knows about events for which data has actually been archived.
+
+```bash
+uv run atlantis bookmarks add EVENT_ID --bbox "W S E N" --start-date YYYY-MM-DD --end-date YYYY-MM-DD [--source SRC ...] [--label TEXT] [--force]
+uv run atlantis bookmarks list
+uv run atlantis bookmarks show EVENT_ID
+uv run atlantis bookmarks remove EVENT_ID [--yes]
+```
+
+`make seed-bookmarks` registers the events used by the Makefile's example
+targets (Harvey_2017, Bihar_2019, Vamco_2020, Valencia_2024).
 
 ### Output controls (all sources)
 
@@ -343,11 +371,11 @@ tracker — so large ranges can take hours. Progress prints automatically
 pixi run atlantis batch viirs catalog [OPTIONS]
 ```
 
-| Option      | Default                            | Description                              |
-| ----------- | ----------------------------------- | ----------------------------------------- |
-| `--output`, `-o` | `viirs_archive_catalog.parquet` | Output Parquet path (local or S3 URI).    |
-| `--start`   | *(required)*                        | Start date `YYYY-MM-DD` (inclusive).      |
-| `--end`     | *(required)*                        | End date `YYYY-MM-DD` (inclusive).        |
+| Option           | Default                         | Description                            |
+| ---------------- | ------------------------------- | -------------------------------------- |
+| `--output`, `-o` | `viirs_archive_catalog.parquet` | Output Parquet path (local or S3 URI). |
+| `--start`        | _(required)_                    | Start date `YYYY-MM-DD` (inclusive).   |
+| `--end`          | _(required)_                    | End date `YYYY-MM-DD` (inclusive).     |
 
 See [archive/cube-build.md](archive/cube-build.md#3-building-or-refreshing-a-catalogue)
 for the full catalogue-build/extend workflow (including the MODIS equivalent).
@@ -403,18 +431,18 @@ tasks are skipped on re-run.
 pixi run atlantis batch viirs cube run [OPTIONS]
 ```
 
-| Option             | Default                                          | Description                                                   |
-| ------------------ | ------------------------------------------------ | ------------------------------------------------------------- |
-| `--inventory`      | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Path or S3 URI to the VIIRS JPSS catalogue Parquet file.      |
-| `--archive`, `-a`  | `s3://atlantis/zarr/viirs_2020_cube`             | Cube root — a local directory or an `s3://` URI.               |
-| `--partition`      | full catalogue                                   | Row slice of the catalogue, e.g. `0:1000`.                     |
-| `--workers-min`    | `2`                                              | Minimum Dask worker processes.                                 |
-| `--workers-max`    | `6`                                              | Maximum Dask worker processes (adaptive).                      |
-| `--memory-limit`   | `4GB`                                            | Memory cap per worker.                                         |
-| `--dashboard-port` | `8787`                                           | Dask dashboard port.                                           |
-| `--db-path`        | `cube_tracker.db`                                | SQLite resume database path.                                   |
-| `--retries`        | `3`                                              | Dask retry count per granule.                                  |
-| `--log-every`      | `100`                                            | Log a progress line every N completions.                       |
+| Option             | Default                                                    | Description                                              |
+| ------------------ | ---------------------------------------------------------- | -------------------------------------------------------- |
+| `--inventory`      | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Path or S3 URI to the VIIRS JPSS catalogue Parquet file. |
+| `--archive`, `-a`  | `s3://atlantis/zarr/viirs_2020_cube`                       | Cube root — a local directory or an `s3://` URI.         |
+| `--partition`      | full catalogue                                             | Row slice of the catalogue, e.g. `0:1000`.               |
+| `--workers-min`    | `2`                                                        | Minimum Dask worker processes.                           |
+| `--workers-max`    | `6`                                                        | Maximum Dask worker processes (adaptive).                |
+| `--memory-limit`   | `4GB`                                                      | Memory cap per worker.                                   |
+| `--dashboard-port` | `8787`                                                     | Dask dashboard port.                                     |
+| `--db-path`        | `cube_tracker.db`                                          | SQLite resume database path.                             |
+| `--retries`        | `3`                                                        | Dask retry count per granule.                            |
+| `--log-every`      | `100`                                                      | Log a progress line every N completions.                 |
 
 `--archive` is the **parent** of the Zarr store — the engine creates
 `datacube.zarr` underneath it. Always run detached (`tmux` / `nohup`) so an
@@ -454,11 +482,11 @@ to run mid-build, after a disconnect, or after the coordinator has exited.
 pixi run atlantis batch viirs cube status [OPTIONS]
 ```
 
-| Option        | Default                                          | Description                               |
-| ------------- | ------------------------------------------------ | ----------------------------------------- |
-| `--db-path`   | `cube_tracker.db`                                | SQLite resume database path.              |
+| Option        | Default                                                    | Description                                   |
+| ------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| `--db-path`   | `cube_tracker.db`                                          | SQLite resume database path.                  |
 | `--inventory` | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Catalogue used to compute the expected total. |
-| `--partition` | —                                                | Row slice the run used, if any.           |
+| `--partition` | —                                                          | Row slice the run used, if any.               |
 
 ## `batch modis catalog`
 
@@ -473,11 +501,11 @@ network-bound, no resume tracker, automatic progress lines every ~30 days.
 pixi run atlantis batch modis catalog [OPTIONS]
 ```
 
-| Option      | Default                            | Description                              |
-| ----------- | ----------------------------------- | ----------------------------------------- |
-| `--output`, `-o` | `modis_archive_catalog.parquet` | Output Parquet path (local or S3 URI).    |
-| `--start`   | *(required)*                        | Start date `YYYY-MM-DD` (inclusive).      |
-| `--end`     | *(required)*                        | End date `YYYY-MM-DD` (inclusive).        |
+| Option           | Default                         | Description                            |
+| ---------------- | ------------------------------- | -------------------------------------- |
+| `--output`, `-o` | `modis_archive_catalog.parquet` | Output Parquet path (local or S3 URI). |
+| `--start`        | _(required)_                    | Start date `YYYY-MM-DD` (inclusive).   |
+| `--end`          | _(required)_                    | End date `YYYY-MM-DD` (inclusive).     |
 
 ## `batch modis cube run`
 
@@ -490,20 +518,20 @@ workflow and why the defaults below diverge from VIIRS's.
 pixi run atlantis batch modis cube run [OPTIONS]
 ```
 
-| Option             | Default                                          | Description                                                   |
-| ------------------ | ------------------------------------------------- | -------------------------------------------------------------- |
-| `--inventory`, `-i` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Path or S3 URI to the MODIS catalog Parquet file. |
-| `--archive`, `-a`  | `s3://atlantis/zarr/modis_cube`                   | Cube root — a local directory or an `s3://` URI.               |
-| `--partition`      | full catalog                                      | Row slice of the catalog, e.g. `0:10000`.                       |
-| `--composite`      | `None` (→ config default, `F2`)                   | MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`).              |
-| `--backend`        | `None` (→ `ATLANTIS_MODIS_BACKEND`)               | Informational only — the catalog's URLs determine the source.  |
-| `--workers-min`    | `2`                                               | Minimum Dask worker processes.                                  |
-| `--workers-max`    | `6`                                               | Maximum Dask worker processes (adaptive).                       |
-| `--memory-limit`   | `2.5GB`                                           | Memory cap per worker (lower than VIIRS — MODIS tiles are physically smaller). |
-| `--dashboard-port` | `8788`                                            | Dask dashboard port (distinct from VIIRS's `8787`).             |
-| `--db-path`        | `cube_tracker.db`                                 | SQLite resume database path — use a different path than VIIRS when sharing an archive. |
-| `--retries`        | `3`                                               | Dask retry count per tile.                                      |
-| `--log-every`      | `50`                                              | Log a progress line every N completions.                        |
+| Option              | Default                                                    | Description                                                                            |
+| ------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `--inventory`, `-i` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Path or S3 URI to the MODIS catalog Parquet file.                                      |
+| `--archive`, `-a`   | `s3://atlantis/zarr/modis_cube`                            | Cube root — a local directory or an `s3://` URI.                                       |
+| `--partition`       | full catalog                                               | Row slice of the catalog, e.g. `0:10000`.                                              |
+| `--composite`       | `None` (→ config default, `F2`)                            | MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`).                                     |
+| `--backend`         | `None` (→ `ATLANTIS_MODIS_BACKEND`)                        | Informational only — the catalog's URLs determine the source.                          |
+| `--workers-min`     | `2`                                                        | Minimum Dask worker processes.                                                         |
+| `--workers-max`     | `6`                                                        | Maximum Dask worker processes (adaptive).                                              |
+| `--memory-limit`    | `2.5GB`                                                    | Memory cap per worker (lower than VIIRS — MODIS tiles are physically smaller).         |
+| `--dashboard-port`  | `8788`                                                     | Dask dashboard port (distinct from VIIRS's `8787`).                                    |
+| `--db-path`         | `cube_tracker.db`                                          | SQLite resume database path — use a different path than VIIRS when sharing an archive. |
+| `--retries`         | `3`                                                        | Dask retry count per tile.                                                             |
+| `--log-every`       | `50`                                                       | Log a progress line every N completions.                                               |
 
 ## `batch modis cube status`
 
@@ -514,8 +542,8 @@ after a disconnect, mirroring `batch viirs cube status`.
 pixi run atlantis batch modis cube status [OPTIONS]
 ```
 
-| Option        | Default                                                    | Description                                   |
-| ------------- | ------------------------------------------------------------ | ---------------------------------------------- |
-| `--db-path`   | `cube_tracker.db`                                          | SQLite resume database path.                   |
-| `--inventory` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Catalog used to compute the expected total.    |
-| `--partition` | —                                                           | Row slice the run used, if any.                |
+| Option        | Default                                                    | Description                                 |
+| ------------- | ---------------------------------------------------------- | ------------------------------------------- |
+| `--db-path`   | `cube_tracker.db`                                          | SQLite resume database path.                |
+| `--inventory` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Catalog used to compute the expected total. |
+| `--partition` | —                                                          | Row slice the run used, if any.             |

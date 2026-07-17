@@ -53,7 +53,9 @@ _S3_ENDPOINT = "https://object-store.os-api.cci1.ecmwf.int"
 #: Allow GDAL to use multiple internal threads for warping + COG encoding.
 #: This is the C-level thread pool — independent of the Python GIL — so it
 #: does not conflict with Dask's "1 Python thread per worker" model.
-os.environ.setdefault("GDAL_NUM_THREADS", "2")
+os.environ.setdefault(
+    "GDAL_NUM_THREADS", "2"
+)  # NOTE TODO Probably better to remove this and let GDAL auto-detect the number of threads
 
 #: COG write profile.
 _COG_PROFILE = {
