@@ -116,6 +116,23 @@ class TestHelpers:
             assert ds[name].dims == ("y", "x")
         assert ds.sizes == {"y": 4, "x": 5}
 
+    def test_payload_to_dataset_builds_gfm_layers(self):
+        payload = {
+            "task_id": "gfm-20241101-EU020M_E036N009T3",
+            "date": "2024-11-01",
+            "equi7_tile": "EU020M_E036N009T3",
+            "y": np.arange(4.0),
+            "x": np.arange(5.0),
+            "water_fraction": np.full((4, 5), 30, dtype="uint8"),
+            "exclusion_mask": np.full((4, 5), 0, dtype="uint8"),
+            "reference_water": np.full((4, 5), 1, dtype="uint8"),
+        }
+        ds = _payload_to_dataset(payload)
+        assert set(ds.data_vars) == set(_GFM_LAYERS)
+        for name in _GFM_LAYERS:
+            assert ds[name].dims == ("y", "x")
+        assert ds.sizes == {"y": 4, "x": 5}
+
 
 # ── Dask cube batch (slow integration) ────────────────────────────────────────
 
@@ -259,3 +276,94 @@ def test_cube_batch_all_done_is_noop(tmp_path, cfg):
 
         final = run_cube_batch(tasks, _fake_payload_produce, consume, cfg)
     assert final.get("DONE", 0) == 3
+
+
+# ── GFM cube batch wiring (Dask integration, mirrors the VIIRS block above) ──
+
+#: The GFM layers persisted in the cube (see docs/layers.md — companions
+#: ``ensemble_likelihood`` / ``advisory_flags`` are not part of the cube schema).
+_GFM_LAYERS = ("water_fraction", "exclusion_mask", "reference_water")
+
+#: Fixed EQUI7-tile stand-ins (no real STAC lookups needed for this fake producer).
+_GFM_TILES = ["EU020M_E036N009T3", "EU020M_E036N006T3", "EU020M_E036N012T3"]
+
+
+def _fake_gfm_payload_produce(task: dict) -> dict:
+    """Module-level (picklable) fake producer for a GFM ``(date, equi7_tile)`` cell.
+
+    Mirrors :func:`_fake_payload_produce` but keyed by ``equi7_tile`` instead of
+    ``aoi_id``, matching :func:`atlantis.fetchers.gfm.batch_processor.harmonise_gfm_payload`'s
+    payload shape (water_fraction/exclusion_mask/reference_water only).
+    """
+    import numpy as np
+
+    from atlantis.archive import grid
+
+    tile_index = _GFM_TILES.index(task["equi7_tile"])
+    h = w = 16
+    row0 = 4000 + tile_index * h
+    col0 = 10000
+    y = np.asarray(grid.global_y_coords()[row0 : row0 + h], dtype="float64")
+    x = np.asarray(grid.global_x_coords()[col0 : col0 + w], dtype="float64")
+    water_fraction = np.full((h, w), (tile_index + 1) * 10, dtype="uint8")
+    mask_val = np.full((h, w), tile_index % 2, dtype="uint8")
+    return {
+        "task_id": task["task_id"],
+        "date": task["date"],
+        "equi7_tile": task["equi7_tile"],
+        "water_fraction": water_fraction,
+        "exclusion_mask": mask_val,
+        "reference_water": mask_val,
+        "y": y,
+        "x": x,
+    }
+
+
+def _gfm_tile_bbox(tile_index: int, *, h: int = 16, w: int = 16, col0: int = 10000):
+    res = grid.GLOBAL_RESOLUTION
+    row0 = 4000 + tile_index * h
+    west = grid.ORIGIN_LON + col0 * res
+    east = grid.ORIGIN_LON + (col0 + w) * res
+    north = grid.ORIGIN_LAT - row0 * res
+    south = grid.ORIGIN_LAT - (row0 + h) * res
+    return (west, south, east, north)
+
+
+def _make_gfm_tasks(n: int) -> list[dict]:
+    return [
+        {"task_id": f"gfm-20200101-{_GFM_TILES[i]}", "date": "2020-01-01", "equi7_tile": _GFM_TILES[i]}
+        for i in range(n)
+    ]
+
+
+def _run_gfm(tmp_path, cfg, tasks):
+    """Wire the fake GFM producer to a real writer session (mirrors run_gfm_cube_batch)."""
+    archive_root = str(tmp_path / "cube")
+    writer = ArchiveWriter(archive_root)
+    with writer.session("gfm", _GFM_LAYERS) as session:
+
+        def consume(payload):
+            session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
+            return f"{archive_root}#gfm/{payload['date']}/{payload['equi7_tile']}"
+
+        final = run_cube_batch(tasks, _fake_gfm_payload_produce, consume, cfg)
+    return archive_root, final
+
+
+@pytest.mark.e2e
+def test_gfm_cube_batch_streams_writes_and_tracks(tmp_path, cfg):
+    pytest.importorskip("dask.distributed", reason="batch extras (dask/distributed) not installed")
+    tasks = _make_gfm_tasks(3)
+    archive_root, final = _run_gfm(tmp_path, cfg, tasks)
+
+    assert final.get("DONE", 0) == 3
+    assert final.get("FAILED", 0) == 0
+
+    reader = ArchiveReader(archive_root)
+    assert reader.list_sources() == ["gfm"]
+    # tile index 1 (EU020M_E036N006T3) → water_fraction=(1+1)*10=20 (CF-scaled to 0.20); masks=1%2=1.
+    band = reader.read("gfm", bbox=_gfm_tile_bbox(1))
+    assert set(_GFM_LAYERS) <= set(band.data_vars)
+    np.testing.assert_allclose(float(band["water_fraction"].mean()), 0.20, atol=1e-6)
+    for name in ("exclusion_mask", "reference_water"):
+        np.testing.assert_allclose(float(band[name].mean()), 1.0, atol=1e-6)
