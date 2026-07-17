@@ -134,6 +134,37 @@ def _water_fraction_dataarray(
     return da
 
 
+def _categorical_dataarray(
+    values: np.ndarray,
+    transform: rasterio.Affine,
+    crs: str,
+    name: str,
+):
+    """Wrap a categorical mask (uint8 0/1) into a georeferenced DataArray.
+
+    Mirrors :func:`_water_fraction_dataarray` for the discrete VIIRS masks
+    (``reference_water``, ``cloud_mask``, ``snow_ice``, ``shadow``). The
+    harmoniser's reprojector reads each variable's resampling from the layer
+    registry, which is ``mode`` for every mask here — so the discrete codes
+    survive the warp to the 1-arcmin grid.
+    """
+    import rioxarray  # noqa: F401 — registers .rio on xarray objects
+    import xarray as xr
+
+    height, width = values.shape
+    x_coords = transform.c + (np.arange(width) + 0.5) * transform.a
+    y_coords = transform.f + (np.arange(height) + 0.5) * transform.e
+    da = xr.DataArray(
+        values,
+        dims=("y", "x"),
+        coords={"y": y_coords, "x": x_coords},
+        name=name,
+    )
+    da.rio.write_crs(crs, inplace=True)
+    da.rio.write_transform(transform, inplace=True)
+    return da
+
+
 def process_granule(task: dict) -> TaskResult:
     """Process a single VIIRS granule end-to-end.
 
@@ -237,6 +268,12 @@ def harmonise_granule_payload(task: dict) -> dict:
     region-writes the payloads into the cube — so cube writes stay lock-free
     (no two workers touch shared Zarr metadata or the same chunk).
 
+    Derives the full set of non-``flood_fraction`` VIIRS layers from the raw
+    band: ``water_fraction``, ``reference_water``, ``cloud_mask``, ``snow_ice``,
+    and ``shadow``. Each is passed as an input to the harmoniser (mode
+    resampling preserves the discrete codes); ``exclusion_mask`` is synthesised
+    by the harmoniser from NaN-pixels in ``water_fraction``.
+
     Args:
         task: Task dict (``task_id``, ``source_uri``, ``dest_key``, ``date``,
             ``aoi_id``) as produced by ``inventory.to_tasks``.
@@ -244,9 +281,10 @@ def harmonise_granule_payload(task: dict) -> dict:
     Returns:
         Dict with ``task_id``, ``date``, ``aoi_id``, ``dest_key``, plus the
         harmonised ``water_fraction`` (uint8 [0,100] / 255 nodata),
-        ``exclusion_mask`` (uint8 0/1) and ``reference_water`` (uint8 0/1) on
-        the canonical 1-arcmin grid. ``y`` / ``x`` are global-grid pixel
-        centres for the harmonised AOI window.
+        ``exclusion_mask`` (uint8 0/1), ``reference_water`` (uint8 0/1),
+        ``cloud_mask`` (uint8 0/1), ``snow_ice`` (uint8 0/1) and ``shadow``
+        (uint8 0/1) on the canonical 1-arcmin grid. ``y`` / ``x`` are
+        global-grid pixel centres for the harmonised AOI window.
     """
     import xarray as xr
 
@@ -260,12 +298,23 @@ def harmonise_granule_payload(task: dict) -> dict:
             crs = src.crs.to_string() if src.crs else "EPSG:4326"
 
         ctx = DerivationContext(arrays={SELECTED_BAND: data})
-        water_fraction = registry.get_derived("water_fraction").derive(ctx)
+        water_float = registry.get_derived("water_fraction").derive(ctx)
+        reference_water = registry.get_derived("reference_water").derive(ctx)
+        cloud_mask = registry.get_derived("cloud_mask").derive(ctx)
+        snow_ice = registry.get_derived("snow_ice").derive(ctx)
+        shadow = registry.get_derived("shadow").derive(ctx)
         del data, ctx
 
-        da = _water_fraction_dataarray(water_fraction, transform, crs)
-        ds = xr.Dataset({"water_fraction": da})
-        del water_fraction, da
+        ds = xr.Dataset(
+            {
+                "water_fraction": _water_fraction_dataarray(water_float, transform, crs),
+                "reference_water": _categorical_dataarray(reference_water, transform, crs, "reference_water"),
+                "cloud_mask": _categorical_dataarray(cloud_mask, transform, crs, "cloud_mask"),
+                "snow_ice": _categorical_dataarray(snow_ice, transform, crs, "snow_ice"),
+                "shadow": _categorical_dataarray(shadow, transform, crs, "shadow"),
+            }
+        )
+        del water_float, reference_water, cloud_mask, snow_ice, shadow
 
         harmoniser = Harmoniser(HarmoniseConfig())
         ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="water_fraction")
@@ -275,6 +324,9 @@ def harmonise_granule_payload(task: dict) -> dict:
         water_u8 = _encode_uint8(harm_da.values)
         exclusion_u8 = ds_harm["exclusion_mask"].values.astype(np.uint8)
         reference_u8 = ds_harm["reference_water"].values.astype(np.uint8)
+        cloud_u8 = ds_harm["cloud_mask"].values.astype(np.uint8)
+        snow_u8 = ds_harm["snow_ice"].values.astype(np.uint8)
+        shadow_u8 = ds_harm["shadow"].values.astype(np.uint8)
         y = np.asarray(harm_da["y"].values, dtype="float64")
         x = np.asarray(harm_da["x"].values, dtype="float64")
 
@@ -286,6 +338,9 @@ def harmonise_granule_payload(task: dict) -> dict:
             "water_fraction": water_u8,
             "exclusion_mask": exclusion_u8,
             "reference_water": reference_u8,
+            "cloud_mask": cloud_u8,
+            "snow_ice": snow_u8,
+            "shadow": shadow_u8,
             "y": y,
             "x": x,
         }

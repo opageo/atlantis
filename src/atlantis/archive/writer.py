@@ -33,13 +33,19 @@ _X_DIMS = ("x", "lon", "longitude")
 #: Data variables stored in the cube, in canonical order.
 #: ``quality_mask`` / ``permanent_water`` are kept for backward compatibility —
 #: :meth:`_ensure_masks` still synthesises them from ``water_fraction`` when a
-#: caller passes ``ensure_masks=True``.
+#: caller passes ``ensure_masks=True``. ``cloud_mask``, ``snow_ice`` and
+#: ``shadow`` are VIIRS-only derived masks (per-pixel 0/1); they materialise
+#: when a source writes them (the per-session ``var_names`` is the actual
+#: write-side filter).
 _CUBE_VARS = (
     "water_fraction",
     "exclusion_mask",
     "reference_water",
     "quality_mask",
     "permanent_water",
+    "cloud_mask",
+    "snow_ice",
+    "shadow",
     "recurring_flood",
 )
 
@@ -149,6 +155,9 @@ class ArchiveWriter:
             "reference_water",
             "quality_mask",
             "permanent_water",
+            "cloud_mask",
+            "snow_ice",
+            "shadow",
             "recurring_flood",
         ),
     ) -> _WriteSession:

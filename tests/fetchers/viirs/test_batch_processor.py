@@ -132,3 +132,57 @@ def test_process_granule_cog_roundtrip(tmp_path, monkeypatch):
             arr = ds.read(1)
             assert arr.min() >= 0
             assert arr.max() <= 100 or arr.max() == 255
+
+
+def test_harmonise_granule_payload_returns_full_mask_set(tmp_path, monkeypatch):
+    """``harmonise_granule_payload`` must emit every non-``flood_fraction`` VIIRS derived layer."""
+    fixture_path = _make_fixture_tif(tmp_path)
+
+    def _fake_download(url, suffix=".tif"):
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        fd, tmp_p = tempfile.mkstemp(suffix=suffix, prefix="viirs_test_")
+        import os as _os
+
+        _os.close(fd)
+        shutil.copy(url, tmp_p)
+        return Path(tmp_p)
+
+    import atlantis.fetchers.viirs.batch_processor as bp
+
+    monkeypatch.setattr(bp, "_download_to_tempfile", _fake_download)
+
+    task = {
+        "task_id": "fixture_granule",
+        "source_uri": fixture_path,
+        "dest_key": "viirs/jpss/2020/2020-01-01/GLB001.tif",
+        "date": "2020-01-01",
+        "aoi_id": 1,
+    }
+
+    payload = bp.harmonise_granule_payload(task)
+
+    expected = {
+        "water_fraction",
+        "exclusion_mask",
+        "reference_water",
+        "cloud_mask",
+        "snow_ice",
+        "shadow",
+        "y",
+        "x",
+        "task_id",
+        "date",
+        "aoi_id",
+        "dest_key",
+    }
+    assert expected.issubset(payload.keys())
+
+    water = payload["water_fraction"]
+    for key in ("exclusion_mask", "reference_water", "cloud_mask", "snow_ice", "shadow"):
+        arr = payload[key]
+        assert arr.shape == water.shape
+        assert arr.dtype == np.uint8
+        assert set(np.unique(arr).tolist()).issubset({0, 1, 255})

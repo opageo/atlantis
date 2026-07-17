@@ -167,7 +167,16 @@ def run_viirs_cube_batch(
 
     writer = ArchiveWriter(archive_root, archive_config, storage_options=storage_options)
     with writer.session(
-        source_id, ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood")
+        source_id,
+        (
+            "water_fraction",
+            "exclusion_mask",
+            "reference_water",
+            "cloud_mask",
+            "snow_ice",
+            "shadow",
+            "recurring_flood",
+        ),
     ) as session:
 
         def consume(payload: dict[str, Any]) -> str:
@@ -223,7 +232,17 @@ def _payload_to_dataset(payload: dict[str, Any]):
     import xarray as xr
 
     data_vars = {}
-    for key in ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood"):
+    for key in (
+        "water_fraction",
+        "exclusion_mask",
+        "reference_water",
+        "quality_mask",
+        "permanent_water",
+        "cloud_mask",
+        "snow_ice",
+        "shadow",
+        "recurring_flood",
+    ):
         if key in payload:
             data_vars[key] = (("y", "x"), payload[key])
     return xr.Dataset(data_vars, coords={"y": payload["y"], "x": payload["x"]})
