@@ -31,21 +31,34 @@ def test_flood_fraction_decodes_water_fraction_codes() -> None:
 
 def test_water_fraction_promotes_reference_and_unquantified_water() -> None:
     registry = get_source_registry("viirs")
+    # Code 17 (vegetation) is now excluded → NaN, not 0.0.
     out = registry.get_derived("water_fraction").derive(_ctx([[15, 99, 100, 150, 200, 17]]))
-    np.testing.assert_allclose(out, np.array([[1.0, 1.0, 0.0, 0.5, 1.0, 0.0]], dtype="float32"))
+    expected = np.array([[1.0, 1.0, 0.0, 0.5, 1.0, np.nan]], dtype="float32")
+    np.testing.assert_allclose(out[:, :5], expected[:, :5])
+    assert np.isnan(out[0, 5])
 
 
 def test_flood_fraction_nan_for_fill_and_cloud() -> None:
     registry = get_source_registry("viirs")
+    # Code 17 (vegetation) is now excluded → NaN, not 0.0.
     out = registry.get_derived("flood_fraction").derive(_ctx([[0, 1, 30, 17]]))
-    assert np.isnan(out[0, 0]) and np.isnan(out[0, 1]) and np.isnan(out[0, 2])
-    assert out[0, 3] == 0.0
+    assert np.isnan(out[0, 0]) and np.isnan(out[0, 1]) and np.isnan(out[0, 2]) and np.isnan(out[0, 3])
 
 
 def test_exclusion_mask_invalidates_fill_and_cloud() -> None:
     registry = get_source_registry("viirs")
+    # Code 17 (vegetation) is now excluded too — see test_exclusion_mask_invalidates_vegetation_and_bareland.
     out = registry.get_derived("exclusion_mask").derive(_ctx([[0, 1, 30, 17, 99]]))
-    np.testing.assert_array_equal(out, np.array([[1, 1, 1, 0, 0]], dtype="uint8"))
+    np.testing.assert_array_equal(out, np.array([[1, 1, 1, 1, 0]], dtype="uint8"))
+
+
+def test_exclusion_mask_invalidates_vegetation_and_bareland() -> None:
+    registry = get_source_registry("viirs")
+    # Codes 16 (bareland) and 17 (vegetation) are low-confidence land-cover
+    # classes, not confirmed dry land — flood pixels can be misclassified
+    # into either, so both must be excluded (per VIIRS product team guidance).
+    out = registry.get_derived("exclusion_mask").derive(_ctx([[16, 17, 99, 160]]))
+    np.testing.assert_array_equal(out, np.array([[1, 1, 0, 0]], dtype="uint8"))
 
 
 def test_reference_water_is_code_99() -> None:

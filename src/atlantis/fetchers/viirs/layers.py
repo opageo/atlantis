@@ -33,6 +33,13 @@ SNOW_ICE_CODES = {20}
 SEASONAL_WATER_CODES = SNOW_ICE_CODES
 OPEN_WATER_CODES = {99}
 SHADOW_CODES = {50}
+# Codes 16 (bareland) and 17 (vegetation) are land-cover classes, not confirmed
+# dry-land observations. Flood pixels can be misclassified into either class
+# (confirmed by the VIIRS product team, 2026-07), so both are treated as
+# low-confidence/exclusion classes rather than usable "no flood" observations.
+BARELAND_CODES = {16}
+VEGETATION_CODES = {17}
+
 CLASSIFIED_FLOOD_NODATA = 255
 
 #: Derivation input key for the single encoded VIIRS band (untouched codes).
