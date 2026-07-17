@@ -31,7 +31,17 @@ _Y_DIMS = ("y", "lat", "latitude")
 _X_DIMS = ("x", "lon", "longitude")
 
 #: Data variables stored in the cube, in canonical order.
-_CUBE_VARS = ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood")
+#: ``quality_mask`` / ``permanent_water`` are kept for backward compatibility —
+#: :meth:`_ensure_masks` still synthesises them from ``water_fraction`` when a
+#: caller passes ``ensure_masks=True``.
+_CUBE_VARS = (
+    "water_fraction",
+    "exclusion_mask",
+    "reference_water",
+    "quality_mask",
+    "permanent_water",
+    "recurring_flood",
+)
 
 
 def _find_dim(dataset: "xr.Dataset", candidates: tuple[str, ...]) -> str | None:
@@ -133,7 +143,14 @@ class ArchiveWriter:
     def session(
         self,
         source_id: str,
-        var_names: Sequence[str] = ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood"),
+        var_names: Sequence[str] = (
+            "water_fraction",
+            "exclusion_mask",
+            "reference_water",
+            "quality_mask",
+            "permanent_water",
+            "recurring_flood",
+        ),
     ) -> _WriteSession:
         """Open a streaming write session over a single source group.
 

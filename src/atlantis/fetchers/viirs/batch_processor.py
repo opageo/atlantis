@@ -9,22 +9,21 @@ Pipeline per granule:
      NOAA's source TIFFs are one-row strips (uncompressed, blockysize=1)
      — pathological for HTTP range reads. The tempfile is deleted in a
      ``finally`` block so peak disk = workers × 20 MB ≈ 120 MB total.
-  2. Classify at native 375 m → keep ``flood_fraction`` only (skip the
-       auxiliary ``water_fraction`` / ``reference_water`` / ``exclusion_mask`` allocations).
-  3. Harmonise to 1-arcmin global grid via Harmoniser.
-  4. Scale float32 [0, 1] → uint8 [0, 100], NaN → 255.
+  2. Decode the raw NOAA band via the VIIRS layer registry and emit
+     ``water_fraction`` (float32 [0, 1] / NaN nodata) at native 375 m.
+  3. Harmonise to 1-arcmin global grid via Harmoniser. The harmoniser
+     reprojects every input variable, normalises ``water_fraction`` to
+     ``[0, 1]``, and synthesises the binary ``exclusion_mask`` and
+     ``reference_water`` channels.
+  4. Encode each layer to uint8 (water_fraction [0,100] / 255 nodata;
+     masks 0/1; passthrough integer layers).
   5. Write a true COG into an in-memory MemoryFile (output is ~2-3 KB).
   6. Upload bytes to s3://atlantis/{dest_key}.
   7. Drop large intermediates and call ``gc.collect()`` so the worker
-      returns memory between tasks instead of accumulating fragmentation.
+     returns memory between tasks instead of accumulating fragmentation.
 
 The COG output stays in-memory because each result is tiny; only the
 ~20 MB input warrants local staging.
-
-``harmonise_granule_payload`` is the cube-batch variant: download, derive
-``water_fraction`` via registry, harmonise (which generates ``exclusion_mask``
-and ``reference_water``), encode to uint8, and return everything in-memory
-so the coordinator can stream into the Zarr cube.
 """
 
 from __future__ import annotations
@@ -41,10 +40,10 @@ import requests
 from loguru import logger
 from rasterio.io import MemoryFile
 
+from atlantis.archive.writer import _encode_uint8
 from atlantis.batch import TaskResult
 from atlantis.config import HarmoniseConfig
 from atlantis.fetchers.viirs.layers import SELECTED_BAND, registry
-from atlantis.fetchers.viirs.processor import classify_viirs_flood_fraction
 from atlantis.harmoniser import HARMONISED_NODATA, Harmoniser
 from atlantis.layers import DerivationContext
 
@@ -110,11 +109,18 @@ def _water_fraction_dataarray(
     transform: rasterio.Affine,
     crs: str,
 ):
-    """Wrap a water_fraction array into a georeferenced rioxarray DataArray."""
+    """Wrap a water_fraction array into a georeferenced rioxarray DataArray.
+
+    Builds a single-variable Dataset input for the harmoniser; the COG batch
+    does not need the derived ``exclusion_mask`` / ``reference_water`` masks —
+    those are produced lazily by the harmoniser and dropped before the COG
+    is written.
+    """
     import rioxarray  # noqa: F401 — registers .rio on xarray objects
     import xarray as xr
 
     height, width = water_fraction.shape
+    # Pixel-centre coordinates so the harmoniser sees a fully-georeferenced array.
     x_coords = transform.c + (np.arange(width) + 0.5) * transform.a
     y_coords = transform.f + (np.arange(height) + 0.5) * transform.e
     da = xr.DataArray(
@@ -152,33 +158,32 @@ def process_granule(task: dict) -> TaskResult:
         # ── Step 1: download raw granule to a tempfile ────────────────────
         src_path = _download_to_tempfile(source_uri)
 
-        # ── Step 2: read + classify (flood_fraction only) ───────────────
+        # ── Step 2: read raw band + derive water_fraction via registry ───
         with rasterio.open(src_path) as src:
             data = src.read(1)
             transform = src.transform
             crs = src.crs.to_string() if src.crs else "EPSG:4326"
 
-        flood_fraction = classify_viirs_flood_fraction(data)
-        del data  # raw uint8 array no longer needed (~20 MB)
+        ctx = DerivationContext(arrays={SELECTED_BAND: data})
+        water_fraction = registry.get_derived("water_fraction").derive(ctx)
+        del data, ctx
 
-        # Build a minimal xarray Dataset with just flood_fraction.
+        # Build a minimal xarray Dataset with just water_fraction.
         import xarray as xr
 
-        da = _water_fraction_dataarray(flood_fraction, transform, crs)
-        ds = xr.Dataset({"flood_fraction": da})
-        del flood_fraction, da
+        da = _water_fraction_dataarray(water_fraction, transform, crs)
+        ds = xr.Dataset({"water_fraction": da})
+        del water_fraction, da
 
         # ── Step 3: harmonise to 1 arcmin ────────────────────────────────
         harmoniser = Harmoniser(HarmoniseConfig())
-        ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="flood_fraction")
+        ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="water_fraction")
         del ds
 
         # ── Step 4: scale float32 [0,1] → uint8 [0,100], NaN → 255 ──────
-        harm_da = ds_harm["flood_fraction"]
+        harm_da = ds_harm["water_fraction"]
         arr = harm_da.values
-        scaled = np.full(arr.shape, HARMONISED_NODATA, dtype=np.uint8)
-        valid = ~np.isnan(arr)
-        scaled[valid] = np.round(arr[valid] * 100).clip(0, 100).astype(np.uint8)
+        scaled = _encode_uint8(arr)
 
         harm_transform = harm_da.rio.transform()
         harm_crs = harm_da.rio.crs
@@ -221,25 +226,26 @@ def process_granule(task: dict) -> TaskResult:
 
 
 def harmonise_granule_payload(task: dict) -> dict:
-    """Download + derive + harmonise a granule, returning all cube layers in-memory.
+    """Download + derive + harmonise a granule, returning the result in-memory.
 
-    A *produce-only* sibling of :func:`process_granule`: download raw VIIRS
-    codes, derive ``water_fraction`` via the VIIRS layer registry, harmonise
-    (which also generates ``exclusion_mask`` and ``reference_water``), encode
-    all layers to uint8, and return them with global-grid coordinates. This
-    enables a **parallel-produce / serial-write** pattern for the consolidated
-    Zarr datacube: Dask workers run the expensive per-granule work concurrently,
-    while a single coordinator region-writes the payloads into the cube — so
-    cube writes stay lock-free.
+    A *produce-only* sibling of :func:`process_granule`: it runs the identical
+    pipeline (download → derive via the VIIRS registry → harmonise → encode to
+    uint8) but, instead of writing a COG to S3, returns the harmonised layers
+    plus their global-grid coordinates. This enables a **parallel-produce /
+    serial-write** pattern for the consolidated Zarr datacube: Dask workers run
+    the expensive per-granule work concurrently, while a single coordinator
+    region-writes the payloads into the cube — so cube writes stay lock-free
+    (no two workers touch shared Zarr metadata or the same chunk).
 
     Args:
         task: Task dict (``task_id``, ``source_uri``, ``dest_key``, ``date``,
             ``aoi_id``) as produced by ``inventory.to_tasks``.
 
     Returns:
-        Dict with ``task_id``, ``date``, ``aoi_id``, ``dest_key``,
-        ``water_fraction`` (uint8 [0, 100]), ``exclusion_mask`` (uint8 [0, 1]),
-        ``reference_water`` (uint8 [0, 1]), and ``y`` / ``x`` global-grid pixel
+        Dict with ``task_id``, ``date``, ``aoi_id``, ``dest_key``, plus the
+        harmonised ``water_fraction`` (uint8 [0,100] / 255 nodata),
+        ``exclusion_mask`` (uint8 0/1) and ``reference_water`` (uint8 0/1) on
+        the canonical 1-arcmin grid. ``y`` / ``x`` are global-grid pixel
         centres for the harmonised AOI window.
     """
     import xarray as xr
@@ -255,7 +261,7 @@ def harmonise_granule_payload(task: dict) -> dict:
 
         ctx = DerivationContext(arrays={SELECTED_BAND: data})
         water_fraction = registry.get_derived("water_fraction").derive(ctx)
-        del data
+        del data, ctx
 
         da = _water_fraction_dataarray(water_fraction, transform, crs)
         ds = xr.Dataset({"water_fraction": da})
@@ -265,34 +271,25 @@ def harmonise_granule_payload(task: dict) -> dict:
         ds_harm = harmoniser.harmonise(ds, source_id="viirs", flood_variable="water_fraction")
         del ds
 
-        wf = _encode_uint8_values(ds_harm["water_fraction"].values)
-        em = _encode_uint8_values(ds_harm["exclusion_mask"].values)
-        rw = _encode_uint8_values(ds_harm["reference_water"].values)
+        harm_da = ds_harm["water_fraction"]
+        water_u8 = _encode_uint8(harm_da.values)
+        exclusion_u8 = ds_harm["exclusion_mask"].values.astype(np.uint8)
+        reference_u8 = ds_harm["reference_water"].values.astype(np.uint8)
+        y = np.asarray(harm_da["y"].values, dtype="float64")
+        x = np.asarray(harm_da["x"].values, dtype="float64")
 
         return {
             "task_id": task["task_id"],
             "date": task["date"],
             "aoi_id": task["aoi_id"],
             "dest_key": task["dest_key"],
-            "water_fraction": wf,
-            "exclusion_mask": em,
-            "reference_water": rw,
-            "y": np.asarray(ds_harm["y"].values, dtype="float64"),
-            "x": np.asarray(ds_harm["x"].values, dtype="float64"),
+            "water_fraction": water_u8,
+            "exclusion_mask": exclusion_u8,
+            "reference_water": reference_u8,
+            "y": y,
+            "x": x,
         }
     finally:
         if src_path is not None:
             src_path.unlink(missing_ok=True)
         gc.collect()
-
-
-def _encode_uint8_values(values: np.ndarray) -> np.ndarray:
-    """Encode a 2-D slice to uint8 storage.
-
-    Float in [0, 1] → [0, 100] (percent), NaN → 255 nodata.
-    Integer masks pass through.
-    Mirrors :func:`atlantis.archive.writer._encode_uint8`.
-    """
-    if np.issubdtype(values.dtype, np.floating):
-        return np.where(np.isnan(values), HARMONISED_NODATA, np.clip(np.round(values * 100), 0, 100)).astype("uint8")
-    return values.astype("uint8")

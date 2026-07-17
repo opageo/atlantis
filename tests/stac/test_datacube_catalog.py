@@ -23,7 +23,7 @@ def _aligned(value: float, row0: int, col0: int, h: int, w: int):
     x = grid.global_x_coords()[col0 : col0 + w]
     data = np.full((h, w), value, dtype="float32")
     return xr.Dataset(
-        {"flood_fraction": xr.DataArray(data, dims=["y", "x"], coords={"y": y, "x": x})},
+        {"water_fraction": xr.DataArray(data, dims=["y", "x"], coords={"y": y, "x": x})},
         attrs={"crs": "EPSG:4326"},
     )
 
@@ -79,7 +79,7 @@ class TestBuildDatacubeCatalog:
     def test_item_carries_datacube_dimensions_and_variables(self, catalog):
         item = next(next(catalog.get_children()).get_items())
         assert set(item.properties["cube:dimensions"]) == {"x", "y", "time"}
-        assert "flood_fraction" in item.properties["cube:variables"]
+        assert "water_fraction" in item.properties["cube:variables"]
 
     def test_item_bbox_is_populated_window(self, catalog):
         col = next(catalog.get_children())

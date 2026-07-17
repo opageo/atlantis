@@ -1,16 +1,27 @@
 """Per-tile processing function for MODIS MCDWD cube batch runs.
 
-``harmonise_modis_granule_payload`` is a top-level, picklable function —
-no closures, no lambdas — so Dask can ship it to worker processes.
+``harmonise_modis_granule_payload`` is a top-level, picklable function — no
+closures, no lambdas — so Dask can ship it to worker processes without issue.
 
 Pipeline per tile:
-  1. Download the MODIS tile (HDF4 from LAADS or GeoTIFF from LANCE) → tempfile.
-  2. Extract the F2 subdataset (from HDF4) or open the GeoTIFF → raw pixel codes.
-  3. Derive ``water_fraction`` and ``recurring_flood`` via the MODIS registry.
-  4. Build a georeferenced dataset (from ``tile_bounds_from_hv``).
-  5. Harmonise to 1-arcmin global grid → reprojected layers + masks.
-  6. Encode all 4 layers to uint8.
-  7. Return the payload dict for the cube-batch coordinator.
+
+  1. **Download** the raw tile from NASA (LAADS HDF4 or LANCE GeoTIFF) into
+     a tempfile (~10–20 MB). The tempfile is deleted in a ``finally`` block
+     so peak disk = workers × 20 MB ≈ 120 MB total.
+  2. **Read** the MCDWD composite codes — for HDF4 the F2 subdataset is
+     extracted with ``open_hdf4_tile``; for LANCE the GeoTIFF is opened
+     directly. The result is a uint8 raster of 0/1/2/3/255 codes.
+  3. **Derive** ``water_fraction``, ``recurring_flood`` and ``reference_water``
+     via the MODIS layer registry (single declarative source of truth).
+  4. Build a Dataset with the three derived layers, each carrying the
+     MODIS tile's pixel-centre coordinates + EPSG:4326 CRS.
+  5. **Harmonise** via :class:`Harmoniser` — reprojects every variable to the
+     canonical 1-arcmin global grid and synthesises ``exclusion_mask``.
+  6. Encode each layer to uint8 (water_fraction [0,100] / 255 nodata;
+     masks 0/1; passthrough uint8 layers).
+  7. Return the harmonised layers + global-grid coordinates so a coordinator
+     can region-write them into the consolidated Zarr datacube.
+  8. Drop intermediates and call ``gc.collect()`` so worker RSS stays flat.
 """
 
 from __future__ import annotations
@@ -23,30 +34,42 @@ from pathlib import Path
 import numpy as np
 import rasterio
 import requests
+from loguru import logger
 from rasterio.transform import from_bounds
 
-from atlantis.config import HarmoniseConfig
+from atlantis.archive.writer import _encode_uint8
+from atlantis.config import HarmoniseConfig, get_config
+from atlantis.fetchers.modis.backend import earthdata_auth_headers
 from atlantis.fetchers.modis.layers import SELECTED_COMPOSITE, registry
 from atlantis.fetchers.modis.processor import (
     MODIS_TILE_PIXELS,
-    find_hdf4_subdataset,
+    open_hdf4_tile,
     tile_bounds_from_hv,
 )
-from atlantis.harmoniser import HARMONISED_NODATA, Harmoniser
+from atlantis.harmoniser import Harmoniser
 from atlantis.layers import DerivationContext
 
+#: Allow GDAL to use multiple internal threads for warping + reprojection.
+#: Independent of the Python GIL so it does not conflict with Dask's
+#: "1 Python thread per worker" model.
 os.environ.setdefault("GDAL_NUM_THREADS", "2")
 
+#: HTTP chunk size for streaming downloads.
 _DOWNLOAD_CHUNK_SIZE = 1 << 20  # 1 MiB
-_HDF4_SUFFIX = ".hdf"
+#: HTTP request timeout (seconds) for tile downloads.
+_DOWNLOAD_TIMEOUT = 120
 
 
-def _download_to_tempfile(url: str, suffix: str = ".hdf") -> Path:
-    """Stream *url* to a NamedTemporaryFile and return its path."""
+def _download_to_tempfile(url: str, suffix: str) -> Path:
+    """Stream *url* (with Earthdata auth) to a tempfile and return its path.
+
+    The caller is responsible for deleting the file when done.
+    """
+    headers = earthdata_auth_headers()
     fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="modis_src_")
     try:
         with os.fdopen(fd, "wb") as fp:
-            with requests.get(url, stream=True, timeout=120) as resp:
+            with requests.get(url, stream=True, headers=headers, timeout=_DOWNLOAD_TIMEOUT) as resp:
                 resp.raise_for_status()
                 for chunk in resp.iter_content(chunk_size=_DOWNLOAD_CHUNK_SIZE):
                     if chunk:
@@ -57,140 +80,134 @@ def _download_to_tempfile(url: str, suffix: str = ".hdf") -> Path:
     return Path(tmp_path)
 
 
-def _encode_uint8_values(values: np.ndarray) -> np.ndarray:
-    """Encode a 2-D slice to uint8 storage.
+def _tile_dataarray(values: np.ndarray, h: int, v: int, name: str):
+    """Wrap a native-resolution MODIS tile array into a georeferenced DataArray.
 
-    Float in [0, 1] → [0, 100] (percent), NaN → 255 nodata.
-    Integer masks pass through.
+    Uses the MODIS sinusoidal tile grid to synthesise an EPSG:4326 affine from
+    the ``(h, v)`` index. Pixel centres are at ``(k + 0.5) * 1/480°`` from the
+    western/southern edge so the harmoniser sees a fully-georeferenced array.
     """
-    if np.issubdtype(values.dtype, np.floating):
-        return np.where(np.isnan(values), HARMONISED_NODATA, np.clip(np.round(values * 100), 0, 100)).astype("uint8")
-    return values.astype("uint8")
-
-
-def _water_fraction_dataarray(
-    water_fraction: np.ndarray,
-    transform: rasterio.Affine,
-    crs: str,
-):
-    """Wrap a water_fraction array into a georeferenced rioxarray DataArray."""
-    import rioxarray  # noqa: F401
+    import rioxarray  # noqa: F401 — registers .rio on xarray objects
     import xarray as xr
 
-    height, width = water_fraction.shape
+    west, south, east, north = tile_bounds_from_hv(h, v)
+    transform = from_bounds(west, south, east, north, MODIS_TILE_PIXELS, MODIS_TILE_PIXELS)
+    height, width = values.shape
     x_coords = transform.c + (np.arange(width) + 0.5) * transform.a
     y_coords = transform.f + (np.arange(height) + 0.5) * transform.e
     da = xr.DataArray(
-        water_fraction,
+        values,
         dims=("y", "x"),
         coords={"y": y_coords, "x": x_coords},
-        name="water_fraction",
+        name=name,
     )
-    da.rio.write_crs(crs, inplace=True)
+    da.rio.write_crs("EPSG:4326", inplace=True)
     da.rio.write_transform(transform, inplace=True)
     return da
 
 
-def _open_modis_tile(src_path: Path) -> tuple[np.ndarray, rasterio.Affine, str]:
-    """Open a MODIS tile and return ``(raw_codes, transform, crs)``.
+def _read_raw_codes(src_path: Path, composite: str, h: int, v: int) -> np.ndarray:
+    """Read the MCDWD composite codes (0/1/2/3/255) from a downloaded tile.
 
-    Handles both HDF4 (LAADS) and GeoTIFF (LANCE) inputs.
+    Picks the HDF4 subdataset extraction path for ``.hdf`` inputs and a direct
+    rasterio read for everything else (LANCE GeoTIFFs).
     """
-    if src_path.suffix.lower() == _HDF4_SUFFIX:
-        subdataset_uri = find_hdf4_subdataset(src_path, "F2")
-        with rasterio.open(subdataset_uri) as src:
-            data = src.read(1).astype(np.uint8)
-            transform = src.transform
-            crs = src.crs.to_string() if src.crs else "EPSG:4326"
-            if transform == rasterio.Affine.identity():
-                hv = None
-                try:
-                    import re
+    if src_path.suffix.lower() == ".hdf":
+        ds = open_hdf4_tile(src_path, composite)
+        try:
+            data = ds.read(1)
+        finally:
+            ds.close()
+        return data
 
-                    match = re.search(r"\.h(\d{2})v(\d{2})\.", src_path.name)
-                    if match:
-                        hv = (int(match.group(1)), int(match.group(2)))
-                except Exception:
-                    pass
-                if hv is None:
-                    raise RuntimeError(f"Cannot determine georeferencing for HDF4 {src_path.name}")
-                west, south, east, north = tile_bounds_from_hv(*hv)
-                transform = from_bounds(west, south, east, north, MODIS_TILE_PIXELS, MODIS_TILE_PIXELS)
-                crs = "EPSG:4326"
-    else:
-        with rasterio.open(src_path) as src:
-            data = src.read(1).astype(np.uint8)
-            transform = src.transform
-            crs = src.crs.to_string() if src.crs else "EPSG:4326"
-    return data, transform, crs
+    with rasterio.open(src_path) as src:
+        data = src.read(1)
+    return data
 
 
 def harmonise_modis_granule_payload(task: dict) -> dict:
-    """Download + derive + harmonise a MODIS tile, returning all cube layers in-memory.
+    """Download + derive + harmonise a single MODIS tile, returning the result in-memory.
 
-    Pipeline: download → extract F2 subdataset → derive water_fraction + recurring_flood
-    via MODIS registry → build georeferenced dataset (tile_bounds_from_hv) →
-    harmonise (reproject + generate masks) → encode to uint8 → return payload.
+    The picklable produce function for the MODIS cube batch. Mirrors
+    :func:`atlantis.fetchers.viirs.batch_processor.harmonise_granule_payload`:
+    Dask workers run this in parallel, the coordinator streams each payload
+    into the consolidated Zarr datacube.
 
     Args:
-        task: Task dict with ``task_id``, ``source_uri``, ``date``, ``h``, ``v``.
+        task: Task dict (``task_id``, ``source_uri``, ``date``, ``h``, ``v``)
+            as produced by :func:`atlantis.fetchers.modis.inventory.to_tasks`.
 
     Returns:
-        Dict with ``task_id``, ``date``, ``h``, ``v``, ``water_fraction``,
-        ``exclusion_mask``, ``reference_water``, ``recurring_flood`` (all uint8),
-        and ``y`` / ``x`` global-grid pixel centres.
+        Dict with ``task_id``, ``date``, ``h``, ``v``, the harmonised
+        ``water_fraction`` (uint8 [0,100] / 255 nodata), ``exclusion_mask``
+        (uint8 0/1), ``reference_water`` (uint8 0/1), ``recurring_flood``
+        (uint8 0/1) on the canonical 1-arcmin grid, plus ``y`` / ``x`` global
+        pixel centres for the harmonised AOI window.
+
+    Raises:
+        RuntimeError: If ``EARTHDATA_TOKEN`` is not set.
+        FileNotFoundError: If the downloaded file is unreadable.
+        Exception: Any download / rasterio / GDAL / harmoniser error
+            propagates to Dask so it counts against the retry budget.
     """
     import xarray as xr
 
+    task_id: str = task["task_id"]
+    source_uri: str = task["source_uri"]
+    date_str: str = task["date"]
+    h: int = int(task["h"])
+    v: int = int(task["v"])
+
+    cfg = get_config().fetcher
+    composite = cfg.modis_composite.upper()
+    is_hdf4 = source_uri.lower().endswith(".hdf")
+    suffix = ".hdf" if is_hdf4 else ".tif"
+
     src_path: Path | None = None
     try:
-        src_path = _download_to_tempfile(task["source_uri"])
+        src_path = _download_to_tempfile(source_uri, suffix=suffix)
 
-        raw_codes, _, _ = _open_modis_tile(src_path)
+        raw_codes = _read_raw_codes(src_path, composite, h, v)
 
         ctx = DerivationContext(arrays={SELECTED_COMPOSITE: raw_codes})
-        water_fraction = registry.get_derived("water_fraction").derive(ctx)
+        water_float = registry.get_derived("water_fraction").derive(ctx)
+        reference_water = registry.get_derived("reference_water").derive(ctx)
         recurring_flood = registry.get_derived("recurring_flood").derive(ctx)
-        del raw_codes
+        del ctx, raw_codes
 
-        h, v = task["h"], task["v"]
-        west, south, east, north = tile_bounds_from_hv(h, v)
-        transform = from_bounds(west, south, east, north, MODIS_TILE_PIXELS, MODIS_TILE_PIXELS)
-        crs = "EPSG:4326"
-
-        wf_da = _water_fraction_dataarray(water_fraction, transform, crs)
-        rf_da = xr.DataArray(
-            recurring_flood,
-            dims=("y", "x"),
-            coords={"y": wf_da["y"], "x": wf_da["x"]},
-            name="recurring_flood",
+        ds = xr.Dataset(
+            {
+                "water_fraction": _tile_dataarray(water_float, h, v, "water_fraction"),
+                "reference_water": _tile_dataarray(reference_water, h, v, "reference_water"),
+                "recurring_flood": _tile_dataarray(recurring_flood, h, v, "recurring_flood"),
+            }
         )
-        rf_da.rio.write_crs(crs, inplace=True)
-        rf_da.rio.write_transform(transform, inplace=True)
-
-        ds = xr.Dataset({"water_fraction": wf_da, "recurring_flood": rf_da})
-        del water_fraction, recurring_flood, wf_da, rf_da
+        del water_float, reference_water, recurring_flood
 
         harmoniser = Harmoniser(HarmoniseConfig())
         ds_harm = harmoniser.harmonise(ds, source_id="modis", flood_variable="water_fraction")
         del ds
 
-        wf = _encode_uint8_values(ds_harm["water_fraction"].values)
-        em = _encode_uint8_values(ds_harm["exclusion_mask"].values)
-        rw = _encode_uint8_values(ds_harm["reference_water"].values)
-        rf = _encode_uint8_values(ds_harm["recurring_flood"].values)
+        harm_da = ds_harm["water_fraction"]
+        water_u8 = _encode_uint8(harm_da.values)
+        exclusion_u8 = ds_harm["exclusion_mask"].values.astype(np.uint8)
+        reference_u8 = ds_harm["reference_water"].values.astype(np.uint8)
+        recurring_u8 = ds_harm["recurring_flood"].values.astype(np.uint8)
+        y = np.asarray(harm_da["y"].values, dtype="float64")
+        x = np.asarray(harm_da["x"].values, dtype="float64")
 
+        logger.debug("modis tile {} h{:02d}v{:02d} → shape {}×{}", task_id, h, v, *harm_da.shape)
         return {
-            "task_id": task["task_id"],
-            "date": task["date"],
+            "task_id": task_id,
+            "date": date_str,
             "h": h,
             "v": v,
-            "water_fraction": wf,
-            "exclusion_mask": em,
-            "reference_water": rw,
-            "recurring_flood": rf,
-            "y": np.asarray(ds_harm["y"].values, dtype="float64"),
-            "x": np.asarray(ds_harm["x"].values, dtype="float64"),
+            "water_fraction": water_u8,
+            "exclusion_mask": exclusion_u8,
+            "reference_water": reference_u8,
+            "recurring_flood": recurring_u8,
+            "y": y,
+            "x": x,
         }
     finally:
         if src_path is not None:

@@ -121,7 +121,8 @@ def build_catalog(
         storage_options: fsspec options for S3 writes.
 
     Returns:
-        Path of the written Parquet file.
+        Path of the written Parquet file (local), or ``None`` when written to
+        an ``s3://`` URI.
 
     Raises:
         RuntimeError: If ``EARTHDATA_TOKEN`` is not set.
@@ -146,9 +147,16 @@ def build_catalog(
     df = pd.DataFrame(rows, columns=["date", "h", "v", "task_id", "source_uri"])
     logger.info("Catalog: {} tiles across {} dates", len(df), df["date"].nunique())
 
-    output = Path(output)
-    output.parent.mkdir(parents=True, exist_ok=True)
+    output_str = str(output)
+    if output_str.startswith("s3://"):
+        import s3fs
 
-    df.to_parquet(str(output), engine="pyarrow", index=False)
-    logger.info("Wrote catalog → {}", output)
-    return output
+        fs = s3fs.S3FileSystem(**(storage_options or {}))
+        with fs.open(output_str, "wb") as f:
+            df.to_parquet(f, engine="pyarrow", index=False)
+    else:
+        local_path = Path(output_str)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(local_path, engine="pyarrow", index=False)
+    logger.info("Wrote catalog → {}", output_str)
+    return Path(output_str) if not output_str.startswith("s3://") else None

@@ -23,7 +23,7 @@ def aligned_dataset(value: float = 0.5, *, row0: int = _ROW0, col0: int = _COL0,
     x = grid.global_x_coords()[col0 : col0 + w]
     data = np.full((h, w), value, dtype="float32")
     return xr.Dataset(
-        {"flood_fraction": xr.DataArray(data, dims=["y", "x"], coords={"y": y, "x": x})},
+        {"water_fraction": xr.DataArray(data, dims=["y", "x"], coords={"y": y, "x": x})},
         attrs={"crs": "EPSG:4326"},
     )
 
@@ -44,7 +44,7 @@ def window_bbox(row0: int = _ROW0, col0: int = _COL0, h: int = _H, w: int = _W):
 class TestWriteSession:
     def test_session_streams_many_slices_then_consolidates_once(self, tmp_path):
         writer = ArchiveWriter(tmp_path)
-        with writer.session("viirs", ("flood_fraction",)) as session:
+        with writer.session("viirs", ("water_fraction",)) as session:
             session.write(aligned_dataset(0.2), time=date(2020, 1, 1))
             session.write(aligned_dataset(0.8), time=date(2020, 1, 2))
 
@@ -52,9 +52,9 @@ class TestWriteSession:
         full = reader.read("viirs", bbox=window_bbox())
         assert full.sizes["time"] == 2
         first = reader.read("viirs", bbox=window_bbox(), start=date(2020, 1, 1), end=date(2020, 1, 1))
-        np.testing.assert_allclose(float(first["flood_fraction"].mean()), 0.2, atol=1e-6)
+        np.testing.assert_allclose(float(first["water_fraction"].mean()), 0.2, atol=1e-6)
         second = reader.read("viirs", bbox=window_bbox(), start=date(2020, 1, 2), end=date(2020, 1, 2))
-        np.testing.assert_allclose(float(second["flood_fraction"].mean()), 0.8, atol=1e-6)
+        np.testing.assert_allclose(float(second["water_fraction"].mean()), 0.8, atol=1e-6)
 
     def test_session_records_bounded_provenance_no_bookmark(self, tmp_path):
         import zarr
@@ -96,14 +96,14 @@ class TestHelpers:
     def test_to_date_from_datetime64(self):
         assert _to_date(np.datetime64("2020-01-01")) == date(2020, 1, 1)
 
-    def test_payload_to_dataset_builds_flood_fraction(self):
+    def test_payload_to_dataset_builds_water_fraction(self):
         payload = {
-            "scaled": np.full((4, 5), 30, dtype="uint8"),
+            "water_fraction": np.full((4, 5), 30, dtype="uint8"),
             "y": np.arange(4.0),
             "x": np.arange(5.0),
         }
         ds = _payload_to_dataset(payload)
-        assert ds["flood_fraction"].dims == ("y", "x")
+        assert ds["water_fraction"].dims == ("y", "x")
         assert ds.sizes == {"y": 4, "x": 5}
 
 
@@ -114,7 +114,7 @@ def _fake_payload_produce(task: dict) -> dict:
     """Module-level (picklable) fake producer — builds a synthetic AOI payload.
 
     Each ``aoi_id`` maps to a distinct, non-overlapping 16-row band on the global
-    grid, with a constant uint8 flood-fraction percent derived from the id.
+    grid, with a constant uint8 water-fraction percent derived from the id.
     """
     import numpy as np
 
@@ -125,12 +125,12 @@ def _fake_payload_produce(task: dict) -> dict:
     col0 = 10000
     y = np.asarray(grid.global_y_coords()[row0 : row0 + h], dtype="float64")
     x = np.asarray(grid.global_x_coords()[col0 : col0 + w], dtype="float64")
-    scaled = np.full((h, w), (int(task["aoi_id"]) + 1) * 10, dtype="uint8")
+    water_fraction = np.full((h, w), (int(task["aoi_id"]) + 1) * 10, dtype="uint8")
     return {
         "task_id": task["task_id"],
         "date": task["date"],
         "aoi_id": int(task["aoi_id"]),
-        "scaled": scaled,
+        "water_fraction": water_fraction,
         "y": y,
         "x": x,
     }
@@ -166,7 +166,7 @@ def _run(tmp_path, cfg, tasks):
     """Wire the fake producer to a real writer session (mirrors run_viirs_cube_batch)."""
     archive_root = str(tmp_path / "cube")
     writer = ArchiveWriter(archive_root)
-    with writer.session("viirs", ("flood_fraction",)) as session:
+    with writer.session("viirs", ("water_fraction",)) as session:
 
         def consume(payload):
             session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
@@ -188,7 +188,7 @@ def test_cube_batch_streams_writes_and_tracks(tmp_path, cfg):
     assert reader.list_sources() == ["viirs"]
     # A specific AOI band round-trips to its expected decoded value.
     band = reader.read("viirs", bbox=_aoi_bbox(2))
-    np.testing.assert_allclose(float(band["flood_fraction"].mean()), 0.30, atol=1e-6)
+    np.testing.assert_allclose(float(band["water_fraction"].mean()), 0.30, atol=1e-6)
 
 
 @pytest.mark.slow

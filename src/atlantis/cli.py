@@ -2688,6 +2688,201 @@ def batch_viirs_cube_status(
         info(f"{remaining} task(s) remaining — re-run `batch viirs cube run` to resume.")
 
 
+# ── MODIS batch subcommand ─────────────────────────────────────────────────────
+
+modis_batch_app = typer.Typer(help="Batch-process MODIS MCDWD tiles to 1-arcmin COGs and Zarr cubes.")
+batch_app.add_typer(modis_batch_app, name="modis")
+
+
+@modis_batch_app.command("catalog", help="Build the MODIS MCDWD tile catalog from the LAADS archive.")
+def modis_build_catalog(
+    output: str = typer.Option(
+        "modis_archive_catalog.parquet",
+        "--output",
+        "-o",
+        help="Output Parquet path (local or S3 URI).",
+    ),
+    start: str = typer.Option(
+        ...,
+        "--start",
+        help="Start date YYYY-MM-DD (inclusive).",
+    ),
+    end: str = typer.Option(
+        ...,
+        "--end",
+        help="End date YYYY-MM-DD (inclusive).",
+    ),
+) -> None:
+    """Build a Parquet catalog of available MODIS MCDWD F2 tiles from LAADS.
+
+    Queries the LAADS archive directory listings for each date in the range and
+    writes a Parquet file with columns: date, h, v, task_id, source_uri.
+
+    Requires EARTHDATA_TOKEN in the environment (run `atlantis setup`).
+    """
+    from atlantis.fetchers.modis.catalog import build_catalog
+
+    command_header("batch modis catalog build", subtitle=f"{start} → {end}")
+    build_catalog(start=start, end=end, output=Path(output))
+    ok(f"Catalog written → {output}")
+
+
+modis_cube_app = typer.Typer(help="Build the MODIS 1-arcmin Zarr datacube (resume-safe, streaming).")
+modis_batch_app.add_typer(modis_cube_app, name="cube")
+
+_MODIS_CATALOGUE = "s3://atlantis/assets/modis/modis_archive_catalog.parquet"
+
+
+@modis_cube_app.command("run")
+def batch_modis_cube(
+    inventory: str = typer.Option(
+        _MODIS_CATALOGUE,
+        "--inventory",
+        "-i",
+        help="Path or S3 URI to the MODIS catalog Parquet file.",
+    ),
+    archive: str = typer.Option(
+        "s3://atlantis/zarr/modis_cube",
+        "--archive",
+        "-a",
+        help="Datacube root — a local directory or an s3:// URI.",
+    ),
+    partition: str | None = typer.Option(
+        None,
+        "--partition",
+        help="Row slice of the catalog to process, e.g. '0:10000'. None = full catalog.",
+    ),
+    composite: str | None = typer.Option(
+        None,
+        "--composite",
+        help="MCDWD composite to extract from HDF4 tiles (F1 / F1C / F2 / F3).",
+    ),
+    backend: str | None = typer.Option(
+        None,
+        "--backend",
+        help="MODIS backend the catalog was built from (lance_geotiff / laads_hdf4). "
+        "Defaults to ATLANTIS_MODIS_BACKEND. Informational only — the URLs in the catalog "
+        "determine the actual download source.",
+    ),
+    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+    memory_limit: str = typer.Option("2.5GB", "--memory-limit", help="Memory cap per worker."),
+    dashboard_port: int = typer.Option(8788, "--dashboard-port", help="Dask dashboard port."),
+    db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
+    retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
+    log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+) -> None:
+    """Build the MODIS datacube from the catalog — resume-safe and streaming.
+
+    Dask harmonises tiles in parallel while a single coordinator streams each
+    result into the consolidated Zarr cube. Every finished tile is recorded in
+    --db-path, so the run can be interrupted and resumed.
+
+    Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
+
+        tmux new -s cube
+        atlantis batch modis cube run --partition 0:10000
+
+    Check progress at any time with::
+
+        atlantis batch modis cube status --partition 0:10000
+    """
+    import os
+
+    from atlantis.archive.cube_batch import run_modis_cube_batch
+    from atlantis.batch import BatchConfig
+    from atlantis.config import reload_config
+    from atlantis.fetchers.modis.inventory import load_inventory, slice_partition, to_tasks
+    from atlantis.utils.setup import AWS_PROFILES
+
+    command_header("batch modis cube", subtitle=archive)
+
+    # ── Override config from CLI flags (re-read after setting env) ───────
+    if composite is not None:
+        os.environ["ATLANTIS_MODIS_COMPOSITE"] = composite.upper()
+    if backend is not None:
+        os.environ["ATLANTIS_MODIS_BACKEND"] = backend
+    cfg_obj = reload_config().fetcher
+
+    storage_options = None
+    if archive.startswith("s3://"):
+        ecmwf_profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+        if ecmwf_profile is None or not ecmwf_profile.endpoint_url:
+            fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+            raise typer.Exit(code=1)
+        storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
+
+    info(f"Loading catalog from {inventory} …")
+    df = slice_partition(load_inventory(inventory), partition)
+    tasks = to_tasks(df)
+    console.print(
+        f"  [bold]{len(tasks)}[/bold] tiles → {archive}" + (f"  (partition {partition})" if partition else "")
+    )
+    console.print(f"  [bold]tracker:[/bold] {db_path}")
+    console.print(f"  [bold]composite:[/bold] {cfg_obj.modis_composite}  [bold]backend:[/bold] {cfg_obj.modis_backend}")
+    warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
+
+    cfg = BatchConfig(
+        db_path=db_path,
+        workers_min=workers_min,
+        workers_max=workers_max,
+        memory_limit_per_worker=memory_limit,
+        dashboard_port=dashboard_port,
+        retries=retries,
+        log_every=log_every,
+    )
+
+    final = run_modis_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
+
+
+@modis_cube_app.command("status")
+def batch_modis_cube_status(
+    db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
+    inventory: str = typer.Option(
+        _MODIS_CATALOGUE,
+        "--inventory",
+        help="Catalog used to compute the expected total.",
+    ),
+    partition: str | None = typer.Option(None, "--partition", help="Row slice the run used, if any."),
+) -> None:
+    """Report MODIS cube-build completion from the tracker — works offline / after a disconnect."""
+    from atlantis.batch.tracker import get_pending, init_db, stats
+    from atlantis.fetchers.modis.inventory import load_inventory, slice_partition, to_tasks
+
+    command_header("batch modis cube status", subtitle=str(db_path))
+    init_db(db_path)
+    s = stats(db_path)
+    done = s.get("DONE", 0)
+    failed = s.get("FAILED", 0)
+
+    total: int
+    remaining: int | None
+    try:
+        df = slice_partition(load_inventory(inventory), partition)
+        tasks = to_tasks(df)
+        total = len(tasks)
+        remaining = len(get_pending(db_path, {t["task_id"] for t in tasks}))
+    except Exception as exc:
+        warn(f"Could not load catalog ({exc}); showing tracker counts only.")
+        total = done + failed
+        remaining = None
+
+    pct = f"{100 * done / total:.1f}%" if total else "—"
+    rows = [
+        ["Total (catalog)", str(total)],
+        ["DONE", str(done)],
+        ["FAILED (retried on resume)", str(failed)],
+        ["Remaining", "—" if remaining is None else str(remaining)],
+        ["Complete", pct],
+    ]
+    console.print(summary_table("MODIS cube — build status", ["Metric", "Count"], rows))
+    if remaining == 0 and failed == 0 and total:
+        ok("All tasks complete.")
+    elif remaining:
+        info(f"{remaining} task(s) remaining — re-run `batch modis cube run` to resume.")
+
+
 # ── STAC subcommand ───────────────────────────────────────────────────────────
 
 stac_app = typer.Typer(help="STAC catalog over the consolidated Zarr datacube.")

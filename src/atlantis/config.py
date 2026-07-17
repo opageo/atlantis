@@ -127,8 +127,8 @@ class ArchiveConfig(BaseSettings):
         shard_size: Spatial shard size (pixels) — the storage-object granularity;
             must be a multiple of ``chunk_size``. One shard bundles many inner
             chunks into a single (cloud) object.
-        scale_factor: CF ``scale_factor`` for ``flood_fraction`` so the uint8
-            ``[0, 100]`` storage decodes to float ``[0, 1]`` (CMF-comparable).
+        scale_factor: CF ``scale_factor`` for ``water_fraction`` so the uint8
+            ``[0, 100]`` storage decodes to float ``[0, 1]``.
         time_epoch: CF epoch (``YYYY-MM-DD``) for the integer ``time`` axis.
     """
 
