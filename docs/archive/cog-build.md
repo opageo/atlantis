@@ -159,7 +159,7 @@ atlantis batch viirs run \
   --inventory s3://atlantis/assets/viirs/jpss/2020/catalogue.parquet \
   --output    s3://atlantis/viirs/jpss/2020/ \
   --workers-min 2 --workers-max 6 \
-  --memory-limit 6GB \
+  --memory-limit 4GB \
   --db-path tracker.db
 ```
 

@@ -1,9 +1,12 @@
 # Atlantis STAC + Visualization Layer — Implementation Spec
 
-> Companion to the [Zarr datacube spec](./archive/zarr-spec.md). This document
+> Companion to the [Zarr datacube spec](./zarr-spec.md). This document
 > describes the **STAC discovery layer** built over the consolidated
 > `datacube.zarr`, plus the **local visualization** (hvplot / Panel) demo that
 > renders the cube with a time slider.
+>
+> **Prerequisite**: build the Zarr datacube first — see
+> [Cube build guide](./cube-build.md).
 >
 > Mental model:
 >
@@ -14,12 +17,12 @@
 
 | Concern                                   | Module                                                                              |
 | ----------------------------------------- | ----------------------------------------------------------------------------------- |
-| STAC catalog builder                      | [`src/atlantis/stac/datacube_catalog.py`](../src/atlantis/stac/datacube_catalog.py) |
-| stac-geoparquet index                     | [`src/atlantis/stac/geoparquet.py`](../src/atlantis/stac/geoparquet.py)             |
-| Visualization (hvplot/Panel)              | [`src/atlantis/viz/dashboard.py`](../src/atlantis/viz/dashboard.py)                 |
-| Config (`StacConfig`, `VizConfig`)        | [`src/atlantis/config.py`](../src/atlantis/config.py)                               |
-| CLI (`atlantis stac …`, `atlantis viz …`) | [`src/atlantis/cli.py`](../src/atlantis/cli.py)                                     |
-| Underlying cube (reader, grid, store)     | [`src/atlantis/archive/`](../src/atlantis/archive)                                  |
+| STAC catalog builder                      | [`src/atlantis/stac/datacube_catalog.py`](../../src/atlantis/stac/datacube_catalog.py) |
+| stac-geoparquet index                     | [`src/atlantis/stac/geoparquet.py`](../../src/atlantis/stac/geoparquet.py)             |
+| Visualization (hvplot/Panel)              | [`src/atlantis/viz/dashboard.py`](../../src/atlantis/viz/dashboard.py)                 |
+| Config (`StacConfig`, `VizConfig`)        | [`src/atlantis/config.py`](../../src/atlantis/config.py)                               |
+| CLI (`atlantis stac …`, `atlantis viz …`) | [`src/atlantis/cli.py`](../../src/atlantis/cli.py)                                     |
+| Underlying cube (reader, grid, store)     | [`src/atlantis/archive/`](../../src/atlantis/archive)                                  |
 
 > This is **separate** from the KuroSiwo SAR STAC catalog
 > ([`stac_catalog.py`](../src/atlantis/stac/stac_catalog.py)), which indexes

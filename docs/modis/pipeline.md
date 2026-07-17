@@ -176,6 +176,20 @@ $$
 Useful when several dates have similar raw flood counts but differ
 markedly in cloud cover.
 
+> **Peak dates can differ across composites.** `argmax flood_pixel_count` is
+> computed independently for each fetch. F1/F1C/F2/F3 are different
+> accumulation rules over the underlying detections — a pixel needs *at
+> least N* water detections across the previous *N* days to appear in the
+> N-Day composite (see
+> [overview.md § Composites](overview.md#composites-how-the-four-flood-layers-are-built))
+> — not the same raster thresholded differently. Fetching one event
+> separately with `--modis-composite F1C`, `F2`, and `F3` can therefore
+> select a **different peak date for each composite**. When comparing
+> composites side by side, check the selected date per composite before
+> attributing differences purely to the compositing window; see
+> [notebooks/drafts/modis_composite_comparison.ipynb](../../notebooks/drafts/modis_composite_comparison.ipynb)
+> for a worked comparison across five events.
+
 ### `aggregate` — nan-mean / mode
 
 All layers are reduced by [`atlantis.layers.aggregate_layer`](../../src/atlantis/layers/aggregation.py)

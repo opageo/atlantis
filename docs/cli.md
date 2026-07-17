@@ -21,12 +21,14 @@ environment).
 - [`fetch-kurosiwo-modis`](#fetch-kurosiwo-modis)
 - [`build-kurosiwo-metadata`](#build-kurosiwo-metadata)
 - [`harmonise`](#harmonise)
-- [`archive`](#archive) _(placeholder)_
+- [`archive`](#archive)
 - [`validate`](#validate) _(placeholder)_
 - [`list-sources`](#list-sources)
 - [`list-layers`](#list-layers)
 - [`list-events`](#list-events) _(placeholder)_
 - [`batch viirs run`](#batch-viirs-run)
+- [`batch viirs cube run`](#batch-viirs-cube-run)
+- [`batch viirs cube status`](#batch-viirs-cube-status)
 
 ## Global options
 
@@ -58,6 +60,8 @@ Example: `pixi run atlantis --verbose fetch --event ...`
 | `list-layers`             | List the native and derived layers available per source.                | implemented |
 | `list-events`             | List events in the archive.                                             | placeholder |
 | `batch viirs run`         | Batch-process the VIIRS JPSS catalogue → 1 arcmin COGs on S3 via Dask.  | implemented |
+| `batch viirs cube run`    | Build a consolidated Zarr v3 datacube from VIIRS granules (resume-safe). | implemented |
+| `batch viirs cube status` | Report cube-build progress from the SQLite tracker (works offline).      | implemented |
 
 ## `setup`
 
@@ -298,18 +302,10 @@ files are found.
 
 ## `archive`
 
-> Placeholder — archive writing is not yet implemented.
-
-```bash
-pixi run atlantis archive [OPTIONS]
-```
-
-| Option            | Default                 | Description                             |
-| ----------------- | ----------------------- | --------------------------------------- |
-| `--event`, `-e`   | required                | Flood event ID to archive.              |
-| `--source`, `-s`  | all available           | Data source.                            |
-| `--archive`, `-a` | `<config.archive_root>` | Archive root directory.                 |
-| `--raw-only`      | off                     | Only write raw archive (skip ML-ready). |
+> The `archive` subcommand is a placeholder — Zarr archive writing is handled
+> by the batch pipeline. See [`batch viirs cube run`](#batch-viirs-cube-run) for
+> building a consolidated datacube, or [`batch viirs run`](#batch-viirs-run) for
+> per-granule COGs on S3.
 
 ## `validate`
 
@@ -398,4 +394,73 @@ pixi run atlantis batch viirs run --partition 24464:48928 --db-path tracker_vm2.
 Pre-flight checks: `--output` must start with `s3://atlantis/`, and the
 `default` AWS profile must be configured (run `atlantis setup` first).
 
-See [batch/viirs/jpss.md](batch/viirs/jpss.md) for operational notes.
+See [archive/cog-build.md](archive/cog-build.md) for operational notes.
+
+## `batch viirs cube run`
+
+Build a consolidated Zarr v3 datacube (`datacube.zarr`) from the VIIRS
+catalogue. Dask harmonises granules in parallel while a single coordinator
+streams each result into the Zarr store. Every finished granule is recorded
+in a SQLite tracker, so the run can be interrupted and resumed — already-`DONE`
+tasks are skipped on re-run.
+
+```bash
+pixi run atlantis batch viirs cube run [OPTIONS]
+```
+
+| Option             | Default                                          | Description                                                   |
+| ------------------ | ------------------------------------------------ | ------------------------------------------------------------- |
+| `--inventory`      | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Path or S3 URI to the VIIRS JPSS catalogue Parquet file.      |
+| `--archive`, `-a`  | `s3://atlantis/zarr/viirs_2020_cube`             | Cube root — a local directory or an `s3://` URI.               |
+| `--partition`      | full catalogue                                   | Row slice of the catalogue, e.g. `0:1000`.                     |
+| `--workers-min`    | `2`                                              | Minimum Dask worker processes.                                 |
+| `--workers-max`    | `6`                                              | Maximum Dask worker processes (adaptive).                      |
+| `--memory-limit`   | `6GB`                                            | Memory cap per worker.                                         |
+| `--dashboard-port` | `8787`                                           | Dask dashboard port.                                           |
+| `--db-path`        | `cube_tracker.db`                                | SQLite resume database path.                                   |
+| `--retries`        | `3`                                              | Dask retry count per granule.                                  |
+| `--log-every`      | `100`                                            | Log a progress line every N completions.                       |
+
+`--archive` is the **parent** of the Zarr store — the engine creates
+`datacube.zarr` underneath it. Always run detached (`tmux` / `nohup`) so an
+SSH disconnect cannot kill the coordinator.
+
+**Example — Oct–Nov 2024 (~8,855 granules):**
+
+```bash
+# Query partition bounds first:
+PYTHONPATH=src python -c "
+from atlantis.fetchers.viirs.inventory import load_inventory
+df = load_inventory('s3://atlantis/assets/viirs/viirs_archive_catalog.parquet')
+df = df.sort_values(['date', 'aoi_id']).reset_index(drop=True)
+d = df['date'].astype(str)
+mask = d.str.startswith('2024-10') | d.str.startswith('2024-11')
+subset = df[mask]
+print(f'{subset.index[0]}:{subset.index[-1] + 1}')
+"
+
+# Then run with the computed partition:
+pixi run atlantis batch viirs cube run \
+  --partition 109152:118007 \
+  --archive s3://atlantis/zarr/viirs_2024q4 \
+  --log-every 50
+```
+
+See [archive/cube-build.md](archive/cube-build.md) for the full workflow
+(cube → STAC catalog → viz dashboard) and partition math.
+
+## `batch viirs cube status`
+
+Report cube-build completion from the SQLite tracker. Reads only the local
+`--db-path` (plus the catalogue to compute the expected total), so it is safe
+to run mid-build, after a disconnect, or after the coordinator has exited.
+
+```bash
+pixi run atlantis batch viirs cube status [OPTIONS]
+```
+
+| Option        | Default                                          | Description                               |
+| ------------- | ------------------------------------------------ | ----------------------------------------- |
+| `--db-path`   | `cube_tracker.db`                                | SQLite resume database path.              |
+| `--inventory` | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Catalogue used to compute the expected total. |
+| `--partition` | —                                                | Row slice the run used, if any.           |

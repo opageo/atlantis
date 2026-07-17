@@ -266,11 +266,9 @@ def harmonise_granule_payload(task: dict) -> dict:
 
         harm_da = ds_harm["flood_fraction"]
         arr = harm_da.values
-        scaled = np.where(
-            np.isnan(arr),
-            np.uint8(HARMONISED_NODATA),
-            np.round(arr * 100).clip(0, 100).astype(np.uint8),
-        ).astype(np.uint8)
+        scaled = np.full(arr.shape, HARMONISED_NODATA, dtype=np.uint8)
+        valid = np.isfinite(arr)
+        scaled[valid] = np.round(arr[valid] * 100).clip(0, 100).astype(np.uint8)
 
         return {
             "task_id": task["task_id"],
