@@ -147,8 +147,8 @@ def run_viirs_cube_batch(
     Wires the VIIRS produce step (:func:`harmonise_granule_payload`, run on Dask
     workers) to a single held-open :meth:`~atlantis.archive.writer.ArchiveWriter.session`
     on the coordinator: each harmonised granule is region-written into the
-    ``flood_fraction`` channel as it arrives, and the store is consolidated once
-    when the session closes.
+            ``water_fraction`` channel as it arrives, and the store is consolidated once
+            when the session closes.
 
     Args:
         tasks: VIIRS task dicts (from
@@ -166,7 +166,18 @@ def run_viirs_cube_batch(
     from atlantis.fetchers.viirs.batch_processor import harmonise_granule_payload
 
     writer = ArchiveWriter(archive_root, archive_config, storage_options=storage_options)
-    with writer.session(source_id, ("flood_fraction",)) as session:
+    with writer.session(
+        source_id,
+        (
+            "water_fraction",
+            "exclusion_mask",
+            "reference_water",
+            "cloud_mask",
+            "snow_ice",
+            "shadow",
+            "recurring_flood",
+        ),
+    ) as session:
 
         def consume(payload: dict[str, Any]) -> str:
             session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
@@ -175,14 +186,66 @@ def run_viirs_cube_batch(
         return run_cube_batch(tasks, harmonise_granule_payload, consume, cfg)
 
 
+def run_modis_cube_batch(
+    tasks: list[dict[str, Any]],
+    *,
+    archive_root: str,
+    cfg: BatchConfig,
+    archive_config: Any = None,
+    storage_options: dict[str, Any] | None = None,
+    source_id: str = "modis",
+) -> dict[str, Any]:
+    """Build the MODIS datacube from a catalog, resume-safe and streaming.
+
+    Wires the MODIS produce step (:func:`harmonise_modis_granule_payload`, run
+    on Dask workers) to a single held-open
+    :meth:`~atlantis.archive.writer.ArchiveWriter.session` on the coordinator.
+
+    Args:
+        tasks: MODIS task dicts (from
+            :func:`atlantis.fetchers.modis.inventory.to_tasks`).
+        archive_root: Cube root — a local path or an ``s3://`` URI.
+        cfg: Batch configuration.
+        archive_config: Optional :class:`~atlantis.config.ArchiveConfig`.
+        storage_options: fsspec options for a remote ``archive_root``.
+        source_id: Cube group name (default ``"modis"``).
+
+    Returns:
+        Final tracker stats for the run.
+    """
+    from atlantis.archive.writer import ArchiveWriter
+    from atlantis.fetchers.modis.batch_processor import harmonise_modis_granule_payload
+
+    writer = ArchiveWriter(archive_root, archive_config, storage_options=storage_options)
+    var_names = ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood")
+    with writer.session(source_id, var_names) as session:
+
+        def consume(payload: dict[str, Any]) -> str:
+            session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
+            return f"{archive_root}#{source_id}/{payload['date']}/h{payload['h']:02d}v{payload['v']:02d}"
+
+        return run_cube_batch(tasks, harmonise_modis_granule_payload, consume, cfg)
+
+
 def _payload_to_dataset(payload: dict[str, Any]):
-    """Build a 2-D ``flood_fraction`` dataset from a harmonised granule payload."""
+    """Build a 2-D dataset from a harmonised granule payload."""
     import xarray as xr
 
-    return xr.Dataset(
-        {"flood_fraction": (("y", "x"), payload["scaled"])},
-        coords={"y": payload["y"], "x": payload["x"]},
-    )
+    data_vars = {}
+    for key in (
+        "water_fraction",
+        "exclusion_mask",
+        "reference_water",
+        "quality_mask",
+        "permanent_water",
+        "cloud_mask",
+        "snow_ice",
+        "shadow",
+        "recurring_flood",
+    ):
+        if key in payload:
+            data_vars[key] = (("y", "x"), payload[key])
+    return xr.Dataset(data_vars, coords={"y": payload["y"], "x": payload["x"]})
 
 
 def _to_date(value: Any) -> date:

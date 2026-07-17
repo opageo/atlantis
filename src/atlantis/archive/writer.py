@@ -31,7 +31,23 @@ _Y_DIMS = ("y", "lat", "latitude")
 _X_DIMS = ("x", "lon", "longitude")
 
 #: Data variables stored in the cube, in canonical order.
-_CUBE_VARS = ("flood_fraction", "quality_mask", "permanent_water", "recurring_flood")
+#: ``quality_mask`` / ``permanent_water`` are kept for backward compatibility —
+#: :meth:`_ensure_masks` still synthesises them from ``water_fraction`` when a
+#: caller passes ``ensure_masks=True``. ``cloud_mask``, ``snow_ice`` and
+#: ``shadow`` are VIIRS-only derived masks (per-pixel 0/1); they materialise
+#: when a source writes them (the per-session ``var_names`` is the actual
+#: write-side filter).
+_CUBE_VARS = (
+    "water_fraction",
+    "exclusion_mask",
+    "reference_water",
+    "quality_mask",
+    "permanent_water",
+    "cloud_mask",
+    "snow_ice",
+    "shadow",
+    "recurring_flood",
+)
 
 
 def _find_dim(dataset: "xr.Dataset", candidates: tuple[str, ...]) -> str | None:
@@ -44,7 +60,7 @@ def _find_dim(dataset: "xr.Dataset", candidates: tuple[str, ...]) -> str | None:
 def _encode_uint8(values: np.ndarray) -> np.ndarray:
     """Encode a 2-D slice to uint8 storage.
 
-    Float ``flood_fraction`` in ``[0, 1]`` → ``[0, 100]`` (percent), ``NaN`` →
+    Float ``water_fraction`` in ``[0, 1]`` → ``[0, 100]`` (percent), ``NaN`` →
     ``255`` nodata. Integer masks / already-percent uint8 inputs pass through.
     Mirrors :func:`atlantis.harmoniser.write_harmonised_raster`.
     """
@@ -133,7 +149,17 @@ class ArchiveWriter:
     def session(
         self,
         source_id: str,
-        var_names: Sequence[str] = ("flood_fraction",),
+        var_names: Sequence[str] = (
+            "water_fraction",
+            "exclusion_mask",
+            "reference_water",
+            "quality_mask",
+            "permanent_water",
+            "cloud_mask",
+            "snow_ice",
+            "shadow",
+            "recurring_flood",
+        ),
     ) -> _WriteSession:
         """Open a streaming write session over a single source group.
 
@@ -242,7 +268,7 @@ class ArchiveWriter:
         normaliser = Normaliser()
         ds = dataset
         if "quality_mask" not in ds.data_vars:
-            base = "flood_fraction" if "flood_fraction" in ds.data_vars else list(ds.data_vars)[0]
+            base = "water_fraction" if "water_fraction" in ds.data_vars else list(ds.data_vars)[0]
             ds = ds.assign(quality_mask=normaliser.generate_quality_mask(ds, variable=base))
         if "permanent_water" not in ds.data_vars:
             ds = ds.assign(permanent_water=normaliser.generate_permanent_water_mask(ds))

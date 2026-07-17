@@ -52,7 +52,7 @@ DATACUBE_EXT = "https://stac-extensions.github.io/datacube/v2.2.0/schema.json"
 
 _RES = grid.GLOBAL_RESOLUTION
 #: Known physical units for cube variables (others are categorical / unitless).
-_VAR_UNITS: dict[str, str] = {"flood_fraction": "1"}
+_VAR_UNITS: dict[str, str] = {"water_fraction": "1"}
 #: Global fallback bbox (west, south, east, north) when an extent cannot be computed.
 _GLOBAL_BBOX = (grid.ORIGIN_LON, grid.ORIGIN_LAT - 180.0, grid.ORIGIN_LON + 360.0, grid.ORIGIN_LAT)
 
@@ -300,7 +300,7 @@ def build_source_collection(
     *,
     config: StacConfig | None = None,
     storage_options: dict[str, Any] | None = None,
-    var: str = "flood_fraction",
+    var: str = "water_fraction",
     progress: BuildProgress | None = None,
 ) -> pystac.Collection | None:
     """Build the STAC Collection (with per-date items) for one source group.
