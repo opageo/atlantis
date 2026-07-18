@@ -96,6 +96,8 @@ class TestFetcherConfig:
         assert cfg.viirs_format == "tif"
         assert cfg.gfm_api_url is None
         assert cfg.viirs_base_url is None
+        assert cfg.viirs_excluded_categories == "fill,cloud,snow_ice,shadow,bareland,vegetation"
+        assert cfg.viirs_exclude_extra_codes == ""
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("ATLANTIS_CACHE_DIR", "/custom/cache")
@@ -107,6 +109,13 @@ class TestFetcherConfig:
         assert cfg.timeout == 600
         assert cfg.max_retries == 5
         assert cfg.viirs_backend == "gmu_legacy"
+
+    def test_viirs_excluded_categories_env_override(self, monkeypatch):
+        monkeypatch.setenv("ATLANTIS_VIIRS_EXCLUDED_CATEGORIES", "fill,cloud,snow_ice,shadow")
+        monkeypatch.setenv("ATLANTIS_VIIRS_EXCLUDE_EXTRA_CODES", "27,38")
+        cfg = FetcherConfig()
+        assert cfg.viirs_excluded_categories == "fill,cloud,snow_ice,shadow"
+        assert cfg.viirs_exclude_extra_codes == "27,38"
 
 
 class TestAtlantisConfig:

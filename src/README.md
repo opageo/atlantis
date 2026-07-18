@@ -284,7 +284,9 @@ This writes only:
     ├── harmonised/
     │   └── Yangtze_2020_2020-07-22_viirs_harmonised.tif
     └── plots/
-        └── Yangtze_2020_2020-07-22_viirs_harmonised.png
+        └── harmonised/
+            └── derived/
+                └── Yangtze_2020_2020-07-22_viirs_harmonised.png
 ```
 
 Without any optional flags (still streams and classifies by default, writes all intermediate files):

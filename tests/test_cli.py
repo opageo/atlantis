@@ -223,6 +223,8 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
                 "peak_days_after": 0,
                 "max_observations": 0,
                 "peak_priority": "post",
+                "excluded_categories": None,
+                "extra_excluded_codes": None,
             }
 
         def fetch(self, event, output_dir):
@@ -267,6 +269,82 @@ def test_fetch_command_with_bbox(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert "Wrote 2 files" in result.stdout
     assert "VIIRS backend: noaa_s3" in result.stdout
+
+
+def test_fetch_command_viirs_exclude_categories_and_codes(monkeypatch, tmp_path):
+    """`--viirs-exclude-categories` / `--viirs-exclude-codes` flow into fetcher_kwargs."""
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            assert kwargs["excluded_categories"] == ["fill", "cloud"]
+            assert kwargs["extra_excluded_codes"] == [27, 38]
+
+        def fetch(self, event, output_dir):
+            return []
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Yangtze_2020",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "105 28 125 38",
+            "--start-date",
+            "2020-07-22",
+            "--end-date",
+            "2020-07-22",
+            "--viirs-exclude-categories",
+            "fill,cloud",
+            "--viirs-exclude-codes",
+            "27,38",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+
+
+def test_fetch_command_invalid_viirs_exclude_category_errors(monkeypatch, tmp_path):
+    """An unknown --viirs-exclude-categories name is rejected with a clear error."""
+
+    class DummyFetcher:
+        def __init__(self, **kwargs):
+            pass
+
+        def fetch(self, event, output_dir):
+            return []
+
+    monkeypatch.setattr("atlantis.cli.get_fetcher", lambda _source: DummyFetcher)
+
+    result = runner.invoke(
+        cli,
+        [
+            "fetch",
+            "--event",
+            "Yangtze_2020",
+            "--source",
+            "viirs",
+            "--output",
+            str(tmp_path),
+            "--bbox",
+            "105 28 125 38",
+            "--start-date",
+            "2020-07-22",
+            "--end-date",
+            "2020-07-22",
+            "--viirs-exclude-categories",
+            "fill,not_a_category",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Unknown VIIRS exclusion category" in result.output
 
 
 def test_fetch_command_resolves_bookmark(monkeypatch, tmp_path):
@@ -667,6 +745,8 @@ def test_fetch_command_supports_legacy_viirs_backend(monkeypatch, tmp_path):
                 "peak_days_after": 0,
                 "max_observations": 0,
                 "peak_priority": "post",
+                "excluded_categories": None,
+                "extra_excluded_codes": None,
             }
 
         def fetch(self, event, output_dir):

@@ -20,6 +20,7 @@ from atlantis.fetchers.base import AbstractFloodFetcher, FetchResult, SearchResu
 from atlantis.fetchers.registry import register_fetcher
 from atlantis.fetchers.viirs.backend import get_backend, list_backends
 from atlantis.fetchers.viirs.dataset import processed_tile_to_dataset
+from atlantis.fetchers.viirs.layers import parse_category_list, parse_code_list, resolve_excluded_codes
 from atlantis.fetchers.viirs.processor import (
     CLASSIFIED_FLOOD_NODATA,
     OutputPaths,
@@ -154,6 +155,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
         peak_days_after: int = 0,
         max_observations: int = 0,
         peak_priority: str = "post",
+        excluded_categories: list[str] | None = None,
+        extra_excluded_codes: list[int] | None = None,
     ) -> None:
         """Initialize the VIIRS fetcher.
 
@@ -179,6 +182,15 @@ class VIIRSFetcher(AbstractFloodFetcher):
             peak_priority: How to fill *max_observations* around the peak:
                 ``"post"`` (post-event first, then pre), ``"pre"`` (pre-event
                 first, then post), or ``"balanced"`` (alternating ±1, ±2, …).
+            excluded_categories: Named VIIRS pixel-code categories to treat as
+                invalid in ``water_fraction``/``flood_fraction``/``exclusion_mask``
+                (any of ``fill``, ``cloud``, ``snow_ice``, ``shadow``,
+                ``bareland``, ``vegetation``). Defaults to
+                ``config.fetcher.viirs_excluded_categories`` (all six) when
+                ``None``.
+            extra_excluded_codes: Additional raw pixel codes to exclude beyond
+                *excluded_categories*. Defaults to
+                ``config.fetcher.viirs_exclude_extra_codes`` (none) when ``None``.
         """
         config = get_config()
 
@@ -193,6 +205,18 @@ class VIIRSFetcher(AbstractFloodFetcher):
         self.keep_processed = keep_processed
         self.last_diagnostics: SearchDiagnostics | None = None
         self._peak_token: str | None = None
+
+        resolved_categories = (
+            excluded_categories
+            if excluded_categories is not None
+            else parse_category_list(config.fetcher.viirs_excluded_categories)
+        )
+        resolved_extra_codes = (
+            extra_excluded_codes
+            if extra_excluded_codes is not None
+            else parse_code_list(config.fetcher.viirs_exclude_extra_codes)
+        )
+        self.excluded_codes = resolve_excluded_codes(resolved_categories, resolved_extra_codes)
 
         if self.strategy not in {"peak", "aggregate", "all"}:
             raise ValueError(f"Invalid strategy '{self.strategy}'. Expected 'peak', 'aggregate', or 'all'.")
@@ -467,7 +491,7 @@ class VIIRSFetcher(AbstractFloodFetcher):
             grouped_results[result.properties["date"]].append(result)
 
         area_geom = box(*event.bbox)
-        processor = ViirsRasterProcessor(area_geom, classify=self.classify)
+        processor = ViirsRasterProcessor(area_geom, classify=self.classify, excluded_codes=self.excluded_codes)
 
         all_processed: list[tuple[str, ProcessTilesResult]] = []
 

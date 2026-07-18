@@ -229,29 +229,29 @@ using the operator declared for each layer in the
 
 **Classified mode:**
 
-| Layer                 | Operator      | Rationale                                                                 |
-| :-------------------- | :------------ | :------------------------------------------------------------------------ |
-| `water_fraction`      | `nanmean`     | Continuous variable → arithmetic mean; NaN dates skipped per-pixel        |
-| `flood_fraction`      | `nanmean`     | Continuous variable → arithmetic mean; NaN dates skipped per-pixel        |
-| `reference_water`     | `masked_max`  | Highest valid shared code wins; nodata=255 never dominates a mixed pixel  |
-| `exclusion_mask`      | `masked_max`  | Preserve strongest valid exclusion code; nodata ignored                   |
-| `ensemble_likelihood` | `masked_max`  | Preserve strongest valid likelihood code; nodata ignored                  |
-| `advisory_flags`      | `masked_or`   | Bitwise OR across valid observations; preserves every advisory bit seen   |
-| `cloud_fraction`      | scalar        | Tile-level metadata (`1 − valid_pixels/total_pixels`)                     |
+| Layer                 | Operator     | Rationale                                                                |
+| :-------------------- | :----------- | :----------------------------------------------------------------------- |
+| `water_fraction`      | `nanmean`    | Continuous variable → arithmetic mean; NaN dates skipped per-pixel       |
+| `flood_fraction`      | `nanmean`    | Continuous variable → arithmetic mean; NaN dates skipped per-pixel       |
+| `reference_water`     | `masked_max` | Highest valid shared code wins; nodata=255 never dominates a mixed pixel |
+| `exclusion_mask`      | `masked_max` | Preserve strongest valid exclusion code; nodata ignored                  |
+| `ensemble_likelihood` | `masked_max` | Preserve strongest valid likelihood code; nodata ignored                 |
+| `advisory_flags`      | `masked_or`  | Bitwise OR across valid observations; preserves every advisory bit seen  |
+| `cloud_fraction`      | scalar       | Tile-level metadata (`1 − valid_pixels/total_pixels`)                    |
 
 `nanmean` means pixels that were unobserved (NaN) on some dates are averaged
 over the dates that _did_ observe them — no bias toward missing data.
 
 **Native / raw mode:**
 
-| Layer                   | Operator     | Rationale                                                            |
-| :---------------------- | :----------- | :------------------------------------------------------------------- |
-| `ensemble_flood_extent` | `masked_max` | Valid code always beats nodata (255); highest valid class wins       |
-| `ensemble_water_extent` | `masked_max` | Valid code always beats nodata (255); highest valid class wins       |
-| `reference_water_mask`  | `masked_max` | Highest valid class wins across dates; nodata never dominates        |
-| `exclusion_mask`        | `masked_max` | Preserve strongest valid exclusion code                              |
-| `ensemble_likelihood`   | `masked_max` | Preserve strongest valid likelihood code                             |
-| `advisory_flags`        | `masked_or`  | Bitwise OR across valid observations; preserves every advisory bit   |
+| Layer                   | Operator     | Rationale                                                          |
+| :---------------------- | :----------- | :----------------------------------------------------------------- |
+| `ensemble_flood_extent` | `masked_max` | Valid code always beats nodata (255); highest valid class wins     |
+| `ensemble_water_extent` | `masked_max` | Valid code always beats nodata (255); highest valid class wins     |
+| `reference_water_mask`  | `masked_max` | Highest valid class wins across dates; nodata never dominates      |
+| `exclusion_mask`        | `masked_max` | Preserve strongest valid exclusion code                            |
+| `ensemble_likelihood`   | `masked_max` | Preserve strongest valid likelihood code                           |
+| `advisory_flags`        | `masked_or`  | Bitwise OR across valid observations; preserves every advisory bit |
 
 > **Why `masked_max` / `masked_or` for GFM?** GFM uses `nodata=255` for unobserved
 > pixels. A plain numeric `max` would let 255 win every mixed block, so the
@@ -289,9 +289,17 @@ harmonised GeoTIFF + PNG.
         <event_id>_<YYYYMMDD>_gfm_exclusion_mask.tif          # uint8 native codes
         <event_id>_<YYYYMMDD>_gfm_advisory_flags.tif          # uint8 native bitmask
         <event_id>_<YYYYMMDD>_gfm_ensemble_likelihood.tif     # uint8 0–100
-      plots/        # with --plot
-        <event_id>_<date_token>_gfm.png
-        <event_id>_<date_token>_gfm_harmonised.png      # with --harmonise
+      plots/
+        processed/
+          derived/      # --classify (default) + --plot
+            <event_id>_<date_token>_gfm.png
+          native/       # --no-classify + --plot
+            <event_id>_<date_token>_gfm.png
+        harmonised/
+          derived/      # --classify (default) + --harmonise
+            <event_id>_<date_token>_gfm_harmonised.png
+          native/       # --no-classify + --harmonise
+            <event_id>_<date_token>_gfm_harmonised.png
       harmonised/   # with --harmonise
         # Classified mode:
         <event_id>_<date_token>_gfm_harmonised.tif
@@ -334,25 +342,25 @@ This mirrors the VIIRS (375 m) and MODIS (250 m) ladders: a source-resolution
 
 ### Processed outputs — classified mode (~80 m, EPSG:4326)
 
-| File                        | Dtype | Nodata | Values                                                     |
-| --------------------------- | ----- | ------ | ---------------------------------------------------------- |
-| `*_water_fraction.tif`      | uint8 | 255    | 0–100 — % of obs water (`round(frac×100)`); 255 = no obs   |
-| `*_flood_fraction.tif`      | uint8 | 255    | 0–100 — % of obs flooded (`round(frac×100)`); 255 = no obs |
+| File                        | Dtype | Nodata | Values                                                              |
+| --------------------------- | ----- | ------ | ------------------------------------------------------------------- |
+| `*_water_fraction.tif`      | uint8 | 255    | 0–100 — % of obs water (`round(frac×100)`); 255 = no obs            |
+| `*_flood_fraction.tif`      | uint8 | 255    | 0–100 — % of obs flooded (`round(frac×100)`); 255 = no obs          |
 | `*_reference_water.tif`     | uint8 | 255    | 0 = no water, 1 = permanent water, 2 = seasonal water, 255 = nodata |
-| `*_exclusion_mask.tif`      | uint8 | 255    | Native GFM exclusion-mask codes                            |
-| `*_advisory_flags.tif`      | uint8 | 255    | Native advisory bitmask                                    |
-| `*_ensemble_likelihood.tif` | uint8 | 255    | Native ensemble likelihood values (0–100)                  |
+| `*_exclusion_mask.tif`      | uint8 | 255    | Native GFM exclusion-mask codes                                     |
+| `*_advisory_flags.tif`      | uint8 | 255    | Native advisory bitmask                                             |
+| `*_ensemble_likelihood.tif` | uint8 | 255    | Native ensemble likelihood values (0–100)                           |
 
 ### Processed outputs — native / raw mode (~80 m, EPSG:4326)
 
-| File                          | Dtype | Nodata | Values                                                 |
-| ----------------------------- | ----- | ------ | ------------------------------------------------------ |
-| `*_ensemble_flood_extent.tif` | uint8 | 255    | 0 = dry, 1 = flood, 255 = nodata                       |
-| `*_ensemble_water_extent.tif` | uint8 | 255    | 0 = dry, 1 = water, 255 = nodata                       |
+| File                          | Dtype | Nodata | Values                                                              |
+| ----------------------------- | ----- | ------ | ------------------------------------------------------------------- |
+| `*_ensemble_flood_extent.tif` | uint8 | 255    | 0 = dry, 1 = flood, 255 = nodata                                    |
+| `*_ensemble_water_extent.tif` | uint8 | 255    | 0 = dry, 1 = water, 255 = nodata                                    |
 | `*_reference_water_mask.tif`  | uint8 | 255    | 0 = no water, 1 = permanent water, 2 = seasonal water, 255 = nodata |
-| `*_exclusion_mask.tif`        | uint8 | 255    | Native GFM exclusion-mask codes                        |
-| `*_advisory_flags.tif`        | uint8 | 255    | Native advisory bitmask                                |
-| `*_ensemble_likelihood.tif`   | uint8 | 255    | Native ensemble likelihood values (0–100)              |
+| `*_exclusion_mask.tif`        | uint8 | 255    | Native GFM exclusion-mask codes                                     |
+| `*_advisory_flags.tif`        | uint8 | 255    | Native advisory bitmask                                             |
+| `*_ensemble_likelihood.tif`   | uint8 | 255    | Native ensemble likelihood values (0–100)                           |
 
 All processed outputs use **CRS**: EPSG:4326 (WGS84), **Compression**: LZW.
 

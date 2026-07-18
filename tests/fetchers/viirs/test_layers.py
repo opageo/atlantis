@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from atlantis.layers import DerivationContext, get_source_registry
 
 
-def _ctx(codes: list[list[int]]) -> DerivationContext:
-    return DerivationContext(arrays={"raw": np.array(codes, dtype="uint8")})
+def _ctx(codes: list[list[int]], params: dict | None = None) -> DerivationContext:
+    return DerivationContext(arrays={"raw": np.array(codes, dtype="uint8")}, params=params or {})
 
 
 def test_native_manifest_lists_single_band_with_codes() -> None:
@@ -31,21 +32,34 @@ def test_flood_fraction_decodes_water_fraction_codes() -> None:
 
 def test_water_fraction_promotes_reference_and_unquantified_water() -> None:
     registry = get_source_registry("viirs")
+    # Code 17 (vegetation) is now excluded → NaN, not 0.0.
     out = registry.get_derived("water_fraction").derive(_ctx([[15, 99, 100, 150, 200, 17]]))
-    np.testing.assert_allclose(out, np.array([[1.0, 1.0, 0.0, 0.5, 1.0, 0.0]], dtype="float32"))
+    expected = np.array([[1.0, 1.0, 0.0, 0.5, 1.0, np.nan]], dtype="float32")
+    np.testing.assert_allclose(out[:, :5], expected[:, :5])
+    assert np.isnan(out[0, 5])
 
 
 def test_flood_fraction_nan_for_fill_and_cloud() -> None:
     registry = get_source_registry("viirs")
+    # Code 17 (vegetation) is now excluded → NaN, not 0.0.
     out = registry.get_derived("flood_fraction").derive(_ctx([[0, 1, 30, 17]]))
-    assert np.isnan(out[0, 0]) and np.isnan(out[0, 1]) and np.isnan(out[0, 2])
-    assert out[0, 3] == 0.0
+    assert np.isnan(out[0, 0]) and np.isnan(out[0, 1]) and np.isnan(out[0, 2]) and np.isnan(out[0, 3])
 
 
 def test_exclusion_mask_invalidates_fill_and_cloud() -> None:
     registry = get_source_registry("viirs")
+    # Code 17 (vegetation) is now excluded too — see test_exclusion_mask_invalidates_vegetation_and_bareland.
     out = registry.get_derived("exclusion_mask").derive(_ctx([[0, 1, 30, 17, 99]]))
-    np.testing.assert_array_equal(out, np.array([[1, 1, 1, 0, 0]], dtype="uint8"))
+    np.testing.assert_array_equal(out, np.array([[1, 1, 1, 1, 0]], dtype="uint8"))
+
+
+def test_exclusion_mask_invalidates_vegetation_and_bareland() -> None:
+    registry = get_source_registry("viirs")
+    # Codes 16 (bareland) and 17 (vegetation) are low-confidence land-cover
+    # classes, not confirmed dry land — flood pixels can be misclassified
+    # into either, so both must be excluded (per VIIRS product team guidance).
+    out = registry.get_derived("exclusion_mask").derive(_ctx([[16, 17, 99, 160]]))
+    np.testing.assert_array_equal(out, np.array([[1, 1, 0, 0]], dtype="uint8"))
 
 
 def test_reference_water_is_code_99() -> None:
@@ -77,3 +91,90 @@ def test_classify_routes_new_layers_to_extra_layers() -> None:
     assert set(processed.extra_layers) == {"cloud_mask", "snow_ice", "shadow"}
     assert processed.water_fraction is not None
     assert processed.flood_fraction is not None
+
+
+# ── Configurable exclusion (excluded_codes / categories) ─────────────────────
+
+
+class TestResolveExcludedCodes:
+    def test_default_matches_historical_behaviour(self) -> None:
+        from atlantis.fetchers.viirs.layers import DEFAULT_EXCLUDED_CODES, resolve_excluded_codes
+
+        assert resolve_excluded_codes() == DEFAULT_EXCLUDED_CODES
+        assert DEFAULT_EXCLUDED_CODES == frozenset({0, 1, 30, 20, 50, 16, 17})
+
+    def test_dropping_a_category_removes_its_codes(self) -> None:
+        from atlantis.fetchers.viirs.layers import resolve_excluded_codes
+
+        codes = resolve_excluded_codes(["fill", "cloud", "snow_ice", "shadow"])
+        assert 16 not in codes  # bareland
+        assert 17 not in codes  # vegetation
+        assert codes == frozenset({0, 1, 30, 20, 50})
+
+    def test_extra_codes_are_additive(self) -> None:
+        from atlantis.fetchers.viirs.layers import resolve_excluded_codes
+
+        codes = resolve_excluded_codes(["fill"], extra_codes=[27, 38])
+        assert codes == frozenset({0, 1, 27, 38})
+
+    def test_unknown_category_raises(self) -> None:
+        from atlantis.fetchers.viirs.layers import resolve_excluded_codes
+
+        with pytest.raises(ValueError, match="Unknown VIIRS exclusion category"):
+            resolve_excluded_codes(["fill", "not_a_category"])
+
+
+class TestParseCsvHelpers:
+    def test_parse_category_list_trims_and_drops_empties(self) -> None:
+        from atlantis.fetchers.viirs.layers import parse_category_list
+
+        assert parse_category_list(" fill, cloud ,, snow_ice") == ["fill", "cloud", "snow_ice"]
+        assert parse_category_list("") == []
+
+    def test_parse_code_list_trims_and_converts(self) -> None:
+        from atlantis.fetchers.viirs.layers import parse_code_list
+
+        assert parse_code_list(" 27, 38 ") == [27, 38]
+        assert parse_code_list("") == []
+
+
+class TestConfigurableExclusionInDerivation:
+    def test_exclusion_mask_honours_custom_excluded_codes(self) -> None:
+        registry = get_source_registry("viirs")
+        custom = frozenset({0, 1, 30})  # fill + cloud only, no snow/shadow/bareland/vegetation
+        out = registry.get_derived("exclusion_mask").derive(
+            _ctx([[0, 1, 30, 20, 50, 16, 17, 99]], params={"excluded_codes": custom})
+        )
+        # Only fill (0, 1) and cloud (30) are marked excluded now.
+        np.testing.assert_array_equal(out, np.array([[1, 1, 1, 0, 0, 0, 0, 0]], dtype="uint8"))
+
+    def test_water_fraction_honours_custom_excluded_codes(self) -> None:
+        registry = get_source_registry("viirs")
+        custom = frozenset({0, 1, 30})  # vegetation/bareland no longer excluded
+        out = registry.get_derived("water_fraction").derive(_ctx([[16, 17, 150]], params={"excluded_codes": custom}))
+        # Bareland/vegetation now decode as 0.0 (clear/no-water) instead of NaN.
+        np.testing.assert_allclose(out, np.array([[0.0, 0.0, 0.5]], dtype="float32"))
+
+    def test_flood_fraction_honours_custom_excluded_codes(self) -> None:
+        registry = get_source_registry("viirs")
+        custom = frozenset({0, 1, 30})
+        out = registry.get_derived("flood_fraction").derive(_ctx([[16, 17]], params={"excluded_codes": custom}))
+        np.testing.assert_allclose(out, np.array([[0.0, 0.0]], dtype="float32"))
+
+    def test_none_params_falls_back_to_default(self) -> None:
+        # No params at all (the pre-existing call style) keeps today's behaviour.
+        registry = get_source_registry("viirs")
+        out = registry.get_derived("exclusion_mask").derive(_ctx([[16, 17]]))
+        np.testing.assert_array_equal(out, np.array([[1, 1]], dtype="uint8"))
+
+
+def test_classify_viirs_pixels_accepts_excluded_codes_override() -> None:
+    from rasterio.transform import from_origin
+
+    from atlantis.fetchers.viirs.processor import classify_viirs_pixels
+
+    data = np.array([[16, 17, 150, 0]], dtype="uint8")
+    custom = frozenset({0, 1, 30})  # bareland/vegetation no longer excluded
+    processed = classify_viirs_pixels(data, from_origin(0, 1, 1, 1), "EPSG:4326", excluded_codes=custom)
+    np.testing.assert_allclose(processed.flood_fraction, np.array([[0.0, 0.0, 0.5, np.nan]], dtype="float32"))
+    np.testing.assert_array_equal(processed.exclusion_mask, np.array([[0, 0, 0, 1]], dtype="uint8"))
