@@ -46,7 +46,13 @@ Typical folder layout:
     modis/
       raw/          # downloaded .tif or .hdf inputs
       processed/    # absent with --no-keep-processed
-      plots/        # with --plot or harmonised previews
+      plots/
+        processed/    # with --plot
+          derived/    # --classify (default)
+          native/     # --no-classify
+        harmonised/   # with --harmonise
+          derived/
+          native/
       harmonised/   # with --harmonise
 ```
 

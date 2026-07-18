@@ -88,9 +88,16 @@ class DerivationContext:
 
     Attributes:
         arrays: Mapping of native layer name -> 2D NumPy array.
+        params: Optional source-specific side-channel values (e.g. runtime
+            configuration overrides) beyond the raw arrays. Empty by default;
+            a ``derive`` function that doesn't know about a given key simply
+            never reads it, so this stays backward compatible for every
+            existing call site. See ``atlantis.fetchers.viirs.derived`` for an
+            example (``excluded_codes``).
     """
 
     arrays: Mapping[str, "np.ndarray"]
+    params: Mapping[str, object] = field(default_factory=dict)
 
     def __getitem__(self, name: str) -> "np.ndarray":
         """Return the native array registered under *name*.

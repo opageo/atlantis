@@ -312,9 +312,19 @@ A classified run with `--harmonise --plot` writes, per source:
 ```
 <output>/<event_id>/<source>/
   processed/    # source-resolution GeoTIFFs (omitted with --no-keep-processed)
-  plots/        # one PNG per date (with --plot), incl. *_harmonised.png
+  plots/
+    processed/    # one PNG per date (with --plot)
+      derived/    # --classify (default)
+      native/     # --no-classify
+    harmonised/   # *_harmonised.png (with --harmonise)
+      derived/
+      native/
   harmonised/   # 1-arcmin GeoTIFFs (with --harmonise)
 ```
+
+The `derived/` / `native/` split (matching `--classify`/`--no-classify`) means
+re-running the same event/source with the other mode never overwrites the
+previous PNGs — no need to clear `plots/` between runs.
 
 With `--classify`, `processed/` and `harmonised/` hold derived layers. With
 `--no-classify`, they hold the native source layers instead — e.g. GFM

@@ -189,8 +189,10 @@ source-specific distinctions worth remembering here are:
   `NormalWater` (`99`) and the unquantified floodwater code (`15`) to `1.0`;
 - `flood_fraction` only decodes the NOAA `100–200` fraction codes and keeps
   `99` / `15` at `0.0`;
-- fill/cloud codes become `NaN` in the fraction layers and `1` in
-  `exclusion_mask`;
+- fill/cloud/snow-ice/shadow/bareland/vegetation codes become `NaN` in the
+  fraction layers and `1` in `exclusion_mask` — bareland (`16`) and
+  vegetation (`17`) are treated as low-confidence rather than confirmed dry
+  land, since flood pixels can be misclassified into either class;
 - `cloud_mask`, `snow_ice`, and `shadow` remain simple code-specific uint8
   masks.
 
@@ -202,7 +204,8 @@ source-specific distinctions worth remembering here are:
 > alone. The GeoTIFF `nodata=0` tag is a shared rendering convention for all
 > binary derived masks (so the background renders transparent), **not** a
 > data-availability flag. On a single date — or with the `peak` strategy — you
-> must pair `reference_water` with `exclusion_mask` (`1` = fill/cloud) to tell
+> must pair `reference_water` with `exclusion_mask` (`1` = fill/cloud/snow-ice/
+> shadow/bareland/vegetation) to tell
 > "observed non-water" from "couldn't observe." In `aggregate` mode this is
 > partly mitigated: `reference_water` is reduced by `majority` over non-excluded
 > dates only (see [pipeline.md](pipeline.md#aggregate--temporal-composite-mean--mode)).
@@ -210,9 +213,9 @@ source-specific distinctions worth remembering here are:
 The authoritative legend lives in the band tag `WaterDetection#TypeDescription`
 inside each NOAA GeoTIFF (verified against a fetched raw tile). Per that tag, code `99 = NormalWater` is the reference-water
 class and is the basis of `reference_water`; code `20 = Snow_ice` (now surfaced as `snow_ice`),
-`30 = Cloud` (now `cloud_mask`), and `50 = Shadow` (now `shadow`). Codes `17` (Vegetation) and `20` (Snow_ice)
-are still valid observations — they receive `exclusion_mask = 0` and contribute `0` to both fraction layers.
-Fill (`1`; plus `0` from clip/mosaic) and cloud (`30`) pixels remain missing through classification and are only encoded
+`30 = Cloud` (now `cloud_mask`), and `50 = Shadow` (now `shadow`). Codes `16` (Bareland) and `17` (Vegetation)
+are treated as low-confidence/exclusion classes (`exclusion_mask = 1`), not usable observations, since flood pixels can be misclassified into either class.
+Fill (`1`; plus `0` from clip/mosaic), cloud (`30`), snow/ice (`20`), shadow (`50`), bareland (`16`), and vegetation (`17`) pixels remain missing through classification and are only encoded
 as `255` when Atlantis writes the classified fraction GeoTIFFs.
 
 There is no thresholding step inside `_classify_pixels()` in the current pipeline. If you

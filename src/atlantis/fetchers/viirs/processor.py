@@ -25,6 +25,7 @@ from shapely.geometry.base import BaseGeometry
 from atlantis.fetchers.viirs.layers import (  # noqa: F401 — re-exported for backwards compatibility
     CLASSIFIED_FLOOD_NODATA,
     CLOUD_CODES,
+    DEFAULT_EXCLUDED_CODES,
     FILL_CODES,
     FLOOD_MIN_CODE,
     OPEN_WATER_CODES,
@@ -50,14 +51,15 @@ _VSICURL_PREFIX = "/vsicurl/"
 _CORE_DERIVED = ("water_fraction", "flood_fraction", "reference_water", "exclusion_mask")
 
 
-def _decode_flood_fraction(data: np.ndarray) -> np.ndarray:
+def _decode_flood_fraction(data: np.ndarray, excluded_codes: frozenset[int] | None = None) -> np.ndarray:
     """Decode raw VIIRS codes into flood fraction while preserving missing data.
 
     Thin wrapper delegating to the registered ``flood_fraction`` derivation so
     the decode lives in exactly one place
     (:mod:`atlantis.fetchers.viirs.derived`).
     """
-    return registry.get_derived("flood_fraction").derive(DerivationContext(arrays={SELECTED_BAND: data}))
+    ctx = DerivationContext(arrays={SELECTED_BAND: data}, params={"excluded_codes": excluded_codes})
+    return registry.get_derived("flood_fraction").derive(ctx)
 
 
 def _resolve_tile_path(item: TilePath) -> str:
@@ -134,7 +136,12 @@ class ProcessTilesResult:
     processed: ProcessedTile
 
 
-def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str) -> "ProcessedTile":
+def classify_viirs_pixels(
+    data: np.ndarray,
+    transform: rasterio.Affine,
+    crs: str,
+    excluded_codes: frozenset[int] | None = None,
+) -> "ProcessedTile":
     """Classify raw VIIRS pixel values into flood fraction and masks.
 
     Module-level so it is picklable by Dask workers without instantiating
@@ -144,13 +151,17 @@ def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str
         data: Raw pixel values (uint8) from a single-band VIIRS tile.
         transform: Affine transform of the array.
         crs: Coordinate reference system string (e.g. ``"EPSG:4326"``).
+        excluded_codes: Override for which pixel codes count as invalid in
+            ``water_fraction``/``flood_fraction``/``exclusion_mask``. Defaults
+            to :data:`~atlantis.fetchers.viirs.layers.DEFAULT_EXCLUDED_CODES`
+            when ``None`` (see :func:`~atlantis.fetchers.viirs.layers.resolve_excluded_codes`).
 
     Returns:
         :class:`ProcessedTile` with water/flood fractions populated; other
         core fields are set but callers that only need ``flood_fraction`` may
         discard them.
     """
-    ctx = DerivationContext(arrays={SELECTED_BAND: data})
+    ctx = DerivationContext(arrays={SELECTED_BAND: data}, params={"excluded_codes": excluded_codes})
     derived = {spec.name: spec.derive(ctx) for spec in registry.list_derived()}
     extra = {name: arr for name, arr in derived.items() if name not in _CORE_DERIVED}
 
@@ -172,7 +183,7 @@ def classify_viirs_pixels(data: np.ndarray, transform: rasterio.Affine, crs: str
     )
 
 
-def classify_viirs_flood_fraction(data: np.ndarray) -> np.ndarray:
+def classify_viirs_flood_fraction(data: np.ndarray, excluded_codes: frozenset[int] | None = None) -> np.ndarray:
     """Decode raw VIIRS pixel codes into a continuous flood-fraction array.
 
     Lighter-weight sibling of :func:`classify_viirs_pixels` for batch
@@ -181,17 +192,20 @@ def classify_viirs_flood_fraction(data: np.ndarray) -> np.ndarray:
     (~40 MB saved per 4448×4448 granule).
 
     VIIRS codes 100–200 encode fraction as ``(code − 100) / 100``.
-    Valid non-flood observations map to 0.0, while fill and cloud are preserved
-    as NaN so downstream averaging skips them.
+    Valid non-flood observations map to 0.0, while excluded-category pixels
+    (fill/cloud by default) are preserved as NaN so downstream averaging skips
+    them.
 
     Args:
         data: Raw pixel values (uint8) from a single-band VIIRS tile.
+        excluded_codes: Override for which pixel codes count as invalid; see
+            :func:`classify_viirs_pixels`.
 
     Returns:
         ``float32`` array of flood fraction values in ``[0.0, 1.0]`` with
-        NaN for fill/cloud pixels, same shape as *data*.
+        NaN for excluded pixels, same shape as *data*.
     """
-    return _decode_flood_fraction(data)
+    return _decode_flood_fraction(data, excluded_codes)
 
 
 class ViirsRasterProcessor:
@@ -215,6 +229,7 @@ class ViirsRasterProcessor:
         area_geometry: BaseGeometry,
         crs: str = "EPSG:4326",
         classify: bool = False,
+        excluded_codes: frozenset[int] | None = None,
     ) -> None:
         """Initialize the processor.
 
@@ -223,10 +238,15 @@ class ViirsRasterProcessor:
             crs: Target CRS for outputs.
             classify: Whether to classify pixels into discrete flood layers.
                 If False (default), outputs raw data only.
+            excluded_codes: Which pixel codes count as invalid in
+                ``water_fraction``/``flood_fraction``/``exclusion_mask``.
+                Defaults to :data:`~atlantis.fetchers.viirs.layers.DEFAULT_EXCLUDED_CODES`
+                when ``None`` (see :func:`~atlantis.fetchers.viirs.layers.resolve_excluded_codes`).
         """
         self.area_geometry = area_geometry
         self.crs = crs
         self.classify = classify
+        self.excluded_codes = excluded_codes if excluded_codes is not None else DEFAULT_EXCLUDED_CODES
 
     def process_tiles(
         self,
@@ -343,7 +363,7 @@ class ViirsRasterProcessor:
         (:mod:`atlantis.fetchers.viirs.derived`), so this is a thin wrapper that
         also emits a debug summary of the classification mix.
         """
-        processed = classify_viirs_pixels(data, transform, crs)
+        processed = classify_viirs_pixels(data, transform, crs, self.excluded_codes)
 
         n_total = int(data.size)
         n_fill = int(np.isin(data, list(FILL_CODES)).sum())

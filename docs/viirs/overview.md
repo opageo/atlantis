@@ -23,7 +23,7 @@ The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the
 | 101–200 | **Flood water** — water fraction % = `code − 100` |
 | ≥160    | High-confidence flood (≥60% water fraction)       |
 
-> **Note:** The authoritative legend is embedded in each NOAA GeoTIFF as the band tag `WaterDetection#TypeDescription` (verified against a fetched raw tile). The table above mirrors that tag for the classes Atlantis decodes. Cloud (30), snow/ice (20), and shadow (50) are now surfaced as dedicated `cloud_mask`, `snow_ice`, and `shadow` derived layers; the remaining additional classes (16=Bareland, 27=River/lake ice, 38=mixed snow/ice/water) are present in the source data but currently pass through as `0` flood fraction with no dedicated layer. Code `15` ("Floodwater without fraction retrieval") is flagged as floodwater by NOAA but carries no sub-pixel water fraction; Atlantis therefore forces it to `1.0` in `water_fraction` while keeping it at `0.0` in `flood_fraction`, exactly as it does for NormalWater (`99`). The source `_FillValue` is `1` (not `0`).
+> **Note:** The authoritative legend is embedded in each NOAA GeoTIFF as the band tag `WaterDetection#TypeDescription` (verified against a fetched raw tile). The table above mirrors that tag for the classes Atlantis decodes. Cloud (30), snow/ice (20), and shadow (50) are now surfaced as dedicated `cloud_mask`, `snow_ice`, and `shadow` derived layers; bareland (16) and vegetation (17) are treated as low-confidence/exclusion classes (`exclusion_mask = 1`) rather than confirmed dry land, since flood pixels can be misclassified into either class. The remaining additional classes (27=River/lake ice, 38=mixed snow/ice/water) are present in the source data but currently pass through as `0` flood fraction with no dedicated layer. Code `15` ("Floodwater without fraction retrieval") is flagged as floodwater by NOAA but carries no sub-pixel water fraction; Atlantis therefore forces it to `1.0` in `water_fraction` while keeping it at `0.0` in `flood_fraction`, exactly as it does for NormalWater (`99`). The source `_FillValue` is `1` (not `0`).
 
 ### Native vs derived layers
 
@@ -49,13 +49,15 @@ uv run atlantis fetch \
   --no-keep-processed --harmonise
 ```
 
-This streams VIIRS tiles from NOAA S3, derives per-pixel water/flood fractions plus reference/exclusion and weather masks, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/`):
+This streams VIIRS tiles from NOAA S3, derives per-pixel water/flood fractions plus reference/exclusion and weather masks, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/harmonised/derived/`):
 
 ```
 harmonised/
   valencia_2024_2024-10-31_viirs_harmonised.tif   # uint8, 1 arcmin, flood % [0–100], nodata=255
 plots/
-  valencia_2024_2024-10-31_viirs_harmonised.png
+  harmonised/
+    derived/
+      valencia_2024_2024-10-31_viirs_harmonised.png
 ```
 
 ## CLI reference
@@ -161,7 +163,7 @@ days around it, then keeps the peak plus the 4 nearest post-event dates (the
 | `--no-stream`     |           | Download tiles to `raw/` for reuse across runs           |
 | `--viirs-backend` | `noaa_s3` | Data source (`noaa_s3` or `gmu_legacy`)                  |
 
-With `--classify`, codes `101–200` become both `water_fraction` and `flood_fraction` values in `[0.01, 1.00]` in memory and are written as uint8 percentages `[1, 100]` on disk. `water_fraction` additionally promotes NOAA `NormalWater` (`99`) and the unquantified floodwater code (`15`) to `1.0`; `flood_fraction` keeps those as `0.0`. Fill/cloud pixels become `NaN` in memory and are encoded as `255` on disk for the fraction rasters. The companion **derived** masks `reference_water`, `exclusion_mask`, `cloud_mask`, `snow_ice`, and `shadow` are written alongside. With `--no-classify`, the single **native** band is written untouched as `raw`.
+With `--classify`, codes `101–200` become both `water_fraction` and `flood_fraction` values in `[0.01, 1.00]` in memory and are written as uint8 percentages `[1, 100]` on disk. `water_fraction` additionally promotes NOAA `NormalWater` (`99`) and the unquantified floodwater code (`15`) to `1.0`; `flood_fraction` keeps those as `0.0`. Fill/cloud/snow-ice/shadow/vegetation/bareland pixels become `NaN` in memory and are encoded as `255` on disk for the fraction rasters. The companion **derived** masks `reference_water`, `exclusion_mask`, `cloud_mask`, `snow_ice`, and `shadow` are written alongside. With `--no-classify`, the single **native** band is written untouched as `raw`.
 
 ### `atlantis fetch-kurosiwo-viirs` flags
 
@@ -310,9 +312,17 @@ details on backend selection.
         <event_id>_<YYYYMMDD>_viirs_shadow.tif
         # --no-classify — native band:
         <event_id>_<YYYYMMDD>_viirs_raw.tif
-      plots/        # with --plot, or with --harmonise (harmonised PNG goes here too)
-        <event_id>_<YYYY-MM-DD>_viirs.png
-        <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
+      plots/
+        processed/
+          derived/      # --classify (default) + --plot
+            <event_id>_<YYYY-MM-DD>_viirs.png
+          native/       # --no-classify + --plot
+            <event_id>_<YYYY-MM-DD>_viirs.png
+        harmonised/
+          derived/      # --classify (default) + --harmonise
+            <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
+          native/       # --no-classify + --harmonise
+            <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
       harmonised/   # with --harmonise
         <event_id>_<YYYY-MM-DD>_viirs_harmonised.tif
 ```

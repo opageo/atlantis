@@ -166,6 +166,38 @@ class TestVIIRSFetcherInit:
         with pytest.raises(NotImplementedError, match="not implemented yet"):
             VIIRSFetcher(data_format="png")
 
+    def test_excluded_codes_default_matches_historical_behaviour(self):
+        from atlantis.fetchers.viirs.layers import DEFAULT_EXCLUDED_CODES
+
+        fetcher = VIIRSFetcher()
+        assert fetcher.excluded_codes == DEFAULT_EXCLUDED_CODES
+
+    def test_excluded_categories_override_drops_vegetation_and_bareland(self):
+        fetcher = VIIRSFetcher(excluded_categories=["fill", "cloud", "snow_ice", "shadow"])
+        assert 16 not in fetcher.excluded_codes  # bareland
+        assert 17 not in fetcher.excluded_codes  # vegetation
+
+    def test_extra_excluded_codes_are_additive(self):
+        fetcher = VIIRSFetcher(excluded_categories=["fill"], extra_excluded_codes=[27, 38])
+        assert fetcher.excluded_codes == frozenset({0, 1, 27, 38})
+
+    def test_invalid_excluded_category_raises(self):
+        with pytest.raises(ValueError, match="Unknown VIIRS exclusion category"):
+            VIIRSFetcher(excluded_categories=["not_a_category"])
+
+    def test_excluded_categories_env_var_override(self, monkeypatch):
+        """When ATLANTIS_VIIRS_EXCLUDED_CATEGORIES is set and config is reloaded, fetcher picks it up."""
+        monkeypatch.setenv("ATLANTIS_VIIRS_EXCLUDED_CATEGORIES", "fill,cloud")
+        from atlantis.config import get_config, reload_config
+
+        old_config = get_config.__globals__.get("_config")
+        reload_config()
+        try:
+            fetcher = VIIRSFetcher()
+            assert fetcher.excluded_codes == frozenset({0, 1, 30})
+        finally:
+            get_config.__globals__["_config"] = old_config
+
 
 # ── Search tests ─────────────────────────────────────────────────────────────
 
