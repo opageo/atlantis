@@ -12,30 +12,34 @@ from __future__ import annotations
 import numpy as np
 
 from atlantis.fetchers.viirs.layers import (
-    BARELAND_CODES,
     CLOUD_CODES,
-    FILL_CODES,
+    DEFAULT_EXCLUDED_CODES,
     PERMANENT_WATER_CODES,
     SELECTED_BAND,
     SHADOW_CODES,
     SNOW_ICE_CODES,
-    VEGETATION_CODES,
     registry,
 )
 from atlantis.layers import DerivationContext
 
 
-def _invalid_mask(data: np.ndarray) -> np.ndarray:
-    """Return True where the VIIRS code should be excluded from fractions."""
-    return np.isin(
-        data,
-        list(FILL_CODES | CLOUD_CODES | SNOW_ICE_CODES | SHADOW_CODES | BARELAND_CODES | VEGETATION_CODES),
-    )
+def _invalid_mask(data: np.ndarray, excluded_codes: frozenset[int] | None = None) -> np.ndarray:
+    """Return True where the VIIRS code should be excluded from fractions.
+
+    ``excluded_codes`` defaults to :data:`~atlantis.fetchers.viirs.layers.DEFAULT_EXCLUDED_CODES`
+    (fill, cloud, snow/ice, shadow, bareland, vegetation). Callers can override
+    which categories count as invalid via
+    :func:`~atlantis.fetchers.viirs.layers.resolve_excluded_codes` — e.g. to stop
+    treating vegetation/bareland as low-confidence and keep them as usable
+    "no flood" observations.
+    """
+    codes = excluded_codes if excluded_codes is not None else DEFAULT_EXCLUDED_CODES
+    return np.isin(data, list(codes))
 
 
-def _decode_fraction_codes(data: np.ndarray) -> np.ndarray:
-    """Decode 100-200 fraction codes to float32, preserving fill/cloud as NaN."""
-    invalid = _invalid_mask(data)
+def _decode_fraction_codes(data: np.ndarray, excluded_codes: frozenset[int] | None = None) -> np.ndarray:
+    """Decode 100-200 fraction codes to float32, preserving excluded codes as NaN."""
+    invalid = _invalid_mask(data, excluded_codes)
     out = np.zeros(data.shape, dtype=np.float32)
     out[invalid] = np.nan
     fraction_codes = (data >= 100) & (data <= 200)
@@ -60,7 +64,7 @@ def _decode_fraction_codes(data: np.ndarray) -> np.ndarray:
 def water_fraction(ctx: DerivationContext) -> np.ndarray:
     """Decode the VIIRS band into the broader water-fraction product."""
     data = ctx[SELECTED_BAND]
-    out = _decode_fraction_codes(data)
+    out = _decode_fraction_codes(data, ctx.params.get("excluded_codes"))
     out[np.isin(data, list(PERMANENT_WATER_CODES))] = 1.0
     out[data == 15] = 1.0
     return out
@@ -82,7 +86,7 @@ def water_fraction(ctx: DerivationContext) -> np.ndarray:
 )
 def flood_fraction(ctx: DerivationContext) -> np.ndarray:
     """Decode the VIIRS band into a float32 flood fraction, NaN for excluded codes."""
-    return _decode_fraction_codes(ctx[SELECTED_BAND])
+    return _decode_fraction_codes(ctx[SELECTED_BAND], ctx.params.get("excluded_codes"))
 
 
 @registry.derived(
@@ -100,8 +104,8 @@ def flood_fraction(ctx: DerivationContext) -> np.ndarray:
     aggregation="all_true",
 )
 def exclusion_mask(ctx: DerivationContext) -> np.ndarray:
-    """Mark fill/cloud/snow/shadow/bareland/vegetation pixels excluded (1); everything else usable (0)."""
-    return _invalid_mask(ctx[SELECTED_BAND]).astype(np.uint8)
+    """Mark excluded-category pixels (default: fill/cloud/snow/shadow/bareland/vegetation) as 1; else 0."""
+    return _invalid_mask(ctx[SELECTED_BAND], ctx.params.get("excluded_codes")).astype(np.uint8)
 
 
 @registry.derived(

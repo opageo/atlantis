@@ -218,6 +218,7 @@ def plot_classified(
     output_path: Path,
     cmap: str = "Blues",
     *,
+    cbar_label: str = "Flood",
     announce: bool = True,
 ) -> None:
     """Render a classified flood raster (binary 0/1 or flood fraction 0–1).
@@ -226,6 +227,11 @@ def plot_classified(
     than the pale-blue tint that colormaps like ``"Blues"`` use at their low
     end, so they can't be mistaken for a faint flood signal and read the same
     as NaN (no-data) pixels.
+
+    Args:
+        cbar_label: Colorbar label. Defaults to ``"Flood"``; pass a more
+            specific label (e.g. ``"Excluded"``, ``"Cloud"``) when rendering
+            other derived layers such as masks.
     """
     import matplotlib.pyplot as plt
 
@@ -239,7 +245,7 @@ def plot_classified(
         vmin=1e-6,
         vmax=max(vmax, 0.01),
         add_colorbar=True,
-        cbar_kwargs={"label": "Flood", "shrink": 0.8},
+        cbar_kwargs={"label": cbar_label, "shrink": 0.8},
     )
     ax.set_title(title, fontsize=11, fontweight="bold")
     ax.set_xlabel("Longitude (°)")

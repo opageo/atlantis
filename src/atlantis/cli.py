@@ -20,8 +20,14 @@ load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=Fal
 from atlantis.config import HarmoniseConfig, get_config  # noqa: E402
 
 # Import fetchers to register them
-from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, modis, rfm, viirs  # noqa: E402, F401
+from atlantis.fetchers import Pmodis, fetcher_registry, get_fetcher, gfm, list_fetchers, rfm, viirs  # noqa: E402, F401
 from atlantis.fetchers.base import FetchResult  # noqa: E402
+from atlantis.fetchers.viirs.layers import (  # noqa: E402
+    DEFAULT_EXCLUDED_CATEGORIES,
+    parse_category_list,
+    parse_code_list,
+    resolve_excluded_codes,
+)
 from atlantis.harmoniser import write_harmonised_raster  # noqa: E402
 from atlantis.models.event import FloodEvent  # noqa: E402
 from atlantis.utils.checklist import is_task_checklist_active, task_checklist  # noqa: E402
@@ -157,6 +163,78 @@ def _ds_is_classified(ds, source_id: str | None = None) -> bool:
         return False
     derived_names = {layer.name for layer in registry.list_derived()}
     return any(name in ds.data_vars for name in derived_names)
+
+
+# Colormap + colorbar label for each known derived layer, used to expand
+# --plot to cover every derived layer on a classified dataset (not just the
+# primary flood_fraction / flood_extent layer). Unknown layers fall back to
+# a Blues colormap with a title-cased label derived from the layer name.
+_DERIVED_LAYER_STYLE: dict[str, tuple[str, str]] = {
+    "water_fraction": ("Blues", "Water fraction"),
+    "flood_fraction": ("Blues", "Flood fraction"),
+    "reference_water": ("Blues", "Reference water"),
+    "exclusion_mask": ("Oranges", "Excluded"),
+    "recurring_flood": ("PuRd", "Recurring flood"),
+    "cloud_mask": ("Greys", "Cloud"),
+    "snow_ice": ("PuBu", "Snow / ice"),
+    "shadow": ("Purples", "Shadow"),
+}
+
+
+def _derived_layer_style(layer_name: str) -> tuple[str, str]:
+    """Return ``(cmap, colorbar_label)`` for a derived layer, with a sane fallback."""
+    return _DERIVED_LAYER_STYLE.get(layer_name, ("Blues", layer_name.replace("_", " ").capitalize()))
+
+
+def _ordered_derived_layers(ds) -> list[str]:
+    """Data-var names for a classified dataset, ``flood_fraction`` first."""
+    names = list(ds.data_vars)
+    rest = sorted(name for name in names if name != "flood_fraction")
+    return (["flood_fraction"] if "flood_fraction" in names else []) + rest
+
+
+def _plot_all_derived_layers(
+    ds,
+    event_id,
+    date_label,
+    *,
+    source_id: str,
+    primary_png_path,
+    title_suffix: str = "",
+    announce: bool = True,
+) -> None:
+    """Save one PNG per derived layer present on a classified dataset.
+
+    ``flood_fraction`` keeps *primary_png_path*'s exact name (backwards
+    compatible with the single-layer behaviour); every other derived layer
+    (e.g. ``water_fraction``, ``exclusion_mask``, ``reference_water``, and
+    VIIRS's ``cloud_mask`` / ``snow_ice`` / ``shadow``) is saved alongside it
+    with the layer name appended to the filename.
+    """
+    pretty = _pretty_source(source_id)
+    res = _resolution_label(source_id)
+    primary_label = _classified_layer_label(source_id)
+    for layer_name in _ordered_derived_layers(ds):
+        if layer_name == "flood_fraction":
+            # Preserve the original single-layer call exactly (default cmap/label).
+            plot_classified(
+                ds[layer_name],
+                title=f"{event_id}: {pretty} {primary_label} {date_label} ({res}){title_suffix}",
+                output_path=primary_png_path,
+                announce=announce,
+            )
+            continue
+        cmap, cbar_label = _derived_layer_style(layer_name)
+        out_path = primary_png_path.parent / primary_png_path.name.replace(".png", f"_{layer_name}.png")
+        layer_title = layer_name.replace("_", " ")
+        plot_classified(
+            ds[layer_name],
+            title=f"{event_id}: {pretty} {layer_title} {date_label} ({res}){title_suffix}",
+            output_path=out_path,
+            cmap=cmap,
+            cbar_label=cbar_label,
+            announce=announce,
+        )
 
 
 def _date_label(result: FetchResult) -> str:
@@ -443,15 +521,21 @@ def _plot_source(
     output_png_path,
     announce: bool = True,
 ):
-    """Save a PNG visualisation of the peak-flood date for any source."""
+    """Save a PNG visualisation of the peak-flood date for any source.
+
+    For classified datasets, saves one PNG per derived layer present on the
+    dataset (see :func:`_plot_all_derived_layers`) rather than just
+    ``flood_fraction``.
+    """
     pretty = _pretty_source(source_id)
     res = _resolution_label(source_id)
     if _ds_is_classified(best_ds, source_id=source_id):
-        layer_label = _classified_layer_label(source_id)
-        plot_classified(
-            best_ds["flood_fraction"],
-            title=f"{event_id}: {pretty} {layer_label} {date_label} ({res})",
-            output_path=output_png_path,
+        _plot_all_derived_layers(
+            best_ds,
+            event_id,
+            date_label,
+            source_id=source_id,
+            primary_png_path=output_png_path,
             announce=announce,
         )
     elif "ensemble_flood_extent" in best_ds:
@@ -604,6 +688,23 @@ def _harmonise_source(
             output_path=png_harm_path,
             announce=announce,
         )
+        for layer_name in _ordered_derived_layers(ds_harm):
+            if layer_name == "flood_fraction":
+                continue
+            layer_tif = harm_dir / f"{event_id}_{date_label}_{source_id}_{layer_name}_harmonised.tif"
+            write_harmonised_raster(ds_harm[layer_name], layer_tif)
+            if announce:
+                console.print(f"  Harmonised → {layer_tif.name}")
+            cmap, cbar_label = _derived_layer_style(layer_name)
+            layer_png = plot_dir / f"{event_id}_{date_label}_{source_id}_{layer_name}_harmonised.png"
+            plot_classified(
+                ds_harm[layer_name],
+                title=f"{event_id}: {pretty} harmonised {layer_name.replace('_', ' ')} {date_label} (1 arcmin)",
+                output_path=layer_png,
+                cmap=cmap,
+                cbar_label=cbar_label,
+                announce=announce,
+            )
         return ds_harm
 
     # Native / raw mode — NN-reproject the raw codes to the 1-arcmin grid and
@@ -850,6 +951,21 @@ def fetch(
         "--viirs-format",
         help="VIIRS format: tif, netcdf, shapezip, png. Only tif is implemented.",
     ),
+    viirs_exclude_categories: str | None = typer.Option(
+        None,
+        "--viirs-exclude-categories",
+        help="Comma-separated VIIRS categories treated as invalid/excluded in water_fraction/"
+        "flood_fraction/exclusion_mask: fill, cloud, snow_ice, shadow, bareland, vegetation."
+        " Default (all six) comes from ATLANTIS_VIIRS_EXCLUDED_CATEGORIES / config. Omit a name"
+        " (e.g. drop bareland,vegetation) to stop excluding it.",
+    ),
+    viirs_exclude_codes: str | None = typer.Option(
+        None,
+        "--viirs-exclude-codes",
+        help="Comma-separated extra raw VIIRS pixel codes to additionally exclude, e.g. '27,38'"
+        " (escape hatch beyond --viirs-exclude-categories). Default from"
+        " ATLANTIS_VIIRS_EXCLUDE_EXTRA_CODES / config (none).",
+    ),
     modis_backend: str = typer.Option(
         "lance_geotiff",
         "--modis-backend",
@@ -949,6 +1065,10 @@ def fetch(
         end_date: End date for direct event construction in YYYY-MM-DD format.
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
+        viirs_exclude_categories: VIIRS categories to treat as invalid/excluded (fill, cloud, snow_ice,
+            shadow, bareland, vegetation), comma-separated. None keeps the config/env default (all six).
+        viirs_exclude_codes: Extra raw VIIRS pixel codes to additionally exclude, comma-separated.
+            None keeps the config/env default (none).
         modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).
         modis_composite: Which MCDWD composite to fetch (F1, F1C, F2, F3).
         classify: If True, write water/flood-fraction plus reference/exclusion layers instead of raw data.
@@ -1073,7 +1193,20 @@ def fetch(
                 "peak_days_after": effective_days_after,
                 "max_observations": max_observations,
                 "peak_priority": peak_priority,
+                "excluded_categories": (
+                    parse_category_list(viirs_exclude_categories) if viirs_exclude_categories is not None else None
+                ),
+                "extra_excluded_codes": (
+                    parse_code_list(viirs_exclude_codes) if viirs_exclude_codes is not None else None
+                ),
             }
+            try:
+                resolve_excluded_codes(
+                    fetcher_kwargs["excluded_categories"] or DEFAULT_EXCLUDED_CATEGORIES,
+                    fetcher_kwargs["extra_excluded_codes"] or (),
+                )
+            except ValueError as exc:
+                raise typer.BadParameter(str(exc)) from exc
         elif src == "modis":
             effective_stream = stream and modis_backend == "lance_geotiff"
             fetcher_kwargs = {
