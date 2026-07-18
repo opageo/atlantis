@@ -165,6 +165,17 @@ def _ds_is_classified(ds, source_id: str | None = None) -> bool:
     return any(name in ds.data_vars for name in derived_names)
 
 
+def _layer_mode_dirname(ds, *, source_id: str) -> str:
+    """Return ``'derived'`` or ``'native'`` to split plot output by layer mode.
+
+    Used to nest an extra subdir under ``plots/processed/`` and
+    ``plots/harmonised/`` so re-running with a different
+    ``--classify``/``--no-classify`` setting never overwrites the other
+    mode's PNGs (they share the same filenames otherwise).
+    """
+    return "derived" if _ds_is_classified(ds, source_id=source_id) else "native"
+
+
 # Colormap + colorbar label for each known derived layer, used to expand
 # --plot to cover every derived layer on a classified dataset (not just the
 # primary flood_fraction / flood_extent layer). Unknown layers fall back to
@@ -884,16 +895,16 @@ def _emit_source_outputs(
 
     if plot:
         with checklist.step("Plot outputs"):
-            processed_plot_dir = png_dir / "processed"
             for date_label, ds in items:
-                png_out = processed_plot_dir / f"{event}_{date_label}_{src}.png"
+                mode_dir = _layer_mode_dirname(ds, source_id=src)
+                png_out = png_dir / "processed" / mode_dir / f"{event}_{date_label}_{src}.png"
                 _plot_source(ds, event, date_label, source_id=src, output_png_path=png_out)
         checklist.complete("Plot outputs", detail=detail)
 
     if harmonise:
         with checklist.step("Harmonise outputs"):
-            harm_plot_dir = png_dir / "harmonised"
             for date_label, ds in items:
+                harm_plot_dir = png_dir / "harmonised" / _layer_mode_dirname(ds, source_id=src)
                 if src == "gfm":
                     _harmonise_safely(
                         _harmonise_gfm,
@@ -1506,10 +1517,12 @@ def fetch_kurosiwo_viirs(
                     best_ds = fetcher.to_dataset(best_result)
                     peak_label = best_date_label
                     png_dir = plot_dir or (event_viirs_dir / "plots")
+                    mode_dir = _layer_mode_dirname(best_ds, source_id="viirs")
+                    processed_plot_dir = png_dir / "processed" / mode_dir
 
                     if plot:
                         with checklist.step("Plot outputs"):
-                            png_path = png_dir / "processed" / f"{event.event_id}_{best_date_label}_viirs.png"
+                            png_path = processed_plot_dir / f"{event.event_id}_{best_date_label}_viirs.png"
                             _plot_viirs(best_ds, event.event_id, best_date_label, output_png_path=png_path)
                         checklist.complete("Plot outputs", detail=best_date_label)
 
@@ -1521,7 +1534,7 @@ def fetch_kurosiwo_viirs(
                                 event.event_id,
                                 best_date_label,
                                 harm_dir=harm_dir,
-                                plot_dir=png_dir / "harmonised",
+                                plot_dir=png_dir / "harmonised" / mode_dir,
                             )
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
@@ -1739,10 +1752,12 @@ def fetch_kurosiwo_modis(
                     best_ds = fetcher.to_dataset(best_result)
                     peak_label = best_date_label
                     png_dir = plot_dir or (event_modis_dir / "plots")
+                    mode_dir = _layer_mode_dirname(best_ds, source_id="modis")
+                    processed_plot_dir = png_dir / "processed" / mode_dir
 
                     if plot:
                         with checklist.step("Plot outputs"):
-                            png_path = png_dir / "processed" / f"{event.event_id}_{best_date_label}_modis.png"
+                            png_path = processed_plot_dir / f"{event.event_id}_{best_date_label}_modis.png"
                             _plot_source(
                                 best_ds,
                                 event.event_id,
@@ -1761,7 +1776,7 @@ def fetch_kurosiwo_modis(
                                 best_date_label,
                                 source_id="modis",
                                 harm_dir=harm_dir,
-                                plot_dir=png_dir / "harmonised",
+                                plot_dir=png_dir / "harmonised" / mode_dir,
                             )
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
@@ -2287,7 +2302,8 @@ def demo(
         best_ds = fetcher.to_dataset(best_result)
 
         plot_dir_path = viirs_dir / "plots"
-        processed_plot_dir = plot_dir_path / "processed"
+        mode_dir = _layer_mode_dirname(best_ds, source_id="viirs")
+        processed_plot_dir = plot_dir_path / "processed" / mode_dir
         processed_plot_dir.mkdir(parents=True, exist_ok=True)
         png_path = processed_plot_dir / f"Valencia_2024_{best_date_label}_viirs.png"
         with checklist.step("Plot outputs"):
@@ -2296,7 +2312,7 @@ def demo(
 
         if harmonise:
             harm_dir = viirs_dir / "harmonised"
-            harm_plot_dir = plot_dir_path / "harmonised"
+            harm_plot_dir = plot_dir_path / "harmonised" / mode_dir
             with checklist.step("Harmonise outputs"):
                 _harmonise_viirs(
                     best_ds,
@@ -2433,14 +2449,15 @@ def demo_modis(
 
     # Plot
     plot_dir_path = modis_dir / "plots"
-    processed_plot_dir = plot_dir_path / "processed"
+    mode_dir = _layer_mode_dirname(best_ds, source_id="modis")
+    processed_plot_dir = plot_dir_path / "processed" / mode_dir
     processed_plot_dir.mkdir(parents=True, exist_ok=True)
     png_path = processed_plot_dir / f"Valencia_2024_{best_date_label}_modis.png"
     with step_status("Plotting peak-flood date…"):
         _plot_source(best_ds, "Valencia_2024", best_date_label, source_id="modis", output_png_path=png_path)
 
     # Harmonise
-    harm_plot_dir = plot_dir_path / "harmonised"
+    harm_plot_dir = plot_dir_path / "harmonised" / mode_dir
     if harmonise:
         harm_dir = modis_dir / "harmonised"
         with step_status("Harmonising to 1 arcmin…"):
@@ -2551,14 +2568,15 @@ def demo_gfm(
 
     # Plot
     plot_dir_path = gfm_dir / "plots"
-    processed_plot_dir = plot_dir_path / "processed"
+    mode_dir = _layer_mode_dirname(best_ds, source_id="gfm")
+    processed_plot_dir = plot_dir_path / "processed" / mode_dir
     processed_plot_dir.mkdir(parents=True, exist_ok=True)
     png_path = processed_plot_dir / f"Valencia_2024_{best_date_label}_gfm.png"
     with step_status("Plotting peak-flood date…"):
         _plot_source(best_ds, "Valencia_2024", best_date_label, source_id="gfm", output_png_path=png_path)
 
     # Harmonise
-    harm_plot_dir = plot_dir_path / "harmonised"
+    harm_plot_dir = plot_dir_path / "harmonised" / mode_dir
     if harmonise:
         harm_dir = gfm_dir / "harmonised"
         with step_status("Harmonising to 1 arcmin…"):

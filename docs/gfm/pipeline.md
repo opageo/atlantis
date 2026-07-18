@@ -290,10 +290,16 @@ harmonised GeoTIFF + PNG.
         <event_id>_<YYYYMMDD>_gfm_advisory_flags.tif          # uint8 native bitmask
         <event_id>_<YYYYMMDD>_gfm_ensemble_likelihood.tif     # uint8 0–100
       plots/
-        processed/    # with --plot
-          <event_id>_<date_token>_gfm.png
-        harmonised/   # with --harmonise
-          <event_id>_<date_token>_gfm_harmonised.png
+        processed/
+          derived/      # --classify (default) + --plot
+            <event_id>_<date_token>_gfm.png
+          native/       # --no-classify + --plot
+            <event_id>_<date_token>_gfm.png
+        harmonised/
+          derived/      # --classify (default) + --harmonise
+            <event_id>_<date_token>_gfm_harmonised.png
+          native/       # --no-classify + --harmonise
+            <event_id>_<date_token>_gfm_harmonised.png
       harmonised/   # with --harmonise
         # Classified mode:
         <event_id>_<date_token>_gfm_harmonised.tif

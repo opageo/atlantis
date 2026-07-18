@@ -144,7 +144,11 @@ Typical folder layout (classified mode with `--harmonise`):
       processed/
       plots/
         processed/    # with --plot
+          derived/    # --classify (default)
+          native/     # --no-classify
         harmonised/   # with --harmonise
+          derived/
+          native/
       harmonised/
         <event_id>_<date_token>_gfm_harmonised.tif    # uint8, 1 arcmin, flood % [0–100]
 ```

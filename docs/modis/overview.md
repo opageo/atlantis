@@ -48,7 +48,11 @@ Typical folder layout:
       processed/    # absent with --no-keep-processed
       plots/
         processed/    # with --plot
+          derived/    # --classify (default)
+          native/     # --no-classify
         harmonised/   # with --harmonise
+          derived/
+          native/
       harmonised/   # with --harmonise
 ```
 
