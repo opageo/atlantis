@@ -17,10 +17,10 @@ implementation flow, see [internals.md](internals.md).
 GFM produces daily flood extent maps by detecting changes in SAR backscatter
 from Sentinel-1A and Sentinel-1B. Two key bands are provided per acquisition:
 
-| Asset                   | Meaning                                                                                |
-| ----------------------- | -------------------------------------------------------------------------------------- |
-| `ensemble_flood_extent` | Flood classification: 0 = dry, 1 = flood, 255 = nodata                                 |
-| `reference_water_mask`  | Water type: 0 = no water, 1 = permanent water, 2 = seasonal water, 255 = nodata        |
+| Asset                   | Meaning                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `ensemble_flood_extent` | Flood classification: 0 = dry, 1 = flood, 255 = nodata                          |
+| `reference_water_mask`  | Water type: 0 = no water, 1 = permanent water, 2 = seasonal water, 255 = nodata |
 
 Native product resolution is **~20 m** in the STAC COGs. Atlantis coarsens to
 ~80 m (default `--gfm-coarsen-factor 4`) before reprojection to reduce SAR
@@ -143,6 +143,8 @@ Typical folder layout (classified mode with `--harmonise`):
     gfm/
       processed/
       plots/
+        processed/    # with --plot
+        harmonised/   # with --harmonise
       harmonised/
         <event_id>_<date_token>_gfm_harmonised.tif    # uint8, 1 arcmin, flood % [0–100]
 ```

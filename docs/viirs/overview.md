@@ -49,13 +49,14 @@ uv run atlantis fetch \
   --no-keep-processed --harmonise
 ```
 
-This streams VIIRS tiles from NOAA S3, derives per-pixel water/flood fractions plus reference/exclusion and weather masks, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/`):
+This streams VIIRS tiles from NOAA S3, derives per-pixel water/flood fractions plus reference/exclusion and weather masks, and writes the final harmonised 1-arcmin GeoTIFF (in `harmonised/`) alongside its PNG visualisation (in `plots/harmonised/`):
 
 ```
 harmonised/
   valencia_2024_2024-10-31_viirs_harmonised.tif   # uint8, 1 arcmin, flood % [0–100], nodata=255
 plots/
-  valencia_2024_2024-10-31_viirs_harmonised.png
+  harmonised/
+    valencia_2024_2024-10-31_viirs_harmonised.png
 ```
 
 ## CLI reference
@@ -310,9 +311,11 @@ details on backend selection.
         <event_id>_<YYYYMMDD>_viirs_shadow.tif
         # --no-classify — native band:
         <event_id>_<YYYYMMDD>_viirs_raw.tif
-      plots/        # with --plot, or with --harmonise (harmonised PNG goes here too)
-        <event_id>_<YYYY-MM-DD>_viirs.png
-        <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
+      plots/
+        processed/    # with --plot
+          <event_id>_<YYYY-MM-DD>_viirs.png
+        harmonised/   # with --harmonise
+          <event_id>_<YYYY-MM-DD>_viirs_harmonised.png
       harmonised/   # with --harmonise
         <event_id>_<YYYY-MM-DD>_viirs_harmonised.tif
 ```

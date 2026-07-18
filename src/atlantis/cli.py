@@ -20,7 +20,7 @@ load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=Fal
 from atlantis.config import HarmoniseConfig, get_config  # noqa: E402
 
 # Import fetchers to register them
-from atlantis.fetchers import Pmodis, fetcher_registry, get_fetcher, gfm, list_fetchers, rfm, viirs  # noqa: E402, F401
+from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, modis, rfm, viirs  # noqa: E402, F401
 from atlantis.fetchers.base import FetchResult  # noqa: E402
 from atlantis.fetchers.viirs.layers import (  # noqa: E402
     DEFAULT_EXCLUDED_CATEGORIES,
@@ -884,13 +884,15 @@ def _emit_source_outputs(
 
     if plot:
         with checklist.step("Plot outputs"):
+            processed_plot_dir = png_dir / "processed"
             for date_label, ds in items:
-                png_out = png_dir / f"{event}_{date_label}_{src}.png"
+                png_out = processed_plot_dir / f"{event}_{date_label}_{src}.png"
                 _plot_source(ds, event, date_label, source_id=src, output_png_path=png_out)
         checklist.complete("Plot outputs", detail=detail)
 
     if harmonise:
         with checklist.step("Harmonise outputs"):
+            harm_plot_dir = png_dir / "harmonised"
             for date_label, ds in items:
                 if src == "gfm":
                     _harmonise_safely(
@@ -900,7 +902,7 @@ def _emit_source_outputs(
                         event,
                         date_label,
                         harm_dir=harm_dir,
-                        plot_dir=png_dir,
+                        plot_dir=harm_plot_dir,
                     )
                 else:
                     _harmonise_safely(
@@ -911,7 +913,7 @@ def _emit_source_outputs(
                         date_label,
                         source_id=src,
                         harm_dir=harm_dir,
-                        plot_dir=png_dir,
+                        plot_dir=harm_plot_dir,
                     )
         checklist.complete("Harmonise outputs", detail=detail)
 
@@ -1507,7 +1509,7 @@ def fetch_kurosiwo_viirs(
 
                     if plot:
                         with checklist.step("Plot outputs"):
-                            png_path = png_dir / f"{event.event_id}_{best_date_label}_viirs.png"
+                            png_path = png_dir / "processed" / f"{event.event_id}_{best_date_label}_viirs.png"
                             _plot_viirs(best_ds, event.event_id, best_date_label, output_png_path=png_path)
                         checklist.complete("Plot outputs", detail=best_date_label)
 
@@ -1519,7 +1521,7 @@ def fetch_kurosiwo_viirs(
                                 event.event_id,
                                 best_date_label,
                                 harm_dir=harm_dir,
-                                plot_dir=png_dir,
+                                plot_dir=png_dir / "harmonised",
                             )
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
@@ -1740,7 +1742,7 @@ def fetch_kurosiwo_modis(
 
                     if plot:
                         with checklist.step("Plot outputs"):
-                            png_path = png_dir / f"{event.event_id}_{best_date_label}_modis.png"
+                            png_path = png_dir / "processed" / f"{event.event_id}_{best_date_label}_modis.png"
                             _plot_source(
                                 best_ds,
                                 event.event_id,
@@ -1759,7 +1761,7 @@ def fetch_kurosiwo_modis(
                                 best_date_label,
                                 source_id="modis",
                                 harm_dir=harm_dir,
-                                plot_dir=png_dir,
+                                plot_dir=png_dir / "harmonised",
                             )
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
@@ -2285,21 +2287,23 @@ def demo(
         best_ds = fetcher.to_dataset(best_result)
 
         plot_dir_path = viirs_dir / "plots"
-        plot_dir_path.mkdir(parents=True, exist_ok=True)
-        png_path = plot_dir_path / f"Valencia_2024_{best_date_label}_viirs.png"
+        processed_plot_dir = plot_dir_path / "processed"
+        processed_plot_dir.mkdir(parents=True, exist_ok=True)
+        png_path = processed_plot_dir / f"Valencia_2024_{best_date_label}_viirs.png"
         with checklist.step("Plot outputs"):
             _plot_viirs(best_ds, "Valencia_2024", best_date_label, output_png_path=png_path, announce=False)
         checklist.complete("Plot outputs", detail=best_date_label)
 
         if harmonise:
             harm_dir = viirs_dir / "harmonised"
+            harm_plot_dir = plot_dir_path / "harmonised"
             with checklist.step("Harmonise outputs"):
                 _harmonise_viirs(
                     best_ds,
                     "Valencia_2024",
                     best_date_label,
                     harm_dir=harm_dir,
-                    plot_dir=plot_dir_path,
+                    plot_dir=harm_plot_dir,
                     announce=False,
                 )
             checklist.complete("Harmonise outputs", detail=best_date_label)
@@ -2314,7 +2318,7 @@ def demo(
             [
                 png_path,
                 harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
-                plot_dir_path / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
+                harm_plot_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
             ]
         )
     else:
@@ -2429,12 +2433,14 @@ def demo_modis(
 
     # Plot
     plot_dir_path = modis_dir / "plots"
-    plot_dir_path.mkdir(parents=True, exist_ok=True)
-    png_path = plot_dir_path / f"Valencia_2024_{best_date_label}_modis.png"
+    processed_plot_dir = plot_dir_path / "processed"
+    processed_plot_dir.mkdir(parents=True, exist_ok=True)
+    png_path = processed_plot_dir / f"Valencia_2024_{best_date_label}_modis.png"
     with step_status("Plotting peak-flood date…"):
         _plot_source(best_ds, "Valencia_2024", best_date_label, source_id="modis", output_png_path=png_path)
 
     # Harmonise
+    harm_plot_dir = plot_dir_path / "harmonised"
     if harmonise:
         harm_dir = modis_dir / "harmonised"
         with step_status("Harmonising to 1 arcmin…"):
@@ -2444,7 +2450,7 @@ def demo_modis(
                 best_date_label,
                 source_id="modis",
                 harm_dir=harm_dir,
-                plot_dir=plot_dir_path,
+                plot_dir=harm_plot_dir,
             )
 
     console.print("")
@@ -2455,7 +2461,7 @@ def demo_modis(
         output_files = [
             png_path,
             harm_dir / f"Valencia_2024_{best_date_label}_modis_harmonised.tif",
-            plot_dir_path / f"Valencia_2024_{best_date_label}_modis_harmonised.png",
+            harm_plot_dir / f"Valencia_2024_{best_date_label}_modis_harmonised.png",
         ]
     else:
         output_files = [png_path]
@@ -2545,12 +2551,14 @@ def demo_gfm(
 
     # Plot
     plot_dir_path = gfm_dir / "plots"
-    plot_dir_path.mkdir(parents=True, exist_ok=True)
-    png_path = plot_dir_path / f"Valencia_2024_{best_date_label}_gfm.png"
+    processed_plot_dir = plot_dir_path / "processed"
+    processed_plot_dir.mkdir(parents=True, exist_ok=True)
+    png_path = processed_plot_dir / f"Valencia_2024_{best_date_label}_gfm.png"
     with step_status("Plotting peak-flood date…"):
         _plot_source(best_ds, "Valencia_2024", best_date_label, source_id="gfm", output_png_path=png_path)
 
     # Harmonise
+    harm_plot_dir = plot_dir_path / "harmonised"
     if harmonise:
         harm_dir = gfm_dir / "harmonised"
         with step_status("Harmonising to 1 arcmin…"):
@@ -2560,7 +2568,7 @@ def demo_gfm(
                 best_date_label,
                 source_id="gfm",
                 harm_dir=harm_dir,
-                plot_dir=plot_dir_path,
+                plot_dir=harm_plot_dir,
             )
 
     console.print("")
@@ -2571,7 +2579,7 @@ def demo_gfm(
         output_files = [
             png_path,
             harm_dir / f"Valencia_2024_{best_date_label}_gfm_harmonised.tif",
-            plot_dir_path / f"Valencia_2024_{best_date_label}_gfm_harmonised.png",
+            harm_plot_dir / f"Valencia_2024_{best_date_label}_gfm_harmonised.png",
         ]
     else:
         output_files = [png_path]
