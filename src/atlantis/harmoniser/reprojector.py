@@ -371,12 +371,12 @@ class Reprojector:
         destination_fill = np.nan if np.isnan(dst_nodata) else float(dst_nodata)
         destination = np.full((dst_height, dst_width), destination_fill, dtype=np.float64)
 
-        reproject_kwargs: dict[str, float] = {}
-        if not np.isnan(src_nodata):
-            reproject_kwargs["src_nodata"] = float(src_nodata)
-        if not np.isnan(dst_nodata):
-            reproject_kwargs["dst_nodata"] = float(dst_nodata)
-
+        # `src_nodata`/`dst_nodata` must always be passed through to GDAL, even
+        # when the sentinel is NaN — rasterio/GDAL accept NaN as a valid nodata
+        # value, and omitting it (as a previous version of this code did) means
+        # GDAL has no way to exclude NaN sub-pixels from `average`/other
+        # resampling kernels: a single NaN sub-pixel then poisons the whole
+        # destination pixel instead of being skipped.
         rio_reproject(
             source=src_array.astype(np.float64),
             destination=destination,
@@ -385,7 +385,8 @@ class Reprojector:
             dst_transform=dst_transform,
             dst_crs=dst_crs,
             resampling=resampling,
-            **reproject_kwargs,
+            src_nodata=float(src_nodata),
+            dst_nodata=float(dst_nodata),
         )
 
         attrs = dict(src_da.attrs)

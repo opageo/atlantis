@@ -85,8 +85,13 @@ class TestReprojector:
         ds_out = r.reproject(ds)
 
         vals = ds_out["flood_extent"].values
-        assert vals.min() >= 0.0
-        assert vals.max() <= 1.0
+        # Grid-snapping can extend the destination slightly beyond source
+        # coverage; those border cells are legitimately nodata (NaN), not a
+        # fabricated in-range value, so exclude them from the range check.
+        valid = vals[~np.isnan(vals)]
+        assert valid.size > 0
+        assert valid.min() >= 0.0
+        assert valid.max() <= 1.0
 
     def test_reproject_quality_mask_mode(self):
         """Quality mask with mode resampling should stay binary + nodata."""
@@ -122,6 +127,59 @@ class TestReprojector:
         ds_fine = r_fine.reproject(ds)
 
         assert ds_coarse["flood_extent"].size < ds_fine["flood_extent"].size
+
+    def test_reproject_average_nan_nodata_skips_invalid_subpixels(self):
+        """Regression: NaN-sentinel source nodata must be excluded from ``average``.
+
+        ``water_fraction``/``flood_fraction`` declare ``nodata=None`` and use an
+        in-array ``NaN`` sentinel for excluded pixels (no ``_FillValue``/``nodata``
+        metadata). A destination pixel whose footprint mixes valid and NaN
+        sub-pixels must be averaged over the valid sub-pixels only, not
+        collapse to NaN just because one contributing sub-pixel is NaN.
+        """
+        import rioxarray  # noqa: F401
+        import xarray as xr
+
+        width, height, res = 4, 4, 1.0
+        west, north = 0.0, 4.0
+        east = west + width * res
+        south = north - height * res
+        transform = from_bounds(west, south, east, north, width, height)
+
+        # Checkerboard of valid (1.0) and excluded (NaN) sub-pixels: each 2x2
+        # destination block mixes two valid and two NaN sub-pixels.
+        data = np.array(
+            [
+                [1.0, np.nan, 1.0, np.nan],
+                [np.nan, 1.0, np.nan, 1.0],
+                [1.0, np.nan, 1.0, np.nan],
+                [np.nan, 1.0, np.nan, 1.0],
+            ],
+            dtype=np.float32,
+        )
+        # No _FillValue/nodata attrs set, matching water_fraction/flood_fraction's
+        # `nodata=None` spec (NaN is an in-array sentinel, not declared metadata).
+        da = xr.DataArray(data, dims=["y", "x"])
+        ds = xr.Dataset(
+            {"water_fraction": da},
+            coords={
+                "x": west + (np.arange(width) + 0.5) * res,
+                "y": north - (np.arange(height) + 0.5) * res,
+            },
+        )
+        ds.rio.write_crs("EPSG:4326", inplace=True)
+        ds.rio.write_transform(transform, inplace=True)
+
+        r = Reprojector(
+            target_resolution=res * 2,
+            variable_resampling={"water_fraction": "average"},
+            snap_to_global_grid=False,
+        )
+        ds_out = r.reproject(ds)
+
+        vals = ds_out["water_fraction"].values
+        assert not np.any(np.isnan(vals)), f"NaN sub-pixels poisoned the average: {vals}"
+        np.testing.assert_allclose(vals, np.ones((2, 2), dtype=np.float32), atol=1e-5)
 
     def test_integer_nearest_preserves_nodata_on_snapped_border(self):
         """Uncovered destination cells must remain nodata for integer rasters.
