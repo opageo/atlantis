@@ -204,8 +204,10 @@ class FetcherConfig(BaseSettings):
             ``exclusion_mask``. Valid names: fill, cloud, snow_ice, shadow,
             bareland, vegetation (see
             :data:`atlantis.fetchers.viirs.layers.EXCLUSION_CATEGORY_CODES`).
-            Default excludes all six (historical behaviour) — drop a name
-            (e.g. remove "bareland,vegetation") to stop treating it as invalid.
+            Default excludes only the four occlusion categories (fill, cloud,
+            snow_ice, shadow) — bareland/vegetation are usable "no flood"
+            observations unless added (e.g. "fill,cloud,snow_ice,shadow,
+            bareland,vegetation") to treat them as low-confidence instead.
         viirs_exclude_extra_codes: Comma-separated extra raw VIIRS pixel codes
             to additionally exclude, regardless of category (escape hatch for
             one-off codes, e.g. "27,38"). Empty by default.
@@ -233,7 +235,7 @@ class FetcherConfig(BaseSettings):
     viirs_base_url: str | None = None
     viirs_legacy_base_url: str | None = None
     viirs_format: Literal["tif", "netcdf", "shapezip", "png"] = "tif"
-    viirs_excluded_categories: str = "fill,cloud,snow_ice,shadow,bareland,vegetation"
+    viirs_excluded_categories: str = "fill,cloud,snow_ice,shadow"
     viirs_exclude_extra_codes: str = ""
     modis_backend: Literal["lance_geotiff", "laads_hdf4"] = "lance_geotiff"
     modis_composite: Literal["F1", "F1C", "F2", "F3"] = "F2"

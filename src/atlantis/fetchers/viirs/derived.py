@@ -27,11 +27,10 @@ def _invalid_mask(data: np.ndarray, excluded_codes: frozenset[int] | None = None
     """Return True where the VIIRS code should be excluded from fractions.
 
     ``excluded_codes`` defaults to :data:`~atlantis.fetchers.viirs.layers.DEFAULT_EXCLUDED_CODES`
-    (fill, cloud, snow/ice, shadow, bareland, vegetation). Callers can override
-    which categories count as invalid via
-    :func:`~atlantis.fetchers.viirs.layers.resolve_excluded_codes` — e.g. to stop
-    treating vegetation/bareland as low-confidence and keep them as usable
-    "no flood" observations.
+    (fill, cloud, snow/ice, shadow). Callers can override which categories
+    count as invalid via :func:`~atlantis.fetchers.viirs.layers.resolve_excluded_codes`
+    — e.g. to additionally treat vegetation/bareland as low-confidence instead
+    of usable "no flood" observations.
     """
     codes = excluded_codes if excluded_codes is not None else DEFAULT_EXCLUDED_CODES
     return np.isin(data, list(codes))
@@ -55,8 +54,9 @@ def _decode_fraction_codes(data: np.ndarray, excluded_codes: frozenset[int] | No
     description=(
         "Continuous water fraction decoded from codes 100-200 as (code-100)/100, "
         "with NOAA reference-water code 99 and unquantified floodwater code 15 forced to 1.0. "
-        "Fill, cloud, snow/ice, shadow, vegetation, and bareland pixels are NaN so temporal "
-        "averaging skips them."
+        "Fill, cloud, snow/ice, and shadow pixels are NaN so temporal averaging skips them. "
+        "Vegetation and bareland pixels resolve to 0.0 (usable non-flood observations) by "
+        "default; opt them into exclusion via --viirs-exclude-categories."
     ),
     resampling="average",
     aggregation="nanmean",
@@ -78,8 +78,9 @@ def water_fraction(ctx: DerivationContext) -> np.ndarray:
     description=(
         "Continuous fraction decoded directly from the NOAA 100-200 fraction codes. "
         "Reference-water code 99 and unquantified floodwater code 15 remain 0.0 here; "
-        "fill, cloud, snow/ice, shadow, vegetation, and bareland pixels are NaN so temporal "
-        "averaging skips them."
+        "fill, cloud, snow/ice, and shadow pixels are NaN so temporal averaging skips them. "
+        "Vegetation and bareland pixels resolve to 0.0 (usable non-flood observations) by "
+        "default; opt them into exclusion via --viirs-exclude-categories."
     ),
     resampling="average",
     aggregation="nanmean",
@@ -95,16 +96,17 @@ def flood_fraction(ctx: DerivationContext) -> np.ndarray:
     dtype="uint8",
     nodata=0,
     description=(
-        "Exclusion mask: 1 for fill (0, 1), cloud (30), snow/ice (20), shadow (50), "
-        "bareland (16), or vegetation (17); 0 otherwise. Bareland/vegetation are treated as "
-        "low-confidence rather than confirmed dry land, since flood pixels can be "
+        "Exclusion mask: 1 for fill (0, 1), cloud (30), snow/ice (20), or shadow (50); 0 "
+        "otherwise. Bareland (16) and vegetation (17) are usable non-flood observations by "
+        "default (0), not confirmed-occlusion classes — pass them to --viirs-exclude-categories "
+        "to instead treat them as low-confidence/excluded, since flood pixels can be "
         "misclassified into either class. Pre-existing water classes count as usable observations."
     ),
     resampling="mode",
     aggregation="all_true",
 )
 def exclusion_mask(ctx: DerivationContext) -> np.ndarray:
-    """Mark excluded-category pixels (default: fill/cloud/snow/shadow/bareland/vegetation) as 1; else 0."""
+    """Mark excluded-category pixels (default: fill/cloud/snow/shadow) as 1; else 0."""
     return _invalid_mask(ctx[SELECTED_BAND], ctx.params.get("excluded_codes")).astype(np.uint8)
 
 
