@@ -112,15 +112,13 @@ class TestBuildCatalog:
             build_catalog("2024-11-01", "2024-11-01", tmp_path / "catalog.parquet")
 
     @patch("atlantis.fetchers.gfm.catalog._search_day")
-    def test_continues_on_exception(self, mock_search, tmp_path):
-        """A failed day search should be skipped, not crash the whole run."""
+    def test_aborts_on_persistent_day_failure(self, mock_search, tmp_path):
+        """A day that still fails after retries must abort the whole build, not silently truncate it."""
         mock_search.side_effect = [RuntimeError("network error"), [self._ROW]]
         output = tmp_path / "catalog.parquet"
-        result = build_catalog("2024-11-01", "2024-11-02", output)
-
-        assert result == output
-        df = pd.read_parquet(output)
-        assert len(df) == 1
+        with pytest.raises(RuntimeError, match="GFM catalog build aborted.*2024-11-01"):
+            build_catalog("2024-11-01", "2024-11-02", output)
+        assert not output.exists()
 
     @patch("atlantis.fetchers.gfm.catalog._search_day")
     def test_progress_callback_invoked(self, mock_search, tmp_path):

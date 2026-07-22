@@ -199,10 +199,10 @@ single year is still too slow) into separate local files, then merge:
 ```bash
 # One tmux window per year, or a simple sequential loop — either works.
 for year in 2015 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025; do
-  PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm catalog \
+  PYTHONPATH=src pixi run -e batch python -m atlantis.cli --verbose batch gfm catalog \
     --start "${year}-01-01" --end "${year}-12-31" \
     --output "gfm_archive_catalog_${year}.parquet" \
-    | tee "gfm_catalog_${year}.log"
+    2>&1 | tee "gfm_catalog_${year}.log"
 done
 ```
 

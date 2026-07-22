@@ -70,18 +70,16 @@ def _search_day(api_url: str, day: _date) -> list[dict[str, Any]]:
         if bbox is None:
             logger.warning("GFM item {} has no bbox, skipping", item.id)
             continue
-        rows.append(
-            {
-                "date": day_str,
-                "equi7_tile": tile,
-                "item_id": item.id,
-                "item_href": item.self_href,
-                "west": bbox[0],
-                "south": bbox[1],
-                "east": bbox[2],
-                "north": bbox[3],
-            }
-        )
+        rows.append({
+            "date": day_str,
+            "equi7_tile": tile,
+            "item_id": item.id,
+            "item_href": item.self_href,
+            "west": bbox[0],
+            "south": bbox[1],
+            "east": bbox[2],
+            "north": bbox[3],
+        })
     return rows
 
 
@@ -118,15 +116,22 @@ def build_catalog(
         an ``s3://`` URI.
 
     Raises:
-        RuntimeError: If no GFM items were found in the date range.
+        RuntimeError: If no GFM items were found in the date range, or if the
+            STAC search for a day still fails after :data:`_MAX_RETRIES`
+            attempts — a partial catalog is never silently written; the whole
+            build aborts so a truncated result can't be mistaken for a
+            complete one.
     """
     days = list(iter_dates(start, end))
     rows: list[dict[str, Any]] = []
     for i, day in enumerate(days):
         try:
             rows.extend(_search_day(api_url, day))
-        except Exception as exc:  # noqa: BLE001 - one bad day shouldn't kill the whole run
-            logger.warning("Failed to search GFM STAC for {}: {}", day.isoformat(), exc)
+        except Exception as exc:
+            raise RuntimeError(
+                f"GFM catalog build aborted: STAC search for {day.isoformat()} failed after "
+                f"{_MAX_RETRIES} attempt(s) ({len(rows)} row(s) collected from {i} prior day(s)): {exc}"
+            ) from exc
         log_progress(i, len(days), label="GFM catalog", on_progress=on_progress)
 
     if not rows:

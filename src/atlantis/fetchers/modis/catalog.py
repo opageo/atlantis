@@ -80,15 +80,13 @@ def _list_tiles_for_date(
         h, v = hv
         task_id = f"modis-{date_str.replace('-', '')}-h{h:02d}v{v:02d}"
         source_uri = url + filename
-        tiles.append(
-            {
-                "date": date_str,
-                "h": h,
-                "v": v,
-                "task_id": task_id,
-                "source_uri": source_uri,
-            }
-        )
+        tiles.append({
+            "date": date_str,
+            "h": h,
+            "v": v,
+            "task_id": task_id,
+            "source_uri": source_uri,
+        })
     logger.debug("{} → {} tile(s)", date_str, len(tiles))
     return tiles
 
@@ -126,7 +124,10 @@ def build_catalog(
         an ``s3://`` URI.
 
     Raises:
-        RuntimeError: If ``EARTHDATA_TOKEN`` is not set.
+        RuntimeError: If ``EARTHDATA_TOKEN`` is not set, or if the LAADS
+            listing for a day still fails after :data:`_MAX_RETRIES` attempts
+            — a partial catalog is never silently written; the whole build
+            aborts so a truncated result can't be mistaken for a complete one.
     """
     headers = earthdata_auth_headers()
 
@@ -137,7 +138,10 @@ def build_catalog(
         try:
             rows.extend(_list_tiles_for_date(day_str, headers))
         except requests.RequestException as exc:
-            logger.warning("Failed to list {}: {}", day_str, exc)
+            raise RuntimeError(
+                f"MODIS catalog build aborted: LAADS listing for {day_str} failed after "
+                f"{_MAX_RETRIES} attempt(s) ({len(rows)} row(s) collected from {i} prior day(s)): {exc}"
+            ) from exc
         log_progress(i, len(days), label="MODIS catalog", on_progress=on_progress)
 
     if not rows:
