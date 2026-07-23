@@ -3,22 +3,21 @@
 import pytest
 
 
-def pytest_addoption(parser):
-    """Add a command-line option to control whether e2e tests are run."""
-    parser.addoption(
-        "--run-e2e",
-        action="store_true",
-        default=False,
-        help="run end-to-end tests",
-    )
-
-
 def pytest_collection_modifyitems(config, items):
-    """Skip e2e tests unless --run-e2e is specified."""
-    if config.getoption("--run-e2e"):
+    """Skip e2e tests by default, without affecting test collection/discovery.
+
+    All tests (including e2e) are still collected, so tools like the VS Code
+    Python test explorer/debugger can discover and run them individually.
+    When no explicit `-m` marker expression is given, e2e tests are skipped.
+    Passing an expression that references "e2e" (e.g. `-m e2e` or
+    `-m "not e2e"`) opts back into pytest's own marker filtering, so e.g.
+    `pytest -m e2e` runs only the e2e tests.
+    """
+    markexpr = config.getoption("markexpr") or ""
+    if "e2e" in markexpr:
         return
 
-    skip_e2e = pytest.mark.skip(reason="need --run-e2e option to run")
+    skip_e2e = pytest.mark.skip(reason="e2e tests skipped by default; run with `-m e2e` to include them")
 
     for item in items:
         if "e2e" in item.keywords:
