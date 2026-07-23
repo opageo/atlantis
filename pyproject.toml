@@ -49,9 +49,9 @@ batch = [
 stac = [
   "atlantis[geo]",
   "pystac>=1.9",
-  "pystac-client>=0.7",   # pystac, pystac-client, xarray, zarr
+  "pystac-client>=0.7",     # pystac, pystac-client, xarray, zarr
   "stac-geoparquet>=0.8.1", # serverless columnar item index (scale path)
-  "xpystac>=0.1",         # open a STAC Item/Asset/Collection as xarray (Zarr)
+  "xpystac>=0.1",           # open a STAC Item/Asset/Collection as xarray (Zarr)
 ]
 viz = [
   "atlantis[geo]",    # xarray/zarr datacube reads
@@ -139,7 +139,7 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-env = ["R:AWS_PROFILE=default"]
+env = ["R:AWS_PROFILE=default", "ATLANTIS_E2E_STRICT_REFERENCE_BYTES=1"]
 markers = [
   "e2e: end-to-end tests requiring network access (STAC API + S3)",
   "slow: slow integration tests that spin a real Dask cluster",
