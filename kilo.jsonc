@@ -1,0 +1,8 @@
+// Kilo Code project configuration.
+// Custom agents for this project are defined as markdown files in .kilo/agents/
+// (spec-interviewer.md, builder.md, output-reviewer.md) rather than inline here,
+// per https://kilo.ai/docs/customize/custom-modes — project agent markdown files
+// take precedence over this config file, so definitions are not duplicated.
+{
+  "$schema": "https://app.kilo.ai/config.json"
+}
