@@ -65,7 +65,7 @@ def test_classify_viirs_pixels_nodata_fill():
     assert result.cloud_fraction == 0.0
 
 
-@pytest.mark.integration
+@pytest.mark.e2e
 def test_process_granule_cog_roundtrip(tmp_path, monkeypatch):
     """Run process_granule against a local fixture TIF, intercept the S3 upload,
     and verify the in-memory COG is valid."""
