@@ -24,7 +24,7 @@ from upath import UPath
 
 from tests.fetchers._e2e_utils import compare_rasters, run_pipeline, s3_rasterio_env, strict_reference_bytes_enabled
 
-S3_REFERENCE_BASE = "s3://atlantis/reference/Valencia_2024_gfm/gfm/harmonised"
+S3_REFERENCE_BASE = "s3://atlantis/reference/Valencia_2024_gfm"
 STRICT_REFERENCE_BYTES = strict_reference_bytes_enabled()
 
 # Event parameters matching the reference run
@@ -33,11 +33,14 @@ BBOX = "-1.5 38.8 0.5 40.0"
 START_DATE = "2024-10-29"
 END_DATE = "2024-11-04"
 
-# Expected reference filenames per strategy
-REFERENCE_FILES = {
-    "peak": "Valencia_2024_2024-10-31_gfm_harmonised.tif",
-    "aggregate": "Valencia_2024_aggregated_gfm_harmonised.tif",
-}
+LAYERS_RASTERS = [
+    "Valencia_2024_2024-11-01_gfm_advisory_flags_harmonised.tif",
+    "Valencia_2024_2024-11-01_gfm_ensemble_likelihood_harmonised.tif",
+    "Valencia_2024_2024-11-01_gfm_exclusion_mask_harmonised.tif",
+    "Valencia_2024_2024-11-01_gfm_harmonised.tif",
+    "Valencia_2024_2024-11-01_gfm_reference_water_harmonised.tif",
+    "Valencia_2024_2024-11-01_gfm_water_fraction_harmonised.tif",
+]
 
 
 def _run_gfm_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
@@ -54,62 +57,40 @@ def _run_gfm_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
     )
 
 
-@pytest.mark.e2e
-class TestGfmE2EPeak:
-    """End-to-end test: GFM pipeline with --strategy peak."""
+@pytest.fixture(scope="class")
+def produced_tifs(
+    request: pytest.FixtureRequest,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> list[UPath]:
+    output_dir = UPath(tmp_path_factory.mktemp("output"))
 
-    @pytest.fixture(autouse=True)
-    def _setup(self, tmp_path):
-        self.tmp_path = tmp_path
+    strategy = request.cls.strategy
 
-    def test_peak_matches_reference(self):
-        """Pipeline output matches the S3 reference raster, optionally by exact bytes."""
-        reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["peak"]
-
-        output_dir = UPath(self.tmp_path / "output")
-        tifs = _run_gfm_pipeline("peak", output_dir)
-
-        # Find the matching output file
-        produced = None
-        for tif in tifs:
-            if tif.name == reference_file.name:
-                produced = tif
-                break
-
-        if produced is None:
-            # The peak date may vary if data availability changes;
-            # compare whichever single file was produced
-            assert len(tifs) == 1, f"Peak strategy should produce exactly 1 file, got {len(tifs)}: {tifs}"
-            produced = tifs[0]
-
-        with s3_rasterio_env():
-            compare_rasters(produced, reference_file, require_byte_identity=STRICT_REFERENCE_BYTES)
+    return _run_gfm_pipeline(strategy, output_dir)
 
 
 @pytest.mark.e2e
-class TestGfmE2EAggregate:
-    """End-to-end test: GFM pipeline with --strategy aggregate."""
+class TestGfmE2EAll:
+    strategy = "all"
 
-    @pytest.fixture(autouse=True)
-    def _setup(self, tmp_path):
-        self.tmp_path = tmp_path
+    @pytest.mark.parametrize("layer_raster", LAYERS_RASTERS)
+    def test_matches_reference(
+        self,
+        produced_tifs: list[UPath],
+        layer_raster: str,
+    ):
+        reference_file = UPath(S3_REFERENCE_BASE) / f"strategy_{self.strategy}" / "harmonised" / layer_raster
 
-    def test_aggregate_matches_reference(self):
-        """Pipeline output matches the S3 reference raster, optionally by exact bytes."""
-        reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["aggregate"]
+        produced = next(
+            (tif for tif in produced_tifs if tif.name == layer_raster),
+            None,
+        )
 
-        output_dir = UPath(self.tmp_path / "output")
-        tifs = _run_gfm_pipeline("aggregate", output_dir)
-
-        produced = None
-        for tif in tifs:
-            if tif.name == reference_file.name:
-                produced = tif
-                break
-
-        if produced is None:
-            assert len(tifs) == 1, f"Aggregate strategy should produce exactly 1 file, got {len(tifs)}: {tifs}"
-            produced = tifs[0]
+        assert produced is not None
 
         with s3_rasterio_env():
-            compare_rasters(produced, reference_file, require_byte_identity=STRICT_REFERENCE_BYTES)
+            compare_rasters(
+                produced,
+                reference_file,
+                require_byte_identity=STRICT_REFERENCE_BYTES,
+            )
