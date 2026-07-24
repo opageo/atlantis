@@ -1784,7 +1784,13 @@ def test_harmonise_source_native_writes_raw_codes(tmp_path):
 
 
 def test_harmonise_source_modis_raw_preserves_255_nodata(tmp_path):
-    """MODIS raw harmonisation must keep 255 as nodata, not create 0 borders."""
+    """MODIS raw harmonisation must not create 0 (or leftover 255) borders.
+
+    The snapped-grid margin is trimmed away entirely (see
+    ``Reprojector._trim_uncovered_margin``), so an all-valid source produces
+    an all-valid output -- no bogus ``0`` from mis-cast nodata, and no
+    leftover ``255`` sentinel from an uncovered border either.
+    """
     import rioxarray  # noqa: F401
     import xarray as xr
 
@@ -1824,9 +1830,7 @@ def test_harmonise_source_modis_raw_preserves_255_nodata(tmp_path):
         assert dsr.dtypes[0] == "uint8"
         assert dsr.nodata == 255
         values = set(np.unique(dsr.read(1)).tolist())
-    assert values <= {1, 255}
-    assert 0 not in values
-    assert 255 in values
+    assert values == {1}, f"Uncovered border must be trimmed away entirely, found: {values}"
 
 
 def test_fetch_unknown_source_reports_unknown(monkeypatch):

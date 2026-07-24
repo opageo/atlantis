@@ -19,7 +19,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.10 /uv /uvx /bin/
 RUN apt-get -qq update && \
     apt-get install -y curl make g++ locales openssh-client git-lfs && \
     locale-gen en_US.UTF-8
-
+    
+RUN git config --system --add safe.directory '*' && \
+    git config --system core.autocrlf input
+    
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8
 

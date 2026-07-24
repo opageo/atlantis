@@ -5,9 +5,7 @@
     },
     "mounts": [
         "source=${localEnv:HOME}/.aws/credentials,target=/home/ubuntu/.aws/credentials,type=bind,readonly",
-        "source=${localEnv:HOME}/.aws/config,target=/home/ubuntu/.aws/config,type=bind,readonly",
-        "source=${localEnv:HOME}/.gitconfig,target=/home/ubuntu/.gitconfig,type=bind,readonly",
-        "source=/etc/pki/tls/certs/ca-bundle.crt,target=/etc/pki/tls/certs/ca-bundle.crt,type=bind,readonly"
+        "source=${localEnv:HOME}/.aws/config,target=/home/ubuntu/.aws/config,type=bind,readonly"
     ],
     "runArgs": [
         "--hostname=atlantis"
@@ -39,7 +37,9 @@
     },
     "remoteUser": "ubuntu",
     "postCreateCommand": "uv sync",
-    "containerEnv": { "AWS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt" }
+    "containerEnv": {
+        "AWS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt"
+    }
     // "postStartCommand": "git config --global --add safe.directory /workspaces/atlantis",
     // "initializeCommand": "echo 'Git credentials will be forwarded from host'"
 }
