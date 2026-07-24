@@ -796,10 +796,11 @@ def _harmonise_gfm(
 ):
     """Harmonise GFM data and save GeoTIFF (harm_dir) + optional PNG (plot_dir).
 
-    Works for both classified mode (flood_fraction variable) and native / raw
-    mode (ensemble_flood_extent + reference_water_mask variables).  In native
-    mode the bands are NN-reprojected to 1-arcmin and written as-is (uint8
-    codes); no fraction derivation is performed.
+    Works for both classified mode (``flood_fraction`` / ``water_fraction`` /
+    ``reference_water`` plus any native-code extras such as ``exclusion_mask``)
+    and native / raw mode (``ensemble_flood_extent`` + ``reference_water_mask``
+    variables). In native mode the bands are NN-reprojected to 1-arcmin and
+    written as-is (uint8 codes); no fraction derivation is performed.
     """
     from atlantis.harmoniser import Harmoniser
 
@@ -808,7 +809,11 @@ def _harmonise_gfm(
     h = Harmoniser()
 
     if _ds_is_classified(ds, source_id="gfm"):
-        # Classified mode
+        # Classified mode — harmonise flood_fraction plus every other derived
+        # layer present on the dataset (water_fraction, reference_water, and
+        # any native-code extras), mirroring `_harmonise_source`'s behaviour
+        # for VIIRS/MODIS so GFM emits the full layer set, not just
+        # flood_fraction.
         ds_harm = h.harmonise(ds, source_id="gfm", flood_variable="flood_fraction")
         tif_path = harm_dir / f"{event_id}_{date_label}_gfm_harmonised.tif"
         write_harmonised_raster(ds_harm["flood_fraction"], tif_path)
@@ -819,6 +824,21 @@ def _harmonise_gfm(
             title=f"{event_id}: GFM harmonised flood extent {date_label} (1 arcmin)",
             output_path=png_harm_path,
         )
+        for layer_name in _ordered_derived_layers(ds_harm):
+            if layer_name == "flood_fraction":
+                continue
+            layer_tif = harm_dir / f"{event_id}_{date_label}_gfm_{layer_name}_harmonised.tif"
+            write_harmonised_raster(ds_harm[layer_name], layer_tif)
+            console.print(f"  Harmonised → {layer_tif.name}")
+            cmap, cbar_label = _derived_layer_style(layer_name)
+            layer_png = plot_dir / f"{event_id}_{date_label}_gfm_{layer_name}_harmonised.png"
+            plot_classified(
+                ds_harm[layer_name],
+                title=f"{event_id}: GFM harmonised {layer_name.replace('_', ' ')} {date_label} (1 arcmin)",
+                output_path=layer_png,
+                cmap=cmap,
+                cbar_label=cbar_label,
+            )
         return ds_harm
 
     # Native mode — reproject each band with NN, write as uint8 codes + plot bands
