@@ -181,12 +181,15 @@ class TestReprojector:
         assert not np.any(np.isnan(vals)), f"NaN sub-pixels poisoned the average: {vals}"
         np.testing.assert_allclose(vals, np.ones((2, 2), dtype=np.float32), atol=1e-5)
 
-    def test_integer_nearest_preserves_nodata_on_snapped_border(self):
-        """Uncovered destination cells must remain nodata for integer rasters.
+    def test_integer_nearest_trims_uncovered_snapped_border(self):
+        """Uncovered destination cells must be trimmed away, not left as nodata.
 
         Regression guard for native-code harmonisation: snapped AOI bounds can
-        extend slightly beyond source coverage; those border pixels must not be
-        cast to valid code ``0``.
+        extend slightly beyond source coverage. Those border pixels must not
+        be cast to valid code ``0`` (original guard) -- and, since
+        `Reprojector._trim_uncovered_margin` was added, must no longer remain
+        in the output as a nodata sentinel either: the whole partially/
+        uncovered strip is dropped so the returned dataset is fully valid.
         """
         import rioxarray  # noqa: F401
         import xarray as xr
@@ -223,9 +226,84 @@ class TestReprojector:
 
         vals = ds_out["flood_extent"].values
         unique = set(np.unique(vals).tolist())
-        assert 0 not in unique
-        assert unique.issubset({1, 255})
-        assert 255 in unique
+        assert unique == {1}, f"Partially/uncovered border must be trimmed away entirely, found: {unique}"
+
+        # Confirm the grid actually shrank (this source is off-grid on all
+        # four sides), not merely that it coincidentally has no nodata.
+        snapped_west, snapped_south, snapped_east, snapped_north = r._snap_bounds_to_global_grid(
+            west, south, east, north
+        )
+        untrimmed_width = round((snapped_east - snapped_west) / r.target_resolution)
+        untrimmed_height = round((snapped_north - snapped_south) / r.target_resolution)
+        assert ds_out["flood_extent"].shape[1] == untrimmed_width - 2
+        assert ds_out["flood_extent"].shape[0] == untrimmed_height - 2
+
+    def test_average_partial_coverage_on_snapped_border(self):
+        """Diagnostic: border cells with PARTIAL (not zero) source coverage.
+
+        Complements ``test_integer_nearest_preserves_nodata_on_snapped_border``,
+        which only exercises *zero*-coverage border cells under ``nearest``.
+        Here the outward-snapped margin overlaps the source by a fraction of a
+        destination pixel (neither ~0% nor ~100%) under ``average`` resampling
+        -- the scenario behind issue #109's edge artefact. The source is a
+        uniform constant so any leak of real data into these cells is
+        unambiguous: the result must be either NaN or exactly the constant
+        (correctly averaged over whatever fraction of real sub-pixels is
+        actually present) -- never some other spurious value.
+
+        This test is intentionally diagnostic (see module docstring / PR
+        notes): its purpose is to establish *what the border cells actually
+        contain* so that the border-trimming fix knows whether "trim
+        pure-fill rows/cols" is sufficient, or whether partially-covered
+        non-fill border cells also need to be trimmed.
+        """
+        import rioxarray  # noqa: F401
+        import xarray as xr
+
+        # Off-grid origin (same style as the West-Africa-like snap tests)
+        # with native resolution fine enough that each destination pixel
+        # spans ~3-4 source sub-pixels, so border coverage is meaningfully
+        # fractional rather than all-or-nothing.
+        width, height, res = 40, 40, 0.005
+        west, north = -0.861, 11.731
+        east = west + width * res
+        south = north - height * res
+        transform = from_bounds(west, south, east, north, width, height)
+
+        marker = 7.0
+        data = np.full((height, width), marker, dtype=np.float32)
+        da = xr.DataArray(data, dims=["y", "x"])
+        ds = xr.Dataset(
+            {"water_fraction": da},
+            coords={
+                "x": west + (np.arange(width) + 0.5) * res,
+                "y": north - (np.arange(height) + 0.5) * res,
+            },
+        )
+        ds.rio.write_crs("EPSG:4326", inplace=True)
+        ds.rio.write_transform(transform, inplace=True)
+
+        r = Reprojector(
+            target_resolution=1.0 / 60.0,
+            variable_resampling={"water_fraction": "average"},
+            snap_to_global_grid=True,
+        )
+        ds_out = r.reproject(ds)
+
+        vals = ds_out["water_fraction"].values
+        border = np.concatenate([vals[0, :], vals[-1, :], vals[:, 0], vals[:, -1]])
+        spurious = border[~np.isnan(border) & ~np.isclose(border, marker)]
+        assert spurious.size == 0, (
+            f"Border cells must be NaN or exactly the source constant ({marker}); "
+            f"found spurious values instead: {spurious}"
+        )
+
+        n_nan = int(np.isnan(border).sum())
+        n_marker = int(np.isclose(border, marker).sum())
+        print(
+            f"\n[diagnostic] border cells: {n_nan} NaN, {n_marker} == marker "
+            f"(out of {border.size}); vals[0,:5]={vals[0, :5]}; vals[:5,0]={vals[:5, 0]}"
+        )
 
 
 class TestResolveResampling:
