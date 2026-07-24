@@ -969,8 +969,8 @@ def fetch(
         "--viirs-exclude-categories",
         help="Comma-separated VIIRS categories treated as invalid/excluded in water_fraction/"
         "flood_fraction/exclusion_mask: fill, cloud, snow_ice, shadow, bareland, vegetation."
-        " Default (all six) comes from ATLANTIS_VIIRS_EXCLUDED_CATEGORIES / config. Omit a name"
-        " (e.g. drop bareland,vegetation) to stop excluding it.",
+        " Default (fill,cloud,snow_ice,shadow) comes from ATLANTIS_VIIRS_EXCLUDED_CATEGORIES /"
+        " config. Add a name (e.g. bareland,vegetation) to also exclude it.",
     ),
     viirs_exclude_codes: str | None = typer.Option(
         None,
@@ -1079,7 +1079,8 @@ def fetch(
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
         viirs_exclude_categories: VIIRS categories to treat as invalid/excluded (fill, cloud, snow_ice,
-            shadow, bareland, vegetation), comma-separated. None keeps the config/env default (all six).
+            shadow, bareland, vegetation), comma-separated. None keeps the config/env default
+            (fill,cloud,snow_ice,shadow).
         viirs_exclude_codes: Extra raw VIIRS pixel codes to additionally exclude, comma-separated.
             None keeps the config/env default (none).
         modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).

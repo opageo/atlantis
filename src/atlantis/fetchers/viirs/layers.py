@@ -35,19 +35,23 @@ SNOW_ICE_CODES = {20}
 SEASONAL_WATER_CODES = SNOW_ICE_CODES
 OPEN_WATER_CODES = {99}
 SHADOW_CODES = {50}
-# Codes 16 (bareland) and 17 (vegetation) are land-cover classes, not confirmed
-# dry-land observations. Flood pixels can be misclassified into either class
-# (confirmed by the VIIRS product team, 2026-07), so both are treated as
-# low-confidence/exclusion classes rather than usable "no flood" observations.
+# Codes 16 (bareland) and 17 (vegetation) are land-cover classes reached only
+# after the clear-sky (non-cloud, non-snow/ice) decision tree runs — i.e. the
+# algorithm did assess these pixels for water/flood and determined "land, not
+# water". Atlantis therefore treats them as usable "no flood" observations by
+# default. The VIIRS product team confirmed (2026-07) that flood pixels can
+# occasionally be misclassified into either class; pass "bareland"/"vegetation"
+# to --viirs-exclude-categories / ATLANTIS_VIIRS_EXCLUDED_CATEGORIES to instead
+# treat them as low-confidence/excluded.
 BARELAND_CODES = {16}
 VEGETATION_CODES = {17}
 
 # ── Configurable exclusion (invalid mask) ─────────────────────────────────
 # `water_fraction` / `flood_fraction` / `exclusion_mask` all derive from the
 # same "which codes count as invalid/excluded" decision. This is exposed as
-# named categories (rather than raw codes) so a developer can, e.g., stop
-# excluding vegetation/bareland without needing to know their numeric codes.
-# Configure via `FetcherConfig.viirs_excluded_categories` /
+# named categories (rather than raw codes) so a developer can, e.g., opt
+# vegetation/bareland into the exclusion mask without needing to know their
+# numeric codes. Configure via `FetcherConfig.viirs_excluded_categories` /
 # `viirs_exclude_extra_codes` (env: `ATLANTIS_VIIRS_EXCLUDED_CATEGORIES` /
 # `ATLANTIS_VIIRS_EXCLUDE_EXTRA_CODES`), or per-run via `atlantis fetch
 # --viirs-exclude-categories` / `--viirs-exclude-codes`.
@@ -60,14 +64,17 @@ EXCLUSION_CATEGORY_CODES: dict[str, frozenset[int]] = {
     "vegetation": frozenset(VEGETATION_CODES),
 }
 
-#: Categories excluded by default — matches Atlantis's historical behaviour.
+#: Categories excluded by default: pixels the sensor could not assess at all
+#: (occluded/unobserved). Bareland/vegetation are deliberately NOT included —
+#: they are usable "no flood" observations by default, since the classifier
+#: did evaluate them for water/flood and decided "land". Add "bareland"/
+#: "vegetation" here (or via --viirs-exclude-categories) to instead treat them
+#: as low-confidence/excluded.
 DEFAULT_EXCLUDED_CATEGORIES: tuple[str, ...] = (
     "fill",
     "cloud",
     "snow_ice",
     "shadow",
-    "bareland",
-    "vegetation",
 )
 
 
@@ -80,9 +87,10 @@ def resolve_excluded_codes(
     Args:
         categories: Named groups to exclude, from :data:`EXCLUSION_CATEGORY_CODES`
             (``fill``, ``cloud``, ``snow_ice``, ``shadow``, ``bareland``,
-            ``vegetation``). Defaults to all six (current/historical behaviour).
-            Drop a name (e.g. omit ``"bareland"``/``"vegetation"``) to stop
-            treating that category as invalid.
+            ``vegetation``). Defaults to the four occlusion categories (fill,
+            cloud, snow_ice, shadow); ``bareland``/``vegetation`` are usable
+            "no flood" observations unless added here. Add ``"bareland"``/
+            ``"vegetation"`` to instead treat that category as invalid.
         extra_codes: Additional raw pixel codes to exclude regardless of
             category — an escape hatch for one-off codes not covered by a
             named category (e.g. 27 "river/lake ice", 38 "mixed snow/ice/water").
@@ -114,8 +122,8 @@ def parse_code_list(value: str) -> list[int]:
     return [int(item.strip()) for item in value.split(",") if item.strip()]
 
 
-#: Codes excluded with the default category set — Atlantis's historical
-#: ``_invalid_mask`` behaviour, used whenever no override is supplied.
+#: Codes excluded with the default category set, used whenever no override
+#: is supplied.
 DEFAULT_EXCLUDED_CODES: frozenset[int] = resolve_excluded_codes()
 
 CLASSIFIED_FLOOD_NODATA = 255
