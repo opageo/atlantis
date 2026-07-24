@@ -969,8 +969,8 @@ def fetch(
         "--viirs-exclude-categories",
         help="Comma-separated VIIRS categories treated as invalid/excluded in water_fraction/"
         "flood_fraction/exclusion_mask: fill, cloud, snow_ice, shadow, bareland, vegetation."
-        " Default (all six) comes from ATLANTIS_VIIRS_EXCLUDED_CATEGORIES / config. Omit a name"
-        " (e.g. drop bareland,vegetation) to stop excluding it.",
+        " Default (fill,cloud,snow_ice,shadow) comes from ATLANTIS_VIIRS_EXCLUDED_CATEGORIES /"
+        " config. Add a name (e.g. bareland,vegetation) to also exclude it.",
     ),
     viirs_exclude_codes: str | None = typer.Option(
         None,
@@ -1079,7 +1079,8 @@ def fetch(
         viirs_backend: Which VIIRS backend to use (noaa_s3 or gmu_legacy).
         viirs_format: Which VIIRS data format to fetch (tif, netcdf, shapezip, png). Only tif is implemented.
         viirs_exclude_categories: VIIRS categories to treat as invalid/excluded (fill, cloud, snow_ice,
-            shadow, bareland, vegetation), comma-separated. None keeps the config/env default (all six).
+            shadow, bareland, vegetation), comma-separated. None keeps the config/env default
+            (fill,cloud,snow_ice,shadow).
         viirs_exclude_codes: Extra raw VIIRS pixel codes to additionally exclude, comma-separated.
             None keeps the config/env default (none).
         modis_backend: Which MODIS backend to use (lance_geotiff or laads_hdf4).
@@ -1539,13 +1540,15 @@ def fetch_kurosiwo_viirs(
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
 
-            summary_rows.append([
-                event.event_id,
-                "[green]✓ ok[/green]",
-                str(written) if written else ("mem" if has_in_memory else "0"),
-                peak_label,
-                harmonised_label,
-            ])
+            summary_rows.append(
+                [
+                    event.event_id,
+                    "[green]✓ ok[/green]",
+                    str(written) if written else ("mem" if has_in_memory else "0"),
+                    peak_label,
+                    harmonised_label,
+                ]
+            )
             progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
@@ -1779,13 +1782,15 @@ def fetch_kurosiwo_modis(
                         checklist.complete("Harmonise outputs", detail=best_date_label)
                         harmonised_label = "✓"
 
-            summary_rows.append([
-                event.event_id,
-                "[green]✓ ok[/green]",
-                str(written) if written else ("mem" if has_in_memory else "0"),
-                peak_label,
-                harmonised_label,
-            ])
+            summary_rows.append(
+                [
+                    event.event_id,
+                    "[green]✓ ok[/green]",
+                    str(written) if written else ("mem" if has_in_memory else "0"),
+                    peak_label,
+                    harmonised_label,
+                ]
+            )
             progress.advance(task)
 
     console.print(f"\n[bold]Total files written:[/bold] {total_files}")
@@ -2326,11 +2331,13 @@ def demo(
 
     output_files = [path for result in fetch_results for path in result.files]
     if harmonise:
-        output_files.extend([
-            png_path,
-            harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
-            harm_plot_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
-        ])
+        output_files.extend(
+            [
+                png_path,
+                harm_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.tif",
+                harm_plot_dir / f"Valencia_2024_{best_date_label}_viirs_harmonised.png",
+            ]
+        )
     else:
         output_files.append(png_path)
     console.print(_ft(str(out), output_files))

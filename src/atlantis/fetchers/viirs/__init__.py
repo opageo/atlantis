@@ -186,8 +186,8 @@ class VIIRSFetcher(AbstractFloodFetcher):
                 invalid in ``water_fraction``/``flood_fraction``/``exclusion_mask``
                 (any of ``fill``, ``cloud``, ``snow_ice``, ``shadow``,
                 ``bareland``, ``vegetation``). Defaults to
-                ``config.fetcher.viirs_excluded_categories`` (all six) when
-                ``None``.
+                ``config.fetcher.viirs_excluded_categories`` (fill, cloud,
+                snow_ice, shadow) when ``None``.
             extra_excluded_codes: Additional raw pixel codes to exclude beyond
                 *excluded_categories*. Defaults to
                 ``config.fetcher.viirs_exclude_extra_codes`` (none) when ``None``.

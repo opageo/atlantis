@@ -16,7 +16,15 @@ These tests require:
 Run with:
     uv run python -m pytest tests/fetchers/test_modis_e2e.py -v -m e2e
     ATLANTIS_E2E_STRICT_REFERENCE_BYTES=1 uv run python -m pytest tests/fetchers/test_modis_e2e.py -v -m e2e
-"""
+
+Reference created with:
+uv run atlantis --verbose fetch \
+        --event Valencia_2024 --source modis \
+        --bbox "-1.5 38.8 0.5 40.0" \
+        --start-date 2024-10-29 --end-date 2024-11-04 \
+        --modis-backend laads_hdf4 --modis-composite F2 --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced --harmonise --no-keep-processed \
+        --output ./data/Valencia_2024
+"""  # noqa: E501
 
 from __future__ import annotations
 
@@ -38,11 +46,25 @@ END_DATE = "2024-11-04"
 
 MODIS_EXTRA_ARGS = ["--modis-backend", "laads_hdf4", "--modis-composite", "F2"]
 
-# Expected reference filenames per strategy
-REFERENCE_FILES = {
-    "peak": "Valencia_2024_2024-10-31_modis_harmonised.tif",
-    "aggregate": "Valencia_2024_aggregated_modis_harmonised.tif",
-}
+LAYERS_RASTERS = [
+    "Valencia_2024_2024-11-01_modis_exclusion_mask_harmonised.tif",
+    "Valencia_2024_2024-11-01_modis_harmonised.tif",
+    "Valencia_2024_2024-11-01_modis_recurring_flood_harmonised.tif",
+    "Valencia_2024_2024-11-01_modis_reference_water_harmonised.tif",
+    "Valencia_2024_2024-11-01_modis_water_fraction_harmonised.tif",
+]
+
+
+@pytest.fixture(scope="class")
+def produced_tifs(
+    request: pytest.FixtureRequest,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> list[UPath]:
+    output_dir = UPath(tmp_path_factory.mktemp("output"))
+
+    strategy = request.cls.strategy
+
+    return _run_modis_pipeline(strategy, output_dir)
 
 
 def _run_modis_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
@@ -60,67 +82,29 @@ def _run_modis_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
 
 
 @pytest.mark.e2e
-@pytest.mark.skipif(
-    not os.getenv("EARTHDATA_TOKEN"),
-    reason="LAADS HDF4 backend requires EARTHDATA_TOKEN",
-)
-class TestModisE2EPeak:
-    """End-to-end test: MODIS pipeline with --strategy peak."""
+class TestModisE2EAll:
+    if not os.getenv("EARTHDATA_TOKEN"):
+        pytest.fail("You are lacking the EARTHDATA_TOKEN environment variable, which is required for MODIS tests.")
+    strategy = "all"
 
-    @pytest.fixture(autouse=True)
-    def _setup(self, tmp_path):
-        self.tmp_path = tmp_path
+    @pytest.mark.parametrize("layer_raster", LAYERS_RASTERS)
+    def test_matches_reference(
+        self,
+        produced_tifs: list[UPath],
+        layer_raster: str,
+    ):
+        reference_file = UPath(S3_REFERENCE_BASE) / f"strategy_{self.strategy}" / "harmonised" / layer_raster
 
-    def test_peak_matches_reference(self):
-        """Pipeline output matches the S3 reference raster, optionally by exact bytes."""
-        reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["peak"]
+        produced = next(
+            (tif for tif in produced_tifs if tif.name == layer_raster),
+            None,
+        )
 
-        output_dir = UPath(self.tmp_path / "output")
-        tifs = _run_modis_pipeline("peak", output_dir)
-
-        # Find the matching output file
-        produced = None
-        for tif in tifs:
-            if tif.name == reference_file.name:
-                produced = tif
-                break
-
-        if produced is None:
-            assert len(tifs) == 1, f"Peak strategy should produce exactly 1 file, got {len(tifs)}: {tifs}"
-            produced = tifs[0]
+        assert produced is not None
 
         with s3_rasterio_env():
-            compare_rasters(produced, reference_file, require_byte_identity=STRICT_REFERENCE_BYTES)
-
-
-@pytest.mark.e2e
-@pytest.mark.skipif(
-    not os.getenv("EARTHDATA_TOKEN"),
-    reason="LAADS HDF4 backend requires EARTHDATA_TOKEN",
-)
-class TestModisE2EAggregate:
-    """End-to-end test: MODIS pipeline with --strategy aggregate."""
-
-    @pytest.fixture(autouse=True)
-    def _setup(self, tmp_path):
-        self.tmp_path = tmp_path
-
-    def test_aggregate_matches_reference(self):
-        """Pipeline output matches the S3 reference raster, optionally by exact bytes."""
-        reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["aggregate"]
-
-        output_dir = UPath(self.tmp_path / "output")
-        tifs = _run_modis_pipeline("aggregate", output_dir)
-
-        produced = None
-        for tif in tifs:
-            if tif.name == reference_file.name:
-                produced = tif
-                break
-
-        if produced is None:
-            assert len(tifs) == 1, f"Aggregate strategy should produce exactly 1 file, got {len(tifs)}: {tifs}"
-            produced = tifs[0]
-
-        with s3_rasterio_env():
-            compare_rasters(produced, reference_file, require_byte_identity=STRICT_REFERENCE_BYTES)
+            compare_rasters(
+                produced,
+                reference_file,
+                require_byte_identity=STRICT_REFERENCE_BYTES,
+            )

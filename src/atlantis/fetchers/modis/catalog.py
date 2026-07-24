@@ -80,13 +80,15 @@ def _list_tiles_for_date(
         h, v = hv
         task_id = f"modis-{date_str.replace('-', '')}-h{h:02d}v{v:02d}"
         source_uri = url + filename
-        tiles.append({
-            "date": date_str,
-            "h": h,
-            "v": v,
-            "task_id": task_id,
-            "source_uri": source_uri,
-        })
+        tiles.append(
+            {
+                "date": date_str,
+                "h": h,
+                "v": v,
+                "task_id": task_id,
+                "source_uri": source_uri,
+            }
+        )
     logger.debug("{} → {} tile(s)", date_str, len(tiles))
     return tiles
 

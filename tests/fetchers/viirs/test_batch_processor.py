@@ -38,8 +38,8 @@ def test_classify_viirs_pixels_flood_fraction():
     from atlantis.fetchers.viirs.processor import classify_viirs_pixels
 
     rows, cols = 100, 100
-    # Background is vegetation (17), which is now excluded (NaN) rather than
-    # a confirmed non-flood observation — see test_layers.py for the rationale.
+    # Background is vegetation (17), a usable non-flood observation (0.0) by
+    # default — see test_layers.py for the rationale.
     data = np.full((rows, cols), 17, dtype=np.uint8)
     data[0:50, 0:50] = 150  # code 150 → 50% flood
     transform = from_bounds(-10.0, -5.0, 0.0, 5.0, cols, rows)
@@ -49,7 +49,7 @@ def test_classify_viirs_pixels_flood_fraction():
     flooded = result.flood_fraction[0:50, 0:50]
     assert np.allclose(flooded, 0.5, atol=0.01)
     not_flooded = result.flood_fraction[50:, 50:]
-    assert np.all(np.isnan(not_flooded))
+    assert np.allclose(not_flooded, 0.0, atol=0.01)
 
 
 def test_classify_viirs_pixels_nodata_fill():
@@ -65,7 +65,7 @@ def test_classify_viirs_pixels_nodata_fill():
     assert result.cloud_fraction == 0.0
 
 
-@pytest.mark.integration
+@pytest.mark.e2e
 def test_process_granule_cog_roundtrip(tmp_path, monkeypatch):
     """Run process_granule against a local fixture TIF, intercept the S3 upload,
     and verify the in-memory COG is valid."""

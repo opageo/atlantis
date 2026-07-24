@@ -70,16 +70,18 @@ def _search_day(api_url: str, day: _date) -> list[dict[str, Any]]:
         if bbox is None:
             logger.warning("GFM item {} has no bbox, skipping", item.id)
             continue
-        rows.append({
-            "date": day_str,
-            "equi7_tile": tile,
-            "item_id": item.id,
-            "item_href": item.self_href,
-            "west": bbox[0],
-            "south": bbox[1],
-            "east": bbox[2],
-            "north": bbox[3],
-        })
+        rows.append(
+            {
+                "date": day_str,
+                "equi7_tile": tile,
+                "item_id": item.id,
+                "item_href": item.self_href,
+                "west": bbox[0],
+                "south": bbox[1],
+                "east": bbox[2],
+                "north": bbox[3],
+            }
+        )
     return rows
 
 
