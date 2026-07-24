@@ -58,7 +58,7 @@ jobs:
           GDAL_HTTP_UNSAFESSL: "YES"
           EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
           NO_COLOR: "1"
-        run: uv run pytest tests/ -m e2e -v --timeout=600
+        run: uv run pytest tests/ -m e2e -v --timeout=900
 
       - name: Remove run-e2e label after successful run
         if: github.event_name == 'pull_request' && success()
