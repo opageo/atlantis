@@ -96,7 +96,7 @@ class TestFetcherConfig:
         assert cfg.viirs_format == "tif"
         assert cfg.gfm_api_url is None
         assert cfg.viirs_base_url is None
-        assert cfg.viirs_excluded_categories == "fill,cloud,snow_ice,shadow,bareland,vegetation"
+        assert cfg.viirs_excluded_categories == "fill,cloud,snow_ice,shadow"
         assert cfg.viirs_exclude_extra_codes == ""
 
     def test_env_override(self, monkeypatch):

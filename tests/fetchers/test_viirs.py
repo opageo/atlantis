@@ -166,16 +166,21 @@ class TestVIIRSFetcherInit:
         with pytest.raises(NotImplementedError, match="not implemented yet"):
             VIIRSFetcher(data_format="png")
 
-    def test_excluded_codes_default_matches_historical_behaviour(self):
+    def test_excluded_codes_default_matches_config_default(self):
         from atlantis.fetchers.viirs.layers import DEFAULT_EXCLUDED_CODES
 
         fetcher = VIIRSFetcher()
         assert fetcher.excluded_codes == DEFAULT_EXCLUDED_CODES
 
-    def test_excluded_categories_override_drops_vegetation_and_bareland(self):
+    def test_excluded_categories_default_excludes_neither_vegetation_nor_bareland(self):
         fetcher = VIIRSFetcher(excluded_categories=["fill", "cloud", "snow_ice", "shadow"])
         assert 16 not in fetcher.excluded_codes  # bareland
         assert 17 not in fetcher.excluded_codes  # vegetation
+
+    def test_excluded_categories_can_opt_into_vegetation_and_bareland(self):
+        fetcher = VIIRSFetcher(excluded_categories=["fill", "cloud", "snow_ice", "shadow", "bareland", "vegetation"])
+        assert 16 in fetcher.excluded_codes  # bareland
+        assert 17 in fetcher.excluded_codes  # vegetation
 
     def test_extra_excluded_codes_are_additive(self):
         fetcher = VIIRSFetcher(excluded_categories=["fill"], extra_excluded_codes=[27, 38])
