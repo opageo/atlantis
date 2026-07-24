@@ -172,7 +172,7 @@ def run_pipeline(
         pytest.fail(f"{source} pipeline failed (strategy={strategy}):\noutput: {output[-2000:]}{exc}")
 
     harm_dir = output_dir / source / "harmonised"
-    tifs = sorted(harm_dir.glob(f"*_{source}_harmonised.tif"))
+    tifs = sorted(harm_dir.glob(f"*_{source}_*harmonised.tif"))
     if not tifs:
         pytest.fail(
             f"No harmonised TIFs produced (source={source}, strategy={strategy}).\n"

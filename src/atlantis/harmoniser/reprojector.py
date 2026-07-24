@@ -152,9 +152,16 @@ class Reprojector:
         dst_crs = str(self.target_crs)
 
         # ── 2. Compute target grid ────────────────────────────────────────
-        west, south, east, north = _get_dataset_bounds(dataset)
+        raw_west, raw_south, raw_east, raw_north = _get_dataset_bounds(dataset)
+        west, south, east, north = raw_west, raw_south, raw_east, raw_north
         if self.snap_to_global_grid and dst_crs.upper() == "EPSG:4326":
             west, south, east, north = self._snap_bounds_to_global_grid(west, south, east, north)
+            # Outward snapping can leave a border row/column with only partial
+            # source coverage (see `_trim_uncovered_margin` docstring) — shrink
+            # back to the cells that are fully backed by real source data.
+            west, south, east, north = self._trim_uncovered_margin(
+                west, south, east, north, raw_west, raw_south, raw_east, raw_north
+            )
 
         dst_width = max(1, int(round((east - west) / self.target_resolution)))
         dst_height = max(1, int(round((north - south) / self.target_resolution)))
@@ -310,6 +317,66 @@ class Reprojector:
 
         return float(west_snap), float(south_snap), float(east_snap), float(north_snap)
 
+    def _trim_uncovered_margin(
+        self,
+        west: float,
+        south: float,
+        east: float,
+        north: float,
+        raw_west: float,
+        raw_south: float,
+        raw_east: float,
+        raw_north: float,
+    ) -> tuple[float, float, float, float]:
+        """Shrink outward-snapped bounds back to cells fully covered by source data.
+
+        ``_snap_bounds_to_global_grid`` expands the AOI outward so its bounds
+        align to the canonical grid; that expansion is always strictly less
+        than one target pixel per side. The resulting border row/column
+        therefore has only *partial* real source coverage. For ``average``/
+        ``mode`` resampling this does not necessarily come back as nodata — a
+        thin sliver of real sub-pixels still produces a "valid"-looking value
+        computed from a statistically meaningless sample size (issue #109's
+        edge artefact) — so uncovered/partially-covered cells must be dropped
+        geometrically (by comparing pixel edges to the true source bounds)
+        rather than detected after the fact from the resampled values.
+
+        Any side that was actually expanded by snapping is shrunk back inward
+        by exactly one pixel; sides that were already grid-aligned (zero
+        expansion) are left untouched. If the source is narrower than one
+        target pixel along an axis, trimming both ends would invert the
+        bounds — in that degenerate case the untrimmed (snapped) bounds are
+        kept for that axis rather than collapsing it.
+
+        Args:
+            west: Snapped western edge (already outward-expanded).
+            south: Snapped southern edge.
+            east: Snapped eastern edge.
+            north: Snapped northern edge.
+            raw_west: Pre-snap western edge of the actual source data.
+            raw_south: Pre-snap southern edge.
+            raw_east: Pre-snap eastern edge.
+            raw_north: Pre-snap northern edge.
+
+        Returns:
+            ``(west, south, east, north)`` with any partially-covered border
+            pixel removed from each side, where geometrically possible.
+        """
+        res = self.target_resolution
+        tol = res * 1e-6
+
+        trimmed_west = west + res if west < raw_west - tol else west
+        trimmed_east = east - res if east > raw_east + tol else east
+        if trimmed_west < trimmed_east:
+            west, east = trimmed_west, trimmed_east
+
+        trimmed_north = north - res if north > raw_north + tol else north
+        trimmed_south = south + res if south < raw_south - tol else south
+        if trimmed_south < trimmed_north:
+            south, north = trimmed_south, trimmed_north
+
+        return west, south, east, north
+
     # ── Internal helpers ──────────────────────────────────────────────────
 
     def _resolve_source_crs(self, dataset: "xr.Dataset", source_crs: "CRS | str | None") -> str:
@@ -371,12 +438,12 @@ class Reprojector:
         destination_fill = np.nan if np.isnan(dst_nodata) else float(dst_nodata)
         destination = np.full((dst_height, dst_width), destination_fill, dtype=np.float64)
 
-        reproject_kwargs: dict[str, float] = {}
-        if not np.isnan(src_nodata):
-            reproject_kwargs["src_nodata"] = float(src_nodata)
-        if not np.isnan(dst_nodata):
-            reproject_kwargs["dst_nodata"] = float(dst_nodata)
-
+        # `src_nodata`/`dst_nodata` must always be passed through to GDAL, even
+        # when the sentinel is NaN — rasterio/GDAL accept NaN as a valid nodata
+        # value, and omitting it (as a previous version of this code did) means
+        # GDAL has no way to exclude NaN sub-pixels from `average`/other
+        # resampling kernels: a single NaN sub-pixel then poisons the whole
+        # destination pixel instead of being skipped.
         rio_reproject(
             source=src_array.astype(np.float64),
             destination=destination,
@@ -385,7 +452,8 @@ class Reprojector:
             dst_transform=dst_transform,
             dst_crs=dst_crs,
             resampling=resampling,
-            **reproject_kwargs,
+            src_nodata=float(src_nodata),
+            dst_nodata=float(dst_nodata),
         )
 
         attrs = dict(src_da.attrs)
