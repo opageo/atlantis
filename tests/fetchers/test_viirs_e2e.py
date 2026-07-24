@@ -17,6 +17,9 @@ Run with:
     ATLANTIS_E2E_STRICT_REFERENCE_BYTES=1 uv run python -m pytest tests/fetchers/test_viirs_e2e.py -v -m e2e
 """
 
+# NOTE this e2e test cross-check the viirs-demo cli case from makefile, the strategy parameters are defined at
+# _e2e_utils.py, if you want to add more strategies this needs to be refactored
+
 from __future__ import annotations
 
 import pytest
@@ -35,11 +38,27 @@ END_DATE = "2024-11-04"
 
 VIIRS_EXTRA_ARGS = ["--viirs-backend", "noaa_s3"]
 
-# Expected reference filenames per strategy
-REFERENCE_FILES = {
-    "peak": "Valencia_2024_2024-11-02_viirs_harmonised.tif",
-    "aggregate": "Valencia_2024_aggregated_viirs_harmonised.tif",
-}
+LAYERS_RASTERS = [
+    "Valencia_2024_2024-11-02_viirs_cloud_mask_harmonised.tif",
+    "Valencia_2024_2024-11-02_viirs_exclusion_mask_harmonised.tif",
+    "Valencia_2024_2024-11-02_viirs_harmonised.tif",
+    "Valencia_2024_2024-11-02_viirs_reference_water_harmonised.tif",
+    "Valencia_2024_2024-11-02_viirs_shadow_harmonised.tif",
+    "Valencia_2024_2024-11-02_viirs_snow_ice_harmonised.tif",
+    "Valencia_2024_2024-11-02_viirs_water_fraction_harmonised.tif",
+]
+
+
+@pytest.fixture(scope="class")
+def produced_tifs(
+    request: pytest.FixtureRequest,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> list[UPath]:
+    output_dir = UPath(tmp_path_factory.mktemp("output"))
+
+    strategy = request.cls.strategy
+
+    return _run_viirs_pipeline(strategy, output_dir)
 
 
 def _run_viirs_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
@@ -57,59 +76,27 @@ def _run_viirs_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
 
 
 @pytest.mark.e2e
-class TestViirsE2EPeak:
-    """End-to-end test: VIIRS pipeline with --strategy peak."""
+class TestViirsE2EAll:
+    strategy = "all"
 
-    @pytest.fixture(autouse=True)
-    def _setup(self, tmp_path):
-        self.tmp_path = tmp_path
+    @pytest.mark.parametrize("layer_raster", LAYERS_RASTERS)
+    def test_matches_reference(
+        self,
+        produced_tifs: list[UPath],
+        layer_raster: str,
+    ):
+        reference_file = UPath(S3_REFERENCE_BASE) / f"strategy_{self.strategy}" / "harmonised" / layer_raster
 
-    def test_peak_matches_reference(self):
-        """Pipeline output matches the S3 reference raster, optionally by exact bytes."""
-        reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["peak"]
+        produced = next(
+            (tif for tif in produced_tifs if tif.name == layer_raster),
+            None,
+        )
 
-        output_dir = UPath(self.tmp_path / "output")
-        tifs = _run_viirs_pipeline("peak", output_dir)
-
-        # Find the matching output file
-        produced = None
-        for tif in tifs:
-            if tif.name == reference_file.name:
-                produced = tif
-                break
-
-        if produced is None:
-            assert len(tifs) == 1, f"Peak strategy should produce exactly 1 file, got {len(tifs)}: {tifs}"
-            produced = tifs[0]
+        assert produced is not None
 
         with s3_rasterio_env():
-            compare_rasters(produced, reference_file, require_byte_identity=STRICT_REFERENCE_BYTES)
-
-
-@pytest.mark.e2e
-class TestViirsE2EAggregate:
-    """End-to-end test: VIIRS pipeline with --strategy aggregate."""
-
-    @pytest.fixture(autouse=True)
-    def _setup(self, tmp_path):
-        self.tmp_path = tmp_path
-
-    def test_aggregate_matches_reference(self):
-        """Pipeline output matches the S3 reference raster, optionally by exact bytes."""
-        reference_file = UPath(S3_REFERENCE_BASE) / REFERENCE_FILES["aggregate"]
-
-        output_dir = UPath(self.tmp_path / "output")
-        tifs = _run_viirs_pipeline("aggregate", output_dir)
-
-        produced = None
-        for tif in tifs:
-            if tif.name == reference_file.name:
-                produced = tif
-                break
-
-        if produced is None:
-            assert len(tifs) == 1, f"Aggregate strategy should produce exactly 1 file, got {len(tifs)}: {tifs}"
-            produced = tifs[0]
-
-        with s3_rasterio_env():
-            compare_rasters(produced, reference_file, require_byte_identity=STRICT_REFERENCE_BYTES)
+            compare_rasters(
+                produced,
+                reference_file,
+                require_byte_identity=True,
+            )
