@@ -20,11 +20,13 @@ jobs:
       - name: Ruff format
         uses: astral-sh/ruff-action@v3
         with:
+          version-file: "uv.lock"
           args: "format --check --diff"
 
       - name: Ruff lint
         uses: astral-sh/ruff-action@v3
         with:
+          version-file: "uv.lock"
           args: "check src --output-format=github"
 
   check-uv-lock:
