@@ -1,0 +1,3590 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="ML-ready archive of satellite-derived flood inundation observations">
+      
+      
+      
+        <link rel="canonical" href="https://opageo.github.io/atlantis/viirs/overview/">
+      
+      
+        <link rel="prev" href="../../layers/">
+      
+      
+        <link rel="next" href="../pipeline/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Overview - Atlantis</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#viirs-flood-detection" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Atlantis" class="md-header__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Atlantis
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Overview
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../pixi-setup/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../sources/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Data Sources
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  CLI
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../batch/viirs/jpss.md" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Batch Processing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../development/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Development
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/config/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Atlantis" class="md-nav__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Atlantis
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pixi-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pixi Setup (Newcomers)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials & Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gdal-install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual GDAL Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Sources
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Sources
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layer Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    VIIRS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is VIIRS?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What is VIIRS?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pixel-encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pixel encoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-vs-derived-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native vs derived layers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CLI reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-fetch-source-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis fetch --source viirs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-fetch-kurosiwo-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis fetch-kurosiwo-viirs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-harmonise-source-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis harmonise --source viirs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-fetch-source-viirs-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis fetch --source viirs flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="atlantis fetch --source viirs flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#output-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#peak-window-filtering-and-subsampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Peak-window filtering and subsampling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data access
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-fetch-kurosiwo-viirs-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis fetch-kurosiwo-viirs flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="atlantis fetch-kurosiwo-viirs flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kurosiwo-specific" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KuroSiwo-specific
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-harmonise-source-viirs-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis harmonise --source viirs flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="atlantis harmonise --source viirs flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#harmonisation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Harmonisation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming-vs-downloading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming vs downloading
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backends
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backends">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#noaa_s3-noaa-jpss-on-aws-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        noaa_s3 — NOAA JPSS on AWS (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gmu_legacy-george-mason-university-archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        gmu_legacy — George Mason University archive
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data availability
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data availability">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-are-2021-and-2022-on-aws" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where are 2021 and 2022 on AWS?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canonical-1-arcmin-global-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canonical 1-arcmin global grid
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Canonical 1-arcmin global grid">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-1-arcmin-on-the-global-grid-means-intuitively" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What "1 arcmin on the global grid" means, intuitively
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-it-is-implemented" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it is implemented
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snap-algorithm-in-one-paragraph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snap algorithm in one paragraph
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verifying-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verifying alignment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quick-check-on-any-harmonised-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick check on any harmonised file
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MODIS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MODIS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GFM
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    GFM
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KuroSiwo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KuroSiwo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kurosiwo/stac-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    STAC Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    End-to-End Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Batch Processing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../batch/viirs/jpss.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS JPSS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fetchers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fetchers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/harmoniser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harmoniser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is VIIRS?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What is VIIRS?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pixel-encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pixel encoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-vs-derived-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native vs derived layers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CLI reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-fetch-source-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis fetch --source viirs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-fetch-kurosiwo-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis fetch-kurosiwo-viirs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-harmonise-source-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis harmonise --source viirs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-fetch-source-viirs-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis fetch --source viirs flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="atlantis fetch --source viirs flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#output-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#peak-window-filtering-and-subsampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Peak-window filtering and subsampling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data access
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-fetch-kurosiwo-viirs-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis fetch-kurosiwo-viirs flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="atlantis fetch-kurosiwo-viirs flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kurosiwo-specific" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KuroSiwo-specific
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#atlantis-harmonise-source-viirs-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        atlantis harmonise --source viirs flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="atlantis harmonise --source viirs flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#harmonisation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Harmonisation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming-vs-downloading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming vs downloading
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backends
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backends">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#noaa_s3-noaa-jpss-on-aws-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        noaa_s3 — NOAA JPSS on AWS (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gmu_legacy-george-mason-university-archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        gmu_legacy — George Mason University archive
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data availability
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data availability">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-are-2021-and-2022-on-aws" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where are 2021 and 2022 on AWS?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canonical-1-arcmin-global-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canonical 1-arcmin global grid
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Canonical 1-arcmin global grid">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-1-arcmin-on-the-global-grid-means-intuitively" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What "1 arcmin on the global grid" means, intuitively
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-it-is-implemented" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it is implemented
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snap-algorithm-in-one-paragraph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snap algorithm in one paragraph
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verifying-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verifying alignment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quick-check-on-any-harmonised-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick check on any harmonised file
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="viirs-flood-detection">VIIRS Flood Detection</h1>
+<p><strong>Satellite-based flood mapping at 375 m resolution</strong></p>
+<p>Atlantis integrates VIIRS flood products from the JPSS (Joint Polar Satellite System) constellation—providing global flood detection from the VIIRS Flood Mapping (VFM) product (<a href="https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf">NOAA ATBD v1.0, 2021</a>).</p>
+<h2 id="what-is-viirs">What is VIIRS?</h2>
+<p>VIIRS (Visible Infrared Imaging Radiometer Suite) instruments aboard Suomi-NPP and NOAA-20 satellites detect floods at <strong>375 metre resolution</strong> using four Imager bands: I1 (visible, 0.64 µm), I2 (near-IR, 0.865 µm), I3 (shortwave-IR, 1.61 µm), and I5 (thermal IR, 11.45 µm).</p>
+<h3 id="pixel-encoding">Pixel encoding</h3>
+<p>The GeoTIFFs on the NOAA S3 bucket use a simplified encoding (different from the <a href="https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf">ATBD</a>'s internal netCDF scheme):</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Fill / No data (nodata sentinel)</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Floodwater without fraction retrieval</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Vegetation</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Snow / ice</td>
+</tr>
+<tr>
+<td>30</td>
+<td>Cloud cover</td>
+</tr>
+<tr>
+<td>99</td>
+<td>Permanent water (NOAA NormalWater reference)</td>
+</tr>
+<tr>
+<td>101–200</td>
+<td><strong>Flood water</strong> — water fraction % = <code>code − 100</code></td>
+</tr>
+<tr>
+<td>≥160</td>
+<td>High-confidence flood (≥60% water fraction)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Note:</strong> The authoritative legend is embedded in each NOAA GeoTIFF as the band tag <code>WaterDetection#TypeDescription</code> (verified against a fetched raw tile). The table above mirrors that tag for the classes Atlantis decodes. Cloud (30), snow/ice (20), and shadow (50) are now surfaced as dedicated <code>cloud_mask</code>, <code>snow_ice</code>, and <code>shadow</code> derived layers and are excluded by default (<code>exclusion_mask = 1</code>); bareland (16) and vegetation (17) are treated as usable non-flood observations by default (<code>exclusion_mask = 0</code>), since the classifier did assess them for water/flood and determined "land" — pass <code>--viirs-exclude-categories</code> with <code>bareland</code>/<code>vegetation</code> added (env <code>ATLANTIS_VIIRS_EXCLUDED_CATEGORIES</code>) to instead treat them as low-confidence/excluded, since flood pixels can occasionally be misclassified into either class. The remaining additional classes (27=River/lake ice, 38=mixed snow/ice/water) are present in the source data but currently pass through as <code>0</code> flood fraction with no dedicated layer. Code <code>15</code> ("Floodwater without fraction retrieval") is flagged as floodwater by NOAA but carries no sub-pixel water fraction; Atlantis therefore forces it to <code>1.0</code> in <code>water_fraction</code> while keeping it at <code>0.0</code> in <code>flood_fraction</code>, exactly as it does for NormalWater (<code>99</code>). The source <code>_FillValue</code> is <code>1</code> (not <code>0</code>).</p>
+</blockquote>
+<h3 id="native-vs-derived-layers">Native vs derived layers</h3>
+<p>Atlantis distinguishes <strong>native</strong> and <strong>derived</strong> VIIRS layers, but the exact
+inventory is maintained only in the canonical
+<a href="../../layers/#layers-viirs">VIIRS layer reference</a> and via
+<code>atlantis list-layers --source viirs</code>.</p>
+<ul>
+<li><strong>Native layer</strong> — the single encoded VFM band above, fetched and passed through untouched.</li>
+<li><strong>Derived layers</strong> — the registry-defined decoded products emitted with <code>--classify</code>.</li>
+</ul>
+<p><code>flood_fraction</code> is therefore a <strong>derived</strong> layer, not something the source ships — it is decoded from the native codes <code>101–200</code> as <code>(code − 100) / 100</code>.</p>
+<h2 id="quick-start">Quick start</h2>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>valencia_2024<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;-1.2 39.0 0.2 39.8&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span><span class="m">2024</span>-10-30<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--end-date<span class="w"> </span><span class="m">2024</span>-11-01<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--no-keep-processed<span class="w"> </span>--harmonise
+</code></pre></div>
+<p>This streams VIIRS tiles from NOAA S3, derives per-pixel water/flood fractions plus reference/exclusion and weather masks, and writes the final harmonised 1-arcmin GeoTIFF (in <code>harmonised/</code>) alongside its PNG visualisation (in <code>plots/harmonised/derived/</code>):</p>
+<div class="highlight"><pre><span></span><code>harmonised/
+  valencia_2024_2024-10-31_viirs_harmonised.tif   # uint8, 1 arcmin, flood % [0–100], nodata=255
+plots/
+  harmonised/
+    derived/
+      valencia_2024_2024-10-31_viirs_harmonised.png
+</code></pre></div>
+<h2 id="cli-reference">CLI reference</h2>
+<h3 id="atlantis-fetch-source-viirs"><code>atlantis fetch --source viirs</code></h3>
+<p>Fetch VIIRS flood data for any location and date range.</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>&lt;event_id&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;&lt;west&gt; &lt;south&gt; &lt;east&gt; &lt;north&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span>YYYY-MM-DD<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--end-date<span class="w"> </span>YYYY-MM-DD<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="o">[</span>flags<span class="o">]</span>
+</code></pre></div>
+<h3 id="atlantis-fetch-kurosiwo-viirs"><code>atlantis fetch-kurosiwo-viirs</code></h3>
+<p>Fetch VIIRS for events from the KuroSiwo SAR flood catalogue (bbox and dates resolved automatically):</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch-kurosiwo-viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--catalogue<span class="w"> </span>assets/ks_catalogue.gpkg<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--case<span class="w"> </span>KuroSiwo_470<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--no-keep-processed<span class="w"> </span>--harmonise
+</code></pre></div>
+<h3 id="atlantis-harmonise-source-viirs"><code>atlantis harmonise --source viirs</code></h3>
+<p>Resample previously fetched VIIRS outputs to a uniform 1-arcmin grid:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>harmonise<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>valencia_2024<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>viirs
+</code></pre></div>
+<h2 id="flags">Flags</h2>
+<h3 id="atlantis-fetch-source-viirs-flags"><code>atlantis fetch --source viirs</code> flags</h3>
+<h4 id="output-control">Output control</h4>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--classify</code></td>
+<td>on</td>
+<td>Emit <strong>derived</strong> layers — <code>water_fraction</code>, <code>flood_fraction</code>, <code>reference_water</code>, <code>exclusion_mask</code>, plus <code>cloud_mask</code> / <code>snow_ice</code> / <code>shadow</code></td>
+</tr>
+<tr>
+<td><code>--no-classify</code></td>
+<td></td>
+<td>Emit the <strong>native</strong> VFM band untouched (single <code>raw</code> GeoTIFF)</td>
+</tr>
+<tr>
+<td><code>--harmonise</code></td>
+<td>off</td>
+<td>Also produce a resampled 1-arcmin flood-fraction GeoTIFF</td>
+</tr>
+<tr>
+<td><code>--no-keep-processed</code></td>
+<td>off</td>
+<td>Skip writing intermediate 375 m GeoTIFFs; keep processed rasters in memory unless combined with <code>--harmonise</code> and/or <code>--plot</code></td>
+</tr>
+<tr>
+<td><code>--plot</code></td>
+<td>off</td>
+<td>Save a PNG of the peak-flood date</td>
+</tr>
+<tr>
+<td><code>--strategy</code></td>
+<td><code>peak</code></td>
+<td>Multi-date reduction: <code>peak</code> (most-flooded date), <code>aggregate</code> (mean/mode composite), <code>all</code> (per-date outputs). See <a href="../pipeline/#strategies-in-detail-pixel-level">Strategies in detail</a>.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="peak-window-filtering-and-subsampling">Peak-window filtering and subsampling</h4>
+<p>These flags work as <strong>composable modifiers</strong> on top of any <code>--strategy</code>. They are
+no-ops for <code>--strategy peak</code> (which always returns a single date).</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--peak-days-before</code></td>
+<td><code>0</code></td>
+<td>Include dates up to N days <strong>before</strong> the computed peak. 0 = no window filter.</td>
+</tr>
+<tr>
+<td><code>--peak-days-after</code></td>
+<td><code>0</code></td>
+<td>Include dates up to N days <strong>after</strong> the computed peak. 0 = no window filter.</td>
+</tr>
+<tr>
+<td><code>--peak-window-days</code></td>
+<td><code>0</code></td>
+<td>Symmetric shorthand: sets both <code>--peak-days-before</code> and <code>--peak-days-after</code> to the same value. Cannot be combined with the two specific flags.</td>
+</tr>
+<tr>
+<td><code>--max-observations</code></td>
+<td><code>0</code></td>
+<td>Cap the number of returned dates after windowing. 0 = no limit. Selection order is controlled by <code>--peak-priority</code>.</td>
+</tr>
+<tr>
+<td><code>--peak-priority</code></td>
+<td><code>post</code></td>
+<td>Subsampling bias: <code>post</code> (post-event first, then pre), <code>pre</code> (pre-event first, then post), <code>balanced</code> (alternating ±1, ±2, …).</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>peak</strong> is the date with the highest flood-pixel count among all fetched dates
+(ties broken by earliest). Windowing always keeps the peak date.</p>
+<p><strong>Example — 7-day window, up to 5 observations (post-event bias):</strong></p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>valencia_2024<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;-1.2 39.0 0.2 39.8&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span><span class="m">2024</span>-10-20<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--end-date<span class="w"> </span><span class="m">2024</span>-11-10<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--strategy<span class="w"> </span>all<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--peak-window-days<span class="w"> </span><span class="m">7</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--max-observations<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--no-keep-processed<span class="w"> </span>--harmonise
+</code></pre></div>
+<p>This fetches all dates in the two-week window, identifies the peak, filters to ±7
+days around it, then keeps the peak plus the 4 nearest post-event dates (the
+<code>post</code> default). The 5 harmonised GeoTIFFs are written to <code>harmonised/</code>.</p>
+<p><strong>Interaction with strategies:</strong></p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Strategy</th>
+<th style="text-align: left;">Window filter</th>
+<th style="text-align: left;">Subsampling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>peak</code></td>
+<td style="text-align: left;">No-op (1 date returned regardless)</td>
+<td style="text-align: left;">No-op</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>aggregate</code></td>
+<td style="text-align: left;">Narrows the composite to window dates</td>
+<td style="text-align: left;">Narrows further before mean/mode reduction</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>all</code></td>
+<td style="text-align: left;">Filters the returned FetchResult list</td>
+<td style="text-align: left;">Subsamples the filtered list</td>
+</tr>
+</tbody>
+</table>
+<h4 id="data-access">Data access</h4>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--stream</code></td>
+<td>on</td>
+<td>Stream tiles from S3 via <code>/vsicurl/</code> (no local download)</td>
+</tr>
+<tr>
+<td><code>--no-stream</code></td>
+<td></td>
+<td>Download tiles to <code>raw/</code> for reuse across runs</td>
+</tr>
+<tr>
+<td><code>--viirs-backend</code></td>
+<td><code>noaa_s3</code></td>
+<td>Data source (<code>noaa_s3</code> or <code>gmu_legacy</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>With <code>--classify</code>, codes <code>101–200</code> become both <code>water_fraction</code> and <code>flood_fraction</code> values in <code>[0.01, 1.00]</code> in memory and are written as uint8 percentages <code>[1, 100]</code> on disk. <code>water_fraction</code> additionally promotes NOAA <code>NormalWater</code> (<code>99</code>) and the unquantified floodwater code (<code>15</code>) to <code>1.0</code>; <code>flood_fraction</code> keeps those as <code>0.0</code>. Fill/cloud/snow-ice/shadow pixels become <code>NaN</code> in memory and are encoded as <code>255</code> on disk for the fraction rasters. Vegetation/bareland pixels resolve to <code>0.0</code> (usable non-flood observations) by default — add them to <code>--viirs-exclude-categories</code> to treat them as <code>NaN</code>/excluded instead. The companion <strong>derived</strong> masks <code>reference_water</code>, <code>exclusion_mask</code>, <code>cloud_mask</code>, <code>snow_ice</code>, and <code>shadow</code> are written alongside. With <code>--no-classify</code>, the single <strong>native</strong> band is written untouched as <code>raw</code>.</p>
+<h3 id="atlantis-fetch-kurosiwo-viirs-flags"><code>atlantis fetch-kurosiwo-viirs</code> flags</h3>
+<h4 id="kurosiwo-specific">KuroSiwo-specific</h4>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--catalogue</code></td>
+<td></td>
+<td>Path to KuroSiwo GeoPackage</td>
+</tr>
+<tr>
+<td><code>--metadata</code></td>
+<td></td>
+<td>Path to pre-built metadata CSV (faster lookups)</td>
+</tr>
+<tr>
+<td><code>--case</code></td>
+<td></td>
+<td>Single case ID (omit to fetch all events)</td>
+</tr>
+<tr>
+<td><code>--limit</code></td>
+<td></td>
+<td>Process only the first N events</td>
+</tr>
+<tr>
+<td><code>--days-before</code></td>
+<td>0</td>
+<td>Days before flood peak to include</td>
+</tr>
+<tr>
+<td><code>--days-after</code></td>
+<td>0</td>
+<td>Days after flood peak to include</td>
+</tr>
+</tbody>
+</table>
+<h3 id="atlantis-harmonise-source-viirs-flags"><code>atlantis harmonise --source viirs</code> flags</h3>
+<h4 id="harmonisation">Harmonisation</h4>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--target-resolution</code></td>
+<td>0.0167°</td>
+<td>Target grid spacing (1 arcmin default)</td>
+</tr>
+<tr>
+<td><code>--dry-run</code></td>
+<td></td>
+<td>Show what would be processed without acting</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Tip:</strong> The harmoniser uses <code>average</code> resampling for <code>flood_fraction</code> and <code>mode</code> for the mask layers. Override via <code>ATLANTIS_VARIABLE_RESAMPLING</code> in <code>.env</code>.</p>
+</blockquote>
+<h2 id="streaming-vs-downloading">Streaming vs downloading</h2>
+<p>VIIRS tiles (~20 MB each) are streamed directly from NOAA S3 via GDAL's <code>/vsicurl/</code> driver by default. This is ideal when disk space is limited or you only need a single run, since no <code>raw/</code> directory is created.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Flag</th>
+<th>Disk usage (typical)</th>
+<th>Network dependency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stream</td>
+<td><code>--stream</code></td>
+<td>0 (processed output only)</td>
+<td>Required throughout processing</td>
+</tr>
+<tr>
+<td>Download</td>
+<td><code>--no-stream</code></td>
+<td>~50–200 MB raw tiles</td>
+<td>Only during fetch</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Streaming works with the <code>noaa_s3</code> backend only (the default). Use <code>--no-stream</code> if you need <code>gmu_legacy</code>.</p>
+</blockquote>
+<h2 id="backends">Backends</h2>
+<p>Both backends serve the same underlying science product — the <strong>VIIRS Flood
+Mapping (VFM)</strong> algorithm developed at George Mason University (Li &amp; Sun) under
+the JPSS Proving Ground programme (<a href="https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf">ATBD v1.0, 2021</a>).
+They differ in <em>who hosts the bytes</em>, <em>which compositing window</em> is exposed, and
+<em>how the directory layout is structured</em>.</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Host &amp; protocol</th>
+<th>Composite window</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>noaa_s3</code></td>
+<td>NOAA NODD public S3 bucket <code>s3://noaa-jpss/</code> (HTTPS, anonymous)</td>
+<td><strong>1-day</strong> global</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>gmu_legacy</code></td>
+<td>GMU JPSS Flood archive <code>https://jpssflood.gmu.edu/downloads/pub/</code> (HTTP directory listings)</td>
+<td><strong>5-day</strong> global</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Set via <code>--viirs-backend</code> or the environment variable <code>ATLANTIS_VIIRS_BACKEND</code>.</p>
+<h3 id="noaa_s3-noaa-jpss-on-aws-recommended"><code>noaa_s3</code> — NOAA JPSS on AWS (recommended)</h3>
+<ul>
+<li><strong>Source of truth</strong> — NOAA Open Data Dissemination (NODD) programme, AWS registry entry <a href="https://registry.opendata.aws/noaa-jpss/"><code>noaa-jpss</code></a>.</li>
+<li><strong>Bucket / region</strong> — <code>arn:aws:s3:::noaa-jpss</code> in <code>us-east-1</code>. Browse at <a href="https://noaa-jpss.s3.amazonaws.com/index.html">noaa-jpss.s3.amazonaws.com</a>.</li>
+<li><strong>Atlantis path</strong> — <code>JPSS_Blended_Products/VFM_1day_GLB/TIF/&lt;YYYY&gt;/&lt;MM&gt;/&lt;DD&gt;/</code>.</li>
+<li><strong>Tile naming</strong> — <code>VIIRS-Flood-1day-GLB&lt;AOI&gt;_v2r0_blend_s&lt;start&gt;_e&lt;end&gt;_c&lt;created&gt;.tif</code> (e.g. <code>GLB001</code>…<code>GLB145</code>). The <code>blend</code> token indicates blended Suomi-NPP + NOAA-20 observations.</li>
+<li><strong>AOI grid</strong> — 136 land-covering 15°×15° tiles defined by the VFM algorithm (see <code>src/atlantis/fetchers/viirs/data/viirs_aois.geojson</code>). On a typical day ~145 tile files are present (some AOIs split at the antimeridian).</li>
+<li><strong>Spatial / temporal</strong> — 375 m, EPSG:4326, uint8 pixel codes 0–200, daily global.</li>
+<li><strong>Other VFM variants on the same bucket</strong> — <code>VFM_5day_GLB/</code> (5-day composite), <code>VIIRS-ABI-Flood-Day/</code>, <code>VIIRS-ABI-Flood-Day-TIF/</code>, <code>VIIRS-ABI-Flood-Day-Shapefiles/</code> (VIIRS+GOES-ABI joint daytime product). Atlantis currently consumes only <code>VFM_1day_GLB/TIF/</code>.</li>
+<li><strong>License</strong> — open NOAA data (NODD terms of use; attribution requested).</li>
+<li><strong>Streaming</strong> — works end-to-end via GDAL <code>/vsicurl/</code> because S3 supports HTTP range reads.</li>
+<li><strong>Docs</strong> — <a href="https://github.com/NOAA-Big-Data-Program/nodd-data-docs/tree/main/JPSS">NOAA-Big-Data-Program/nodd-data-docs (JPSS)</a>.</li>
+</ul>
+<h3 id="gmu_legacy-george-mason-university-archive"><code>gmu_legacy</code> — George Mason University archive</h3>
+<ul>
+<li><strong>Source of truth</strong> — Hosted by the same group that authored the VFM algorithm (Sanmei Li, Donglian Sun et al., George Mason University). This was the original public distribution point before the NOAA NODD migration.</li>
+<li><strong>Atlantis path</strong> — <code>https://jpssflood.gmu.edu/downloads/pub/&lt;YYYYMMDD&gt;/tif/</code>.</li>
+<li><strong>Tile naming</strong> — files matching <code>_005day_&lt;AOI&gt;.tif</code> or <code>_005day_&lt;AOI&gt;.tif.zip</code> (the <code>005day</code> token is the <strong>5-day max-water-fraction composite</strong>, used to suppress cloud and shadow contamination across the compositing window).</li>
+<li><strong>AOI grid</strong> — same 136 15°×15° AOI scheme as <code>noaa_s3</code>.</li>
+<li><strong>Streaming</strong> — <em>not supported</em>. <code>.zip</code>-packaged tiles and a plain HTML directory listing require the <code>--no-stream</code> (download-and-extract) path.</li>
+<li><strong>Coverage</strong> — the GMU site does not advertise its index; Atlantis does not declare published years and falls back to per-date probing. Reachability is best-effort: the host may be intermittently offline (it was unreachable at the time of writing).</li>
+<li><strong>When to use it</strong> — historical 5-day composites, or as a fallback for the years currently missing from NOAA S3 (see below). For modern operational use, prefer <code>noaa_s3</code>.</li>
+</ul>
+<h3 id="data-availability">Data availability</h3>
+<p>VIIRS coverage differs per backend. Atlantis queries the backend's published
+years before fetching and aborts early with an explanation if the requested
+window falls outside that range.</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Published calendar years (as of 2026-06)</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>noaa_s3</code></td>
+<td>2012–2020, 2023–2026</td>
+<td><strong>2021 and 2022 are not published</strong> on the public NOAA JPSS bucket. Verified via S3 listing of <code>JPSS_Blended_Products/VFM_1day_GLB/TIF/</code>.</td>
+</tr>
+<tr>
+<td><code>gmu_legacy</code></td>
+<td>Best-effort (not declared)</td>
+<td>The GMU archive does not enumerate cheaply; Atlantis attempts each requested date directly. May cover the 2021–2022 gap when the host is reachable.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>noaa_s3</code> coverage set is read at runtime from <code>JPSS_Blended_Products/VFM_1day_GLB/&lt;FORMAT&gt;/</code>,
+so it will pick up new years automatically as NOAA publishes them. When a request
+targets a year that NOAA does not publish (e.g. the 2022 Pakistan floods), the
+CLI emits a clear diagnostic and suggests falling back to <code>--viirs-backend gmu_legacy</code>.</p>
+<h4 id="where-are-2021-and-2022-on-aws">Where are 2021 and 2022 on AWS?</h4>
+<p>Nowhere. The 2021–2022 gap is <strong>bucket-wide on the public NOAA mirror</strong>, not specific to
+<code>VFM_1day_GLB/TIF</code>. We verified every plausible alternative S3 location and all
+exhibit the same gap:</p>
+<table>
+<thead>
+<tr>
+<th>Bucket / prefix</th>
+<th>Years present</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>s3://noaa-jpss/JPSS_Blended_Products/VFM_1day_GLB/{TIF,NETCDF,SHAPEZIP}/</code></td>
+<td>2012–2020, 2023–2026</td>
+</tr>
+<tr>
+<td><code>s3://noaa-jpss/JPSS_Blended_Products/VFM_5day_GLB/{TIF,NETCDF,PNG}/</code></td>
+<td>2012–2020, 2023–2026</td>
+</tr>
+<tr>
+<td><code>s3://noaa-jpss/JPSS_Blended_Products/SNPP_DECOM/NetCDF/</code></td>
+<td>2018–2020 only</td>
+</tr>
+<tr>
+<td><code>s3://noaa-jpss/JPSS_Blended_Products/VIIRS-ABI-Flood-Day*/</code> (3 variants)</td>
+<td>2025–2026 only</td>
+</tr>
+<tr>
+<td><code>s3://noaa-nesdis-{n20,snpp}-pds/VIIRS_VFM_MWS_MOSAIC/</code></td>
+<td>2024–2026 only</td>
+</tr>
+</tbody>
+</table>
+<p>For events in 2021–2022 the only routes are:</p>
+<ul>
+<li><strong>GMU JPSS Flood archive</strong> (<code>gmu_legacy</code> backend) — the historical
+  distribution at <code>jpssflood.gmu.edu</code>. The host is intermittently reachable;
+  retry from a non-cloud network if requests time out.</li>
+<li><strong>NESDIS Product Distribution &amp; Access</strong> — authenticated portal at
+  <a href="https://www.star.nesdis.noaa.gov/jpss/VIIRSflood.php">https://www.star.nesdis.noaa.gov/jpss/VIIRSflood.php</a>. Not yet wired into
+  Atlantis (account + credentials required).</li>
+<li><strong>NOAA NCEI archive</strong> — long-term mirror, requires manual ordering.</li>
+</ul>
+<p><strong>Pakistan 2022 — GMU Legacy backend example:</strong></p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>Pakistan_2022<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;67.5 26 70 29.5&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span><span class="m">2022</span>-08-28<span class="w"> </span>--end-date<span class="w"> </span><span class="m">2022</span>-09-03<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--viirs-backend<span class="w"> </span>gmu_legacy<span class="w"> </span>--no-stream<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--plot<span class="w"> </span>--harmonise<span class="w"> </span>--no-keep-processed<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--output<span class="w"> </span>./data/Pakistan_2022
+</code></pre></div>
+<p>See <a href="../../CLI_Examples.md#viirs-availability-notes"><code>CLI_Examples.md</code></a> for more
+details on backend selection.</p>
+<h2 id="output-structure">Output structure</h2>
+<div class="highlight"><pre><span></span><code>&lt;output&gt;/
+  &lt;event_id&gt;/
+    viirs/
+      raw/          # only with --no-stream
+      processed/    # absent with --no-keep-processed
+        # --classify (default) — derived layers:
+        &lt;event_id&gt;_&lt;YYYYMMDD&gt;_viirs_water_fraction.tif
+        &lt;event_id&gt;_&lt;YYYYMMDD&gt;_viirs_flood_fraction.tif
+        &lt;event_id&gt;_&lt;YYYYMMDD&gt;_viirs_reference_water.tif
+        &lt;event_id&gt;_&lt;YYYYMMDD&gt;_viirs_exclusion_mask.tif
+        &lt;event_id&gt;_&lt;YYYYMMDD&gt;_viirs_cloud_mask.tif
+        &lt;event_id&gt;_&lt;YYYYMMDD&gt;_viirs_snow_ice.tif
+        &lt;event_id&gt;_&lt;YYYYMMDD&gt;_viirs_shadow.tif
+        # --no-classify — native band:
+        &lt;event_id&gt;_&lt;YYYYMMDD&gt;_viirs_raw.tif
+      plots/
+        processed/
+          derived/      # --classify (default) + --plot
+            &lt;event_id&gt;_&lt;YYYY-MM-DD&gt;_viirs.png
+          native/       # --no-classify + --plot
+            &lt;event_id&gt;_&lt;YYYY-MM-DD&gt;_viirs.png
+        harmonised/
+          derived/      # --classify (default) + --harmonise
+            &lt;event_id&gt;_&lt;YYYY-MM-DD&gt;_viirs_harmonised.png
+          native/       # --no-classify + --harmonise
+            &lt;event_id&gt;_&lt;YYYY-MM-DD&gt;_viirs_harmonised.png
+      harmonised/   # with --harmonise
+        &lt;event_id&gt;_&lt;YYYY-MM-DD&gt;_viirs_harmonised.tif
+</code></pre></div>
+<h2 id="output-format">Output format</h2>
+<p>All GeoTIFFs share these properties:</p>
+<ul>
+<li><strong>CRS</strong>: EPSG:4326 (WGS84)</li>
+<li><strong>Dtype</strong>: uint8</li>
+<li><strong>Compression</strong>: LZW</li>
+<li><strong>Nodata</strong>: <code>255</code> for <code>processed/*_{water,flood}_fraction.tif</code> and <code>harmonised/*.tif</code>; <code>0</code> for <code>processed/*_raw.tif</code> and the derived masks (<code>*_reference_water.tif</code>, <code>*_exclusion_mask.tif</code>, <code>*_cloud_mask.tif</code>, <code>*_snow_ice.tif</code>, <code>*_shadow.tif</code>). Note the <em>native</em> VFM band's own <code>_FillValue</code> is <code>1</code>; Atlantis writes its <code>raw</code> passthrough with <code>nodata=0</code> (clip/mosaic fill).</li>
+</ul>
+<p>Processed and harmonised flood-fraction values are stored as <strong>integer percentages</strong> (0–100),
+where 0 = no flood and 100 = fully flooded. This gives 1% precision while
+using 4× less disk space than float32.</p>
+<p>Compatible with <code>rioxarray</code>, <code>rasterio</code>, QGIS, and any GDAL-based tool.</p>
+<h2 id="canonical-1-arcmin-global-grid">Canonical 1-arcmin global grid</h2>
+<p>Harmonised outputs are aligned to a <strong>fixed global reference grid</strong> so that
+every AOI we produce is a bit-for-bit subset of the same worldwide raster.
+The reference is the grid used by ECMWF's <code>Globe_flood_area_*.grb</code>
+(<code>s3://atlantis/</code>), shared with several other 1-arcmin global datasets
+(MERIT/CaMa-Flood, etc.).</p>
+<h3 id="what-1-arcmin-on-the-global-grid-means-intuitively">What "1 arcmin on the global grid" means, intuitively</h3>
+<ul>
+<li><strong>Pixel size.</strong> 1 arcminute = <code>1/60°</code>. So one pixel spans <code>0.01666…°</code> in
+  both latitude and longitude — about <strong>1.85 km × 1.85 km</strong> at the equator.</li>
+<li><strong>Grid extent.</strong> The whole globe is tiled by <code>Nj × Ni = 10 800 × 21 600 =
+~233 million</code> pixels.</li>
+<li><strong>Pixel-is-area, not pixel-is-point.</strong> Each pixel covers a 1×1 arcmin
+  square on the ground. By convention we describe a pixel by its <strong>centre</strong>:
+  the cell at column <code>i</code>, row <code>j</code> has centre</li>
+</ul>
+<p>$$
+  \text{lon}_i = -180\degree + (i + \tfrac{1}{2}) / 60, \qquad
+  \text{lat}_j = +90\degree - (j + \tfrac{1}{2}) / 60.
+  $$</p>
+<p>So the first column's centre is <code>-179.99166…°</code>, the last is
+  <code>+179.99166…°</code>; latitudes go top-down from <code>+89.99166…°</code> to
+  <code>-89.99166…°</code>. This matches the grid definition encoded in
+  <code>Globe_flood_area_*.grb</code> (verified via <code>eccodes</code>; see
+  <a href="#verifying-alignment">Verifying alignment</a>).</p>
+<ul>
+<li><strong>Why "snapping" matters.</strong> A user-supplied AOI bbox almost never lines
+  up with this grid. If we just resample to the AOI bounds, our output
+  pixel centres land at fractional offsets like <code>-0.85166…°</code> instead of
+  the canonical <code>-0.85833…°</code> — close, but <strong>not stackable</strong> with the
+  global product. Snapping fixes this by extending the AOI outward to the
+  nearest cell edges of the global grid before resampling.</li>
+<li><strong>Result.</strong> After snapping, our AOI window is a contiguous slice of the
+  global grid: <code>globe.isel(lat=slice(j0, j1), lon=slice(i0, i1))</code> and our
+  harmonised raster cover the <strong>same pixels</strong>, byte-for-byte. Cross-product
+  overlay (VIIRS vs <code>Globe_flood_area</code>, MERIT topography, etc.) becomes a
+  trivial array subset, no resampling required.</li>
+</ul>
+<h3 id="how-it-is-implemented">How it is implemented</h3>
+<p>This is enabled by default on every <code>--harmonise</code> run; you do not need to
+pass any flag. See <a href="../../src/atlantis/config.py"><code>HarmoniseConfig</code></a> for the
+three knobs and <a href="../../src/atlantis/harmoniser/reprojector.py"><code>Reprojector._snap_bounds_to_global_grid</code></a>
+for the snap maths.</p>
+<table>
+<thead>
+<tr>
+<th>Config field</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>target_resolution</code></td>
+<td><code>1/60</code> (deg)</td>
+<td>Pixel size; <code>0.0166666…°</code> = exactly 1 arcmin.</td>
+</tr>
+<tr>
+<td><code>snap_to_global_grid</code></td>
+<td><code>True</code></td>
+<td>Snap AOI bounds to the canonical grid before resampling. Set <code>False</code> to disable.</td>
+</tr>
+<tr>
+<td><code>global_grid_origin_lon</code></td>
+<td><code>-180.0</code></td>
+<td>Western edge anchor.</td>
+</tr>
+<tr>
+<td><code>global_grid_origin_lat</code></td>
+<td><code>+90.0</code></td>
+<td>Northern edge anchor.</td>
+</tr>
+</tbody>
+</table>
+<p>Override via env vars (<code>ATLANTIS_SNAP_TO_GLOBAL_GRID=false</code>,
+<code>ATLANTIS_TARGET_RESOLUTION=…</code>) or programmatically through <code>HarmoniseConfig</code>.</p>
+<h3 id="snap-algorithm-in-one-paragraph">Snap algorithm in one paragraph</h3>
+<p>For an AOI <code>(west, south, east, north)</code> and resolution <code>r = 1/60°</code>, we
+extend the bounds <strong>outward</strong> to the nearest multiple of <code>r</code> from the
+origins:</p>
+<div class="highlight"><pre><span></span><code>west_snap  = -180 + floor(( west + 180) / r) * r
+east_snap  = -180 +  ceil(( east + 180) / r) * r
+north_snap = +90  - floor(( 90  - north) / r) * r
+south_snap = +90  -  ceil(( 90  - south) / r) * r
+</code></pre></div>
+<p>(then clipped to <code>[-180, 180] × [-90, 90]</code>). The number of pixels is
+<code>(east_snap − west_snap) / r</code> × <code>(north_snap − south_snap) / r</code>, all
+integers; pixel centres are exactly <code>±(k + 0.5) / 60</code>.</p>
+<h3 id="verifying-alignment">Verifying alignment</h3>
+<p>The notebook <a href="../../notebooks/drafts/verify_global_grid.ipynb"><code>notebooks/drafts/verify_global_grid.ipynb</code></a>
+walks through the verification end-to-end:</p>
+<ol>
+<li>Streams ~200 MiB (one full message) of <code>Globe_flood_area_202208.grb</code>
+   from <code>s3://atlantis/</code> using <code>aws s3api get-object --range</code>, then reads
+   its grid definition with the <code>eccodes</code> Python API. Confirms <code>Ni=21600</code>,
+   <code>Nj=10800</code>, <code>di=dj=1/60°</code>. (Note: GRIB stores longitudes in <code>[0, 360)</code>,
+   so its first lon reads as <code>180.008°</code>, which is the same pixel as
+   <code>-179.992°</code> in the <code>±180°</code> convention we use.)</li>
+<li>Numerically proves that <code>Reprojector._snap_bounds_to_global_grid</code>
+   maps an off-grid AOI (<code>-0.86, 8.26, 1.99, 11.73</code>) to a contiguous
+   window of the global grid: <code>lon[10748:10920], lat[4696:4905]</code>.</li>
+<li>Runs the full <code>Harmoniser</code> on a synthetic dataset and verifies that
+   every output pixel centre satisfies <code>(lon + 180) × 60 − 0.5 ∈ ℤ</code> and
+   <code>(90 − lat) × 60 − 0.5 ∈ ℤ</code> (deviation <code>&lt; 1e-12</code>).</li>
+</ol>
+<h3 id="quick-check-on-any-harmonised-file">Quick check on any harmonised file</h3>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">rasterio</span>
+
+<span class="n">RES</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="mi">60</span>
+<span class="n">LON0</span><span class="p">,</span> <span class="n">LAT0</span> <span class="o">=</span> <span class="o">-</span><span class="mf">180.0</span><span class="p">,</span> <span class="mf">90.0</span>
+
+<span class="k">with</span> <span class="n">rasterio</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;…_viirs_harmonised.tif&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">src</span><span class="p">:</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">src</span><span class="o">.</span><span class="n">transform</span>
+    <span class="n">cx0</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">a</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="n">t</span><span class="o">.</span><span class="n">c</span>          <span class="c1"># first pixel centre, lon</span>
+    <span class="n">cy0</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">e</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="n">t</span><span class="o">.</span><span class="n">f</span>          <span class="c1"># first pixel centre, lat</span>
+    <span class="n">kx</span> <span class="o">=</span> <span class="p">(</span><span class="n">cx0</span> <span class="o">-</span> <span class="n">LON0</span><span class="p">)</span> <span class="o">/</span> <span class="n">RES</span> <span class="o">-</span> <span class="mf">0.5</span>  <span class="c1"># must be an integer</span>
+    <span class="n">ky</span> <span class="o">=</span> <span class="p">(</span><span class="n">LAT0</span> <span class="o">-</span> <span class="n">cy0</span><span class="p">)</span> <span class="o">/</span> <span class="n">RES</span> <span class="o">-</span> <span class="mf">0.5</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;pixel size : </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">a</span><span class="si">:</span><span class="s2">.12f</span><span class="si">}</span><span class="s2"> (= 1/60: </span><span class="si">{</span><span class="n">RES</span><span class="si">:</span><span class="s2">.12f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;on-grid    : kx=</span><span class="si">{</span><span class="n">kx</span><span class="si">:</span><span class="s2">.3e</span><span class="si">}</span><span class="s2">, ky=</span><span class="si">{</span><span class="n">ky</span><span class="si">:</span><span class="s2">.3e</span><span class="si">}</span><span class="s2">  (≈0 means aligned)&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>For a West Africa AOI fetched with the default settings this prints
+<code>kx=10748.000000, ky=4696.000000</code> — the AOI is rows 4696–4904 and
+columns 10748–10919 of the global grid.</p>
+<h2 id="tips">Tips</h2>
+<ul>
+<li><strong>Multiple dates</strong> — The date range is inclusive: <code>--start-date 2024-10-27 --end-date 2024-10-31</code> fetches five daily composites.</li>
+<li><strong>Large regions</strong> — VIIRS tiles cover ~15°×15°. Large bboxes automatically trigger multi-tile mosaicing.</li>
+<li><strong>Cloud contamination</strong> — Always check the quality mask. VIIRS is an optical sensor and cloud cover masks flood signal.</li>
+<li><strong>Re-run without re-fetching</strong> — With <code>--no-stream</code>, raw tiles are cached in <code>raw/</code> and reused on subsequent runs.</li>
+<li><strong>Batch KuroSiwo runs</strong> — Use <code>--no-keep-processed</code> to save ~100 MB of intermediate files per event.</li>
+<li><strong>Pre-build metadata</strong> — Run <code>atlantis build-kurosiwo-metadata</code> once to speed up repeated <code>fetch-kurosiwo-viirs</code> calls.</li>
+</ul>
+<h2 id="further-reading">Further reading</h2>
+<ul>
+<li><a href="../pipeline/">Pipeline modes &amp; flowchart</a></li>
+<li><a href="../api/">Python API reference</a></li>
+<li><a href="../internals/">Architecture &amp; internals</a></li>
+<li><a href="../../src/README.md">Pipeline vision</a></li>
+<li><code>scripts/viirs_demo.py</code> — runnable end-to-end example</li>
+<li><code>notebooks/drafts/kurosiwo_viirs_showcase_cli.ipynb</code> — interactive walkthrough</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.indexes", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

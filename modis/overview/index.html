@@ -1,0 +1,4492 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="ML-ready archive of satellite-derived flood inundation observations">
+      
+      
+      
+        <link rel="canonical" href="https://opageo.github.io/atlantis/modis/overview/">
+      
+      
+        <link rel="prev" href="../../viirs/internals/">
+      
+      
+        <link rel="next" href="../pipeline/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Overview - Atlantis</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#modis-flood-detection" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Atlantis" class="md-header__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Atlantis
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Overview
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../pixi-setup/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../sources/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Data Sources
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  CLI
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../batch/viirs/jpss.md" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Batch Processing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../development/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Development
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/config/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Atlantis" class="md-nav__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Atlantis
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pixi-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pixi Setup (Newcomers)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials & Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gdal-install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual GDAL Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Sources
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Sources
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layer Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    VIIRS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MODIS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MODIS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pixel-encoding-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pixel encoding at a glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-modis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is MODIS?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flood-product-family" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flood product family
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flood product family">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#composites-how-the-four-flood-layers-are-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composites: how the four flood layers are built
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#water-detection-algorithm-per-pixel-per-swath" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Water-detection algorithm (per-pixel, per-swath)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shadow-and-topographic-masking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shadow and topographic masking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Shadow and topographic masking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#terrain-shadow-mask-per-swath-before-compositing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terrain-shadow mask (per-swath, before compositing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hand-mask-post-compositing-since-beta-2-jan-2023" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HAND mask (post-compositing, since Beta 2 / Jan 2023)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cloud-shadow-mask-1-day-cs-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cloud-shadow mask (1-Day CS only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#insufficient-data-flag-255" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Insufficient-data flag (255)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#surface-water-vs-flood-reference-water-mask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surface water vs flood (reference water mask)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Surface water vs flood (reference water mask)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-yearly-mask-is-built-release-1-onward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the yearly mask is built (Release 1 onward)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recurring-flood-release-11-dec-2025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recurring flood (Release 1.1, Dec 2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recurring flood (Release 1.1, Dec 2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#algorithm-clopperpearson-confidence-bounded-flood-frequency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Algorithm (Clopper–Pearson confidence-bounded flood frequency)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pixel-encoding-release-11-dec-2025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pixel encoding (Release 1.1, Dec 2025)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#release-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release history
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-to-the-legacy-mwp-product" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison to the legacy MWP product
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tile-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tile grid
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data access
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data access">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#laads-daac-historical-archived-nrt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LAADS DAAC (historical + archived NRT)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lance-live-nrt-1-week-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LANCE (live NRT, ~1-week window)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LANCE (live NRT, ~1-week window)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#json-listing-api-the-right-way-to-discover-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON listing API (the right way to discover files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sibling-nasa-viirs-products-for-context-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sibling NASA VIIRS products (for context only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filename-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filename schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#authentication-header" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication header
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File formats
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File formats">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hdf4-mcdwd_l3-and-mcdwd_l3_nrt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF4 (MCDWD_L3 and MCDWD_L3_NRT)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="HDF4 (MCDWD_L3 and MCDWD_L3_NRT)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hdf4-layer-inventory-release-1-onward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF4 layer inventory (Release 1 onward)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internal-metadata-worth-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Internal metadata worth reading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gdal-access-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GDAL access pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#three-caveats-for-hdf4-ingestion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Three caveats for HDF4 ingestion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#geotiff-mcdwd_l3_f11c23_nrt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GeoTIFF (MCDWD_L3_F{1,1C,2,3}_NRT)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming-strategy-for-atlantis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming strategy for Atlantis
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Streaming strategy for Atlantis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resampling-categorical-modis-pixels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resampling categorical MODIS pixels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#suggested-layer-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suggested layer mapping
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nrt-vs-reprocessed-which-one-to-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NRT vs reprocessed: which one to use
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-caveats-and-failure-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known caveats and failure modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-to-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison to VIIRS
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reference-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reference implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GFM
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    GFM
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KuroSiwo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KuroSiwo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kurosiwo/stac-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    STAC Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    End-to-End Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Batch Processing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../batch/viirs/jpss.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS JPSS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fetchers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fetchers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/harmoniser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harmoniser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pixel-encoding-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pixel encoding at a glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-modis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is MODIS?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flood-product-family" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flood product family
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flood product family">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#composites-how-the-four-flood-layers-are-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composites: how the four flood layers are built
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#water-detection-algorithm-per-pixel-per-swath" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Water-detection algorithm (per-pixel, per-swath)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shadow-and-topographic-masking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shadow and topographic masking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Shadow and topographic masking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#terrain-shadow-mask-per-swath-before-compositing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terrain-shadow mask (per-swath, before compositing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hand-mask-post-compositing-since-beta-2-jan-2023" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HAND mask (post-compositing, since Beta 2 / Jan 2023)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cloud-shadow-mask-1-day-cs-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cloud-shadow mask (1-Day CS only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#insufficient-data-flag-255" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Insufficient-data flag (255)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#surface-water-vs-flood-reference-water-mask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surface water vs flood (reference water mask)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Surface water vs flood (reference water mask)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-yearly-mask-is-built-release-1-onward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the yearly mask is built (Release 1 onward)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recurring-flood-release-11-dec-2025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recurring flood (Release 1.1, Dec 2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recurring flood (Release 1.1, Dec 2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#algorithm-clopperpearson-confidence-bounded-flood-frequency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Algorithm (Clopper–Pearson confidence-bounded flood frequency)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pixel-encoding-release-11-dec-2025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pixel encoding (Release 1.1, Dec 2025)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#release-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release history
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-to-the-legacy-mwp-product" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison to the legacy MWP product
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tile-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tile grid
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data access
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data access">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#laads-daac-historical-archived-nrt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LAADS DAAC (historical + archived NRT)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lance-live-nrt-1-week-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LANCE (live NRT, ~1-week window)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LANCE (live NRT, ~1-week window)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#json-listing-api-the-right-way-to-discover-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON listing API (the right way to discover files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sibling-nasa-viirs-products-for-context-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sibling NASA VIIRS products (for context only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filename-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filename schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#authentication-header" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication header
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File formats
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File formats">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hdf4-mcdwd_l3-and-mcdwd_l3_nrt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF4 (MCDWD_L3 and MCDWD_L3_NRT)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="HDF4 (MCDWD_L3 and MCDWD_L3_NRT)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hdf4-layer-inventory-release-1-onward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF4 layer inventory (Release 1 onward)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internal-metadata-worth-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Internal metadata worth reading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gdal-access-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GDAL access pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#three-caveats-for-hdf4-ingestion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Three caveats for HDF4 ingestion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#geotiff-mcdwd_l3_f11c23_nrt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GeoTIFF (MCDWD_L3_F{1,1C,2,3}_NRT)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming-strategy-for-atlantis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming strategy for Atlantis
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Streaming strategy for Atlantis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resampling-categorical-modis-pixels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resampling categorical MODIS pixels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#suggested-layer-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suggested layer mapping
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nrt-vs-reprocessed-which-one-to-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NRT vs reprocessed: which one to use
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-caveats-and-failure-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known caveats and failure modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-to-viirs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison to VIIRS
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reference-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reference implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<!-- markdownlint-disable MD013 MD051 -->
+
+<h1 id="modis-flood-detection">MODIS Flood Detection</h1>
+<p><strong>Satellite-based flood mapping at 250 m resolution from NASA LANCE/LAADS</strong></p>
+<p>This document collects everything we know about the NASA MODIS flood product
+family — the data sources, formats, tiling scheme, pixel encoding, and the
+access paths that matter for the integrated <a href="../api/">MODIS fetcher</a>.
+For the architectural breakdown, see <a href="../internals/">internals.md</a>;
+for the CLI decision tree, see <a href="../pipeline/">pipeline.md</a>.</p>
+<p>Read this page for the product overview and quick-start guidance. Then use the
+companion pages for the exact surface you need:</p>
+<ul>
+<li><a href="../pipeline/">pipeline.md</a> for backend choices, flag combinations, and strategy flow</li>
+<li><a href="../api/">api.md</a> for Python usage and constructor parameters</li>
+<li><a href="../internals/">internals.md</a> for architecture, search flow, and implementation details</li>
+<li><a href="../README.md">../README.md</a> for the full docs index</li>
+</ul>
+<h2 id="quick-start">Quick start</h2>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">EARTHDATA_TOKEN</span><span class="o">=</span><span class="s2">&quot;YOUR_TOKEN_HERE&quot;</span>
+
+uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>Pakistan_2022<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>modis<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;66.0 22.0 72.0 31.0&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span><span class="m">2022</span>-08-30<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--end-date<span class="w"> </span><span class="m">2022</span>-09-01<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--modis-backend<span class="w"> </span>laads_hdf4<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--modis-composite<span class="w"> </span>F2<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--harmonise<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--no-keep-processed
+</code></pre></div>
+<p>This downloads the historical LAADS HDF4 products for the 2022 Pakistan floods,
+extracts the 2-day flood composite, and writes the harmonised 1-arcmin output.</p>
+<p>Typical folder layout:</p>
+<div class="highlight"><pre><span></span><code>&lt;output&gt;/
+  &lt;event_id&gt;/
+    modis/
+      raw/          # downloaded .tif or .hdf inputs
+      processed/    # absent with --no-keep-processed
+      plots/
+        processed/    # with --plot
+          derived/    # --classify (default)
+          native/     # --no-classify
+        harmonised/   # with --harmonise
+          derived/
+          native/
+      harmonised/   # with --harmonise
+</code></pre></div>
+<h2 id="pixel-encoding-at-a-glance">Pixel encoding at a glance</h2>
+<p>The MODIS flood products are categorical. The full semantics and release
+history are documented later in this page; the quick reference is:</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>No water</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>Surface / reference water</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>Recurring flood</td>
+</tr>
+<tr>
+<td><code>3</code></td>
+<td>Unusual flood</td>
+</tr>
+<tr>
+<td><code>255</code></td>
+<td>Insufficient data</td>
+</tr>
+</tbody>
+</table>
+<p>Atlantis exposes these as <strong>layers</strong> of two kinds (full catalogue: <a href="../../layers/">layer reference</a>, or run <code>atlantis list-layers --source modis</code>):</p>
+<ul>
+<li><strong>Native</strong> — the selected MCDWD flood composite, passed through untouched as <code>raw</code> (<code>--no-classify</code>). The eleven ancillary count layers are catalogued but not loaded by the default pipeline.</li>
+<li><strong>Derived</strong> — the registry-defined MODIS layers emitted with <code>--classify</code>. Their exact names, dtypes, resampling, and descriptions are maintained only in the canonical <a href="../../layers/#layers-modis-derived">layer reference</a>.</li>
+</ul>
+<p><code>flood_fraction</code> is therefore a <strong>derived</strong> layer, not a native MCDWD value.</p>
+<h2 id="what-is-modis">What is MODIS?</h2>
+<p>MODIS (Moderate Resolution Imaging Spectroradiometer) instruments fly on the
+NASA <strong>Terra</strong> (since 1999) and <strong>Aqua</strong> (since 2002) satellites. Each MODIS
+collects 36 spectral bands at 250 m (bands 1–2), 500 m (bands 3–7) and 1 km
+(bands 8–36) nominal resolution. The flood algorithm uses the <strong>250 m red
+(band 1) and near-infrared (band 2)</strong> reflectances, plus <strong>band 7 (SWIR,
+2.13 µm)</strong> which is delivered at 500 m and pan-sharpened to 250 m. All three
+are consumed from the <a href="https://lpdaac.usgs.gov/documents/925/MOD09_User_Guide_V61.pdf">MOD09 Surface Reflectance product</a>
+(<code>MOD09.NRT.061</code> for the NRT chain).</p>
+<p>Both satellites are nearing end-of-life: fuel exhaustion has caused their
+orbits to drift, with Terra equatorial overpasses moving from ~10:30 a.m. to
+~9:30 a.m. and Aqua from ~1:30 p.m. to ~3:00 p.m. as of late 2025. The
+<a href="../../viirs/overview/">VIIRS flood product</a> (NOAA-20 + NOAA-21) was designed as their
+successor.</p>
+<h2 id="flood-product-family">Flood product family</h2>
+<p>NASA's "Global Flood Product" line currently bundles five distinct datasets
+that all share the same algorithm, tile grid, and pixel encoding. The
+algorithm is described in the
+<a href="https://www.earthdata.nasa.gov/s3fs-public/2025-12/MCDWD_VCDWD_UserGuide_RevF.pdf">MODIS/VIIRS NRT Global Flood Products User Guide, Rev F (Dec 2025)</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Short name</th>
+<th>Format</th>
+<th>Period</th>
+<th>Source</th>
+<th>DOI</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MCDWD_L3</code></td>
+<td>HDF4 (<code>.hdf</code>)</td>
+<td>2003 – 2025</td>
+<td>LAADS DAAC</td>
+<td><code>10.5067/MODIS/MCDWD_L3.061</code></td>
+<td><strong>Reprocessed</strong> historical archive, released April 2026. Standard inputs.</td>
+</tr>
+<tr>
+<td><code>MCDWD_L3_NRT</code></td>
+<td>HDF4 (<code>.hdf</code>)</td>
+<td>2021 – present</td>
+<td>LANCE + LAADS</td>
+<td><code>10.5067/MODIS/MCDWD_L3_NRT.061</code></td>
+<td>Near-real-time, expedited geolocation. Archived in LAADS from Jan 2026 onward.</td>
+</tr>
+<tr>
+<td><code>MCDWD_L3_F1_NRT</code></td>
+<td>GeoTIFF</td>
+<td>NRT (~1 week)</td>
+<td>LANCE</td>
+<td><code>10.5067/MODIS/MCDWD_L3_F1_NRT.061</code></td>
+<td>1-day composite, single layer per file.</td>
+</tr>
+<tr>
+<td><code>MCDWD_L3_F1C_NRT</code></td>
+<td>GeoTIFF</td>
+<td>NRT (~1 week)</td>
+<td>LANCE</td>
+<td><code>10.5067/MODIS/MCDWD_L3_F1C_NRT.061</code></td>
+<td>1-day with cloud-shadow screening.</td>
+</tr>
+<tr>
+<td><code>MCDWD_L3_F2_NRT</code></td>
+<td>GeoTIFF</td>
+<td>NRT (~1 week)</td>
+<td>LANCE</td>
+<td><code>10.5067/MODIS/MCDWD_L3_F2_NRT.061</code></td>
+<td>2-day max-composite (cloud suppression).</td>
+</tr>
+<tr>
+<td><code>MCDWD_L3_F3_NRT</code></td>
+<td>GeoTIFF</td>
+<td>NRT (~1 week)</td>
+<td>LANCE</td>
+<td><code>10.5067/MODIS/MCDWD_L3_F3_NRT.061</code></td>
+<td>3-day max-composite.</td>
+</tr>
+<tr>
+<td><code>MWP</code> (legacy)</td>
+<td>GeoTIFF</td>
+<td>2012 – 2022</td>
+<td>NASA NRT</td>
+<td>—</td>
+<td>Discontinued precursor (pixel-size and tile naming differ). Not recommended.</td>
+</tr>
+</tbody>
+</table>
+<p>All current products are <strong>Collection 6.1, Release 1.1</strong>.</p>
+<h3 id="composites-how-the-four-flood-layers-are-built">Composites: how the four flood layers are built</h3>
+<p>Each daily HDF holds <strong>four flood layers</strong> — <code>Flood 1-Day 250m</code>,
+<code>Flood 1-Day CS 250m</code> (cloud-shadow screened), <code>Flood 2-Day 250m</code>, and
+<code>Flood 3-Day 250m</code> — alongside the eleven ancillary count layers from which
+they are derived (see <a href="#hdf4-layer-inventory">§ HDF4 layer inventory</a>).</p>
+<p>The rule that turns water detections into a flood layer is intentionally
+simple: a pixel is marked as water in the <strong>N-Day</strong> composite if it
+accumulates <strong>at least N</strong> water detections across the previous <code>N</code> days of
+clear-sky Terra+Aqua observations. The 2-day and 3-day variants therefore
+<strong>suppress cloud-shadow false-positives</strong> (which rarely repeat at the same
+pixel as clouds drift) at the cost of temporal sharpness. The 1-day product
+has no such suppression and is contaminated by cloud shadows whenever clouds
+are present; the 1-Day CS variant additionally applies the MOD09 cloud-shadow
+mask to mitigate this. <strong>F2 is the recommended default</strong> for event-scale
+flood mapping (see <a href="https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/README.md">ifs-floodbench Scripts/README.md</a>).
+The LANCE NRT publishes each composite as a separate one-band GeoTIFF
+(<code>MCDWD_L3_F{1,1C,2,3}_NRT</code>).</p>
+<h3 id="water-detection-algorithm-per-pixel-per-swath">Water-detection algorithm (per-pixel, per-swath)</h3>
+<p>The algorithm runs on each MOD09 swath granule before any tile mosaicing
+or temporal compositing. A pixel is flagged as water iff:</p>
+<p>$$
+\frac{B_2 + A}{B_1 + B} &lt; C \quad \textbf{AND} \quad B_1 &lt; D \quad \textbf{AND} \quad B_7 &lt; E
+$$</p>
+<p>where $B_1, B_2, B_7$ are MOD09 reflectance values scaled by <code>10000</code>, and the
+constants are inherited from the legacy DFO algorithm:</p>
+<table>
+<thead>
+<tr>
+<th>Constant</th>
+<th>Value</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>A</code></td>
+<td><code>13.5</code></td>
+<td>Numerator offset (band 2)</td>
+</tr>
+<tr>
+<td><code>B</code></td>
+<td><code>1081.1</code></td>
+<td>Denominator offset (band 1)</td>
+</tr>
+<tr>
+<td><code>C</code></td>
+<td><code>0.7</code></td>
+<td>Band-ratio threshold</td>
+</tr>
+<tr>
+<td><code>D</code></td>
+<td><code>2027</code></td>
+<td>Band-1 brightness ceiling (rejects bright land)</td>
+</tr>
+<tr>
+<td><code>E</code></td>
+<td><code>675.7</code></td>
+<td>Band-7 SWIR ceiling (rejects bright/snow surfaces)</td>
+</tr>
+</tbody>
+</table>
+<p>If bands 1 or 2 are saturated or NODATA the pixel is dropped as NODATA; if
+only band 7 is missing the test is evaluated without the third clause. The
+resulting per-swath water mask is then masked further by terrain-shadow,
+cloud-shadow (1-Day CS only), and HAND topographic masks before
+compositing — see <a href="#shadow-and-topographic-masking">§ Shadow and topographic masking</a>.
+Water detections are then accumulated over 1, 2 or 3 days and thresholded
+as described above. Flood vs surface water is resolved against the
+<a href="#surface-water-vs-flood-reference-water-mask">reference water mask</a> after
+compositing, with <code>recurring flood</code> tagged via a separate monthly mask
+(<a href="#recurring-flood-release-11-dec-2025">Recurring flood, Release 1.1</a>).</p>
+<h3 id="shadow-and-topographic-masking">Shadow and topographic masking</h3>
+<p>Four masks shape the final flood layers. Three remove false-positive water
+detections (terrain shadow, HAND, cloud shadow); the fourth (insufficient
+data) records where the algorithm was unable to make a determination.</p>
+<h4 id="terrain-shadow-mask-per-swath-before-compositing">Terrain-shadow mask (per-swath, before compositing)</h4>
+<p>Monthly precomputed shadow rasters generated from the <strong>ASTER GDEM v2</strong> at
+nominal Terra/Aqua overpass geometries. For any given date the most
+liberal mask (closest to the winter solstice) is applied. Removes
+75–90 % of terrain-shadow false-positives in the 2-Day product. Currently
+applied only to the <strong>original 223 product tiles</strong>; the <strong>64 tiles added
+at Release 1</strong> (Apr 2024) rely solely on HAND for terrain-shadow
+mitigation.</p>
+<h4 id="hand-mask-post-compositing-since-beta-2-jan-2023">HAND mask (post-compositing, since Beta 2 / Jan 2023)</h4>
+<p><a href="https://doi.org/10.1016/j.jhydrol.2011.03.051">Height Above Nearest Drainage</a>
+is a topographic feature that records the vertical distance from each pixel
+to its nearest drainage channel. The MCDWD pipeline uses HAND to mask
+pixels that are physically unlikely to flood at 250 m scale.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Source DEM</td>
+<td><strong>Copernicus GLO-90</strong> (~90 m, 3 arc-second), via OpenTopography on AWS</td>
+</tr>
+<tr>
+<td>Drainage area</td>
+<td>~48 km² (6 000 GLO-90 pixels) upstream-area threshold to define channels</td>
+</tr>
+<tr>
+<td>HAND threshold</td>
+<td>30 m (binary mask)</td>
+</tr>
+<tr>
+<td>Cleanup</td>
+<td>Morphological dilation/erosion to remove pixelated noise</td>
+</tr>
+<tr>
+<td>Reference-water override</td>
+<td>MOD44W water (dilated by 1 px) is <strong>subtracted</strong> so known lakes are reportable inside HAND-masked terrain</td>
+</tr>
+<tr>
+<td>Tooling</td>
+<td><a href="https://pcraster.geo.uu.nl/">PCRaster 4.3.3</a></td>
+</tr>
+</tbody>
+</table>
+<p>The HAND mask is applied <strong>after</strong> compositing: every pixel under the mask
+is reassigned to <code>255</code> (insufficient data) regardless of detected water.
+Results: in mountainous tiles HAND eliminates the vast majority of remaining
+terrain- and cloud-shadow false-positives that survive the 2-Day or 3-Day
+composite. The cost is that <strong>new reservoirs in HAND-masked terrain will
+show no water for several years</strong>, until the rolling reference-water mask
+(below) graduates them out of HAND. Custom downstream pipelines can
+reconstruct an unmasked composite from the HDF count layers if this is
+undesirable.</p>
+<h4 id="cloud-shadow-mask-1-day-cs-only">Cloud-shadow mask (1-Day CS only)</h4>
+<p>The MOD09 (or VJ109/VJ209 for VIIRS) State-QA <code>cloud_shadow</code> flag, resampled
+from 1 km to 250 m to match the product grid. Applied only to the
+<code>Flood_1Day_CS_250m</code> variant because the flag is imperfect and can erase
+real water under thin cloud. The companion <code>Flood_1Day_250m</code> is published
+without this mask so users can compare and pick the better answer for their
+AOI.</p>
+<h4 id="insufficient-data-flag-255">Insufficient-data flag (<code>255</code>)</h4>
+<p>Laid down first, using MOD09 State-QA <code>cloud_state</code> to mark pixels reported
+as anything other than "clear". Three subtleties affect downstream code:</p>
+<ol>
+<li><strong><code>255</code> is overwriteable by water.</strong> Composited water detections are
+   written on top of the <code>255</code> mask, so a pixel can be flagged as water
+   through a thin cloud while its neighbours show as insufficient data — a
+   common pattern around river edges under broken cloud cover.</li>
+<li><strong>HAND overrides everything.</strong> After water is written, the HAND mask
+   restamps <code>255</code> over any HAND-masked pixel, regardless of upstream
+   detections.</li>
+<li><strong><code>255</code> is not equivalent to "no flood".</strong> Treating it as <code>0</code> in
+   downstream binary masks systematically under-reports flood. The
+   suggested Atlantis mapping (<code>exclusion_mask = (class == 255)</code>) preserves
+   the distinction.</li>
+</ol>
+<h3 id="surface-water-vs-flood-reference-water-mask">Surface water vs flood (reference water mask)</h3>
+<p>Detected water is split into "surface water" (class <code>1</code>) and "flood" (class
+<code>3</code>) by intersection with a reference water layer. The provenance of that
+layer has changed across releases:</p>
+<table>
+<thead>
+<tr>
+<th>Release</th>
+<th>Date</th>
+<th>Reference water layer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Beta / Beta 2</td>
+<td>2021–2023</td>
+<td><strong>MOD44W Collection 5</strong> (Carroll et al. 2009; static, derived from 2000–2002 MODIS Terra + SRTM)</td>
+</tr>
+<tr>
+<td>Release 1</td>
+<td>Apr 2024</td>
+<td><strong>Yearly MOD44W Collection 6.1</strong> (Carroll et al. 2024), 5-year majority rule</td>
+</tr>
+<tr>
+<td>Release 1.1</td>
+<td>Dec 2025</td>
+<td>Same as Release 1 + monthly <strong>Recurring flood</strong> mask (next section)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="how-the-yearly-mask-is-built-release-1-onward">How the yearly mask is built (Release 1 onward)</h4>
+<p>MOD44W C6.1 produces an annual binary water mask at 250 m. To smooth out
+short-term anomalies (a particularly wet or dry year), MCDWD requires a
+pixel to be <strong>water in ≥ 3 of the 5 most recent annual MOD44W maps</strong> before
+it is treated as surface water. Two operational consequences:</p>
+<ul>
+<li><strong>New reservoirs are flagged as flood for ~3 years</strong> before they
+  graduate into the surface-water class.</li>
+<li><strong>Reference-water rotations happen every March 1.</strong> Annual MOD44W layers
+  are released in February; a 15 Mar 2025 product uses the 2020–2024 mask,
+  while a 15 Feb 2025 product still uses the 2019–2023 mask.</li>
+</ul>
+<p>Users with their own up-to-date surface-water inventory can re-classify
+detected water as flood / non-flood downstream; the User Guide explicitly
+encourages this.</p>
+<h3 id="recurring-flood-release-11-dec-2025">Recurring flood (Release 1.1, Dec 2025)</h3>
+<p>Release 1.1 introduced <strong>monthly recurring-flood masks</strong> that separate
+seasonal flooding from event-driven flooding. The masks are derived from
+the <strong>22-year reprocessed MODIS archive (2003–2024)</strong> and emitted with their
+own class code (<code>2</code>) so users can trivially exclude or include them.</p>
+<h4 id="algorithm-clopperpearson-confidence-bounded-flood-frequency">Algorithm (Clopper–Pearson confidence-bounded flood frequency)</h4>
+<p>For each 250 m pixel, the algorithm walks rolling <strong>3-month windows</strong>
+centered on each calendar month (e.g. the January window spans Dec–Jan–Feb),
+for each year <code>2003–2024</code>:</p>
+<ol>
+<li><strong>Per-window counts.</strong> From the daily 2-Day flood composites:</li>
+<li>$K$ = <code>FloodCounts</code> (days flagged as flood, max ~90)</li>
+<li>$N$ = <code>ValidCounts</code> (days with valid clear-sky observations)</li>
+<li><strong>Sufficiency filter.</strong> Drop windows with $N &lt; 10$ (&lt; 11 % of days valid)
+   — too sparse to estimate flood frequency reliably.</li>
+<li><strong>Clopper–Pearson lower bound (90 % one-sided).</strong> For each remaining
+   window compute</li>
+</ol>
+<p>$$
+   q_L = p_L!\left(K, N, \alpha = 0.10\right)
+   $$</p>
+<p>where $q_L$ is the lower 90 % confidence bound on the true flood
+   frequency given $(K, N)$, and convert to an <em>equivalent</em> number of
+   confidently-flooded days within a notional 90-day window:</p>
+<p>$$
+   D_{\mathrm{cp}} = 90 \cdot q_L
+   $$</p>
+<ol>
+<li><strong>Year qualifies as a flood year if</strong> $D_{\mathrm{cp}} \geq D$ where
+   <code>D = 3</code> (chosen empirically over <code>D ∈ {3, 5, 7, 9}</code>). The Clopper–Pearson
+   step is essential: it suppresses spurious detections in cloudy years
+   where $K/N$ is small but noisy.</li>
+<li><strong>Recurring flood if</strong> the pixel qualifies in <strong>≥ <code>Y</code> of the past
+   <code>W</code> years</strong>, with <code>Y = 7</code>, <code>W = 22</code> (so "flooded in roughly one third of
+   the years on record"). A 3×3 majority filter (fill-only) cleans up
+   isolated speckle.</li>
+</ol>
+<p>The resulting 12 monthly masks ship as static lookups: at production time,
+any detected-water pixel that matches the active month's recurring-flood
+mask is emitted as class <code>2</code> instead of class <code>3</code>. There is currently no
+yearly variation — future releases may re-derive the masks on a rolling
+basis.</p>
+<blockquote>
+<p>Compatibility: in the <strong>2021–2025 beta releases of MCDWD</strong>, class <code>2</code> was
+reserved but never populated — every event-driven flood was emitted as
+class <code>3</code>. Code that needs to ingest both old and new files should treat
+<code>{2, 3}</code> as a single flood mask when reading pre-Release-1.1 archives.</p>
+</blockquote>
+<h2 id="pixel-encoding-release-11-dec-2025">Pixel encoding (Release 1.1, Dec 2025)</h2>
+<p>Release 1.1 introduced the <strong>unusual vs recurring</strong> flood split. The encoding
+applies to every flood layer (1-Day, 1-Day CS, 2-Day, 3-Day) in both MODIS
+(MCDWD) and VIIRS (VCDWD) products.</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>No water</td>
+<td>Land or out-of-detection</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>Surface / reference water</td>
+<td>Permanent lakes, rivers, seas (from rolling 5-year MOD44W)</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>Recurring flood</td>
+<td>Pixel passes Clopper–Pearson recurring-flood test in current calendar month (Release 1.1+)</td>
+</tr>
+<tr>
+<td><code>3</code></td>
+<td>Unusual flood</td>
+<td><strong>Current event flood</strong> — the class of interest</td>
+</tr>
+<tr>
+<td><code>255</code></td>
+<td>Insufficient data</td>
+<td>Cloud, cloud shadow, terrain shadow, no observation, <strong>or HAND-masked</strong></td>
+</tr>
+</tbody>
+</table>
+<p>For most downstream work, treat <strong>class <code>3</code></strong> as the binary flood mask, or
+the union <code>{2, 3}</code> if you want to include seasonal flooding. See
+<a href="#recurring-flood-release-11-dec-2025">§ Recurring flood</a> for the algorithm
+and <a href="#insufficient-data-flag-255">§ Insufficient-data flag</a> for the
+subtleties of <code>255</code>.</p>
+<h2 id="release-history">Release history</h2>
+<table>
+<thead>
+<tr>
+<th>Release</th>
+<th>Date</th>
+<th>User Guide</th>
+<th><code>ALGORITHMPACKAGEVERSION</code></th>
+<th>Headline change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Beta</td>
+<td>5 Mar 2021</td>
+<td>A</td>
+<td><code>1.0</code></td>
+<td>Initial production, 12 HDF layers, MOD44W C5 reference water, 223 tiles.</td>
+</tr>
+<tr>
+<td>Beta (final)</td>
+<td>25 Jun 2021</td>
+<td>B</td>
+<td><code>1.0</code></td>
+<td>Qualitative evaluation completed.</td>
+</tr>
+<tr>
+<td>Beta 2</td>
+<td>12 Jan 2023</td>
+<td>C</td>
+<td><code>6.1.1 patch 12</code></td>
+<td><strong>HAND mask added</strong> — huge reduction in mountain false-positives.</td>
+</tr>
+<tr>
+<td>Release 1</td>
+<td>16 Apr 2024</td>
+<td>D</td>
+<td><code>6.1.0</code></td>
+<td><strong>Yearly MOD44W C6.1 reference water</strong> (rolling 5-year), updated compositing thresholds, <strong>287 tiles</strong> (64 added), 15-layer HDF (Total Counts added).</td>
+</tr>
+<tr>
+<td>Release 1.0 patch</td>
+<td>26 Nov 2024</td>
+<td>D.1</td>
+<td><code>6.1.0</code></td>
+<td>Documentation patch only.</td>
+</tr>
+<tr>
+<td>Release 1.1</td>
+<td>11 Dec 2025</td>
+<td>F</td>
+<td><code>6.1.1</code></td>
+<td><strong>Recurring flood class <code>2</code></strong> populated for the first time, derived from the 2003–2024 reprocessed archive (Clopper–Pearson algorithm). VIIRS Release 1.1 published in parallel as <code>VCDWD_L3_NRT</code> v 2.1.1.</td>
+</tr>
+<tr>
+<td>LAADS archive</td>
+<td>6 Apr 2026</td>
+<td>(n/a)</td>
+<td>(n/a)</td>
+<td><strong>MCDWD_L3</strong> (reprocessed 2003–2025) and <strong>MCDWD_L3_NRT</strong> (Jan 2026 onward) published on LAADS DAAC for long-term archive access.</td>
+</tr>
+</tbody>
+</table>
+<p>Dates and version IDs are from the User Guide Rev F revision history and
+the LAADS product description PDF.</p>
+<h2 id="comparison-to-the-legacy-mwp-product">Comparison to the legacy MWP product</h2>
+<p>Before MCDWD, the same NASA team produced the <strong>MODIS Water Product (MWP)</strong>
+from 2012 to 2022. MWP is the file prefix you'll still see referenced in
+old flood-mapping tooling (<code>MWP_2022123_080E030N_3D3OT.tif</code>). It uses a
+different pixel encoding and a different tile-naming convention; the User
+Guide warns to expect both surface incompatibilities and small numerical
+differences.</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>MWP (legacy, 2012–2022)</th>
+<th>MCDWD (LANCE, 2021–)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>File format</td>
+<td>One GeoTIFF per composite</td>
+<td>One HDF4 with 15 layers + GeoTIFFs</td>
+</tr>
+<tr>
+<td>Pixel encoding</td>
+<td><code>0</code> insufficient, <code>1</code> no water, <code>2</code> surface, <code>3</code> flood</td>
+<td><code>0</code> no water, <code>1</code> surface, <code>2</code> recurring flood, <code>3</code> flood, <code>255</code> insufficient</td>
+</tr>
+<tr>
+<td>Pixel size</td>
+<td>~245 m (<code>0.0021968°</code>)</td>
+<td>~232 m (<code>0.002083333°</code>)</td>
+</tr>
+<tr>
+<td>Grid</td>
+<td>~4552 × 4552, can drift by date</td>
+<td>4800 × 4800, fixed boundaries</td>
+</tr>
+<tr>
+<td>Tile names</td>
+<td><code>100E020N</code> (upper-left lat/lon)</td>
+<td><code>h28v07</code> (MODIS HV)</td>
+</tr>
+<tr>
+<td>Recurring flood</td>
+<td>n/a</td>
+<td>Yes (Release 1.1 onward)</td>
+</tr>
+<tr>
+<td>14-day composite</td>
+<td>Yes</td>
+<td>No (use Worldview to browse)</td>
+</tr>
+</tbody>
+</table>
+<p>MCDWD pixel boundaries are fixed across dates — a pixel at column <code>i</code>,
+row <code>j</code> is the same patch of ground every day, so temporal stacking is a
+trivial array operation. MWP grids drift by ±1 pixel between dates,
+requiring per-date reprojection.</p>
+<h2 id="tile-grid">Tile grid</h2>
+<p>MODIS flood tiles use a regular <strong>10° × 10° linear lat/lon grid</strong> with
+<code>h ∈ [0, 35]</code> and <code>v ∈ [0, 17]</code> (max 36 × 18 = 648 tiles globally). The
+set in production has grown across releases:</p>
+<ul>
+<li><strong>223 tiles</strong> — original beta production (Mar 2021 through Beta 2 Jan 2023).</li>
+<li><strong>287 tiles</strong> — since <strong>Release 1 (Apr 2024)</strong>: 64 additional land tiles
+  added (e.g. small islands and coastal slivers previously excluded).
+  Note that <strong>terrain-shadow masks have not been generated for the 64 new
+  tiles</strong> — they rely solely on HAND for terrain-shadow mitigation.</li>
+</ul>
+<p>The naming convention <code>hXXvYY</code> is the same one MODIS land products have
+used since 2000 — see the
+<a href="https://modis-land.gsfc.nasa.gov/MODLAND_grid.html">MODLAND grid reference</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Projection</td>
+<td>Geographic (<code>EPSG:4326</code>)</td>
+</tr>
+<tr>
+<td>Pixel size</td>
+<td><code>0.002083333333333°</code> exactly (<code>= 1/480°</code>)</td>
+</tr>
+<tr>
+<td>Tile size</td>
+<td><code>4800 × 4800</code> pixels (~23 M pixels, ~23 MB uncompressed uint8)</td>
+</tr>
+<tr>
+<td>Tile extent</td>
+<td>Exactly 10° × 10°</td>
+</tr>
+<tr>
+<td>Grid origin</td>
+<td>Fixed: pixel <code>(0, 0)</code> of tile <code>h00v00</code> is the upper-left at <code>(-180°, +90°)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Because the grid is geographic, the <strong>on-the-ground pixel size varies
+with latitude</strong>: ~232 m at the equator, ~200 m at 30°, ~116 m at 60°.
+This is a projection artefact, not a real resolution gain — the underlying
+MODIS sensor still samples at ~250 m at nadir.</p>
+<blockquote>
+<p><strong>Datum.</strong> The product is processed on a sphere of radius
+<code>6371007.181</code> m, but the HDF metadata field <code>SphereCode=12</code> is
+ambiguously reported as Clarke 1866 or WGS-84 by various GDAL builds.
+Differences are far smaller than one pixel; <strong>treat the coordinates as
+WGS-84 / EPSG:4326</strong> for all practical purposes.</p>
+</blockquote>
+<p>Tile bounds (upper-left convention):</p>
+<p>$$
+\text{west} = -180\degree + 10h, \quad \text{north} = +90\degree - 10v
+$$</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># How to translate an AOI bbox to MODIS h/v tiles</span>
+<span class="c1"># (lifted verbatim from ifs-floodbench/Scripts/extract_modis_flood.py)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">modis_ll_tiles_for_aoi</span><span class="p">(</span><span class="n">north</span><span class="p">,</span> <span class="n">west</span><span class="p">,</span> <span class="n">south</span><span class="p">,</span> <span class="n">east</span><span class="p">):</span>
+    <span class="n">h_min</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">((</span><span class="n">west</span> <span class="o">+</span> <span class="mf">180.0</span><span class="p">)</span> <span class="o">/</span> <span class="mf">10.0</span><span class="p">))</span>
+    <span class="n">h_max</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">((</span><span class="n">east</span> <span class="o">+</span> <span class="mf">180.0</span><span class="p">)</span> <span class="o">/</span> <span class="mf">10.0</span><span class="p">))</span>
+    <span class="n">v_min</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">((</span><span class="mf">90.0</span> <span class="o">-</span> <span class="n">north</span><span class="p">)</span> <span class="o">/</span> <span class="mf">10.0</span><span class="p">))</span>
+    <span class="n">v_max</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">((</span><span class="mf">90.0</span> <span class="o">-</span> <span class="n">south</span><span class="p">)</span> <span class="o">/</span> <span class="mf">10.0</span><span class="p">))</span>
+    <span class="k">return</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;h</span><span class="si">{</span><span class="n">h</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">v</span><span class="si">{</span><span class="n">v</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">h_min</span><span class="p">,</span> <span class="n">h_max</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">v_min</span><span class="p">,</span> <span class="n">v_max</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+</code></pre></div>
+<h2 id="data-access">Data access</h2>
+<p>MODIS flood products live on two NASA-operated servers. <strong>Both require a free
+Earthdata Login bearer token</strong> (no S3-style anonymous access exists). Set
+<code>EARTHDATA_TOKEN</code> in your environment after registering at
+<a href="https://urs.earthdata.nasa.gov">https://urs.earthdata.nasa.gov</a>.</p>
+<h3 id="laads-daac-historical-archived-nrt">LAADS DAAC (historical + archived NRT)</h3>
+<ul>
+<li><strong>Base URL</strong> — <code>https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/61/</code></li>
+<li><strong>Date layout</strong> — <code>&lt;SHORTNAME&gt;/&lt;YYYY&gt;/&lt;DDD&gt;/</code> where <code>DDD</code> is the
+  3-digit day-of-year.</li>
+<li><strong>Listings</strong> — HTML directory listings (parse <code>&lt;a href&gt;</code> links).</li>
+<li><strong>Coverage</strong> — <code>MCDWD_L3</code> covers <strong>2003 – 2025</strong> (reprocessed). Pre-2003
+  data (2000-055 – 2002-365) has not yet been reviewed for release; this
+  is the <strong>Terra-only era</strong> before the Aqua launch in mid-2002, and NASA
+  expects lower product quality there. <code>MCDWD_L3_NRT</code> is mirrored to
+  LAADS from January 2026 onward.</li>
+<li><strong>No GeoTIFFs on LAADS.</strong> LAADS distributes <strong>HDF4 only</strong>; the
+  per-composite GeoTIFFs (<code>MCDWD_L3_F&lt;X&gt;_NRT</code>) are exclusive to the LANCE
+  NRT servers.</li>
+</ul>
+<h3 id="lance-live-nrt-1-week-window">LANCE (live NRT, ~1-week window)</h3>
+<ul>
+<li><strong>Primary</strong> — <code>https://nrt3.modaps.eosdis.nasa.gov/archive/allData/61/</code></li>
+<li><strong>Backup</strong> — <code>https://nrt4.modaps.eosdis.nasa.gov/archive/allData/61/</code></li>
+<li><strong>Window</strong> — ~1 week (7–14 days) of recent NRT files; older files are
+  evicted (the LAADS mirror is the long-term home from 2026 onward).</li>
+<li><strong>Subfolders</strong> — <code>MCDWD_L3_NRT/</code> (HDF4 with all 15 layers) <strong>and</strong>
+  one folder per single-composite GeoTIFF: <code>MCDWD_L3_F1_NRT/</code>,
+  <code>MCDWD_L3_F1C_NRT/</code>, <code>MCDWD_L3_F2_NRT/</code>, <code>MCDWD_L3_F3_NRT/</code>.</li>
+<li><strong>Independent generation.</strong> <code>nrt3</code> and <code>nrt4</code> are independent
+  pipelines; if one is down, swap to the other.</li>
+<li><strong>Latency</strong> — products are normally on the server within 3 hours of
+  observation; appearance in Worldview adds another ~2 hours (~5 hours
+  end-to-end).</li>
+<li><strong>Important quirk: NRT files are updated in place.</strong> As new Terra/Aqua
+  swath granules intersect a tile, the per-tile HDF (and its derived
+  GeoTIFFs) is <strong>regenerated</strong> with the additional observations folded
+  in. The filename does <strong>not</strong> change. The User Guide recommends polling
+  with <code>If-Modified-Since</code> / comparing HTTP <code>Last-Modified</code> to detect
+  these in-place updates. The production timestamp embedded in the
+  filename (see below) is also useful for distinguishing reruns.</li>
+</ul>
+<h4 id="json-listing-api-the-right-way-to-discover-files">JSON listing API (the right way to discover files)</h4>
+<p>LANCE exposes a JSON listing endpoint that is far cheaper to scrape than
+the HTML directory listings. It is the recommended path for any
+automated pipeline.</p>
+<div class="highlight"><pre><span></span><code>https://nrt3.modaps.eosdis.nasa.gov/api/v2/content/details
+  ?products=MCDWD_L3_NRT
+  &amp;archiveSets=61
+  &amp;temporalRanges=2024-235
+</code></pre></div>
+<p>Returns a JSON array of every available file for <code>MCDWD_L3_NRT</code> on
+day-of-year 235 of 2024, including production timestamps. Two
+operationally important uses:</p>
+<ol>
+<li><strong>Detect in-place updates.</strong> Cache the production timestamp from a
+   previous call; if a tile's timestamp has changed, the file has been
+   regenerated and should be re-fetched.</li>
+<li><strong>Filter by AOI.</strong> Walk the JSON, keep only entries whose <code>&lt;TILE&gt;</code>
+   matches the <code>hXXvYY</code> set returned by <code>modis_ll_tiles_for_aoi(...)</code>,
+   and stream those URLs through <code>/vsicurl/</code>. This is the MODIS analogue
+   of the <a href="../../viirs/internals/#stage-2--materialise-inputs--viirsfetcherfetch">VIIRS NoaaS3Backend listing flow</a>.</li>
+</ol>
+<p>The LAADS DAAC archive does <strong>not</strong> advertise an equivalent JSON API; for
+LAADS the HTML listing under <code>archive/allData/61/MCDWD_L3/&lt;YYYY&gt;/&lt;DDD&gt;/</code>
+remains the only programmatic listing route.</p>
+<h3 id="sibling-nasa-viirs-products-for-context-only">Sibling NASA VIIRS products (for context only)</h3>
+<p>For completeness: NASA's MCDWD-equivalent VIIRS products live alongside
+MCDWD on the same servers but under MODIS Collection <code>5200</code> rather than
+<code>61</code>. <strong>Atlantis currently uses the NOAA VFM VIIRS product instead</strong> (see
+<a href="../../viirs/overview/">the VIIRS overview</a>); the NASA VIIRS line is listed here only so the family is
+documented:</p>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>Format</th>
+<th>Cadence</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>VCDWD_L3_NRT</code></td>
+<td>HDF5 (<code>.h5</code>)</td>
+<td>Daily</td>
+<td><code>nrt3.modaps.eosdis.nasa.gov/archive/allData/5200/VCDWD_L3_NRT/</code></td>
+</tr>
+<tr>
+<td><code>VCDWDG_L3_NRT</code></td>
+<td>HDF5 (<code>.h5</code>)</td>
+<td><strong>Hourly cumulative</strong></td>
+<td><code>.../VCDWDG_L3_NRT/</code> — filenames carry an extra <code>&lt;HOUR&gt;</code> field (e.g. <code>VCDWDG_L3_NRT.A2025071.1100.h28v07.002.h5</code> was produced at 11:00 GMT). The 23:00 cycle is published as the day's final <code>VCDWD_L3_NRT</code> instead.</td>
+</tr>
+<tr>
+<td><code>VCDWD_L3_F&lt;X&gt;_NRT</code></td>
+<td>GeoTIFF</td>
+<td>Daily</td>
+<td><code>.../VCDWD_L3_F1_NRT/</code> etc. (same F1/F1C/F2/F3 layout as MODIS).</td>
+</tr>
+</tbody>
+</table>
+<p>The VIIRS NRT product uses the <strong>same MODIS HV tile grid, the same pixel
+encoding, and the same algorithm</strong>; only the input source reflectance
+(VJ109 / VJ209 from NOAA-20 / NOAA-21) differs. Adapting an MCDWD fetcher
+to consume VCDWD would be mostly a path-and-extension change.</p>
+<h3 id="filename-schema">Filename schema</h3>
+<div class="highlight"><pre><span></span><code>&lt;SHORTNAME&gt;.A&lt;YYYYDDD&gt;.&lt;TILE&gt;.&lt;COLLECTION&gt;.&lt;PRODTIMESTAMP&gt;.&lt;EXT&gt;
+</code></pre></div>
+<p>Examples:</p>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>Example filename</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MCDWD_L3</code> (LAADS)</td>
+<td><code>MCDWD_L3.A2024235.h24v05.061.hdf</code></td>
+</tr>
+<tr>
+<td><code>MCDWD_L3_NRT</code></td>
+<td><code>MCDWD_L3_NRT.A2022361.h19v06.061.2022362024142.hdf</code></td>
+</tr>
+<tr>
+<td><code>MCDWD_L3_F2_NRT</code></td>
+<td><code>MCDWD_L3_F2_NRT.A2026032.h09v05.061.2026032142200.tif</code></td>
+</tr>
+</tbody>
+</table>
+<p>Fields:</p>
+<ul>
+<li><code>A&lt;YYYYDDD&gt;</code> — acquisition year + day-of-year (<code>A2026032</code> =
+  Feb 1, 2026).</li>
+<li><code>&lt;TILE&gt;</code> — MODIS HV tile, e.g. <code>h09v05</code>.</li>
+<li><code>&lt;COLLECTION&gt;</code> — <code>061</code> (Collection 6.1).</li>
+<li><code>&lt;PRODTIMESTAMP&gt;</code> — production timestamp <code>YYYYDDDHHMMSS</code>. Present on
+  NRT outputs (and rerun whenever the file is regenerated); the
+  reprocessed <code>MCDWD_L3</code> archive also carries it.</li>
+</ul>
+<h3 id="authentication-header">Authentication header</h3>
+<p>Every request needs a bearer token:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$EARTHDATA_TOKEN</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/61/MCDWD_L3/2024/235/
+</code></pre></div>
+<p>GDAL knows how to pass it via <code>GDAL_HTTP_HEADERS</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">GDAL_HTTP_HEADERS</span><span class="o">=</span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$EARTHDATA_TOKEN</span><span class="s2">&quot;</span>
+<span class="c1"># Replace &lt;PRODTIMESTAMP&gt; with the value from the directory listing.</span>
+gdalinfo<span class="w"> </span><span class="s2">&quot;/vsicurl/https://nrt3.modaps.eosdis.nasa.gov/archive/allData/61/MCDWD_L3_F2_NRT/2026/032/MCDWD_L3_F2_NRT.A2026032.h09v05.061.&lt;PRODTIMESTAMP&gt;.tif&quot;</span>
+</code></pre></div>
+<h2 id="file-formats">File formats</h2>
+<h3 id="hdf4-mcdwd_l3-and-mcdwd_l3_nrt">HDF4 (<code>MCDWD_L3</code> and <code>MCDWD_L3_NRT</code>)</h3>
+<p>The HDF4 files are <strong>HDF-EOS2</strong> (<code>.hdf</code>, version 2.20, based on HDF4)
+containing a single Grid object named <code>Grid_Water_Composite</code>. <strong>As of
+Release 1 (Apr 2024), each file holds 15 raster subdatasets</strong> — four flood
+layers, three total-counts layers, four valid-counts layers, and four
+water-counts layers. (Beta-era files held 12: the three Total Counts
+layers were added at Release 1.) GDAL exposes them as <code>HDF4_EOS:EOS_GRID:...</code>
+subdataset URIs.</p>
+<p>The authoritative subdataset names (per User Guide Rev F, Dec 2025) use
+<strong>underscores, no spaces</strong>, as e.g. <code>Flood_2Day_250m</code>. (The earliest beta
+files used the form <code>"Flood 2-Day 250m"</code> with spaces; if you see that in
+older code, it is the same layer.)</p>
+<h4 id="hdf4-layer-inventory-release-1-onward">HDF4 layer inventory (Release 1 onward)</h4>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Subdataset (in <code>Grid_Water_Composite</code>)</th>
+<th>Composite</th>
+<th>Group</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong><code>FloodCS_1Day_250m</code></strong></td>
+<td>F1C</td>
+<td><strong>Flood</strong></td>
+<td>1-day flood, cloud-shadow mask applied.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong><code>Flood_1Day_250m</code></strong></td>
+<td>F1</td>
+<td><strong>Flood</strong></td>
+<td>1-day flood, no cloud-shadow mask.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong><code>Flood_2Day_250m</code></strong></td>
+<td>F2</td>
+<td><strong>Flood</strong></td>
+<td>2-day composite.</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong><code>Flood_3Day_250m</code></strong></td>
+<td>F3</td>
+<td><strong>Flood</strong></td>
+<td>3-day composite.</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>TotalCounts_1Day_250m</code></td>
+<td>1-Day</td>
+<td>Total counts</td>
+<td>Number of <em>potential</em> swath observations (no swath-gap, no bad data) for 1-day window.</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>TotalCounts_2Day_250m</code></td>
+<td>2-Day</td>
+<td>Total counts</td>
+<td>Same, 2-day window.</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>TotalCounts_3Day_250m</code></td>
+<td>3-Day</td>
+<td>Total counts</td>
+<td>Same, 3-day window.</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>ValidCountsCS_1Day_250m</code></td>
+<td>1-Day CS</td>
+<td>Valid counts</td>
+<td>Clear-sky observations with cloud-shadow mask, 1-day.</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>ValidCounts_1Day_250m</code></td>
+<td>1-Day</td>
+<td>Valid counts</td>
+<td>Clear-sky observations, no cloud-shadow mask, 1-day.</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>ValidCounts_2Day_250m</code></td>
+<td>2-Day</td>
+<td>Valid counts</td>
+<td>Clear-sky observations, 2-day window.</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>ValidCounts_3Day_250m</code></td>
+<td>3-Day</td>
+<td>Valid counts</td>
+<td>Clear-sky observations, 3-day window.</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>WaterCountsCS_1Day_250m</code></td>
+<td>1-Day CS</td>
+<td>Water counts</td>
+<td>Water detections (after terrain + cloud-shadow mask), 1-day.</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>WaterCounts_1Day_250m</code></td>
+<td>1-Day</td>
+<td>Water counts</td>
+<td>Water detections (terrain mask only), 1-day.</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>WaterCounts_2Day_250m</code></td>
+<td>2-Day</td>
+<td>Water counts</td>
+<td>Water detections, 2-day window.</td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>WaterCounts_3Day_250m</code></td>
+<td>3-Day</td>
+<td>Water counts</td>
+<td>Water detections, 3-day window.</td>
+</tr>
+</tbody>
+</table>
+<p>All layers are 4800 × 4800 uint8, fill = 255, valid range 0–3 for flood
+layers and 0–254 for the count layers.</p>
+<p>The <strong>Counts layers are not just diagnostics</strong> — they let users synthesise
+custom composites at run-time, e.g. require
+<code>WaterCounts_2Day_250m ≥ 3 AND ValidCounts_2Day_250m ≥ 6</code> for a stricter
+2-day mask. They are also the only way to <em>reconstruct an unmasked
+composite</em> (without HAND), since HAND is applied to the flood layers but
+not the counts.</p>
+<h4 id="internal-metadata-worth-reading">Internal metadata worth reading</h4>
+<p>MCDWD (and VCDWD) files carry several useful metadata fields, accessible
+via <code>gdalinfo</code> or <code>h4dump</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>INPUTPOINTER</code></td>
+<td>Lists the specific MOD09/MYD09 (or VJ109/VJ209) granules used as input. Filenames carry granule timestamps in <code>HHMM</code> format — useful for tracing back to a specific overpass. Only lists granules for the <em>current</em> day; predecessor-day inputs require reading the previous day's HDF.</td>
+</tr>
+<tr>
+<td><code>ALGORITHMPACKAGEVERSION</code></td>
+<td>Production-code version (<code>6.1.0</code> at Release 1, <code>6.1.1</code> at Release 1.1). For the VIIRS sibling, the equivalent field is <code>AlgorithmVersion</code>.</td>
+</tr>
+<tr>
+<td><code>SphereCode</code></td>
+<td><code>12</code> (see <a href="#tile-grid">datum note</a>).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="gdal-access-pattern">GDAL access pattern</h4>
+<p>List subdatasets:</p>
+<div class="highlight"><pre><span></span><code>gdalinfo<span class="w"> </span>MCDWD_L3.A2024235.h24v05.061.hdf
+<span class="c1"># yields lines like:</span>
+<span class="c1"># SUBDATASET_3_NAME=HDF4_EOS:EOS_GRID:&quot;MCDWD_L3.A2024235.h24v05.061.hdf&quot;:Grid_Water_Composite:Flood_2Day_250m</span>
+</code></pre></div>
+<p>Extract the 2-Day flood layer to a compressed GeoTIFF:</p>
+<div class="highlight"><pre><span></span><code>gdal_translate<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>HDF4_EOS:EOS_GRID:MCDWD_L3.A2024235.h24v05.061.hdf:Grid_Water_Composite:Flood_2Day_250m<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>flood_2day_h24v05.tif<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-co<span class="w"> </span><span class="nv">COMPRESS</span><span class="o">=</span>DEFLATE<span class="w"> </span>-co<span class="w"> </span><span class="nv">PREDICTOR</span><span class="o">=</span><span class="m">2</span>
+</code></pre></div>
+<p>No shell quoting is needed for current Release 1 layer names (no spaces).
+For pre-Release-1 archives that still use space-and-dash names (e.g.
+<code>"Flood 2-Day 250m"</code>), wrap the whole subdataset URI in single quotes.</p>
+<h4 id="three-caveats-for-hdf4-ingestion">Three caveats for HDF4 ingestion</h4>
+<ol>
+<li><strong>Georeferencing is reliable but worth verifying.</strong> HDF-EOS2 stores
+   the projection and grid in a Grid metadata block; GDAL parses it
+   correctly into an <code>Affine</code>. Older tooling that ignores HDF-EOS metadata
+   may report "not georeferenced", in which case bounds must be
+   reconstructed from the <code>hXXvYY</code> tile index — see
+   <code>tile_bounds_from_filename()</code> in
+   <a href="https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/extract_modis_flood.py"><code>ifs-floodbench/Scripts/extract_modis_flood.py</code></a>.</li>
+<li><strong>HDF4 streaming via <code>/vsicurl/</code> is limited.</strong> Unlike Cloud-Optimized
+   GeoTIFFs, HDF4 has no internal chunked layout suited to HTTP range
+   reads. Practical pipelines should either (a) fully download the
+   <code>.hdf</code> then <code>gdal_translate</code> the requested subdataset, or (b) prefer
+   the LANCE single-composite GeoTIFFs for NRT work
+   (<code>MCDWD_L3_F{1,1C,2,3}_NRT</code>), which <strong>do</strong> stream well.</li>
+<li><strong>GDAL must be built with HDF4 support.</strong> Conda's <code>libgdal-hdf4</code>
+   package provides this; the default <code>pip install rasterio</code> wheels
+   don't.</li>
+</ol>
+<h3 id="geotiff-mcdwd_l3_f11c23_nrt">GeoTIFF (<code>MCDWD_L3_F{1,1C,2,3}_NRT</code>)</h3>
+<p>LANCE re-emits each of the four flood layers as a standalone single-band
+GeoTIFF, derived directly from the HDF4 subdataset (the User Guide
+describes the output of <code>gdal_translate</code>). Properties:</p>
+<ul>
+<li><strong>CRS</strong> — EPSG:4326 (geographic lat/lon).</li>
+<li><strong>Dtype</strong> — uint8.</li>
+<li><strong>Nodata</strong> — 255.</li>
+<li><strong>Band count</strong> — 1 (one composite per file).</li>
+<li><strong>Filename mapping</strong> — <code>MCDWD_L3_F1_NRT</code> ↔ <code>Flood 1-Day 250m</code>,
+  <code>MCDWD_L3_F1C_NRT</code> ↔ <code>Flood 1-Day CS 250m</code>,
+  <code>MCDWD_L3_F2_NRT</code> ↔ <code>Flood 2-Day 250m</code>,
+  <code>MCDWD_L3_F3_NRT</code> ↔ <code>Flood 3-Day 250m</code>. (The User Guide Rev A sometimes
+  writes these as <code>MCDWD_F1_L3_NRT</code> etc.; the LANCE-deployed folders use
+  the <code>MCDWD_L3_F&lt;X&gt;_NRT</code> form.)</li>
+<li><strong>Streamability</strong> — files are flat one-band TIFFs without internal
+  overviews, but small enough (a few MB per tile) that GDAL range reads
+  work fine through <code>/vsicurl/</code>.</li>
+</ul>
+<h2 id="streaming-strategy-for-atlantis">Streaming strategy for Atlantis</h2>
+<p>Mapping the VIIRS pipeline onto MODIS, the obvious recipe is:</p>
+<ol>
+<li><strong>Use LANCE GeoTIFFs (<code>MCDWD_L3_F2_NRT</code> etc.) wherever possible.</strong> They
+   stream cleanly via <code>/vsicurl/</code>, one band per file, just like the NOAA
+   VIIRS S3 tiles. Atlantis already has the <code>merge → mask</code> plumbing in
+   <a href="../../src/atlantis/fetchers/viirs/processor.py"><code>ViirsRasterProcessor</code></a>
+   that can be reused almost verbatim.</li>
+<li><strong>Use LAADS HDF4 (<code>MCDWD_L3</code>, <code>MCDWD_L3_NRT</code>) for any non-NRT date.</strong>
+   These can't be streamed efficiently, so the pipeline must download the
+   <code>.hdf</code>, then <code>gdal_translate</code> the requested <code>Flood_*Day_250m</code>
+   subdataset to a temporary GeoTIFF before mosaic-and-clip. This mirrors
+   the <code>prepare_input_geotiffs()</code> helper in
+   <a href="https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/extract_modis_flood.py">ifs-floodbench/Scripts/extract_modis_flood.py</a>.</li>
+<li><strong>Re-use the existing AOI snapping / 1-arcmin harmonisation grid</strong>
+   (<a href="../../viirs/overview/#canonical-1-arcmin-global-grid">VIIRS canonical 1-arcmin global grid</a>).
+   MODIS is at ~250 m, finer than VIIRS' 375 m and finer than the 1-arcmin
+   target, so <code>average</code> resampling is appropriate for <code>flood_fraction</code>-
+   style downstreams. Note that the MODIS product is <strong>categorical</strong>
+   (classes 0/1/2/3/255), so the resampler choice matters: see below.</li>
+</ol>
+<h3 id="resampling-categorical-modis-pixels">Resampling categorical MODIS pixels</h3>
+<p>Atlantis' VIIRS pipeline derives a continuous <code>flood_fraction</code> from raw
+VIIRS codes 101–200 (water fraction in percent) and resamples with
+<code>average</code>. <strong>MODIS does not provide a water fraction</strong> — the four classes
+are mutually exclusive. Two reasonable adaptations:</p>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Resampler</th>
+<th>Output meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Binarise → fraction</td>
+<td><code>average</code></td>
+<td><code>flood_fraction</code> = fraction of 250 m sub-pixels with class 3</td>
+</tr>
+<tr>
+<td>Preserve classes</td>
+<td><code>mode</code></td>
+<td>Majority class per 1-arcmin pixel (integer 0/1/2/3/255)</td>
+</tr>
+</tbody>
+</table>
+<p>The binarised path is the most directly comparable to VIIRS output. The
+recurring-flood class (2) can be folded in as a separate mask layer
+alongside VIIRS <code>reference_water</code>.</p>
+<h3 id="suggested-layer-mapping">Suggested layer mapping</h3>
+<p>This mapping is <strong>implemented</strong>: MODIS exposes the same sensor-agnostic
+<strong>derived</strong> layers VIIRS does (so the harmoniser and ECMWF benchmarking notebooks,
+<a href="../../notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb">notebooks/ecmwf/Bench_CMF_VIIRS_Inundation.ipynb</a>,
+stay source-agnostic). The <code>raw</code> row is the <strong>native</strong> passthrough; the count
+layers are catalogued native layers that are not loaded by default.</p>
+<table>
+<thead>
+<tr>
+<th>MODIS variable</th>
+<th>Kind</th>
+<th>Derivation</th>
+<th>Equivalent VIIRS variable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>water_fraction</code></td>
+<td>derived</td>
+<td><code>class ∈ {1,2,3}</code> aggregated to target</td>
+<td><code>water_fraction</code></td>
+</tr>
+<tr>
+<td><code>flood_fraction</code></td>
+<td>derived</td>
+<td><code>class == 3</code> aggregated to target</td>
+<td><code>flood_fraction</code></td>
+</tr>
+<tr>
+<td><code>exclusion_mask</code></td>
+<td>derived</td>
+<td><code>class == 255</code></td>
+<td><code>exclusion_mask</code></td>
+</tr>
+<tr>
+<td><code>reference_water</code></td>
+<td>derived</td>
+<td><code>class ∈ {1,2}</code></td>
+<td><code>reference_water</code></td>
+</tr>
+<tr>
+<td><code>recurring_flood</code></td>
+<td>derived</td>
+<td><code>class == 2</code></td>
+<td><em>(none — MODIS-only)</em></td>
+</tr>
+<tr>
+<td><code>raw</code></td>
+<td>native</td>
+<td>original uint8 composite codes</td>
+<td><code>raw</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="nrt-vs-reprocessed-which-one-to-use">NRT vs reprocessed: which one to use</h2>
+<p>The <code>MCDWD_L3</code> and <code>MCDWD_L3_NRT</code> collections share an algorithm but differ
+in upstream inputs. Two production differences propagate into the flood
+product, neither one large but worth knowing about for benchmarking work:</p>
+<ol>
+<li><strong>Geolocation inputs.</strong> NRT processing uses expedited
+   attitude/ephemeris (Terra: pulled from L0 telemetry rather than
+   flight-dynamics products; Aqua: predicted ephemeris). Reprocessed
+   data uses standard inputs. Sub-pixel geolocation offsets in NRT can
+   produce occasional flood false-positives or false-negatives,
+   especially along high-contrast water/land edges.</li>
+<li><strong>MOD09 atmospheric correction.</strong> NRT MOD09 uses expedited ancillary
+   atmospheric inputs and (when same-day inputs are unavailable) earlier
+   ancillaries. The reprocessed chain uses standard MOD09. Differences
+   show up as subtle shifts in detected water extent and in the spatial
+   pattern of <code>255</code> ("insufficient data") pixels.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Use case</th>
+<th>Recommended product</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Operational monitoring, rapid response</td>
+<td><code>MCDWD_L3_NRT</code> (LANCE)</td>
+</tr>
+<tr>
+<td>Historical mapping, validation, ML labels</td>
+<td><code>MCDWD_L3</code> (LAADS, 2003–2025)</td>
+</tr>
+<tr>
+<td>Both — long timeline ending today</td>
+<td><code>MCDWD_L3</code> for ≤ 2025-12-31, <code>MCDWD_L3_NRT</code> for ≥ 2026-01-01</td>
+</tr>
+</tbody>
+</table>
+<p>The two collections <strong>share the same tile grid, file format, layer
+names, and pixel encoding</strong>, so swapping between them is purely a matter
+of picking the right LAADS or LANCE prefix at fetch time.</p>
+<h2 id="known-caveats-and-failure-modes">Known caveats and failure modes</h2>
+<p>The User Guide is unusually frank about where the product fails. The
+following are documented as expected behaviours — not bugs — and any
+sensible benchmarking against MCDWD has to account for them.</p>
+<table>
+<thead>
+<tr>
+<th>Failure mode</th>
+<th>Why it happens</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cloud-shadow false-positives</strong></td>
+<td>Cloud shadows are spectrally near-identical to water in MOD09 bands.</td>
+<td>Use 2-Day or 3-Day composites; avoid 1-Day (no CS) under broken cloud.</td>
+</tr>
+<tr>
+<td><strong>Terrain-shadow false-positives</strong></td>
+<td>Terrain shadows recur at the same pixel between Terra/Aqua passes.</td>
+<td>Pre-applied monthly ASTER-GDEM masks remove 75–90 %; residuals concentrate in winter, high-latitude, mountainous tiles.</td>
+</tr>
+<tr>
+<td><strong>High-latitude over-reporting</strong></td>
+<td>Above 50° lat, multi-swath overlap inflates observation counts and propagates more cloud-shadow false-positives.</td>
+<td>Be skeptical of small flood signals at &gt;50° lat; cross-check with Worldview reflectance.</td>
+</tr>
+<tr>
+<td><strong>Missed flooding under canopy / urban</strong></td>
+<td>Tree cover and rooftops mask the water signal at 250 m.</td>
+<td>Combine with SAR products in dense vegetation / urban areas.</td>
+</tr>
+<tr>
+<td><strong>Flash floods / mountain floods</strong></td>
+<td>Sub-pixel events not captured by 250 m grid; transient events miss the overpass window.</td>
+<td>Treat MCDWD as floor-bound for events of this scale.</td>
+</tr>
+<tr>
+<td><strong>Sub-pixel water bodies</strong></td>
+<td>Anything narrower than ~one pixel is below the detection limit.</td>
+<td>Expect under-reporting on rivers narrower than ~250 m; use Sentinel-1 / S2 for fine detail.</td>
+</tr>
+<tr>
+<td><strong>Volcanic dark surfaces</strong></td>
+<td>Recent lava flows have water-like spectral signatures.</td>
+<td>Local masks (Hawaii, Maui already masked; Idaho Craters of the Moon, Iceland, Kamchatka not).</td>
+</tr>
+<tr>
+<td><strong>Sun-glint</strong></td>
+<td>Specular reflections off water can fail the band-7 ceiling.</td>
+<td>Dedicated glint correction is on the algorithm roadmap; until then, skip glint-prone tiles.</td>
+</tr>
+<tr>
+<td><strong>Outdated reference water</strong></td>
+<td>Pre-Release 1 used MOD44W C5 (2009); since Release 1 the rolling 5-year MOD44W C6.1 catches new reservoirs after ~3 years.</td>
+<td>Override with a fresher mask if available; remember new reservoirs are flagged as flood until they graduate.</td>
+</tr>
+<tr>
+<td><strong>Snow-melt over agriculture</strong></td>
+<td>Spring snowmelt creates shallow ponding on bare fields that the algorithm correctly flags as unusual water. The User Guide reports this for the US Northern Plains and Kazakhstan.</td>
+<td>Cross-check against snow-cover layers and seasonality; treat early-spring "flood" claims in agricultural belts with caution.</td>
+</tr>
+<tr>
+<td><strong>Pre-2003 era</strong></td>
+<td>Reprocessing for 2000-055 to 2002-365 is held back; this is the <strong>Terra-only</strong> period before Aqua launched.</td>
+<td>Use only after NASA releases an evaluation report for the pre-2003 archive.</td>
+</tr>
+<tr>
+<td><strong>HAND-masked new reservoirs</strong></td>
+<td>A reservoir built inside a HAND-masked basin will report no water until the rolling MOD44W reference catches up (~3 years).</td>
+<td>Reconstruct an unmasked composite from the <code>WaterCounts_*</code> and <code>ValidCounts_*</code> HDF layers if a known new reservoir is hidden.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="comparison-to-viirs">Comparison to VIIRS</h2>
+<p>The NASA VIIRS NRT product (<code>VCDWD_L3_NRT</code>, see
+<a href="../../viirs/overview/">the VIIRS overview</a>) is intentionally a drop-in replacement for MODIS,
+but Atlantis currently uses the <strong>NOAA VFM</strong> VIIRS product instead. The two
+are different:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>MODIS MCDWD</th>
+<th>NASA VIIRS VCDWD</th>
+<th>NOAA VIIRS VFM (Atlantis default)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sensors</td>
+<td>Terra + Aqua MODIS</td>
+<td>NOAA-20 + NOAA-21 VIIRS</td>
+<td>Suomi-NPP + NOAA-20 VIIRS</td>
+</tr>
+<tr>
+<td>Native resolution</td>
+<td>250 m</td>
+<td>375 m (resampled to 250 m)</td>
+<td>375 m</td>
+</tr>
+<tr>
+<td>Pixel encoding</td>
+<td>0/1/2/3/255 categorical</td>
+<td>0/1/2/3/255 categorical</td>
+<td>0–200 (water-fraction codes)</td>
+</tr>
+<tr>
+<td>Tile grid</td>
+<td>MODIS <code>hXXvYY</code> 10°×10°</td>
+<td>MODIS <code>hXXvYY</code> 10°×10°</td>
+<td>VFM <code>GLB001</code>–<code>GLB145</code> 10°×10°</td>
+</tr>
+<tr>
+<td>File format</td>
+<td>HDF4 / GeoTIFF</td>
+<td>HDF5 / GeoTIFF</td>
+<td>GeoTIFF</td>
+</tr>
+<tr>
+<td>Distribution</td>
+<td>LAADS + LANCE (auth.)</td>
+<td>LAADS + LANCE (auth.)</td>
+<td>NOAA S3 (anonymous)</td>
+</tr>
+<tr>
+<td>Streamable</td>
+<td>GeoTIFFs only</td>
+<td>GeoTIFFs only</td>
+<td>Yes (full pipeline)</td>
+</tr>
+<tr>
+<td>Coverage start</td>
+<td>2003 (reprocessed)</td>
+<td>2025-04-15</td>
+<td>2012 (with 2021–2022 gap)</td>
+</tr>
+<tr>
+<td>Recurring/unusual</td>
+<td>Yes (since Dec 2025)</td>
+<td>Yes (since Dec 2025)</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p>The MODIS product is the <strong>only one with a deep historical archive</strong>
+(2003 onward) and the <strong>only one with a recurring-flood mask</strong> that we
+have not yet integrated. Adding a MODIS fetcher therefore fills two gaps:
+multi-decade benchmarking, and seasonal-flood awareness.</p>
+<h2 id="reference-implementation">Reference implementation</h2>
+<p>A complete (download-and-process, non-streaming) MODIS workflow already
+exists in the sibling repository
+<a href="https://github.com/gpbalsamo/ifs-floodbench">ifs-floodbench</a>:</p>
+<ul>
+<li><a href="https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/extract_modis_flood.py"><code>Scripts/extract_modis_flood.py</code></a>
+  — single-event LAADS or LANCE download + HDF4 → GeoTIFF + mosaic + clip.</li>
+<li><a href="https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/modis_flood_events.py"><code>Scripts/modis_flood_events.py</code></a>
+  — batch over a KuroSiwo-style CSV catalogue.</li>
+<li><a href="https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/estimate_modis_peak_dates.py"><code>Scripts/estimate_modis_peak_dates.py</code></a>
+  — equivalent to VIIRS' <code>strategy="peak"</code>: scans daily rasters and
+  picks the date that maximises <code>flood_fraction × (1 − missing_fraction)</code>.</li>
+<li><a href="https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/gapfill_modis_flood.py"><code>Scripts/gapfill_modis_flood.py</code></a>
+  — temporal gap-filling of the categorical time series.</li>
+<li><a href="https://github.com/gpbalsamo/ifs-floodbench/blob/main/Scripts/README.md"><code>Scripts/README.md</code></a>
+  — usage docs for all of the above.</li>
+</ul>
+<p>These scripts were the starting point for porting the workflow into the
+Atlantis <a href="../../src/atlantis/fetchers/modis/"><code>fetchers/modis/</code></a> package.</p>
+<h2 id="further-reading">Further reading</h2>
+<ul>
+<li><a href="../api/">Python API reference</a> — <code>MODISFetcher</code> usage with both
+  backends.</li>
+<li><a href="../internals/">Architecture &amp; internals</a> — module layout, HDF4
+  extraction, classification rules, search diagnostics.</li>
+<li><a href="../pipeline/">Pipeline modes &amp; flowchart</a> — CLI decision tree
+  and strategy details.</li>
+<li><a href="../../viirs/overview/">VIIRS reference</a> — companion sensor with similar
+  architecture.</li>
+</ul>
+<h2 id="references">References</h2>
+<ul>
+<li><a href="https://www.earthdata.nasa.gov/global-flood-product">NRT Global Flood Products homepage</a></li>
+<li><a href="https://www.earthdata.nasa.gov/s3fs-public/2025-12/MCDWD_VCDWD_UserGuide_RevF.pdf">MODIS/VIIRS NRT Global Flood Products User Guide, Rev F (Dec 2025)</a> — the authoritative source for the algorithm, HAND mask, recurring-flood Clopper–Pearson math, 15-layer HDF inventory, JSON API, and release history.</li>
+<li><a href="https://web.archive.org/web/2021*/MCDWD_UserGuide.pdf">MCDWD User Guide, Rev A (Mar 2021)</a> — the original beta-release user guide is the historical source for the pre-Release-1 layer naming (with spaces); the corresponding text is no longer locally archived (Rev F supersedes it for all current details).</li>
+<li><a href="https://www.earthdata.nasa.gov/s3fs-public/2026-04/MCDWD_LAADS_Desc.pdf">MODIS Historical Reprocessed Archive description (April 2026)</a> — official LAADS description of <code>MCDWD_L3</code> and <code>MCDWD_L3_NRT</code>.</li>
+<li><a href="https://www.earthdata.nasa.gov/news/blog/nasa-enhances-global-flood-products-smarter-detection-flooding-release-23-year-archive">NASA Earthdata blog — 23-year archive release (April 10, 2026)</a></li>
+<li><a href="https://www.earthdata.nasa.gov/learn/earth-observation-data-basics/near-real-time-versus-standard-products">LANCE NRT versus Standard Products</a> — background on the NRT/standard split that motivates the reprocessed archive.</li>
+<li><a href="https://lpdaac.usgs.gov/documents/925/MOD09_User_Guide_V61.pdf">MOD09 Surface Reflectance User Guide</a> — source product for the water-detection algorithm.</li>
+<li>MOD44W C6.1 User Guide &amp; ATBD — documents the yearly MOD44W collection used as the rolling 5-year reference water mask since Release 1.</li>
+<li><a href="https://doi.org/10.1080/17538940902951401">MOD44W Land–Water Mask C5 (Carroll et al. 2009)</a> — the static mask used by Beta releases.</li>
+<li><a href="https://doi.org/10.1016/j.jhydrol.2011.03.051">HAND model paper (Nobre et al. 2011)</a> — the topographic feature underpinning the HAND mask.</li>
+<li><a href="https://portal.opentopography.org/raster?opentopoID=OTSDEM.032021.4326.3">Copernicus GLO-90 DEM via OpenTopography</a> — source DEM for HAND.</li>
+<li><a href="https://ladsweb.modaps.eosdis.nasa.gov/missions-and-measurements/products/MCDWD_L3_NRT/">MCDWD_L3_NRT catalogue page (LAADS)</a></li>
+<li><a href="https://www.earthdata.nasa.gov/data/catalog/lancemodis-vcdwd-l3-nrt-2">VCDWD_L3_NRT catalogue page (Earthdata, NASA VIIRS)</a></li>
+<li><a href="https://modis-land.gsfc.nasa.gov/">MODIS Land Team homepage</a> — includes the <a href="https://modis-land.gsfc.nasa.gov/MODLAND_grid.html">MODLAND HV grid reference</a>.</li>
+<li><a href="https://oceancolor.gsfc.nasa.gov/">MODIS Ocean Color homepage</a></li>
+<li><a href="https://nrt3.modaps.eosdis.nasa.gov/help/downloads">LAADS DAAC bulk download instructions</a></li>
+<li><a href="https://nrt3.modaps.eosdis.nasa.gov/api/v2/content/details">LANCE JSON listing API</a> — the recommended programmatic-discovery endpoint.</li>
+<li><a href="https://urs.earthdata.nasa.gov/">Earthdata Login (token registration)</a></li>
+<li><a href="https://lance.modaps.eosdis.nasa.gov/flood">FLOOD Viewer web tool (compare MODIS / VIIRS / OPERA)</a></li>
+<li><a href="../../viirs/overview/">Atlantis VIIRS reference docs</a></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.indexes", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

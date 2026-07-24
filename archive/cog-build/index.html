@@ -1,0 +1,2807 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="ML-ready archive of satellite-derived flood inundation observations">
+      
+      
+      
+        <link rel="canonical" href="https://opageo.github.io/atlantis/archive/cog-build/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>VIIRS JPSS 2020 Batch Processing - Atlantis</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#viirs-jpss-2020-batch-processing" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Atlantis" class="md-header__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Atlantis
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              VIIRS JPSS 2020 Batch Processing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../pixi-setup/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../sources/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Data Sources
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  CLI
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../batch/viirs/jpss.md" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Batch Processing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../development/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Development
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/config/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Atlantis" class="md-nav__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Atlantis
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pixi-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pixi Setup (Newcomers)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials & Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gdal-install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual GDAL Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Sources
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Sources
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layer Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    VIIRS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MODIS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MODIS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GFM
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    GFM
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KuroSiwo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KuroSiwo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kurosiwo/stac-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    STAC Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    End-to-End Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Batch Processing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../batch/viirs/jpss.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS JPSS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fetchers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fetchers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/harmoniser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harmoniser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tech-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tech stack
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-granule-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-granule pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#module-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inputs-outputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inputs &amp; outputs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inputs &amp; outputs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#source-catalogue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source catalogue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output-cogs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output COGs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running it
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running it">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#single-vm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single VM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-worker-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended worker settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recommended worker settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#healthy-cpu-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Healthy CPU pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-full-archive-on-the-recommended-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: full archive on the recommended profile
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Monitoring">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#3-dask-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Dask dashboard
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#two-vm-split-deterministic-no-coordination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two-VM split (deterministic, no coordination)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resume-after-a-crash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resume after a crash
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operational-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operational profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-these-choices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why these choices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why these choices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dask-localcluster-not-celery-not-ray-not-raw-multiprocessing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dask LocalCluster (not Celery, not Ray, not raw multiprocessing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clientmap-as_completed-not-compute-not-gather" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        client.map() + as_completed() (not compute(), not gather())
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sqlite-resume-not-redis-not-a-flat-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQLite resume (not Redis, not a flat file)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#local-staging-via-tempfile-not-streaming-vsicurl-not-a-persistent-cache-dir" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local staging via tempfile (not streaming /vsicurl/, not a persistent cache dir)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#true-cog-output-not-plain-geotiff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        True COG output (not plain GeoTIFF)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uint8-0100-not-float32-not-uint16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        uint8 0–100 (not float32, not uint16)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replicating-for-another-dataset-eg-modis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replicating for another dataset (e.g. MODIS)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-constraints-gotchas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known constraints &amp; gotchas
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="viirs-jpss-2020-batch-processing">VIIRS JPSS 2020 Batch Processing</h1>
+<p><strong>1-arcmin global flood-fraction COGs from 48,928 NOAA VIIRS granules</strong></p>
+<p>This document describes how Atlantis converts the full <strong>VIIRS JPSS 2020</strong> archive (NOAA-hosted source GeoTIFFs) into a uniform set of <strong>1-arcmin, <code>uint8</code>, Cloud-Optimised GeoTIFFs</strong> stored on the ECMWF object store at <code>s3://atlantis/viirs/jpss/2020/</code>.</p>
+<p>The design is intentionally <strong>dataset-agnostic at the engine layer</strong> — the same <code>src/atlantis/batch/</code> machinery will drive MODIS (and any future dataset) by plugging in a different inventory loader and per-task processor.</p>
+<hr />
+<h2 id="goals">Goals</h2>
+<p>Four properties drive every design choice:</p>
+<table>
+<thead>
+<tr>
+<th>Goal</th>
+<th>How it's achieved</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Compute-efficient</strong></td>
+<td>Dask <code>LocalCluster</code> with 2–6 adaptive worker processes. Per-granule: download to a <code>tempfile</code>, read locally (~2.8× faster than <code>/vsicurl/</code> for NOAA's one-row-strip TIFFs), classify, harmonise, encode COG in memory, upload. <code>GDAL_NUM_THREADS=2</code> per worker for parallel warp + COG encoding.</td>
+</tr>
+<tr>
+<td><strong>Live progress tracking</strong></td>
+<td>Dask dashboard (<code>http://VM:8787</code>) + a periodic loguru line: <code>[12400/48000] 26% · 583/hr · ETA ~61h · failures: 23 · retries: 47</code>.</td>
+</tr>
+<tr>
+<td><strong>Crash-safe resume</strong></td>
+<td>One SQLite DB per VM records <code>(task_id, status, output_uri, error, attempts)</code>. On restart, finished IDs are filtered before futures are submitted — only pending work runs.</td>
+</tr>
+<tr>
+<td><strong>Disk-space lean</strong></td>
+<td>Output is <code>uint8</code> (0–100 percent, <code>nodata=255</code>), not <code>float32</code> (~75% smaller). One COG per granule (flood_fraction only), DEFLATE + <code>predictor=2</code>, ~0.5–2 MB each. Peak local disk during the run is bounded by <code>workers_max × ~20 MB</code> ≈ 120 MB.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="tech-stack">Tech stack</h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Choice</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parallelism</td>
+<td><a href="https://distributed.dask.org/"><code>dask.distributed.LocalCluster</code></a></td>
+<td>Native dashboard, declarative retries (<code>retries=3</code>), clean path to multi-node later. Adaptive <code>workers_min/max</code> handles per-granule memory variability.</td>
+</tr>
+<tr>
+<td>Per-task API</td>
+<td><code>client.map()</code> + <code>as_completed()</code></td>
+<td>Streams results back as they finish so the SQLite tracker is always current — survives multi-day runs and VM crashes.</td>
+</tr>
+<tr>
+<td>Worker model</td>
+<td>2–6 <strong>processes</strong>, 1 thread each (Python)</td>
+<td><code>rasterio</code> is process-safe but not always thread-safe. GDAL's internal C-thread pool (<code>GDAL_NUM_THREADS</code>) is independent of the Python GIL, so we still get warp/encode parallelism inside each worker.</td>
+</tr>
+<tr>
+<td>Source I/O</td>
+<td><code>requests.get(..., stream=True)</code> → <code>tempfile.mkstemp()</code></td>
+<td>NOAA source TIFFs are pathological (one-row strips, uncompressed) so <code>/vsicurl/</code> issues thousands of small range reads. A single sequential GET is ~2.8× faster. Tempfile is unlinked in a <code>finally</code>.</td>
+</tr>
+<tr>
+<td>Source format</td>
+<td>Plain GeoTIFF, 375 m, ~20 MB each</td>
+<td>Decoded with <code>classify_viirs_flood_fraction</code> — a lightweight, picklable module-level sibling of <code>classify_viirs_pixels</code> that returns only the flood-fraction array.</td>
+</tr>
+<tr>
+<td>Reprojection</td>
+<td><code>Harmoniser</code> (existing)</td>
+<td>Same reproject + 1-arcmin-grid logic the rest of Atlantis uses. We don't fork the science.</td>
+</tr>
+<tr>
+<td>Output format</td>
+<td><code>rasterio.MemoryFile(driver="COG", compress="DEFLATE", blocksize=512, predictor=2)</code></td>
+<td>True COG with <code>overviews="AUTO"</code> (GDAL chooses the levels). Output is ~2–3 KB → no point touching disk.</td>
+</tr>
+<tr>
+<td>Upload</td>
+<td><code>s3fs.S3FileSystem(endpoint_url=...)</code></td>
+<td>Custom endpoint = ECMWF object store. Credentials come from the <code>default</code> boto3 profile written by <code>atlantis setup</code>.</td>
+</tr>
+<tr>
+<td>Resume DB</td>
+<td><strong>SQLite, one DB per VM</strong></td>
+<td>No shared state, no NFS coordination. Two-VM split = trivial <code>UNION ALL</code> merge afterwards.</td>
+</tr>
+<tr>
+<td>Packaging</td>
+<td><code>atlantis[batch]</code> extras</td>
+<td>Keeps the core install lean. Adds <code>dask[distributed]</code>, <code>bokeh</code>, <code>rio-cogeo</code>, and pulls in <code>[geo]</code> transitively.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="per-granule-pipeline">Per-granule pipeline</h2>
+<p>Each Dask worker downloads one source granule at a time to a <code>tempfile</code>, processes it locally, uploads the resulting COG, and unlinks the tempfile in a <code>finally</code> block.</p>
+<div class="highlight"><pre><span></span><code>NOAA S3 granule (375 m GeoTIFF, ~20 MB)
+  │
+  │  requests.get(url, stream=True) → tempfile.mkstemp()
+  ▼                                              ← ~1.6 s sequential GET
+ /tmp/viirs_src_XXXXXX.tif
+  │
+  │  rasterio.open(local_path)                  ← ~0.02 s (vs ~4.7 s via /vsicurl/)
+  ▼
+ raw array
+  │
+  │  classify_viirs_flood_fraction()            ← keep ONLY flood_fraction
+  ▼                                              (discard non-flood derived layers and raw codes)
+ flood_fraction (float32, native 375 m)
+  │
+  │  Harmoniser.harmonise()                     ← reproject + regrid to 1 arcmin
+  ▼                                              (GDAL_NUM_THREADS=2)
+ flood_fraction (float32, 1 arcmin)
+  │
+  │  scale [0, 1] → uint8 [0, 100], NaN → 255   ← mirrors write_harmonised_raster
+  ▼
+ flood_fraction (uint8, 1 arcmin)
+  │
+  │  rasterio.MemoryFile(driver=&quot;COG&quot;, ...)     ← DEFLATE, 512×512, overviews=AUTO
+  ▼                                              (output ~2–3 KB — stays in memory)
+ COG bytes (in-memory)
+  │
+  │  s3fs.open(dest, &quot;wb&quot;).write(bytes)
+  ▼
+ s3://atlantis/viirs/jpss/2020/{date}/GLB{aoi_id:03d}.tif
+  │
+  │  finally: src_path.unlink(missing_ok=True)  ← tempfile cleanup
+  │  TaskResult → main process
+  ▼
+ tracker.mark_done(task_id, output_uri)         ← SQLite, one row per granule
+</code></pre></div>
+<hr />
+<h2 id="module-layout">Module layout</h2>
+<div class="highlight"><pre><span></span><code>src/atlantis/batch/                  # dataset-agnostic engine
+├── __init__.py                      # run_batch, BatchConfig, TaskResult
+├── orchestrator.py                  # LocalCluster + Client.map + as_completed
+├── tracker.py                       # SQLite resume layer (per-VM)
+└── config.py                        # BatchConfig dataclass
+
+src/atlantis/fetchers/viirs/         # VIIRS-specific bindings
+├── inventory.py                     # load_inventory, slice_partition, to_tasks
+└── batch_processor.py               # process_granule(task) -&gt; TaskResult
+
+src/atlantis/cli.py                  # +atlantis batch viirs run subcommand
+</code></pre></div>
+<p><strong>Separation of concerns:</strong></p>
+<ul>
+<li><code>batch/*</code> knows nothing about VIIRS, COGs, or S3. It accepts a list of task dicts and a <code>process_fn(task) -&gt; TaskResult</code> callable.</li>
+<li><code>fetchers/viirs/inventory.py</code> knows about the catalogue Parquet schema and produces task dicts.</li>
+<li><code>fetchers/viirs/batch_processor.py</code> is the per-task callable that does the actual science.</li>
+</ul>
+<p>This makes MODIS a drop-in: add <code>fetchers/modis/inventory.py</code> + <code>fetchers/modis/batch_processor.py</code>, and the orchestrator, tracker, and CLI scaffolding stay identical.</p>
+<hr />
+<h2 id="inputs-outputs">Inputs &amp; outputs</h2>
+<h3 id="source-catalogue">Source catalogue</h3>
+<p><code>s3://atlantis/assets/viirs/jpss/2020/catalogue.parquet</code> (1.4 MB). Schema:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>date</code></td>
+<td><code>object</code> (YYYY-MM-DD)</td>
+<td>Granule date, 366 unique values (full year incl. leap day)</td>
+</tr>
+<tr>
+<td><code>aoi_id</code></td>
+<td><code>int64</code></td>
+<td>AOI tile id, 134 unique values in <code>[1, 136]</code></td>
+</tr>
+<tr>
+<td><code>s3_key</code></td>
+<td><code>object</code></td>
+<td>NOAA-relative key</td>
+</tr>
+<tr>
+<td><code>geometry</code></td>
+<td>WKB bytes</td>
+<td>AOI bounding polygon (lat/lon) — not used by the batch pipeline</td>
+</tr>
+</tbody>
+</table>
+<p>48,928 rows, no nulls, no duplicates. Already filtered to JPSS VFM 1-day GLB 2020 — <code>inventory.py</code> does not need a <code>filter(year, product)</code> helper.</p>
+<p><strong>Derivations</strong> (all done in <code>to_tasks()</code>):</p>
+<ul>
+<li><code>task_id</code> = <code>Path(s3_key).stem</code> — unique per row, used as SQLite primary key</li>
+<li><code>source_uri</code> = <code>https://noaa-jpss.s3.amazonaws.com/{s3_key}</code></li>
+<li><code>dest_key</code> = <code>viirs/jpss/2020/{date}/GLB{aoi_id:03d}.tif</code></li>
+</ul>
+<h3 id="output-cogs">Output COGs</h3>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>S3 location</td>
+<td><code>s3://atlantis/viirs/jpss/2020/{date}/GLB{aoi_id:03d}.tif</code></td>
+</tr>
+<tr>
+<td>Variable</td>
+<td><code>flood_fraction</code> only</td>
+</tr>
+<tr>
+<td>Dtype / range</td>
+<td><code>uint8</code>, 0–100 (percent), <code>nodata=255</code></td>
+</tr>
+<tr>
+<td>Resolution</td>
+<td>1 arcmin (<code>HarmoniseConfig.target_resolution_arcmin=1.0</code>)</td>
+</tr>
+<tr>
+<td>Format</td>
+<td><code>driver="COG"</code>, <code>compress="DEFLATE"</code>, <code>blocksize=512</code>, <code>predictor=2</code>, <code>overviews="AUTO"</code> (resampling: <code>average</code>)</td>
+</tr>
+<tr>
+<td>Endpoint</td>
+<td><code>https://object-store.os-api.cci1.ecmwf.int</code> (ECMWF object store)</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>{date}/GLB{aoi_id:03d}.tif</code> key shape is browsable per-day with <code>ecaws s3 ls</code> and uniquely determined by <code>(date, aoi_id)</code>, so re-runs are idempotent (same input → same output URI → S3 last-writer-wins).</p>
+<hr />
+<h2 id="running-it">Running it</h2>
+<h3 id="prerequisites">Prerequisites</h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[batch,geo]&quot;</span>
+atlantis<span class="w"> </span>setup<span class="w">                          </span><span class="c1"># writes the `default` boto3 profile pointing at the ECMWF endpoint</span>
+</code></pre></div>
+<h3 id="single-vm">Single VM</h3>
+<div class="highlight"><pre><span></span><code>atlantis<span class="w"> </span>batch<span class="w"> </span>viirs<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--inventory<span class="w"> </span>s3://atlantis/assets/viirs/jpss/2020/catalogue.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--output<span class="w">    </span>s3://atlantis/viirs/jpss/2020/<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--workers-min<span class="w"> </span><span class="m">2</span><span class="w"> </span>--workers-max<span class="w"> </span><span class="m">6</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--memory-limit<span class="w"> </span>4GB<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--db-path<span class="w"> </span>tracker.db
+</code></pre></div>
+<h3 id="recommended-worker-settings">Recommended worker settings</h3>
+<p>The CLI defaults (<code>--workers-min 2 --workers-max 6</code>) are conservative. For most VMs you'll want to <strong>fix</strong> the worker count instead of relying on adaptive scaling — for our short (~2–5 s) granules the queue drains too fast for adaptive to scale up, and the cluster lingers at <code>workers_min</code>.</p>
+<p>Pick a profile based on what the VM has:</p>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>Flags</th>
+<th>Best for</th>
+<th>Expected throughput</th>
+<th>Full-run time (48,928)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Comfortable</strong></td>
+<td><code>--workers-min 4  --workers-max 4  --memory-limit 4GB</code></td>
+<td>4-core / 16 GB VM, or alongside other jobs</td>
+<td>~1,500 granules/hr</td>
+<td>~32 h</td>
+</tr>
+<tr>
+<td><strong>Recommended</strong> ⭐</td>
+<td><code>--workers-min 12 --workers-max 12 --memory-limit 2.5GB</code></td>
+<td>8-core / 32 GB VM — over-subscribes cores (downloads are I/O-bound)</td>
+<td>~4,500 granules/hr</td>
+<td>~11 h</td>
+</tr>
+<tr>
+<td><strong>Push the limits</strong></td>
+<td><code>--workers-min 16 --workers-max 16 --memory-limit 1.8GB</code></td>
+<td>Same 8-core / 32 GB VM with the perf changes (lean classifier + <code>gc.collect()</code> between tasks)</td>
+<td>~6,000 granules/hr</td>
+<td><strong>~8 h</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Each worker uses ~0.5–1.3 GB RSS plus ~20 MB tempfile. <code>--memory-limit</code> is a Dask cap (kills the worker if exceeded); leave headroom over the actual RSS so transient spikes don't trigger restarts. Total RAM = <code>workers × memory_limit</code> should stay under ~80 % of system RAM.</p>
+</blockquote>
+<p><strong>Why fixed, not adaptive?</strong> Adaptive is excellent for variable workloads. For a uniform batch like this, fixed workers give cleaner throughput, simpler monitoring, and avoid the "cluster never scaled past minimum" surprise.</p>
+<h4 id="healthy-cpu-pattern">Healthy CPU pattern</h4>
+<p>You'll see CPU oscillate between ~50 % and ~99 % across all cores in clear waves. That's the workers cycling in lockstep:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>CPU</th>
+<th>Bottleneck</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Download granule from NOAA</td>
+<td>~50 %</td>
+<td>network</td>
+</tr>
+<tr>
+<td>Classify + harmonise + encode COG</td>
+<td>~99 %</td>
+<td>CPU</td>
+</tr>
+<tr>
+<td>Upload tiny COG to S3</td>
+<td>brief dip</td>
+<td>network</td>
+</tr>
+</tbody>
+</table>
+<p>Both resources alternate — that's optimal. If CPU stays pinned at 99 % the whole time you're CPU-bound (lower workers), if it stays low you're network-bound (raise workers).</p>
+<h4 id="example-full-archive-on-the-recommended-profile">Example: full archive on the recommended profile</h4>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>batch<span class="w"> </span>viirs<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--workers-min<span class="w"> </span><span class="m">12</span><span class="w"> </span>--workers-max<span class="w"> </span><span class="m">12</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--memory-limit<span class="w"> </span><span class="m">2</span>.5GB<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--db-path<span class="w"> </span>tracker_full.db<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--log-every<span class="w"> </span><span class="m">200</span>
+</code></pre></div>
+<h3 id="monitoring">Monitoring</h3>
+<p>Three options. Any one is enough; the SQLite tracker is the source of truth.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. Live progress — refreshes every 2 s, works in any terminal</span>
+watch<span class="w"> </span>-n<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="s2">&quot;sqlite3 tracker_full.db &#39;SELECT status, COUNT(*) FROM tasks GROUP BY status&#39;&quot;</span>
+
+<span class="c1"># 2. CPU + RAM per worker — press F4 and type &#39;python3&#39; to filter</span>
+htop
+</code></pre></div>
+<h4 id="3-dask-dashboard">3. Dask dashboard</h4>
+<p>The dashboard runs <strong>inside the orchestrator process</strong> on the VM at <code>localhost:8787</code>. To view it from your laptop, open an SSH tunnel <strong>on your laptop</strong> (not on the VM) and <strong>leave it running</strong> for the whole batch:</p>
+<div class="highlight"><pre><span></span><code>ssh<span class="w"> </span>-L<span class="w"> </span><span class="m">8787</span>:localhost:8787<span class="w"> </span>-L<span class="w"> </span><span class="m">8786</span>:localhost:8786<span class="w"> </span>user@vm-host
+</code></pre></div>
+<p>Then point your laptop browser at <a href="http://localhost:8787">http://localhost:8787</a>. The dashboard shows the task graph, per-worker memory, throughput, and exception tracebacks live.</p>
+<table>
+<thead>
+<tr>
+<th>Tip</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Forward <strong>both</strong> 8787 and 8786</td>
+<td>8787 serves the Bokeh page; 8786 is the scheduler the page connects back to for live updates.</td>
+</tr>
+<tr>
+<td>The page only works while the run is active</td>
+<td>The dashboard is a Python thread inside the orchestrator — it disappears the moment <code>atlantis batch viirs run</code> exits.</td>
+</tr>
+<tr>
+<td>Re-tunnel after restarting a run</td>
+<td>The port forward survives, but VS Code's "Ports" panel sometimes marks the port broken after the upstream disappeared — re-add it if needed.</td>
+</tr>
+<tr>
+<td>No dashboard? You're not blocked</td>
+<td>The <code>watch sqlite3 …</code> + <code>htop</code> combo covers ~90 % of what the dashboard offers.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="two-vm-split-deterministic-no-coordination">Two-VM split (deterministic, no coordination)</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># VM1</span>
+atlantis<span class="w"> </span>batch<span class="w"> </span>viirs<span class="w"> </span>run<span class="w"> </span>--partition<span class="w"> </span><span class="m">0</span>:24464<span class="w">      </span>--db-path<span class="w"> </span>tracker_vm1.db
+<span class="c1"># VM2</span>
+atlantis<span class="w"> </span>batch<span class="w"> </span>viirs<span class="w"> </span>run<span class="w"> </span>--partition<span class="w"> </span><span class="m">24464</span>:48928<span class="w">  </span>--db-path<span class="w"> </span>tracker_vm2.db
+
+<span class="c1"># After both finish — merge the two trackers locally</span>
+sqlite3<span class="w"> </span>merged.db<span class="w"> </span><span class="s">&lt;&lt;&#39;EOF&#39;</span>
+<span class="s">  ATTACH &#39;tracker_vm1.db&#39; AS a;</span>
+<span class="s">  ATTACH &#39;tracker_vm2.db&#39; AS b;</span>
+<span class="s">  CREATE TABLE tasks AS</span>
+<span class="s">    SELECT * FROM a.tasks UNION ALL SELECT * FROM b.tasks;</span>
+<span class="s">EOF</span>
+</code></pre></div>
+<p><code>slice_partition</code> sorts by <code>(date, aoi_id)</code> before slicing, so the partitioning is reproducible across machines and re-runs.</p>
+<h3 id="resume-after-a-crash">Resume after a crash</h3>
+<p>Just re-run the <strong>same command</strong> with the <strong>same <code>--db-path</code></strong>. The orchestrator queries <code>get_pending(all_task_ids)</code> against the SQLite DB and submits futures only for tasks that aren't yet <code>DONE</code>. <code>FAILED</code> tasks are also re-queued, so transient errors get another chance.</p>
+<hr />
+<h2 id="operational-profile">Operational profile</h2>
+<p>Measured on a single 8-core / 32 GB Linux VM with 4 active workers:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Per-granule time</td>
+<td>~2–5 s end-to-end (~1.6 s download + ~0.5–2 s classify+harmonise+upload)</td>
+</tr>
+<tr>
+<td>Smoke-test throughput (10 granules)</td>
+<td><strong>~13 s wall time</strong> (~46 granules/min sustained)</td>
+</tr>
+<tr>
+<td>Extrapolated full run</td>
+<td><strong>~17 h single-VM</strong>, ~8–9 h split across two VMs</td>
+</tr>
+<tr>
+<td>Local disk usage</td>
+<td>Bounded by <code>tempfile</code> lifetime: <code>workers_max × ~20 MB</code> ≈ <strong>120 MB peak</strong></td>
+</tr>
+<tr>
+<td>Output size per COG</td>
+<td>~0.5–2 MB</td>
+</tr>
+<tr>
+<td>Total output size</td>
+<td>~24–98 GB for 48,928 granules</td>
+</tr>
+<tr>
+<td>Peak RAM</td>
+<td>adaptive, capped at <code>workers_max × memory_limit_per_worker</code> (≈30 GB at 6×5 GB)</td>
+</tr>
+<tr>
+<td>Dashboard</td>
+<td><code>http://VM_IP:8787</code> — task graph, worker memory, throughput, exceptions</td>
+</tr>
+</tbody>
+</table>
+<p>For comparison, the original <strong>streaming <code>/vsicurl/</code></strong> prototype managed ~1,200 granules/hr (full run ~40 h single-VM) because NOAA's source TIFFs are one-row strips that trigger thousands of small range reads. <strong>Local staging via <code>tempfile</code> is ~2.3× faster end-to-end.</strong></p>
+<hr />
+<h2 id="why-these-choices">Why these choices</h2>
+<h3 id="dask-localcluster-not-celery-not-ray-not-raw-multiprocessing">Dask <code>LocalCluster</code> (not Celery, not Ray, not raw multiprocessing)</h3>
+<ul>
+<li><strong>Dashboard for free</strong>: live task graph, worker memory, throughput, exception inspection at <code>:8787</code>. No extra ops.</li>
+<li><strong>Declarative retries</strong>: <code>client.map(fn, items, retries=3)</code> re-submits failed tasks without any hand-rolled backoff loop. Combined with <code>time.sleep(2**attempt)</code> inside <code>process_granule</code>, this absorbs NOAA S3 503 throttling.</li>
+<li><strong>Adaptive scaling</strong> (<code>cluster.adapt(2, 6)</code>): the cluster grows and shrinks based on workload, handling per-granule memory variability gracefully.</li>
+<li><strong>Future-proof</strong>: the exact same code that runs on a <code>LocalCluster</code> works on a multi-node <code>SSHCluster</code> or a Kubernetes cluster. We can migrate later without rewriting <code>process_granule</code>.</li>
+</ul>
+<h3 id="clientmap-as_completed-not-compute-not-gather"><code>client.map()</code> + <code>as_completed()</code> (not <code>compute()</code>, not <code>gather()</code>)</h3>
+<p>We need results to flow back <strong>as they complete</strong>, not in a batch at the end. This is what makes the SQLite tracker always current — pull the plug at any moment and we never lose more than the few in-flight granules. <code>as_completed()</code> gives us that streaming behaviour without us having to hand-write any callbacks.</p>
+<h3 id="sqlite-resume-not-redis-not-a-flat-file">SQLite resume (not Redis, not a flat file)</h3>
+<ul>
+<li><strong>One file</strong>, no daemon. Survives reboots, no port to manage, no network dependency.</li>
+<li><strong>One DB per VM</strong>: zero coordination between VMs means we can split a workload by partition and never touch shared state. <code>UNION ALL</code> merges the trackers afterwards if we want a unified view.</li>
+<li><strong>Upsert semantics</strong> (<code>INSERT … ON CONFLICT(task_id) DO UPDATE</code>): retrying a previously failed task just overwrites its row. Idempotent.</li>
+<li>A flat file could work but would either need locking or sequential writes — SQLite handles both for free.</li>
+</ul>
+<h3 id="local-staging-via-tempfile-not-streaming-vsicurl-not-a-persistent-cache-dir">Local staging via <code>tempfile</code> (not streaming <code>/vsicurl/</code>, not a persistent cache dir)</h3>
+<p>Measured: <strong>~2.8× faster</strong> per granule on real NOAA sources. The win comes from issuing one sequential GET instead of thousands of small range reads against pathological one-row-strip TIFFs.</p>
+<p><code>tempfile.mkstemp()</code> was chosen over <code>tempfile.NamedTemporaryFile</code> because we want to control the lifetime explicitly via <code>finally</code>-block <code>unlink()</code>, not via a context manager's auto-cleanup (which is awkward to combine with the rest of the pipeline). The path comes from <code>mkstemp</code> directly with a clear prefix (<code>viirs_src_</code>) so any leaked files are easy to spot in <code>/tmp</code>.</p>
+<p>A persistent cache directory was considered and rejected: we'd need an LRU eviction policy, disk-pressure handling, and a way to invalidate cached files when the source changes. None of that is worth it when the input is read exactly once per granule.</p>
+<h3 id="true-cog-output-not-plain-geotiff">True COG output (not plain GeoTIFF)</h3>
+<p>The existing <code>write_harmonised_raster()</code> in <code>harmoniser/__init__.py</code> emits a plain LZW-compressed GeoTIFF — perfect for per-event Atlantis runs (one or two files per event). For a 48,928-file global archive, COG matters: HTTP range reads from QGIS, STAC, COG-readers all need internal tiling + overviews. We use <code>driver="COG"</code> directly rather than calling <code>write_harmonised_raster</code> so the science stays consistent but the on-disk layout is web-optimised.</p>
+<p>The COG is built in a <code>MemoryFile</code> because each output is ~2–3 KB. Streaming to a tempfile would add disk I/O for no benefit.</p>
+<h3 id="uint8-0100-not-float32-not-uint16"><code>uint8</code> 0–100 (not <code>float32</code>, not <code>uint16</code>)</h3>
+<p>Source pixel codes 101–200 encode flood fraction as <code>(code − 100) %</code>, so percent is the natural unit. <code>uint8</code> with <code>nodata=255</code> is consistent with <code>write_harmonised_raster</code>'s existing convention, and it's ~75% smaller than <code>float32</code>. Combined with DEFLATE+<code>predictor=2</code>, typical compressed output is <strong>~2–3 KB per granule</strong> — small enough that overhead from S3 metadata operations dominates upload time, not byte count.</p>
+<hr />
+<h2 id="replicating-for-another-dataset-eg-modis">Replicating for another dataset (e.g. MODIS)</h2>
+<ol>
+<li><strong>Build a catalogue Parquet</strong> with at minimum <code>(task_id, source_uri, dest_key)</code> per output. Upload it to <code>s3://atlantis/assets/&lt;dataset&gt;/&lt;year&gt;/catalogue.parquet</code>.</li>
+<li><strong>Write <code>src/atlantis/fetchers/&lt;dataset&gt;/inventory.py</code></strong> with:</li>
+<li><code>load_inventory(uri)</code></li>
+<li><code>slice_partition(df, partition)</code></li>
+<li><code>to_tasks(df, output_prefix)</code> returning a list of task dicts with the keys above (plus whatever extra fields your processor needs).</li>
+<li><strong>Write <code>src/atlantis/fetchers/&lt;dataset&gt;/batch_processor.py</code></strong> with a top-level, picklable <code>process_granule(task) -&gt; TaskResult</code> function. Mirror the structure of <code>viirs/batch_processor.py</code>: download → process → write COG to <code>MemoryFile</code> → upload via <code>s3fs</code> → <code>finally: src_path.unlink(missing_ok=True)</code>.</li>
+<li><strong>Add a CLI command</strong> in <code>cli.py</code>: copy the <code>atlantis batch viirs run</code> pattern, swap the imports.</li>
+<li><strong>Run.</strong> The orchestrator, tracker, dashboard, retry, and resume logic stays identical.</li>
+</ol>
+<hr />
+<h2 id="known-constraints-gotchas">Known constraints &amp; gotchas</h2>
+<ul>
+<li><strong><code>s3fs</code> must be instantiated inside <code>process_granule</code></strong> — never at module level. Dask workers are fresh processes, so each one needs to open its own connection pool. <code>_s3fs_filesystem()</code> is a regular function (not cached); if profiling shows the per-call overhead is significant we can add <code>functools.cache</code>.</li>
+<li><strong><code>GDAL_NUM_THREADS=2</code></strong> is <code>setdefault</code> so users can override via env. Don't bump above the number of physical cores per worker (1 thread × 8 cores ÷ 6 workers ≈ 1.3 cores each → 2 is fine, 4 would be too many at full adaptive scale).</li>
+<li><strong>Loguru in workers</strong> — Dask workers are separate processes, so loguru config doesn't propagate. The orchestrator registers <code>_LoguruWorkerPlugin</code> to call <code>logger.add(sys.stderr, enqueue=True)</code> per worker. Without <code>enqueue=True</code>, multiple workers writing simultaneously would interleave their output.</li>
+<li><strong>NOAA throttling</strong> — NOAA can return HTTP 503 under load. We rely on Dask's <code>retries=3</code> plus an exponential backoff inside <code>process_granule</code> (currently implicit via <code>requests</code>' default retry behaviour; an explicit <code>time.sleep(2**attempt)</code> can be added if 503s become a regular issue).</li>
+<li><strong>Output key collision across VMs</strong>: if two partitions accidentally overlap, S3 is last-writer-wins. Prefer non-overlapping <code>--partition</code> ranges and verify with <code>ecaws s3 ls --recursive s3://atlantis/viirs/jpss/2020/ | wc -l</code> after the run completes — should equal <code>48928</code> minus any FAILED rows in the merged tracker.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.indexes", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,3810 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="ML-ready archive of satellite-derived flood inundation observations">
+      
+      
+      
+        <link rel="canonical" href="https://opageo.github.io/atlantis/architecture/">
+      
+      
+        <link rel="prev" href="../gdal-install/">
+      
+      
+        <link rel="next" href="../sources/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Architecture - Atlantis</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#atlantis-architecture-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Atlantis" class="md-header__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Atlantis
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../pixi-setup/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../sources/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Data Sources
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  CLI
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../batch/viirs/jpss.md" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Batch Processing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../development/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Development
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/config/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Atlantis" class="md-nav__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    Atlantis
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pixi-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pixi Setup (Newcomers)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials & Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gdal-install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual GDAL Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-current-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Current State
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Current State">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#implemented-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implemented today
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#still-planned-mostly-stubbed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still planned / mostly stubbed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-pipeline-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Pipeline At A Glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-package-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Package Layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-core-abstractions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Core Abstractions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Core Abstractions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-floodevent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 FloodEvent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-abstractfloodfetcher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 AbstractFloodFetcher
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-fetchresult-and-tilemetadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 FetchResult and TileMetadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-dual-archive-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Dual-archive strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-checkpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 Checkpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-working-viirs-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Working VIIRS Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Working VIIRS Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-what-you-need" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 What You Need
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-how-the-viirs-fetcher-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 How The VIIRS Fetcher Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-explicit-region-cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Explicit Region CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-kurosiwo-cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 KuroSiwo CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-kurosiwo-metadata-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 KuroSiwo Metadata Mapping
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-viirs-output-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 VIIRS Output Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-current-viirs-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 Current VIIRS Limitations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-working-gfm-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Working GFM Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Working GFM Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-how-the-gfm-fetcher-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 How The GFM Fetcher Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-gfm-cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 GFM CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-gfm-output-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 GFM Output Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-working-modis-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Working MODIS Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Working MODIS Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-how-the-modis-fetcher-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 How The MODIS Fetcher Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-modis-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 MODIS Backends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-modis-cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 MODIS CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-modis-composites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 MODIS Composites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#75-modis-output-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.5 MODIS Output Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-module-deep-dive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Module Deep Dive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Module Deep Dive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-configpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 config.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 models/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-fetchers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 fetchers/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-harmoniser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.4 harmoniser/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#85-archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.5 archive/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#86-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.6 validation/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#87-utils" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.7 utils/
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-cli-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. CLI Commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-dependency-groups" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Dependency Groups
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-extending-atlantis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Extending Atlantis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Sources
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Sources
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layer Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    VIIRS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viirs/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viirs/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viirs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viirs/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MODIS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MODIS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modis/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modis/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modis/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modis/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GFM
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    GFM
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gfm/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gfm/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gfm/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gfm/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KuroSiwo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KuroSiwo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kurosiwo/stac-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    STAC Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    End-to-End Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Batch Processing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../batch/viirs/jpss.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS JPSS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/fetchers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fetchers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/harmoniser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harmoniser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-current-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Current State
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Current State">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#implemented-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implemented today
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#still-planned-mostly-stubbed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still planned / mostly stubbed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-pipeline-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Pipeline At A Glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-package-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Package Layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-core-abstractions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Core Abstractions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Core Abstractions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-floodevent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 FloodEvent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-abstractfloodfetcher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 AbstractFloodFetcher
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-fetchresult-and-tilemetadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 FetchResult and TileMetadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-dual-archive-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Dual-archive strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-checkpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 Checkpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-working-viirs-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Working VIIRS Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Working VIIRS Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-what-you-need" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 What You Need
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-how-the-viirs-fetcher-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 How The VIIRS Fetcher Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-explicit-region-cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Explicit Region CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-kurosiwo-cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 KuroSiwo CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-kurosiwo-metadata-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 KuroSiwo Metadata Mapping
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-viirs-output-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 VIIRS Output Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-current-viirs-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 Current VIIRS Limitations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-working-gfm-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Working GFM Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Working GFM Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-how-the-gfm-fetcher-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 How The GFM Fetcher Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-gfm-cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 GFM CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-gfm-output-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 GFM Output Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-working-modis-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Working MODIS Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Working MODIS Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-how-the-modis-fetcher-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 How The MODIS Fetcher Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-modis-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 MODIS Backends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-modis-cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 MODIS CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-modis-composites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 MODIS Composites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#75-modis-output-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.5 MODIS Output Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-module-deep-dive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Module Deep Dive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Module Deep Dive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-configpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 config.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 models/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-fetchers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 fetchers/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-harmoniser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.4 harmoniser/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#85-archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.5 archive/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#86-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.6 validation/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#87-utils" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.7 utils/
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-cli-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. CLI Commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-dependency-groups" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Dependency Groups
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-extending-atlantis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Extending Atlantis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="atlantis-architecture-guide">Atlantis — Architecture Guide</h1>
+<blockquote>
+<p><strong>What is Atlantis?</strong> An evolving flood-observation pipeline that fetches raw EO flood data from multiple sources (VIIRS, GFM, MODIS), harmonises it to a common 1 arcmin grid, and will eventually archive ML-ready products. Three source paths are fully operational with harmonisation support.</p>
+</blockquote>
+<hr />
+<h2 id="1-current-state">1. Current State</h2>
+<p>Atlantis has a strong domain model, fetcher registry, and three fully operational source paths with harmonisation support.</p>
+<p>Across all three sources, Atlantis now distinguishes between <strong>native layers</strong>
+(the source products fetched unchanged, emitted by <code>--no-classify</code>) and
+<strong>derived layers</strong> (computed by Atlantis, emitted by <code>--classify</code>). The shared
+layer registries under <code>src/atlantis/layers/</code> drive CLI discovery, dataset
+construction, and the generated layer catalogue in <code>docs/layers.md</code>.</p>
+<h3 id="implemented-today">Implemented today</h3>
+<ul>
+<li><code>VIIRSFetcher</code> can search, download, mosaic, clip, and write GeoTIFF outputs from the NOAA S3 or GMU JPSS Flood archive.</li>
+<li><code>GFMFetcher</code> can search, stream, coarsen, reproject, and write GeoTIFF outputs from the EODC STAC API (Sentinel-1 SAR). The exact GFM native/derived inventory is centralised in <code>docs/layers.md</code>.</li>
+<li><code>MODISFetcher</code> can search, download/stream, mosaic, clip, and write GeoTIFF outputs from NASA LANCE (NRT) or LAADS (archive) backends.</li>
+<li><code>atlantis fetch</code> works for explicit bbox/date extraction across all three sources (VIIRS, GFM, MODIS).</li>
+<li><code>atlantis fetch-kurosiwo-viirs</code> and <code>atlantis fetch-kurosiwo-modis</code> work directly from the KuroSiwo catalogue or from a precomputed metadata CSV.</li>
+<li><code>atlantis build-kurosiwo-metadata</code> derives the metadata CSV from the catalogue without using the notebook.</li>
+<li><code>atlantis harmonise</code> reprojects and normalises fetched data to a uniform 1 arcmin grid.</li>
+<li><code>atlantis setup</code> bootstraps required data assets and credentials.</li>
+<li><code>atlantis demo</code> (VIIRS), <code>atlantis demo-modis</code>, and <code>atlantis demo-gfm</code> each run a self-contained Valencia 2024 example end to end.</li>
+<li>All three fetchers expose <code>last_diagnostics</code> (<code>SearchDiagnostics</code> / <code>ModisSearchDiagnostics</code> / <code>GfmSearchDiagnostics</code>) so the CLI can surface actionable hints when a fetch returns no results.</li>
+<li><code>atlantis batch viirs run</code> processes VIIRS granules in bulk using Dask, writing 1-arcmin COGs to S3.</li>
+<li><code>download_file()</code> is implemented and reuses existing files.</li>
+<li>KuroSiwo metadata can be converted into <code>FloodEvent</code> objects through <code>utils.kurosiwo</code>.</li>
+<li>Harmoniser (Reprojector + Normaliser) is fully operational and used by the <code>--harmonise</code> CLI flag.</li>
+</ul>
+<h3 id="still-planned-mostly-stubbed">Still planned / mostly stubbed</h3>
+<ul>
+<li>RFM fetcher (Phase C)</li>
+<li>Tiler (uniform grid tiling for ML)</li>
+<li>Raw and ML-ready Zarr archive writing</li>
+<li>Archive validation and ML smoke-test pipeline</li>
+</ul>
+<p>The rest of this document reflects both the target architecture and the current implementation status.</p>
+<hr />
+<h2 id="2-pipeline-at-a-glance">2. Pipeline At A Glance</h2>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────────┐
+│                         FLOOD EVENT                             │
+│   event_id · bbox · start_date · end_date · sources             │
+└──────────────┬──────────────────────────────────────┬───────────┘
+               │                                      │
+               ▼                                      │
+┌──────────────────────────────┐                       │
+│           FETCHERS           │                       │
+│  AbstractFloodFetcher +      │                       │
+│  @register_fetcher registry  │                       │
+│                              │                       │
+│  GFMFetcher   ──► STAC/EODC  │  implemented          │
+│  VIIRSFetcher ──► JPSS Flood │  implemented          │
+│  MODISFetcher ──► LANCE/LAADS│  implemented          │
+│  RFMFetcher   ──► Phase C    │  planned              │
+└──────────────┬───────────────┘                       │
+               │ raw raster files (GeoTIFF, ZIP, …)    │
+               ▼                                        │
+┌──────────────────────────────┐                       │
+│         HARMONISER           │                       │
+│  Reprojector ──► Normaliser  │  implemented          │
+│  Tiler                       │  planned              │
+│                              │                       │
+│  Target: EPSG:4326, 1 arcmin │                       │
+│  grid, values → [0, 1]       │                       │
+└──────────────┬───────────────┘                       │
+               │ harmonised xarray Datasets            │
+               ▼                                       │
+┌──────────────────────────────┐                       │
+│           ARCHIVE            │                       │
+│                              │                       │
+│  ArchiveWriter               │                       │
+│    └─► raw/                  │  planned              │
+│    └─► ml-ready/             │  planned              │
+│                              │                       │
+│  ArchiveReader               │                       │
+│                              │                       │
+│  Checkpoint markers (.done)  │  implemented          │
+└──────────────┬───────────────┘                       │
+               │                                       │
+               ▼                                       │
+┌──────────────────────────────┐                       │
+│          VALIDATION          │                       │
+│                              │                       │
+│  ArchiveChecker              │  planned              │
+│  MLLoaderValidator           │  planned              │
+└──────────────────────────────────────────────────────┘
+</code></pre></div>
+<hr />
+<h2 id="3-package-layout">3. Package Layout</h2>
+<div class="highlight"><pre><span></span><code>src/atlantis/
+├── __init__.py            # Package entry point, version
+├── cli.py                 # Typer CLI — fetch / fetch-kurosiwo-viirs / fetch-kurosiwo-modis / harmonise / etc.
+├── config.py              # Pydantic settings hierarchy (env-var driven)
+├── layers/
+│   ├── spec.py            # NativeLayer / DerivedLayer / DerivationContext
+│   ├── registry.py        # LayerRegistry + cross-source discovery helpers
+│   └── docs.py            # Markdown renderer for docs/layers.md
+│
+├── models/
+│   ├── event.py           # FloodEvent dataclass
+│   └── metadata.py        # TileMetadata / SourceMetadata (Pydantic)
+│
+├── fetchers/
+│   ├── base.py            # AbstractFloodFetcher ABC + SearchResult / FetchResult
+│   ├── registry.py        # @register_fetcher decorator + global registry
+│   ├── rfm.py             # RFMFetcher — planned / Phase C stub
+│   ├── _dataset.py        # Shared dataset utility helpers
+│   ├── gfm/
+│   │   ├── __init__.py    # GFMFetcher + GfmSearchDiagnostics — implemented
+│   │   ├── backend.py     # GfmStacBackend (EODC STAC API)
+│   │   ├── processor.py   # GfmRasterProcessor (coarsen → reproject → accumulate)
+│   │   ├── dataset.py     # GFM tile → xarray Dataset conversion
+│   │   ├── selection.py   # Peak-window filtering and subsampling
+│   │   └── README.md      # Module guide
+│   ├── modis/
+│   │   ├── __init__.py    # MODISFetcher + ModisSearchDiagnostics — implemented
+│   │   ├── backend.py     # LanceGeotiffBackend, LaadsHdf4Backend
+│   │   ├── processor.py   # ModisRasterProcessor (mosaic, clip, classify)
+│   │   ├── dataset.py     # MODIS tile → xarray Dataset conversion
+│   │   ├── selection.py   # Peak-window filtering and subsampling
+│   │   └── README.md      # Module guide
+│   └── viirs/
+│       ├── __init__.py    # VIIRSFetcher + SearchDiagnostics — implemented
+│       ├── backend.py     # Backend classes (NoaaS3Backend, GmuLegacyBackend)
+│       ├── processor.py   # Raster processing (ViirsRasterProcessor)
+│       ├── dataset.py     # VIIRS tile → xarray Dataset conversion
+│       ├── selection.py   # Peak-window filtering and subsampling
+│       ├── inventory.py   # VIIRS JPSS batch catalogue loader + task builder
+│       ├── batch_processor.py  # Per-granule Dask batch processing function
+│       ├── README.md      # Module guide
+│       └── data/
+│           └── viirs_aois.geojson  # Packaged VIIRS AOI tile grid
+│
+├── batch/
+│   ├── __init__.py        # BatchConfig, TaskResult, run_batch — Dask batch engine
+│   ├── config.py          # BatchConfig (Pydantic settings: workers, S3 paths, etc.)
+│   ├── orchestrator.py    # Dask LocalCluster run loop (submit → drain → checkpoint)
+│   └── tracker.py         # SQLite progress tracker (init_db, mark_done, mark_failed)
+│
+├── harmoniser/
+│   ├── __init__.py        # Harmoniser orchestrator + write_harmonised_raster
+│   ├── reprojector.py     # CRS reprojection + grid-snapped resampling (implemented)
+│   ├── tiler.py           # Uniform grid tiling (planned)
+│   └── normaliser.py      # Value scaling + quality mask generation (implemented)
+│
+├── archive/
+│   ├── writer.py          # Planned raw / ml-ready Zarr writing + working checkpoints
+│   └── reader.py          # Planned archive reader
+│
+├── stac/
+│   ├── stac_api.py        # STAC API utilities
+│   └── stac_catalog.py    # STAC catalog helpers
+│
+├── validation/
+│   ├── checker.py         # Planned archive checks
+│   └── ml_loader.py       # Planned PyTorch smoke tests
+│
+└── utils/
+    ├── geo.py            # BBox dataclass + validation / intersection helpers
+    ├── io.py             # ensure_dir / get_cache_path / download_file
+    ├── kurosiwo.py       # Derive KuroSiwo metadata and build FloodEvent objects
+    ├── plot.py           # Visualisation (flood maps, pixel stats, PNG output)
+    ├── setup.py          # Asset/credential bootstrapping for `atlantis setup`
+    └── ui.py             # Rich console formatting (progress bars, tables, status)
+</code></pre></div>
+<hr />
+<h2 id="4-core-abstractions">4. Core Abstractions</h2>
+<h3 id="41-floodevent">4.1 <code>FloodEvent</code></h3>
+<div class="highlight"><pre><span></span><code><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">FloodEvent</span><span class="p">:</span>
+    <span class="n">event_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">bbox</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>  <span class="c1"># (west, south, east, north)</span>
+    <span class="n">start_date</span><span class="p">:</span> <span class="n">date</span>
+    <span class="n">end_date</span><span class="p">:</span> <span class="n">date</span>
+    <span class="n">sources</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+</code></pre></div>
+<p><code>FloodEvent</code> is still the fundamental unit of work. It captures a region, a time window, and a set of sources. All fetcher paths (VIIRS, GFM, MODIS) and the KuroSiwo helper converge on this type.</p>
+<h3 id="42-abstractfloodfetcher">4.2 <code>AbstractFloodFetcher</code></h3>
+<p>Sources are discovered through the registry rather than hardcoded branch logic.</p>
+<p>To add a new source:</p>
+<ol>
+<li>Subclass <code>AbstractFloodFetcher</code></li>
+<li>Implement <code>search()</code> and <code>fetch()</code></li>
+<li>Optionally implement <code>to_dataset()</code></li>
+<li>Register with <code>@register_fetcher("name")</code></li>
+</ol>
+<p>That keeps the CLI and pipeline entrypoints source-agnostic.</p>
+<h3 id="43-fetchresult-and-tilemetadata">4.3 <code>FetchResult</code> and <code>TileMetadata</code></h3>
+<p>The fetch layer returns <code>FetchResult</code> objects that point at written files plus <code>TileMetadata</code> describing provenance such as bbox, resolution, CRS, and cloud fraction.</p>
+<p>For all implemented fetchers (VIIRS, GFM, MODIS), one <code>FetchResult</code> corresponds to one processed date.</p>
+<h3 id="44-dual-archive-strategy">4.4 Dual-archive strategy</h3>
+<p>The intended long-term design still distinguishes:</p>
+<table>
+<thead>
+<tr>
+<th>Archive</th>
+<th>Purpose</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>raw/</code></td>
+<td>Preservation of fetched source data</td>
+<td>planned</td>
+</tr>
+<tr>
+<td><code>ml-ready/</code></td>
+<td>Harmonised, tiled, normalised training products</td>
+<td>planned</td>
+</tr>
+</tbody>
+</table>
+<p>This strategy is still valid architecturally, but only the fetch and harmonise layers are operational today.</p>
+<h3 id="45-checkpoints">4.5 Checkpoints</h3>
+<p><code>ArchiveWriter.write_checkpoint()</code> and <code>is_checkpointed()</code> already exist and are accurate to the design. Checkpointing is one of the few implemented pieces in the archive layer.</p>
+<hr />
+<h2 id="5-working-viirs-flow">5. Working VIIRS Flow</h2>
+<p>This section consolidates the operational material that used to live in the separate VIIRS document.</p>
+<h3 id="51-what-you-need">5.1 What You Need</h3>
+<ul>
+<li>A checked out copy of this repository</li>
+<li><code>uv</code> installed</li>
+<li>Geo dependencies installed</li>
+<li>Network access (VIIRS: NOAA S3 or GMU; GFM: EODC STAC; MODIS: NASA LANCE/LAADS)</li>
+<li>For MODIS: <code>EARTHDATA_TOKEN</code> environment variable (register at <a href="https://urs.earthdata.nasa.gov/">https://urs.earthdata.nasa.gov/</a>)</li>
+<li>For KuroSiwo runs: either the catalogue at <code>assets/ks_catalogue.gpkg</code> or a precomputed metadata CSV</li>
+</ul>
+<p>Install the required dependencies and bootstrap assets with:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>geo
+uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>setup
+</code></pre></div>
+<h3 id="52-how-the-viirs-fetcher-works">5.2 How The VIIRS Fetcher Works</h3>
+<p>For each requested date and bbox, <code>VIIRSFetcher</code>:</p>
+<ol>
+<li>Loads the packaged global AOI grid from <code>fetchers/viirs/data/viirs_aois.geojson</code></li>
+<li>Selects AOI tiles intersecting the requested bbox</li>
+<li>Looks up matching archive entries under the JPSS Flood date directory</li>
+<li>Downloads ZIP tiles and reuses existing downloads on rerun</li>
+<li>Extracts TIFFs, mosaics them, and clips them to the bbox</li>
+<li>Writes three processed GeoTIFF outputs</li>
+</ol>
+<h3 id="53-explicit-region-cli-usage">5.3 Explicit Region CLI Usage</h3>
+<p>Use this for direct bbox/date extraction. Tiles are streamed from NOAA S3 and flood layers are classified by default. The recommended invocation uses the default <code>peak</code> strategy;
+add <code>--no-keep-processed</code> to skip writing intermediate 375 m files, or <code>--strategy aggregate</code> to return a temporal mean/mode composite:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>Yangtze_2020<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;105 28 125 38&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span><span class="m">2020</span>-07-22<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--end-date<span class="w"> </span><span class="m">2020</span>-07-22<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--no-keep-processed<span class="w"> </span>--harmonise
+</code></pre></div>
+<p>This writes only:</p>
+<div class="highlight"><pre><span></span><code>~/.cache/atlantis/raw/Yangtze_2020/
+└── viirs/
+    ├── harmonised/
+    │   └── Yangtze_2020_2020-07-22_viirs_harmonised.tif
+    └── plots/
+        └── harmonised/
+            └── derived/
+                └── Yangtze_2020_2020-07-22_viirs_harmonised.png
+</code></pre></div>
+<p>Without any optional flags (still streams and classifies by default, writes all intermediate files):</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>atlantis.cli<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>Yangtze_2020<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;105 28 125 38&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span><span class="m">2020</span>-07-22<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--end-date<span class="w"> </span><span class="m">2020</span>-07-22
+</code></pre></div>
+<p>Expected console shape:</p>
+<div class="highlight"><pre><span></span><code>Fetching data for event: Yangtze_2020
+Sources: viirs
+Output: ~/.cache/atlantis/raw/Yangtze_2020
+
+Fetching from viirs...
+  Wrote 3 files
+</code></pre></div>
+<p>Default output layout (no flags, streaming and classify on):</p>
+<div class="highlight"><pre><span></span><code>~/.cache/atlantis/raw/Yangtze_2020/
+└── viirs/
+    └── processed/
+        ├── Yangtze_2020_20200722_viirs_&lt;layer&gt;.tif
+        └── ... one file per derived VIIRS layer from docs/layers.md
+</code></pre></div>
+<p>Use <code>--no-stream</code> to cache raw tiles to disk for reuse across runs. Use <code>--no-classify</code> to emit the native source layer (<code>raw</code> for VIIRS and MODIS; native SAR bands for GFM) instead of Atlantis-derived layers.</p>
+<h3 id="54-kurosiwo-cli-usage">5.4 KuroSiwo CLI Usage</h3>
+<p>There are now two supported KuroSiwo paths.</p>
+<p>Build the metadata CSV directly from the catalogue:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>atlantis.cli<span class="w"> </span>build-kurosiwo-metadata<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--catalogue<span class="w"> </span>assets/ks_catalogue.gpkg<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--output<span class="w"> </span>data/metadata/kurosiwo_metadata_v1.csv
+</code></pre></div>
+<p>Use this when you want a reusable metadata artifact without running a notebook. The CLI default now writes to <code>data/metadata/kurosiwo_metadata_v1.csv</code>.</p>
+<p>Recommended invocation — tiles are streamed and classified by default; add <code>--no-keep-processed</code> to skip writing intermediate 375 m files, or <code>--strategy aggregate</code> to return a temporal mean/mode composite:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>atlantis.cli<span class="w"> </span>fetch-kurosiwo-viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--catalogue<span class="w"> </span>assets/ks_catalogue.gpkg<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--case<span class="w"> </span>KuroSiwo_470<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--no-keep-processed<span class="w"> </span>--harmonise
+</code></pre></div>
+<p>Fetch VIIRS directly from the catalogue without <code>--no-keep-processed</code> if you need 375 m intermediates for later processing:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>atlantis.cli<span class="w"> </span>fetch-kurosiwo-viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--catalogue<span class="w"> </span>assets/ks_catalogue.gpkg<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--case<span class="w"> </span>KuroSiwo_470<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--days-before<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--days-after<span class="w"> </span><span class="m">0</span>
+</code></pre></div>
+<p>Expected console shape:</p>
+<div class="highlight"><pre><span></span><code>KuroSiwo metadata: derived from assets/ks_catalogue.gpkg
+Cases selected: 1
+Output root: ~/.cache/atlantis/raw/kurosiwo
+
+Fetching KuroSiwo_470 (2020-10-14 -&gt; 2020-10-14)
+  Wrote 3 files
+
+Total files written: 3
+</code></pre></div>
+<p>You can still fetch from a precomputed metadata CSV when you want a stable intermediate artifact:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>atlantis.cli<span class="w"> </span>fetch-kurosiwo-viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--metadata<span class="w"> </span>data/metadata/kurosiwo_metadata_v1.csv<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--case<span class="w"> </span>KuroSiwo_470<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--days-before<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--days-after<span class="w"> </span><span class="m">0</span>
+</code></pre></div>
+<p>Default output layout (without <code>--no-keep-processed</code>, streaming on by default):</p>
+<div class="highlight"><pre><span></span><code>~/.cache/atlantis/raw/kurosiwo/
+└── KuroSiwo_470/
+    └── viirs/
+        ├── raw/
+        └── processed/
+            ├── KuroSiwo_470_20201014_viirs_&lt;layer&gt;.tif
+            └── ... one file per derived VIIRS layer from docs/layers.md
+</code></pre></div>
+<p>Widen the search window around the KuroSiwo flood-time date:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>atlantis.cli<span class="w"> </span>fetch-kurosiwo-viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--metadata<span class="w"> </span>data/metadata/kurosiwo_metadata_v1.csv<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--case<span class="w"> </span>KuroSiwo_470<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--days-before<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--days-after<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<p>Use the full KuroSiwo metadata range instead:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>atlantis.cli<span class="w"> </span>fetch-kurosiwo-viirs<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--metadata<span class="w"> </span>data/metadata/kurosiwo_metadata_v1.csv<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--case<span class="w"> </span>KuroSiwo_470<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--use-metadata-range
+</code></pre></div>
+<p>That mode is intentionally not the default because KuroSiwo <code>date_start -&gt; date_end</code> often spans long SAR baseline windows and can trigger many daily VIIRS archive checks.</p>
+<h3 id="55-kurosiwo-metadata-mapping">5.5 KuroSiwo Metadata Mapping</h3>
+<p><code>utils.kurosiwo</code> derives metadata directly from the GeoPackage and interprets the resulting event table as:</p>
+<ul>
+<li><code>flood_case</code> → <code>FloodEvent.event_id</code></li>
+<li><code>(lon_min, lat_min, lon_max, lat_max)</code> → <code>(west, south, east, north)</code> bbox</li>
+<li>Default time window → <code>date_end</code> only</li>
+<li>Optional widened window → <code>date_end ± N days</code></li>
+<li>Optional full-range mode → <code>date_start .. date_end</code></li>
+</ul>
+<h3 id="56-viirs-output-semantics">5.6 VIIRS Output Semantics</h3>
+<p>With <code>--classify</code> (default), Atlantis writes one GeoTIFF per derived VIIRS
+layer from the canonical layer reference in <code>docs/layers.md</code>. The fraction
+layers are written as uint8 percentages; the categorical masks remain uint8.</p>
+<p>With <code>--no-classify</code>, Atlantis writes the single native <code>raw</code> VFM layer instead.
+The native source <code>_FillValue</code> is <code>1</code>; Atlantis also treats <code>0</code> as missing when
+clip/mosaic operations introduce empty pixels.</p>
+<p>These outputs are suitable for analysis and for conversion through <code>to_dataset()</code>, and can be harmonised to 1 arcmin via <code>--harmonise</code>.</p>
+<h3 id="57-current-viirs-limitations">5.7 Current VIIRS Limitations</h3>
+<ul>
+<li>Only the non-NRT JPSS archive is supported</li>
+<li>VIIRS currently writes GeoTIFF outputs, not Zarr</li>
+<li>The KuroSiwo metadata build step is now available in <code>src/</code>, and the default derived CSV path now lives under <code>data/metadata/</code> rather than notebook drafts.</li>
+</ul>
+<hr />
+<h2 id="6-working-gfm-flow">6. Working GFM Flow</h2>
+<h3 id="61-how-the-gfm-fetcher-works">6.1 How The GFM Fetcher Works</h3>
+<p><code>GFMFetcher</code> accesses Sentinel-1 SAR-derived flood extent data via the EODC STAC API:</p>
+<ol>
+<li>Searches STAC items intersecting the bbox and time window</li>
+<li>Streams Cloud-Optimised GeoTIFFs on the fly (no download step)</li>
+<li>Coarsens (max-pool) by a configurable factor (default 4×)</li>
+<li>Reprojects to EPSG:4326 aligned to the canonical 1-arcmin global grid</li>
+<li>Accumulates all dates into per-date or aggregated outputs</li>
+</ol>
+<blockquote>
+<p><strong>Note:</strong> Unlike VIIRS and MODIS, GFM reprojects to the target 1-arcmin grid
+<em>during</em> fetch (because the native ~20 m SAR data is too large to materialise).
+When <code>--harmonise</code> is used, the reprojection step is effectively a no-op since
+the data is already grid-aligned. The normaliser still runs to scale values.</p>
+</blockquote>
+<h3 id="62-gfm-cli-usage">6.2 GFM CLI Usage</h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>Yangtze_2020<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>gfm<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;105 28 125 38&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span><span class="m">2020</span>-07-20<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--end-date<span class="w"> </span><span class="m">2020</span>-07-25<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--harmonise
+</code></pre></div>
+<p>Key GFM-specific options:</p>
+<ul>
+<li><code>--gfm-coarsen-factor N</code> — spatial coarsening before reprojection (default 4)</li>
+<li><code>--gfm-resampling METHOD</code> — resampling for reprojection (default <code>average</code>)</li>
+<li><code>--strategy peak|aggregate|all</code> — date selection</li>
+</ul>
+<h3 id="63-gfm-output-semantics">6.3 GFM Output Semantics</h3>
+<p>With <code>--classify</code> (default), Atlantis writes one GeoTIFF per derived or
+code-preserving companion layer listed in the canonical GFM section of
+<code>docs/layers.md</code>.</p>
+<p>With <code>--no-classify</code> (native/raw mode — emits SAR band codes as-is):</p>
+<ul>
+<li><code>*_gfm_ensemble_flood_extent.tif</code> — uint8 flood code (0=dry, 1=flood, 255=nodata)</li>
+<li><code>*_gfm_reference_water_mask.tif</code> — uint8 water code (0=land, 1=water, 2=permanent, 255=nodata)</li>
+</ul>
+<p>Atlantis currently exposes these two native GFM layers. The upstream STAC items
+include additional assets, but they are not yet surfaced by the fetcher.</p>
+<p>In native mode, reprojection uses nearest-neighbour; the coarsen step is skipped.</p>
+<hr />
+<h2 id="7-working-modis-flow">7. Working MODIS Flow</h2>
+<h3 id="71-how-the-modis-fetcher-works">7.1 How The MODIS Fetcher Works</h3>
+<p><code>MODISFetcher</code> accesses NASA MCDWD flood detection products at ~250 m:</p>
+<ol>
+<li>Determines MODIS sinusoidal tile (h, v) coverage for the bbox</li>
+<li>Queries either the LANCE NRT mirror (last ~1 week) or the LAADS archive (2003+)</li>
+<li>Downloads or streams composites (F1, F1C, F2, F3)</li>
+<li>Mosaics tiles, clips to the bbox, and either emits the native <code>raw</code> composite or derives Atlantis layers from it</li>
+<li>Writes processed GeoTIFF outputs</li>
+</ol>
+<h3 id="72-modis-backends">7.2 MODIS Backends</h3>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Coverage</th>
+<th>Access mode</th>
+<th>Auth</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lance_geotiff</code></td>
+<td>NRT (~last week)</td>
+<td>Stream via <code>/vsicurl/</code></td>
+<td><code>EARTHDATA_TOKEN</code></td>
+</tr>
+<tr>
+<td><code>laads_hdf4</code></td>
+<td>2003–2025 + archived NRT</td>
+<td>Download HDF4</td>
+<td><code>EARTHDATA_TOKEN</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="73-modis-cli-usage">7.3 MODIS CLI Usage</h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--event<span class="w"> </span>Valencia_2024<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>modis<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;-1.5 38.8 0.5 40.0&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--start-date<span class="w"> </span><span class="m">2024</span>-10-29<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--end-date<span class="w"> </span><span class="m">2024</span>-11-04<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--modis-backend<span class="w"> </span>laads_hdf4<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--modis-composite<span class="w"> </span>F2<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--harmonise
+</code></pre></div>
+<p>KuroSiwo extraction:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>atlantis<span class="w"> </span>fetch-kurosiwo-modis<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--catalogue<span class="w"> </span>assets/ks_catalogue.gpkg<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--case<span class="w"> </span>KuroSiwo_470<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--modis-backend<span class="w"> </span>laads_hdf4<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--harmonise
+</code></pre></div>
+<h3 id="74-modis-composites">7.4 MODIS Composites</h3>
+<table>
+<thead>
+<tr>
+<th>Composite</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>F1</code></td>
+<td>1-day flood detection</td>
+</tr>
+<tr>
+<td><code>F1C</code></td>
+<td>1-day flood detection (cloud-corrected)</td>
+</tr>
+<tr>
+<td><code>F2</code></td>
+<td>2-day max-water composite (default)</td>
+</tr>
+<tr>
+<td><code>F3</code></td>
+<td>3-day max-water composite</td>
+</tr>
+</tbody>
+</table>
+<h3 id="75-modis-output-semantics">7.5 MODIS Output Semantics</h3>
+<p>When classified (<code>--classify</code>, the default):</p>
+<p>Atlantis writes one GeoTIFF per derived MODIS layer from the canonical layer
+reference in <code>docs/layers.md</code>. Fraction layers are written as uint8
+percentages; categorical layers remain uint8 masks/codes.</p>
+<p>When raw (<code>--no-classify</code>):</p>
+<ul>
+<li><code>*_modis_raw.tif</code> — original MCDWD integer pixel codes</li>
+</ul>
+<p>Atlantis also knows about the eleven native MODIS count layers present in the
+HDF product, but the standard fetch pipeline currently emits the selected <code>raw</code>
+composite in native mode.</p>
+<hr />
+<h2 id="8-module-deep-dive">8. Module Deep Dive</h2>
+<h3 id="81-configpy">8.1 <code>config.py</code></h3>
+<p>Configuration is centered on <code>AtlantisConfig</code>, which combines:</p>
+<ul>
+<li><code>HarmoniseConfig</code></li>
+<li><code>ArchiveConfig</code></li>
+<li><code>FetcherConfig</code></li>
+</ul>
+<p>Key fetcher settings:</p>
+<ul>
+<li><code>cache_dir</code> defaults to <code>~/.cache/atlantis</code></li>
+<li><code>timeout</code> defaults to 300 seconds</li>
+<li><code>max_retries</code> defaults to 3</li>
+<li><code>gfm_api_url</code> can override the EODC STAC endpoint</li>
+<li><code>gfm_coarsen_factor</code> controls spatial coarsening (default 4)</li>
+<li><code>gfm_resampling</code> controls the reprojection method (default <code>average</code>)</li>
+<li><code>viirs_backend</code> defaults to <code>noaa_s3</code></li>
+<li><code>viirs_base_url</code> can override the NOAA S3 archive base URL</li>
+<li><code>viirs_legacy_base_url</code> can override the GMU legacy base URL</li>
+<li><code>modis_backend</code> defaults to <code>lance_geotiff</code></li>
+<li><code>modis_composite</code> defaults to <code>F2</code></li>
+<li><code>modis_lance_primary_base_url</code> / <code>modis_lance_backup_base_url</code> can override LANCE mirrors</li>
+<li><code>modis_laads_base_url</code> can override the LAADS archive URL</li>
+</ul>
+<p>Key harmoniser settings:</p>
+<ul>
+<li><code>target_crs</code> defaults to <code>EPSG:4326</code></li>
+<li><code>target_resolution</code> defaults to 1 arcmin (~0.01667°)</li>
+<li><code>snap_to_global_grid</code> aligns outputs to a canonical 1-arcmin reference grid</li>
+<li><code>variable_resampling</code> allows per-variable resampling overrides (flood_fraction→average, masks→mode)</li>
+</ul>
+<h3 id="82-models">8.2 <code>models/</code></h3>
+<ul>
+<li><code>FloodEvent</code> is accurate and actively used by all fetchers</li>
+<li><code>TileMetadata</code> is accurate and actively used by VIIRS, MODIS, and GFM</li>
+<li><code>SourceMetadata</code> exists but is not yet central to the working flow</li>
+</ul>
+<h3 id="83-fetchers">8.3 <code>fetchers/</code></h3>
+<table>
+<thead>
+<tr>
+<th>Fetcher</th>
+<th>Data</th>
+<th>Backend</th>
+<th>Diagnostics class</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GFMFetcher</code></td>
+<td>SAR flood maps (Sentinel-1)</td>
+<td>STAC/EODC</td>
+<td><code>GfmSearchDiagnostics</code></td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>VIIRSFetcher</code></td>
+<td>Archived VIIRS flood composites</td>
+<td>NOAA S3 / GMU JPSS Flood archive</td>
+<td><code>SearchDiagnostics</code></td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>MODISFetcher</code></td>
+<td>MCDWD flood detection (~250 m)</td>
+<td>NASA LANCE (NRT) / LAADS (archive)</td>
+<td><code>ModisSearchDiagnostics</code></td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>RFMFetcher</code></td>
+<td>Modelled flood extent</td>
+<td>Phase C</td>
+<td>—</td>
+<td>stub</td>
+</tr>
+</tbody>
+</table>
+<p>All three implemented fetchers share a consistent interface: <code>search()</code>, <code>fetch()</code>, and <code>to_dataset()</code>. They support peak-window filtering (<code>--peak-days-before/after</code>, <code>--max-observations</code>, <code>--peak-priority</code>) and three strategies (<code>peak</code>, <code>aggregate</code>, <code>all</code>). Each populates <code>fetcher.last_diagnostics</code> after <code>search()</code> so the CLI can emit actionable guidance on empty fetches.</p>
+<p><strong>Important pipeline difference:</strong> GFM reprojects to the 1-arcmin grid <em>during</em> fetch (the native ~20 m SAR data is too large to write at full resolution). VIIRS and MODIS fetch at native resolution (375 m / ~250 m) and harmonise to 1 arcmin only when explicitly requested via <code>--harmonise</code> or <code>atlantis harmonise</code>.</p>
+<h3 id="84-harmoniser">8.4 <code>harmoniser/</code></h3>
+<p>The harmonisation pipeline consists of:</p>
+<ol>
+<li><strong>Reproject</strong> (implemented) — CRS detection, grid snapping to a canonical 1-arcmin reference grid, per-variable resampling</li>
+<li><strong>Normalise</strong> (implemented) — value scaling to [0, 1], quality mask generation</li>
+<li><strong>Tile</strong> (planned) — uniform 224×224 tiling for ML models</li>
+</ol>
+<p>Layer metadata controls important parts of this step: derived flood fractions
+default to averaging, while native code layers and categorical masks use
+nearest-neighbour or mode-style handling as declared in the layer registries.</p>
+<p>The <code>Harmoniser</code> orchestrator class chains Reprojector → Normaliser and is used by:</p>
+<ul>
+<li>The <code>--harmonise</code> flag on <code>fetch</code> / <code>fetch-kurosiwo-viirs</code> / <code>fetch-kurosiwo-modis</code></li>
+<li>The standalone <code>atlantis harmonise</code> command</li>
+</ul>
+<h3 id="85-archive">8.5 <code>archive/</code></h3>
+<p>The archive layout and dual raw / ml-ready concept remain the intended design. <code>ArchiveWriter</code> currently provides working checkpoint helpers, but raw and ML-ready Zarr writing are still not implemented.</p>
+<h3 id="86-validation">8.6 <code>validation/</code></h3>
+<p>Validation is still planned. The API surface exists (<code>checker.py</code>, <code>ml_loader.py</code>), but the checks themselves remain placeholders.</p>
+<h3 id="87-utils">8.7 <code>utils/</code></h3>
+<ul>
+<li><code>geo.py</code> provides bbox validation and geometric helpers</li>
+<li><code>io.py</code> provides directory creation, cache naming, and a working streaming downloader</li>
+<li><code>kurosiwo.py</code> converts KuroSiwo metadata rows into <code>FloodEvent</code> objects for extraction</li>
+<li><code>plot.py</code> provides flood map visualisation, pixel statistics, and PNG output</li>
+<li><code>setup.py</code> implements asset/credential bootstrapping for <code>atlantis setup</code></li>
+<li><code>ui.py</code> provides Rich console formatting (progress bars, tables, status indicators)</li>
+</ul>
+<hr />
+<h2 id="9-cli-commands">9. CLI Commands</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Purpose</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>atlantis fetch --event E --source viirs --bbox ... --start-date ... --end-date ...</code></td>
+<td>Fetch data for an explicit bbox/date window (any source)</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis build-kurosiwo-metadata --catalogue ... --output ...</code></td>
+<td>Derive KuroSiwo metadata CSV from the GeoPackage</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis fetch-kurosiwo-viirs --catalogue ...</code></td>
+<td>Fetch VIIRS for KuroSiwo cases directly from the catalogue</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis fetch-kurosiwo-viirs --metadata ...</code></td>
+<td>Fetch VIIRS for KuroSiwo cases from metadata CSV</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis fetch-kurosiwo-modis --catalogue ...</code></td>
+<td>Fetch MODIS for KuroSiwo cases directly from the catalogue</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis fetch-kurosiwo-modis --metadata ...</code></td>
+<td>Fetch MODIS for KuroSiwo cases from metadata CSV</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis harmonise --event E --source S</code></td>
+<td>Reproject → normalise fetched data to 1 arcmin</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis setup</code></td>
+<td>Bootstrap assets and credentials</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis demo</code></td>
+<td>Valencia 2024 end-to-end example (VIIRS)</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis demo-modis</code></td>
+<td>Valencia 2024 end-to-end example (MODIS)</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis demo-gfm</code></td>
+<td>Valencia 2024 end-to-end example (GFM)</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis list-sources</code></td>
+<td>Print registered fetchers and descriptions</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis list-events</code></td>
+<td>List events present in the cache/archive</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis batch viirs run</code></td>
+<td>Bulk-process VIIRS granules → 1-arcmin COGs on S3 (Dask)</td>
+<td>implemented</td>
+</tr>
+<tr>
+<td><code>atlantis archive --event E</code></td>
+<td>Write raw + ml-ready Zarr archives</td>
+<td>planned</td>
+</tr>
+<tr>
+<td><code>atlantis validate --event E</code></td>
+<td>Run archive and ML validation checks</td>
+<td>planned</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10-dependency-groups">10. Dependency Groups</h2>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>sync<span class="w">                           </span><span class="c1"># Core only</span>
+uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>geo<span class="w">               </span><span class="c1"># xarray, zarr, rioxarray, odc-stac, pystac-client, pyproj, shapely, rasterio, requests, beautifulsoup4</span>
+uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>ml<span class="w">                </span><span class="c1"># torch, numpy, scikit-learn, matplotlib</span>
+uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>notebooks<span class="w">         </span><span class="c1"># geo + ml + notebook-only tooling such as earthkit-data, cartopy, metview</span>
+</code></pre></div>
+<p>For the working fetch paths, <code>uv sync --extra geo</code> is the relevant setup step. MODIS additionally requires an <code>EARTHDATA_TOKEN</code> environment variable.</p>
+<hr />
+<h2 id="11-extending-atlantis">11. Extending Atlantis</h2>
+<p>The extension pattern remains the same: add a fetcher, register it, and keep source-specific logic inside the adapter rather than the CLI.</p>
+<p>Minimal example:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">atlantis.fetchers.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbstractFloodFetcher</span><span class="p">,</span> <span class="n">FetchResult</span><span class="p">,</span> <span class="n">SearchResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">atlantis.fetchers.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">register_fetcher</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">atlantis.models.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">FloodEvent</span>
+
+
+<span class="nd">@register_fetcher</span><span class="p">(</span><span class="s2">&quot;sentinel2&quot;</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Sentinel2Fetcher</span><span class="p">(</span><span class="n">AbstractFloodFetcher</span><span class="p">):</span>
+    <span class="n">source_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;sentinel2&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">FloodEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">SearchResult</span><span class="p">]:</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">FloodEvent</span><span class="p">,</span> <span class="n">output_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">FetchResult</span><span class="p">]:</span>
+        <span class="o">...</span>
+</code></pre></div>
+<p>Importing the module in <code>cli.py</code> is still enough to expose it through the registry.</p>
+<hr />
+<h2 id="12-design-principles">12. Design Principles</h2>
+<table>
+<thead>
+<tr>
+<th>Principle</th>
+<th>How Atlantis implements it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pluggable sources</td>
+<td><code>@register_fetcher</code> decorator + global registry</td>
+</tr>
+<tr>
+<td>Config-driven behavior</td>
+<td>Paths, timeouts, CRS, tile settings from config/env</td>
+</tr>
+<tr>
+<td>Separation of concerns</td>
+<td>Fetchers, harmoniser, archive, validation are distinct layers</td>
+</tr>
+<tr>
+<td>Type-safe core</td>
+<td>Dataclasses for events, Pydantic models for metadata</td>
+</tr>
+<tr>
+<td>Resumable processing</td>
+<td>Checkpoint markers in the archive layer</td>
+</tr>
+<tr>
+<td>Evolving implementation</td>
+<td>Current code can expose partial but useful workflows while preserving the long-term architecture</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.indexes", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

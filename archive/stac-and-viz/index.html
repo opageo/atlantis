@@ -1,0 +1,2943 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="ML-ready archive of satellite-derived flood inundation observations">
+      
+      
+      
+        <link rel="canonical" href="https://opageo.github.io/atlantis/archive/stac-and-viz/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Atlantis STAC + Visualization Layer — Implementation Spec - Atlantis</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#atlantis-stac-visualization-layer-implementation-spec" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Atlantis" class="md-header__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Atlantis
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Atlantis STAC + Visualization Layer — Implementation Spec
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../pixi-setup/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../sources/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Data Sources
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  CLI
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../batch/viirs/jpss.md" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Batch Processing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../development/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Development
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/config/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Atlantis" class="md-nav__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Atlantis
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pixi-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pixi Setup (Newcomers)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials & Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gdal-install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual GDAL Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Sources
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Sources
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layer Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    VIIRS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MODIS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MODIS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GFM
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    GFM
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KuroSiwo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KuroSiwo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kurosiwo/stac-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    STAC Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    End-to-End Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Batch Processing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../batch/viirs/jpss.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS JPSS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fetchers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fetchers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/harmoniser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harmoniser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-design-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Design decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-catalog-structure-identifiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Catalog structure &amp; identifiers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-stac-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. STAC extensions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. STAC extensions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-datacube-v220" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 datacube — v2.2.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-xarray-assets-v100" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 xarray-assets — v1.0.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#51-the-zarr-asset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 The Zarr asset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#52-key-benefits-of-the-stac-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Key benefits of the STAC layer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5.2 Key benefits of the STAC layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#benefits-specifically-from-the-datacube-xarray-assets-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benefits specifically from the datacube + xarray-assets extensions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-populated-extent-computation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Populated-extent computation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-build-write-data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Build &amp; write data-flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-catalog-backing-the-scale-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Catalog backing &amp; the scale path
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. CLI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-python-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Python API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-stacconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. StacConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#visualization-local-holoviz-demo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visualization (local HoloViz demo)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Visualization (local HoloViz demo)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#12-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-python-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Python API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-vizconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. VizConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#16-dependencies-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. Dependencies &amp; installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#17-out-of-scope-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. Out of scope (roadmap)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="atlantis-stac-visualization-layer-implementation-spec">Atlantis STAC + Visualization Layer — Implementation Spec</h1>
+<blockquote>
+<p>Companion to the <a href="../zarr-spec/">Zarr datacube spec</a>. This document
+describes the <strong>STAC discovery layer</strong> built over the consolidated
+<code>datacube.zarr</code>, plus the <strong>local visualization</strong> (hvplot / Panel) demo that
+renders the cube with a time slider.</p>
+<p><strong>Prerequisite</strong>: build the Zarr datacube first — see
+<a href="../cube-build/">Cube build guide</a>.</p>
+<p>Mental model:</p>
+<blockquote>
+<p><strong>STAC = "what to load"</strong> (catalog / metadata / query layer)
+<strong>Zarr = "how to load efficiently"</strong> (chunked, cloud-native data layer)</p>
+</blockquote>
+</blockquote>
+<p><strong>Source of truth</strong></p>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Module</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>STAC catalog builder</td>
+<td><a href="../../src/atlantis/stac/datacube_catalog.py"><code>src/atlantis/stac/datacube_catalog.py</code></a></td>
+</tr>
+<tr>
+<td>stac-geoparquet index</td>
+<td><a href="../../src/atlantis/stac/geoparquet.py"><code>src/atlantis/stac/geoparquet.py</code></a></td>
+</tr>
+<tr>
+<td>Visualization (hvplot/Panel)</td>
+<td><a href="../../src/atlantis/viz/dashboard.py"><code>src/atlantis/viz/dashboard.py</code></a></td>
+</tr>
+<tr>
+<td>Config (<code>StacConfig</code>, <code>VizConfig</code>)</td>
+<td><a href="../../src/atlantis/config.py"><code>src/atlantis/config.py</code></a></td>
+</tr>
+<tr>
+<td>CLI (<code>atlantis stac …</code>, <code>atlantis viz …</code>)</td>
+<td><a href="../../src/atlantis/cli.py"><code>src/atlantis/cli.py</code></a></td>
+</tr>
+<tr>
+<td>Underlying cube (reader, grid, store)</td>
+<td><a href="../../src/atlantis/archive"><code>src/atlantis/archive/</code></a></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>This is <strong>separate</strong> from the KuroSiwo SAR STAC catalog
+(<a href="../src/atlantis/stac/stac_catalog.py"><code>stac_catalog.py</code></a>), which indexes
+GeoTIFF assets on S3. The datacube catalog described here indexes the <strong>Zarr
+datacube</strong>.</p>
+</blockquote>
+<hr />
+<h2 id="1-overview">1. Overview</h2>
+<p>The consolidated archive is a single sharded <strong>Zarr v3</strong> store (<code>datacube.zarr</code>)
+with <strong>one group per source</strong> (<code>gfm</code>, <code>modis</code>, <code>viirs</code>, …) on a shared global
+1-arcmin grid (see the <a href="./archive/zarr-spec.md">Zarr spec</a>). The STAC layer sits
+<em>on top</em> of that store as a lightweight, serverless <strong>discovery index</strong>.</p>
+<p>We adopt <strong>Option A</strong> (one Zarr store, many STAC Items), adapted to the
+multi-group cube:</p>
+<ul>
+<li><strong>one Collection per source group</strong>, and</li>
+<li><strong>one Item per populated date</strong>.</li>
+</ul>
+<p>Every Collection and Item references the <em>same</em> Zarr store as an <strong>asset</strong>;
+selection still happens in xarray (<code>.sel(time=…)</code>, bbox windowing). STAC filters
+metadata only — it never reads inside the Zarr.</p>
+<pre class="mermaid"><code>graph TD
+    CAT["🗂 Catalog · id = atlantis-datacube"]
+    CAT --&gt; CG["📁 Collection · atlantis-datacube-gfm"]
+    CAT --&gt; CM["📁 Collection · atlantis-datacube-modis"]
+    CAT --&gt; CV["📁 Collection · atlantis-datacube-viirs"]
+
+    CV --&gt; EXT["🧩 datacube ext · cube:dimensions (x,y,time) + cube:variables"]
+    CV --&gt; AST["🧱 asset 'zarr' · application/vnd+zarr&lt;br/&gt;xarray:open_kwargs{group: viirs}"]
+    CV --&gt; I1["📄 Item · viirs-2020-01-01"]
+    CV --&gt; I2["📄 Item · viirs-2020-01-03"]
+
+    I1 --&gt; I1A["🧱 asset 'zarr' (same store)&lt;br/&gt;bbox = populated extent · datetime = 2020-01-01"]</code></pre>
+<hr />
+<h2 id="2-design-decisions">2. Design decisions</h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Choice</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Catalog granularity</td>
+<td>Collection per source + Item per date</td>
+<td>The cube is multi-group and sparse/event-driven, so per-source + per-date discovery is meaningful (Option A from the original design notes).</td>
+</tr>
+<tr>
+<td>Item ↔ Zarr mapping</td>
+<td>One shared asset; client slices by <code>datetime</code></td>
+<td>Avoids one-Zarr-per-day sprawl; matches xarray's native <code>time</code> slicing.</td>
+</tr>
+<tr>
+<td>Extensions</td>
+<td>datacube + xarray-assets</td>
+<td>Express dimensions/variables and make the asset directly openable as xarray.</td>
+</tr>
+<tr>
+<td>Catalog backing</td>
+<td><strong>Static</strong> JSON tree (local → S3) + <strong>stac-geoparquet</strong> scale path</td>
+<td>Serverless, S3-native, reuses the existing static-catalog pattern; no API server/DB to run.</td>
+</tr>
+<tr>
+<td>Item bbox</td>
+<td>Populated (non-fill) extent per date</td>
+<td>The sparse global grid would otherwise yield meaningless global bboxes.</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Not</strong> chosen (kept for the roadmap — see §16): a dynamic <code>stac-fastapi</code> +
+pgstac API, and tile services (TiTiler / xcube / xpublish). These are the
+production-scale options; they are unnecessary for the current static,
+serverless demo.</p>
+</blockquote>
+<hr />
+<h2 id="3-catalog-structure-identifiers">3. Catalog structure &amp; identifiers</h2>
+<table>
+<thead>
+<tr>
+<th>Object</th>
+<th><code>id</code> pattern</th>
+<th>Example</th>
+<th><code>datetime</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Catalog</td>
+<td><code>StacConfig.catalog_id</code></td>
+<td><code>atlantis-datacube</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Collection</td>
+<td><code>{catalog_id}-{source}</code></td>
+<td><code>atlantis-datacube-viirs</code></td>
+<td>extent only</td>
+</tr>
+<tr>
+<td>Item</td>
+<td><code>{source}-{YYYY-MM-DD}</code></td>
+<td><code>viirs-2020-01-01</code></td>
+<td>UTC midnight of the date</td>
+</tr>
+</tbody>
+</table>
+<p>On disk a written catalog is a self-contained JSON tree:</p>
+<div class="highlight"><pre><span></span><code>&lt;output&gt;/
+├── catalog.json
+├── atlantis-datacube-viirs/
+│   ├── collection.json
+│   ├── viirs-2020-01-01/viirs-2020-01-01.json
+│   └── viirs-2020-01-03/viirs-2020-01-03.json
+└── atlantis-datacube-modis/
+    ├── collection.json
+    └── modis-2020-01-02/modis-2020-01-02.json
+</code></pre></div>
+<hr />
+<h2 id="4-stac-extensions">4. STAC extensions</h2>
+<h3 id="41-datacube-v220">4.1 datacube — <code>v2.2.0</code></h3>
+<p>Applied to both Collections and Items (<code>cube:dimensions</code> + <code>cube:variables</code>).
+Collection-level fields live in the collection body; item-level fields live in
+<code>item.properties</code>.</p>
+<table>
+<thead>
+<tr>
+<th><code>cube:dimension</code></th>
+<th>type</th>
+<th>extent</th>
+<th>step</th>
+<th>notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>x</code></td>
+<td>spatial (axis x)</td>
+<td><code>[west, east]</code></td>
+<td><code>+1/60</code></td>
+<td><code>reference_system: 4326</code></td>
+</tr>
+<tr>
+<td><code>y</code></td>
+<td>spatial (axis y)</td>
+<td><code>[south, north]</code></td>
+<td><code>-1/60</code></td>
+<td>north→south</td>
+</tr>
+<tr>
+<td><code>time</code></td>
+<td>temporal</td>
+<td><code>[start, end]</code> (ISO)</td>
+<td>—</td>
+<td>per-item: a single day</td>
+</tr>
+</tbody>
+</table>
+<p><code>cube:variables</code> mirror the cube's data variables (<code>flood_fraction</code>,
+<code>quality_mask</code>, <code>permanent_water</code>, <code>+ recurring_flood</code> for MODIS), each with
+<code>dimensions: [time, y, x]</code>, <code>type: data</code>; <code>flood_fraction</code> carries <code>unit: "1"</code>.</p>
+<h3 id="42-xarray-assets-v100">4.2 xarray-assets — <code>v1.0.0</code></h3>
+<p>Attached to the <code>zarr</code> asset so a client can open it directly as xarray:</p>
+<ul>
+<li><code>xarray:open_kwargs</code> — <code>{engine, group, consolidated, decode_coords}</code></li>
+<li><code>xarray:storage_options</code> — fsspec options, <strong>only</strong> for remote (<code>s3://</code>) roots.</li>
+</ul>
+<hr />
+<h2 id="51-the-zarr-asset">5.1 The Zarr asset</h2>
+<p>Each Collection and Item exposes a single <code>zarr</code> asset pointing at the shared
+store. The Item describes a <em>time slice</em> of that store; the client opens the
+group and selects the item's <code>datetime</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">&quot;assets&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;zarr&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;href&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;s3://atlantis/zarr/datacube.zarr&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;application/vnd+zarr&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;roles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;viirs flood datacube (Zarr)&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;xarray:open_kwargs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;engine&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;zarr&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;group&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;viirs&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;consolidated&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;decode_coords&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;all&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="52-key-benefits-of-the-stac-layer">5.2 Key benefits of the STAC layer</h2>
+<ol>
+<li>
+<p><strong>Fast discovery without opening data.</strong> STAC Items/Collections are lightweight JSON with bbox + datetime + variable metadata. Clients can filter "which dates/regions have flood data for VIIRS in this bbox between these dates?" by reading small metadata files (or a <code>stac-geoparquet</code> index), instead of opening the Zarr store and scanning <code>time</code>/<code>y</code>/<code>x</code> coordinates — critical since the underlying cube is a <strong>sparse global grid</strong> where most of it is empty.</p>
+</li>
+<li>
+<p><strong>Meaningful spatial extents on a sparse cube.</strong> Populated-extent computation (§6) gives each Item a real bbox (the actual flooded/observed area for that day), not the meaningless full <code>[-180,-90,180,90]</code> grid extent — so bbox search actually narrows results.</p>
+</li>
+<li>
+<p><strong>Serverless, cloud-native scaling.</strong> Static JSON tree → S3, plus <code>stac-geoparquet</code> for columnar bbox/datetime search with geopandas/DuckDB — no database or API server needed, matching the "no infra" design goal, while still scaling to many items.</p>
+</li>
+<li>
+<p><strong>Decouples discovery from data access.</strong> STAC only filters metadata; actual reads still happen through xarray/Zarr with its own chunking/sharding. This cleanly separates "what to load" from "how to load efficiently" — you can swap/scale the discovery layer without touching the storage layer.</p>
+</li>
+</ol>
+<h3 id="benefits-specifically-from-the-datacube-xarray-assets-extensions">Benefits specifically from the <code>datacube</code> + <code>xarray-assets</code> extensions</h3>
+<ul>
+<li>
+<p><strong><code>datacube</code> extension (<code>cube:dimensions</code> / <code>cube:variables</code>)</strong> — makes the Zarr's dimensional structure (x/y/time extents, resolution/step, CRS) and its channels (<code>flood_fraction</code>, <code>quality_mask</code>, etc., with units/dtype intent) <strong>queryable and self-describing</strong> directly in STAC metadata. Tools that understand the datacube extension (or generic STAC clients) can reason about temporal/spatial resolution and available variables <em>before</em> touching the array data — useful for catalog browsers, cross-dataset search, or automated pipeline validation.</p>
+</li>
+<li>
+<p><strong><code>xarray-assets</code> extension (<code>xarray:open_kwargs</code>, <code>xarray:storage_options</code>)</strong> — makes each asset <strong>directly openable</strong> via <code>xarray.open_dataset(asset, engine="stac")</code> (via <code>xpystac</code>) without the client needing to know the group name, consolidation flag, decode options, or S3 credentials in advance. This turns STAC into a genuine "handoff" layer: discover an Item → hand its asset straight to xarray → get a ready-to-use lazy Dataset, with zero manual wiring of Zarr open parameters.</p>
+</li>
+</ul>
+<p>Together, these two extensions mean a STAC search result isn't just "here's a file" — it's "here's a fully self-describing, directly-openable xarray view of exactly the data you searched for," bridging catalog search and analysis-ready access in one step.</p>
+<hr />
+<p><code>href</code> resolution (<a href="../src/atlantis/stac/datacube_catalog.py"><code>_store_href</code></a>):
+an absolute local path for filesystem roots, or <code>…/datacube.zarr</code> for <code>s3://</code>
+roots. Asset hrefs stay absolute even in a self-contained catalog (only the
+catalog/collection/item links are relativised).</p>
+<hr />
+<h2 id="6-populated-extent-computation">6. Populated-extent computation</h2>
+<p>For a sparse global cube, a per-date global bbox would be meaningless, so item
+bboxes are derived from the data:</p>
+<ol>
+<li><strong>Per source, once</strong> — reduce <code>flood_fraction</code> to a <code>(y, x)</code> validity mask
+   (<code>notnull().any("time")</code>) and take its bounding index window
+   (<a href="../src/atlantis/stac/datacube_catalog.py"><code>_populated_window</code></a>). The cube is
+   subset to this window so the next step stays cheap.</li>
+<li><strong>Per date</strong> — within that window, compute the bounding box of non-fill
+   pixels for the day (<a href="../src/atlantis/stac/datacube_catalog.py"><code>_bbox_from_mask</code></a>),
+   mapping pixel centres ± ½-resolution to edges.</li>
+<li><strong>Fallback</strong> — the global bbox <code>[-180, -90, 180, 90]</code> when a date is empty or
+   when <code>StacConfig.compute_item_bbox = False</code>.</li>
+</ol>
+<blockquote>
+<p>Setting <code>compute_item_bbox = False</code> (CLI <code>--no-compute-bbox</code>) skips the scan
+entirely and gives every item the source extent — faster, coarser discovery.</p>
+</blockquote>
+<hr />
+<h2 id="7-build-write-data-flow">7. Build &amp; write data-flow</h2>
+<pre class="mermaid"><code>graph TD
+    A["build_datacube_catalog(archive_root, sources?)"] --&gt; B["ArchiveReader.list_sources()"]
+    B --&gt; C{"for each source"}
+    C --&gt; D["reader.read(source) → lazy xr.Dataset"]
+    D --&gt; E["_populated_window() → subset to populated region"]
+    E --&gt; F["Collection + datacube ext + zarr asset"]
+    F --&gt; G{"for each populated date"}
+    G --&gt; H["_build_date_item(): bbox, datacube ext, zarr asset"]
+    H --&gt; F
+    F --&gt; I["catalog.add_child(collection)"]
+    I --&gt; J["write_catalog(dest)"]
+    J --&gt; K1["local dir → normalize_hrefs + save SELF_CONTAINED"]
+    J --&gt; K2["s3://… → stage to tmp, upload *.json tree"]</code></pre>
+<hr />
+<h2 id="8-catalog-backing-the-scale-path">8. Catalog backing &amp; the scale path</h2>
+<table>
+<thead>
+<tr>
+<th>Backing</th>
+<th>What it is</th>
+<th>Use when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Static JSON (local)</strong></td>
+<td>self-contained tree on disk</td>
+<td>demo / development</td>
+</tr>
+<tr>
+<td><strong>Static JSON (S3)</strong></td>
+<td>same tree uploaded beside the Zarr store</td>
+<td>sharing, serverless reads</td>
+</tr>
+<tr>
+<td><strong>stac-geoparquet</strong></td>
+<td>one columnar Parquet of all items</td>
+<td>fast bbox/datetime search over many items, still serverless</td>
+</tr>
+<tr>
+<td><code>stac-fastapi</code> (future)</td>
+<td>hosted API + Postgres/pgstac</td>
+<td>external consumers, very large catalogs (§16)</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>stac-geoparquet</strong> index (<a href="../src/atlantis/stac/geoparquet.py"><code>geoparquet.py</code></a>)
+is the serverless scale path: query thousands of items with geopandas/DuckDB
+(bbox + datetime predicates) without standing up a server.</p>
+<hr />
+<h2 id="9-cli">9. CLI</h2>
+<div class="highlight"><pre><span></span><code>atlantis stac build              Build the catalog from the datacube and write it
+atlantis stac validate           Validate a catalog (structure + JSON schema)
+atlantis stac export-geoparquet  Export all items to a stac-geoparquet index
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th><code>stac build</code> flag</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--archive, -a</code></td>
+<td><code>ArchiveConfig.archive_root</code></td>
+<td>Datacube root (local dir or <code>s3://</code>)</td>
+</tr>
+<tr>
+<td><code>--output, -o</code></td>
+<td><code>StacConfig.catalog_root</code></td>
+<td>Catalog destination (local dir or <code>s3://</code>)</td>
+</tr>
+<tr>
+<td><code>--source, -s</code></td>
+<td>all present</td>
+<td>Restrict to these source groups (repeatable)</td>
+</tr>
+<tr>
+<td><code>--no-compute-bbox</code></td>
+<td>off</td>
+<td>Use the source extent for every item (skip per-date scans)</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="c1"># Build a local catalog from a local cube</span>
+atlantis<span class="w"> </span>stac<span class="w"> </span>build<span class="w"> </span>--archive<span class="w"> </span>./data/viirs_2020_cube<span class="w"> </span>--output<span class="w"> </span>./data/stac
+
+<span class="c1"># Build straight onto S3 (next to the Zarr store)</span>
+atlantis<span class="w"> </span>stac<span class="w"> </span>build<span class="w"> </span>-a<span class="w"> </span>s3://atlantis/zarr<span class="w"> </span>-o<span class="w"> </span>s3://atlantis/stac/datacube
+
+<span class="c1"># Validate, then export a geoparquet index</span>
+atlantis<span class="w"> </span>stac<span class="w"> </span>validate<span class="w"> </span>./data/stac
+atlantis<span class="w"> </span>stac<span class="w"> </span>export-geoparquet<span class="w"> </span>./data/stac<span class="w"> </span>--output<span class="w"> </span>./data/stac/items.parquet
+</code></pre></div>
+<hr />
+<h2 id="10-python-api">10. Python API</h2>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">atlantis.stac</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_datacube_catalog</span><span class="p">,</span> <span class="n">write_catalog</span>
+
+<span class="n">catalog</span> <span class="o">=</span> <span class="n">build_datacube_catalog</span><span class="p">(</span><span class="s2">&quot;s3://atlantis/zarr&quot;</span><span class="p">)</span>  <span class="c1"># or a local path</span>
+<span class="n">write_catalog</span><span class="p">(</span><span class="n">catalog</span><span class="p">,</span> <span class="s2">&quot;s3://atlantis/stac/datacube&quot;</span><span class="p">)</span>  <span class="c1"># local dir or s3://</span>
+
+<span class="c1"># Serverless scale-path index</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pystac</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">atlantis.stac.geoparquet</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_items_to_geoparquet</span><span class="p">,</span> <span class="n">search_geoparquet</span>
+
+<span class="n">cat</span> <span class="o">=</span> <span class="n">pystac</span><span class="o">.</span><span class="n">Catalog</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;./data/stac/catalog.json&quot;</span><span class="p">)</span>
+<span class="n">export_items_to_geoparquet</span><span class="p">(</span><span class="n">cat</span><span class="o">.</span><span class="n">get_items</span><span class="p">(</span><span class="n">recursive</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="s2">&quot;items.parquet&quot;</span><span class="p">)</span>
+
+<span class="n">hits</span> <span class="o">=</span> <span class="n">search_geoparquet</span><span class="p">(</span><span class="s2">&quot;items.parquet&quot;</span><span class="p">,</span> <span class="n">bbox</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mf">1.5</span><span class="p">,</span> <span class="mf">38.8</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">40.0</span><span class="p">),</span> <span class="n">start</span><span class="o">=</span><span class="s2">&quot;2024-10-29&quot;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;2024-11-04&quot;</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="11-stacconfig">11. <code>StacConfig</code></h2>
+<p><a href="../src/atlantis/config.py"><code>StacConfig</code></a> — env prefix <code>ATLANTIS_</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Env var</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>catalog_id</code></td>
+<td><code>ATLANTIS_CATALOG_ID</code></td>
+<td><code>atlantis-datacube</code></td>
+</tr>
+<tr>
+<td><code>catalog_title</code></td>
+<td><code>ATLANTIS_CATALOG_TITLE</code></td>
+<td><code>Atlantis flood datacube</code></td>
+</tr>
+<tr>
+<td><code>catalog_description</code></td>
+<td><code>ATLANTIS_CATALOG_DESCRIPTION</code></td>
+<td>(see source)</td>
+</tr>
+<tr>
+<td><code>catalog_root</code></td>
+<td><code>ATLANTIS_CATALOG_ROOT</code></td>
+<td><code>~/atlantis-data/stac</code></td>
+</tr>
+<tr>
+<td><code>zarr_media_type</code></td>
+<td><code>ATLANTIS_ZARR_MEDIA_TYPE</code></td>
+<td><code>application/vnd+zarr</code></td>
+</tr>
+<tr>
+<td><code>compute_item_bbox</code></td>
+<td><code>ATLANTIS_COMPUTE_ITEM_BBOX</code></td>
+<td><code>true</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="visualization-local-holoviz-demo">Visualization (local HoloViz demo)</h2>
+<h3 id="12-overview">12. Overview</h3>
+<p>A local <strong>hvplot + Panel</strong> dashboard renders a datacube variable as an
+interactive map with a <strong>time slider</strong>, optionally rasterised server-side with
+<strong>datashader</strong> and overlaid with coastlines &amp; country borders — plus an optional
+web-tile basemap — via <strong>geoviews</strong>. This is the
+"start simple" demo path; tile servers (TiTiler / xcube) are deferred (§16).</p>
+<pre class="mermaid"><code>graph LR
+    SRC{"source"} --&gt;|"--archive"| RD["ArchiveReader.read()"]
+    SRC --&gt;|"--stac"| FS["from_stac() · xpystac&lt;br/&gt;xr.open_dataset(asset, engine='stac')"]
+    RD --&gt; DS["xr.Dataset (time,y,x)"]
+    FS --&gt; DS
+    DS --&gt; HV["build_cube_dashboard()&lt;br/&gt;da.hvplot.image(groupby='time', rasterize=…)"]
+    HV --&gt; PN["serve_dashboard() · panel.serve → http://localhost:5006"]</code></pre>
+<p>Plotting dependencies are imported <strong>lazily</strong>, so importing <code>atlantis.viz</code> never
+requires the <code>viz</code> extra — only calling the build/serve functions does. If
+<code>datashader</code> or <code>geoviews</code> are absent, rasterisation / basemap degrade
+gracefully (a warning is logged and rendering continues).</p>
+<hr />
+<h3 id="13-python-api">13. Python API</h3>
+<p><a href="../src/atlantis/viz/dashboard.py"><code>src/atlantis/viz/dashboard.py</code></a></p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>load_dataset(source, …)</code></td>
+<td>Read a windowed Dataset directly (archive) or via STAC</td>
+</tr>
+<tr>
+<td><code>build_cube_dashboard(…)</code></td>
+<td>Build the hvplot image (time slider) → HoloViews object</td>
+</tr>
+<tr>
+<td><code>serve_dashboard(…)</code></td>
+<td>Build + serve on a local Panel server (blocking)</td>
+</tr>
+<tr>
+<td><code>from_stac(catalog, source, …)</code></td>
+<td>Open the catalog's <code>zarr</code> asset as xarray (xpystac)</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">atlantis.viz</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_cube_dashboard</span><span class="p">,</span> <span class="n">serve_dashboard</span><span class="p">,</span> <span class="n">from_stac</span>
+
+<span class="c1"># Direct from the datacube</span>
+<span class="n">serve_dashboard</span><span class="p">(</span>
+    <span class="s2">&quot;viirs&quot;</span><span class="p">,</span> <span class="n">archive_root</span><span class="o">=</span><span class="s2">&quot;./data/viirs_2020_cube&quot;</span><span class="p">,</span> <span class="n">bbox</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mf">1.5</span><span class="p">,</span> <span class="mf">38.8</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">40.0</span><span class="p">),</span> <span class="n">start</span><span class="o">=</span><span class="s2">&quot;2024-10-29&quot;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;2024-11-04&quot;</span>
+<span class="p">)</span>
+
+<span class="c1"># Discover through STAC, then render</span>
+<span class="n">ds</span> <span class="o">=</span> <span class="n">from_stac</span><span class="p">(</span><span class="s2">&quot;./data/stac&quot;</span><span class="p">,</span> <span class="s2">&quot;viirs&quot;</span><span class="p">)</span>
+<span class="n">dashboard</span> <span class="o">=</span> <span class="n">build_cube_dashboard</span><span class="p">(</span><span class="n">ds</span><span class="o">=</span><span class="n">ds</span><span class="p">,</span> <span class="n">var</span><span class="o">=</span><span class="s2">&quot;flood_fraction&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><code>from_stac</code> resolves the source's Collection, then opens its <code>zarr</code> asset with
+<code>xarray.open_dataset(asset, engine="stac")</code> (the engine is registered by
+<code>xpystac</code>), applying the same bbox/time windowing as the direct reader.</p>
+<hr />
+<h3 id="14-cli">14. CLI</h3>
+<div class="highlight"><pre><span></span><code>atlantis viz serve SOURCE        Serve an interactive dashboard (time slider)
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SOURCE</code></td>
+<td>(required)</td>
+<td>Source group, e.g. <code>viirs</code></td>
+</tr>
+<tr>
+<td><code>--archive, -a</code></td>
+<td><code>ArchiveConfig.archive_root</code></td>
+<td>Datacube root (local dir or <code>s3://</code>)</td>
+</tr>
+<tr>
+<td><code>--stac</code></td>
+<td>—</td>
+<td>Discover via a STAC catalog root instead of the archive</td>
+</tr>
+<tr>
+<td><code>--var</code></td>
+<td><code>VizConfig.variable</code></td>
+<td>Variable to render</td>
+</tr>
+<tr>
+<td><code>--bbox</code></td>
+<td>—</td>
+<td>AOI <code>"west south east north"</code> (degrees)</td>
+</tr>
+<tr>
+<td><code>--start</code>, <code>--end</code></td>
+<td>—</td>
+<td>Inclusive date range (<code>YYYY-MM-DD</code>)</td>
+</tr>
+<tr>
+<td><code>--basemap</code></td>
+<td>off</td>
+<td>Overlay coastlines &amp; country borders (requires <code>geoviews</code>/<code>cartopy</code>)</td>
+</tr>
+<tr>
+<td><code>--tiles</code></td>
+<td>off</td>
+<td>Add an OSM web-tile basemap under the data (requires <code>geoviews</code>)</td>
+</tr>
+<tr>
+<td><code>--port</code>, <code>--host</code></td>
+<td><code>5006</code>, <code>localhost</code></td>
+<td>Server bind address</td>
+</tr>
+<tr>
+<td><code>--no-show</code></td>
+<td>off</td>
+<td>Do not auto-open a browser tab</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="c1"># Serve the Valencia window from the local cube</span>
+atlantis<span class="w"> </span>viz<span class="w"> </span>serve<span class="w"> </span>viirs<span class="w"> </span>-a<span class="w"> </span>./data/viirs_2020_cube<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--bbox<span class="w"> </span><span class="s2">&quot;-1.5 38.8 0.5 40.0&quot;</span><span class="w"> </span>--start<span class="w"> </span><span class="m">2024</span>-10-29<span class="w"> </span>--end<span class="w"> </span><span class="m">2024</span>-11-04
+
+<span class="c1"># Serve via STAC discovery</span>
+atlantis<span class="w"> </span>viz<span class="w"> </span>serve<span class="w"> </span>viirs<span class="w"> </span>--stac<span class="w"> </span>./data/stac
+</code></pre></div>
+<hr />
+<h3 id="15-vizconfig">15. <code>VizConfig</code></h3>
+<p><a href="../src/atlantis/config.py"><code>VizConfig</code></a> — env prefix <code>ATLANTIS_</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Env var</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>variable</code></td>
+<td><code>ATLANTIS_VARIABLE</code></td>
+<td><code>flood_fraction</code></td>
+</tr>
+<tr>
+<td><code>cmap</code></td>
+<td><code>ATLANTIS_CMAP</code></td>
+<td><code>Blues</code></td>
+</tr>
+<tr>
+<td><code>host</code></td>
+<td><code>ATLANTIS_HOST</code></td>
+<td><code>localhost</code></td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td><code>ATLANTIS_PORT</code></td>
+<td><code>5006</code></td>
+</tr>
+<tr>
+<td><code>basemap</code></td>
+<td><code>ATLANTIS_BASEMAP</code></td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>tiles</code></td>
+<td><code>ATLANTIS_TILES</code></td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>rasterize</code></td>
+<td><code>ATLANTIS_RASTERIZE</code></td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>frame_width</code></td>
+<td><code>ATLANTIS_FRAME_WIDTH</code></td>
+<td><code>700</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="16-dependencies-installation">16. Dependencies &amp; installation</h3>
+<p>Both features are optional extras (declared in
+<a href="../pyproject.toml"><code>pyproject.toml</code></a> and <a href="../pixi.toml"><code>pixi.toml</code></a>).</p>
+<table>
+<thead>
+<tr>
+<th>Extra</th>
+<th>Packages</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stac</code></td>
+<td><code>atlantis[geo]</code> + <code>stac-geoparquet</code>, <code>xpystac</code></td>
+</tr>
+<tr>
+<td><code>viz</code></td>
+<td><code>atlantis[geo]</code> + <code>hvplot</code>, <code>holoviews</code>, <code>panel</code>, <code>datashader</code>, <code>geoviews</code>, <code>bokeh</code></td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="c1"># uv / pip</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[stac,viz]&quot;</span>
+
+<span class="c1"># pixi (dedicated environments)</span>
+pixi<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>stac
+pixi<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>viz
+pixi<span class="w"> </span>run<span class="w"> </span>-e<span class="w"> </span>viz<span class="w"> </span>atlantis<span class="w"> </span>viz<span class="w"> </span>serve<span class="w"> </span>viirs<span class="w"> </span>-a<span class="w"> </span>./data/viirs_2020_cube
+</code></pre></div>
+<hr />
+<h3 id="17-out-of-scope-roadmap">17. Out of scope (roadmap)</h3>
+<p>Captured from the original architecture exploration; deliberately <strong>not</strong> built
+yet to keep the first iteration static and serverless:</p>
+<ul>
+<li><strong>Dynamic STAC API</strong> — <code>stac-fastapi</code> + Postgres/pgstac for indexed
+  <code>/search</code> at very large scale or for external consumers.</li>
+<li><strong>Tile services</strong> — <code>TiTiler</code>, <code>xcube</code> server, or <code>xpublish</code> to serve Zarr/COG
+  map tiles to a JS frontend (MapLibre / deck.gl).</li>
+<li><strong>COG derivation</strong> — precompute COG tiles from the Zarr for ultra-fast web maps
+  (the "hybrid" analysis-vs-visualisation pattern).</li>
+<li><strong>Archive-write hook</strong> — auto-update the catalog on every <code>ArchiveWriter.write</code>
+  (today the catalog is (re)built on demand via <code>atlantis stac build</code>).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.indexes", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
