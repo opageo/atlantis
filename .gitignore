@@ -254,7 +254,6 @@ tmp/
 .github/prompts/
 *.db
 *.db-journal
-.kilo/
 .nicegui/
 .github/agents/
 .github/hooks/
