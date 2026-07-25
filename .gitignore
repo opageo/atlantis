@@ -255,5 +255,3 @@ tmp/
 *.db
 *.db-journal
 .nicegui/
-.github/agents/
-.github/hooks/
