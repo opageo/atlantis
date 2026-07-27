@@ -1,11 +1,12 @@
-"""Ad-hoc peak-memory profiling harness for one real GFM cell (Phase C.1/C.2 of
-``.github/prompts/plan-gfmPeakMemoryFix.prompt.md``).
+"""Ad-hoc peak-memory profiling harness for one real GFM cell.
 
 Calls the real, unmodified :meth:`GfmRasterProcessor.process_items` (the exact
 path ``harmonise_gfm_payload`` uses in production) for a single real STAC item,
 transparently wrapping ``_load_item`` and ``_build_native_masks`` — the two
-stages Phase C.1 identified as responsible for 100% of the measured ~15 GiB
-peak — to print the RSS high-water mark after each call.
+stages identified as responsible for 100% of the measured ~15 GiB peak — to
+print the RSS high-water mark after each call, and counting how many times
+``_load_item`` is actually called (1 for the unwindowed path, N windows for
+the windowed path) plus total wall-clock time.
 
 Samples ``resource.getrusage(RUSAGE_SELF).ru_maxrss`` (the OS-level RSS
 high-water mark — this is what ``distributed.worker.memory`` also keys off
@@ -20,7 +21,11 @@ Usage (network access to the public EODC STAC API required, no auth):
 
     PYTHONPATH=src python scripts/profile_gfm_peak_memory.py \
         --bbox -1.5 38.8 0.5 40.0 \
-        --start 2024-10-29 --end 2024-11-04
+        --start 2024-10-29 --end 2024-11-04 \
+        --window-size 3000
+
+Omit ``--window-size`` (or pass nothing) to profile the unwindowed
+(``window_size=None``) path — the pre-Phase-W baseline.
 
 This is a reusable diagnostic/profiling script (kept in ``scripts/``, not
 ``tmp/``, precisely so it stays available across sessions and clones — it's
@@ -36,6 +41,7 @@ import functools
 import gc
 import resource
 import sys
+import time
 from datetime import datetime
 
 from loguru import logger
@@ -96,15 +102,21 @@ def _find_real_item(bbox: tuple[float, float, float, float], start: str, end: st
     raise SystemExit("Found items but none had an Equi7Tile property + bbox.")
 
 
-def _instrument(processor: GfmRasterProcessor, timer: _StageTimer) -> None:
-    """Wrap the two Phase-C.1-identified hotspot methods with RSS checkpoints."""
+def _instrument(processor: GfmRasterProcessor, timer: _StageTimer) -> dict[str, int]:
+    """Wrap the two Phase-C.1-identified hotspot methods with RSS checkpoints.
+
+    Returns a mutable counters dict (``{"load_item_calls": n}``) updated in
+    place — the request-count trade-off is needed, not just memory.
+    """
     orig_load_item = processor._load_item
     orig_build_masks = processor._build_native_masks
+    counters = {"load_item_calls": 0}
 
     @functools.wraps(orig_load_item)
     def _load_item_traced(item, aoi, crs_src, resolution, *, bands=None):
+        counters["load_item_calls"] += 1
         result = orig_load_item(item, aoi, crs_src, resolution, bands=bands)
-        timer.mark(f"_load_item(bands={bands})")
+        timer.mark(f"_load_item(bands={bands}) call #{counters['load_item_calls']}")
         return result
 
     @functools.wraps(orig_build_masks)
@@ -115,22 +127,27 @@ def _instrument(processor: GfmRasterProcessor, timer: _StageTimer) -> None:
 
     processor._load_item = _load_item_traced
     processor._build_native_masks = _build_native_masks_traced
+    return counters
 
 
-def profile_one_cell(bbox_query: tuple[float, float, float, float], start: str, end: str) -> None:
+def profile_one_cell(
+    bbox_query: tuple[float, float, float, float], start: str, end: str, window_size: int | None
+) -> None:
     item = _find_real_item(bbox_query, start, end)
     tile_bbox = tuple(item.bbox)
     print(f"Using real STAC item: {item.id}")
     print(f"  Equi7Tile: {item.properties.get('Equi7Tile')}")
     print(f"  item.bbox (== EQUI7 tile bbox): {tile_bbox}")
-    print(f"  gsd: {item.properties.get('gsd')}\n")
+    print(f"  gsd: {item.properties.get('gsd')}")
+    print(f"  window_size: {window_size!r}\n")
 
-    processor = GfmRasterProcessor(bbox=tile_bbox, coarsen_factor=4, classify=True)
+    processor = GfmRasterProcessor(bbox=tile_bbox, coarsen_factor=4, classify=True, window_size=window_size)
 
     timer = _StageTimer()
     timer.mark("baseline (before any GFM work)")
-    _instrument(processor, timer)
+    counters = _instrument(processor, timer)
 
+    wall_start = time.perf_counter()
     result = processor.process_items(
         [item],
         event_id="",
@@ -138,13 +155,17 @@ def profile_one_cell(bbox_query: tuple[float, float, float, float], start: str, 
         output_dir=None,
         write_outputs=False,
     )
+    wall_elapsed = time.perf_counter() - wall_start
     timer.mark("process_items() returned")
     timer.summary()
+
+    print(f"\nWall-clock time for process_items(): {wall_elapsed:.1f}s")
+    print(f"_load_item() call count: {counters['load_item_calls']}")
 
     if result is None:
         print("\nprocess_items() returned None (no valid data) — check item validity.")
         return
-    print(f"\nOutput shape: {result.processed.flood_fraction.shape}")
+    print(f"Output shape: {result.processed.flood_fraction.shape}")
 
 
 if __name__ == "__main__":
@@ -152,9 +173,15 @@ if __name__ == "__main__":
     parser.add_argument("--bbox", nargs=4, type=float, default=[-1.5, 38.8, 0.5, 40.0])
     parser.add_argument("--start", default="2024-10-29")
     parser.add_argument("--end", default="2024-11-04")
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=None,
+        help="Native pixels per window (classified path only). Omit for the unwindowed baseline.",
+    )
     args = parser.parse_args()
 
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    profile_one_cell(tuple(args.bbox), args.start, args.end)
+    profile_one_cell(tuple(args.bbox), args.start, args.end, args.window_size)

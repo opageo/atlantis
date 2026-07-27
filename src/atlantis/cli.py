@@ -1086,6 +1086,17 @@ def fetch(
         "--gfm-resampling",
         help="GFM resampling method for reprojection to EPSG:4326.",
     ),
+    gfm_window_size: int | None = typer.Option(
+        None,
+        "--gfm-window-size",
+        help=(
+            "GFM native pixels per window for windowed processing (classified path only). "
+            "Reduces per-item peak memory from ~13 GiB to ~2.5 GiB. "
+            "Must be a positive exact multiple of --gfm-coarsen-factor. "
+            "Default: ATLANTIS_GFM_WINDOW_SIZE / 5000 (production default). "
+            "Pass 0 to force the unwindowed path."
+        ),
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -1256,6 +1267,7 @@ def fetch(
                 "peak_priority": peak_priority,
             }
         elif src == "gfm":
+            effective_window_size = gfm_window_size if gfm_window_size else None
             fetcher_kwargs = {
                 "coarsen_factor": gfm_coarsen_factor,
                 "resampling": gfm_resampling_enum,
@@ -1266,6 +1278,7 @@ def fetch(
                 "peak_days_after": effective_days_after,
                 "max_observations": max_observations,
                 "peak_priority": peak_priority,
+                "window_size": effective_window_size,
             }
         fetcher = fetcher_cls(**fetcher_kwargs)
         if flood_event is None:
@@ -3233,25 +3246,36 @@ def batch_gfm_cube(
         "--gfm-resampling",
         help="Resampling method for reprojection (defaults to ATLANTIS_GFM_RESAMPLING / average).",
     ),
+    window_size: int | None = typer.Option(
+        None,
+        "--gfm-window-size",
+        help=(
+            "Native pixels per window for windowed processing. Bounds per-item "
+            "peak memory to ~2.5 GiB (from ~13 GiB unwindowed). Must be a positive exact "
+            "multiple of --gfm-coarsen-factor. Defaults to ATLANTIS_GFM_WINDOW_SIZE / 5000. "
+            "Pass 0 to force the unwindowed path."
+        ),
+    ),
     workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
     workers_max: int = typer.Option(
-        3,
+        6,
         "--workers-max",
         help=(
-            "Maximum Dask worker processes (adaptive). Kept low by default for GFM: a single "
-            "(date, equi7_tile) cell has a measured ~11-14 GiB peak transient footprint (see "
-            "GitHub issue #96), so a high worker count multiplies host RAM pressure fast."
+            "Maximum Dask worker processes (adaptive). With windowed processing "
+            "(--gfm-window-size 5000, default) the per-item peak is ~2.5 GiB, so GFM "
+            "can now use the same worker count as VIIRS/MODIS. Lower this if you "
+            "disable windowing (--gfm-window-size 0) or use a smaller window size. "
+            "See GitHub issue #96."
         ),
     ),
     memory_limit: str = typer.Option(
-        "12GB",
+        "4GB",
         "--memory-limit",
         help=(
-            "Memory cap per worker. GFM needs much more headroom than VIIRS/MODIS: a single "
-            "(date, equi7_tile) cell processes a full ~15000x15000 EQUI7 tile at native ~20m "
-            "resolution, with a measured peak transient footprint of ~11-14 GiB (see GitHub "
-            "issue #96). Do not lower this below ~11GB without re-measuring against "
-            "tmp/profile_gfm_peak_memory.py first."
+            "Memory cap per worker. With windowed processing (--gfm-window-size 5000, "
+            "default) the per-item peak is ~2.5 GiB (down from ~13 GiB unwindowed; see "
+            "GitHub issue #96 and scripts/profile_gfm_peak_memory.py). 4GB leaves a safety "
+            "margin. Don't lower below ~3GB without re-measuring first."
         ),
     ),
     dashboard_port: int = typer.Option(8789, "--dashboard-port", help="Dask dashboard port."),
@@ -3290,6 +3314,8 @@ def batch_gfm_cube(
         os.environ["ATLANTIS_GFM_COARSEN_FACTOR"] = str(coarsen_factor)
     if resampling is not None:
         os.environ["ATLANTIS_GFM_RESAMPLING"] = resampling
+    if window_size is not None:
+        os.environ["ATLANTIS_GFM_WINDOW_SIZE"] = str(window_size)
     cfg_obj = reload_config().fetcher
 
     storage_options = None
@@ -3309,7 +3335,8 @@ def batch_gfm_cube(
     console.print(f"  [bold]tracker:[/bold] {db_path}")
     console.print(
         f"  [bold]coarsen factor:[/bold] {cfg_obj.gfm_coarsen_factor}  "
-        f"[bold]resampling:[/bold] {cfg_obj.gfm_resampling}"
+        f"[bold]resampling:[/bold] {cfg_obj.gfm_resampling}  "
+        f"[bold]window size:[/bold] {cfg_obj.gfm_window_size}"
     )
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
 

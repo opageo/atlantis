@@ -116,6 +116,7 @@ def harmonise_gfm_payload(task: dict) -> dict:
     cfg = get_config().fetcher
     coarsen_factor = cfg.gfm_coarsen_factor
     resampling = Resampling[cfg.gfm_resampling]
+    window_size = cfg.gfm_window_size
 
     items = [pystac.Item.from_file(href) for href in task["item_hrefs"]]
 
@@ -125,6 +126,7 @@ def harmonise_gfm_payload(task: dict) -> dict:
         resampling=resampling,
         classify=True,
         max_retries=cfg.max_retries,
+        window_size=window_size,
     )
     result = processor.process_items(
         items,

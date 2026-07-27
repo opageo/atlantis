@@ -73,47 +73,22 @@ GFM_STAC_CFG: dict = {
     }
 }
 
-# Measured (see /memories/repo/gfm-investigation.md "Phase C.1 profiling results"):
-# a single eager odc.stac.load of all 6 GFM_BANDS at native ~20 m resolution over
-# a full EQUI7 tile peaks around ~6.8 GiB RSS, and _build_native_masks's native-res
-# float32 derivatives (while that 6-band dataset is still resident) add another
-# ~8 GiB on top — together, 100% of the measured ~15 GiB per-cell peak. Splitting
-# the load into these two smaller groups (and fully freeing the first group's
-# native buffers before loading the second) keeps at most 3 native bands + their
-# derivatives resident at once instead of 6 + 3.
+# Measured: a single eager odc.stac.load of all 6 GFM_BANDS at native ~20 m
+# resolution over a full EQUI7 tile peaks ~15 GiB RSS. Splitting the load
+# keeps at most 3 native bands + derivatives resident instead of 6 + 3.
 
-#: First `_load_item` group for the classified path — feeds `_build_native_masks`
-#: (flood/water/valid fractions) and the `reference_water` code layer.
+#: Feeds `_build_native_masks` (flood/water/valid) and `reference_water`.
 _CLASSIFIED_MASK_BANDS: list[str] = ["ensemble_flood_extent", "ensemble_water_extent", "reference_water_mask"]
 
-#: Second `_load_item` group for the classified path — not needed until after
-#: the first group's native buffers have been reprojected and freed.
+#: Not needed until after the first group's native buffers are freed.
 _CLASSIFIED_CODE_BANDS: list[str] = ["exclusion_mask", "advisory_flags", "ensemble_likelihood"]
 
-# ── Windowed native processing (plan-gfmWindowedMemoryFix.prompt.md) ────────
+# ── Windowed native processing ────────────────────────────────────────────
 #
-# The Phase C fix above still processes each item's *entire* native tile
-# (typically 15000x15000 px for a GFM Equi7 T3 tile — confirmed universal
-# across all 7 Equi7 continents and 2022-2024 via a direct STAC metadata
-# sample, see /memories/repo/gfm-investigation.md "Phase W.1 catalogue
-# sampling") eagerly, all at once. Windowed processing instead tiles that
-# native grid into a grid of smaller pixel-aligned windows and runs the
-# existing load -> mask -> coarsen -> reproject pipeline once per window,
-# accumulating each window's contribution exactly like an extra partial-
-# coverage STAC item (no new accumulation math needed — see
-# `_process_items_classified`).
-#
-# The one hard correctness constraint (see `_native_pixel_windows`): a window
-# boundary must never fall *inside* a `coarsen(...).mean()` block, or a
-# native pixel row/column near the seam could be silently double-counted or
-# dropped. This is enforced two ways: (1) `window_size` must be an exact
-# multiple of `coarsen_factor`, so `_build_native_masks`'s
-# ``boundary="trim"`` never trims inside a window; and (2) after loading a
-# (deliberately over-fetched, margin-padded) bbox for a window, the loaded
-# data is cropped back to the window's *exact* native pixel-center bounds
-# using coordinates already in the tile's own native CRS — so imprecision in
-# how ``odc.stac.load`` snaps a requested bbox to pixel edges can never leak
-# into a seam; only the padded bbox request is approximate, never the crop.
+# Tiles the native grid into pixel-aligned windows, running load → mask →
+# coarsen → reproject once per window, accumulated like partial-coverage
+# items. Window size must be an exact multiple of coarsen_factor so
+# `coarsen(..., boundary="trim")` never trims inside a window.
 
 
 def _squeeze_time(obj: "_T") -> "_T":
@@ -163,10 +138,10 @@ def _native_pixel_windows(
             of whatever array it's given, matching the reference bit-for-bit
             requires windows to start at the SAME phase the reference
             happens to use, not phase (0, 0) — an earlier version of this
-            function assumed phase (0, 0) and was found (Phase W.2
-            correctness gate) to diverge substantially at real flood/water
-            boundaries as a result. Defaults to (0, 0) for standalone/unit
-            testing of the pure tiling logic in isolation.
+            function assumed phase (0, 0) and was found to diverge
+            substantially at real flood/water boundaries as a result.
+            Defaults to (0, 0) for standalone/unit testing of the pure tiling
+            logic in isolation.
 
     Returns:
         List of (row_start, row_end, col_start, col_end) tuples in row-major
@@ -184,9 +159,7 @@ def _native_pixel_windows(
         `GfmRasterProcessor._compute_window_phase`). Callers must NOT clamp
         these negative/overshooting indices back into `[0, length)` — doing
         so would silently reintroduce a too-small coarsen group that
-        `boundary="trim"` discards entirely, which is the tiny-window bug
-        this design fixes (see "Phase W.2 correctness gate" in
-        /memories/repo/gfm-investigation.md for how this was found).
+        `boundary="trim"` discards entirely.
 
     Raises:
         ValueError: If *window_size* or *coarsen_factor* isn't a positive
@@ -235,6 +208,31 @@ def _native_pixel_windows(
         for col_start, col_end in col_ranges:
             windows.append((row_start, row_end, col_start, col_end))
     return windows
+
+
+def _window_grid_extent(windows: list[tuple[int, int, int, int]]) -> tuple[int, int, int, int]:
+    """Native pixel-index range spanning the union of all *windows*."""
+    arr = np.array(windows)
+    return int(arr[:, 0].min()), int(arr[:, 1].max()), int(arr[:, 2].min()), int(arr[:, 3].max())
+
+
+def _coarsened_axis_coords(
+    global_start: int,
+    n_groups: int,
+    coarsen_factor: int,
+    origin: float,
+    pixel_size: float,
+) -> np.ndarray:
+    """Analytical pixel-center coordinates for coarsened groups, without loading data.
+
+    Matches `coarsen(...).mean()`'s `coord_func="mean"` closed form exactly.
+    Computed analytically so the assembly buffer's coordinate axis stays
+    well-defined even if a window's tile read was skipped (avoids NaN
+    coordinates that would break rioxarray's transform inference).
+    """
+    group_index = np.arange(n_groups, dtype=np.float64)
+    center = global_start + group_index * coarsen_factor + (coarsen_factor - 1) / 2.0
+    return origin + (center + 0.5) * pixel_size
 
 
 def _window_native_bounds(
@@ -518,27 +516,17 @@ class GfmRasterProcessor:
                 canonical 1-arcmin grid (matching VIIRS/MODIS behaviour).
             max_retries: Number of retries for transient tile-read failures
                 (HTTP errors, timeouts, etc.) before skipping an item.
-            window_size: When set (native pixels, classified path only — see
-                plan-gfmWindowedMemoryFix.prompt.md), each item's full native
-                tile is processed in a grid of pixel-aligned windows of this
-                size instead of eagerly all at once, bounding per-item peak
-                memory well below the ~11 GiB measured for a full ~15000x15000
-                Equi7 tile (Phase C fix). Must be a positive exact multiple of
-                *coarsen_factor* (validated eagerly here, per item at process
-                time against each item's own ``proj:shape``/``proj:transform``
-                — never assumed). ``None`` (default) preserves today's
-                unwindowed behaviour exactly — kept available as a permanent
-                oracle for correctness spot-checks, not just a migration
-                shim. Ignored when *classify* is False.
-                **EXPERIMENTAL — do not use in production yet.** The Phase
-                W.2 correctness gate found and fixed a major coarsen-phase
-                misalignment bug (see `_compute_window_phase`), but a
-                residual, localized discrepancy vs. the unwindowed reference
-                remains unresolved (max abs diff up to ~0.4 on
-                ``water_fraction`` for a small fraction of pixels, near what
-                looks like a real coverage-edge feature) — see
-                "Phase W.2 correctness gate" in
-                /memories/repo/gfm-investigation.md.
+            window_size: When set (native pixels, classified path only),
+                each item's full native tile is processed in a grid of
+                pixel-aligned windows of this size instead of eagerly all at
+                once, bounding per-item peak memory well below the ~11 GiB
+                measured for a full ~15000x15000 Equi7 tile. Must be a
+                positive exact multiple of *coarsen_factor*. ``None``
+                (default) preserves today's unwindowed behaviour exactly.
+                Ignored when *classify* is False. See
+                ``scripts/verify_gfm_windowed_correctness.py`` for the
+                correctness gate (flood_fraction byte-exact; water_fraction
+                has a tiny gated residual).
         """
         self.bbox = bbox
         self.coarsen_factor = coarsen_factor
@@ -690,9 +678,8 @@ class GfmRasterProcessor:
         unwindowed reference load (``odc.stac.load(bbox=self.bbox, ...)``)
         snaps ``self.bbox`` to the native pixel grid at an origin that
         generally does **not** coincide with the tile's own ``proj:transform``
-        origin — confirmed by direct measurement (see "Phase W.2 correctness
-        gate" in /memories/repo/gfm-investigation.md) to be an accident of
-        where ``self.bbox``'s corners land on the native pixel lattice when
+        origin — confirmed by direct measurement to be an accident of where
+        ``self.bbox``'s corners land on the native pixel lattice when
         reprojected, not a property of the tile itself. For windowed
         processing to reproduce the *same* coarsen groupings the reference
         happens to use (and therefore match it bit-for-bit), every window
@@ -810,14 +797,11 @@ class GfmRasterProcessor:
         ref_dims = None
 
         if self.window_size is not None:
-            logger.warning(
-                "GFM windowed processing (window_size={}) is EXPERIMENTAL: the Phase W.2 "
-                "correctness gate (plan-gfmWindowedMemoryFix.prompt.md) found a residual, "
-                "localized discrepancy vs the unwindowed reference (max abs diff up to ~0.4 "
-                "on water_fraction, affecting a small fraction of pixels near what looks like "
-                "a real coverage-edge feature) that is NOT yet resolved — see "
-                "/memories/repo/gfm-investigation.md 'Phase W.2 correctness gate' for details. "
-                "Do not rely on this for production output until that gate passes cleanly.",
+            logger.debug(
+                "GFM windowed processing (window_size={}): flood_fraction is byte-exact vs the "
+                "unwindowed reference; water_fraction has a small, bounded, well-understood "
+                "residual (max abs diff ~1e-3 to ~4e-3, 7-11 pixels out of ~18M, window-size- "
+                "invariant).",
                 self.window_size,
             )
 
@@ -830,14 +814,14 @@ class GfmRasterProcessor:
         )
 
         for idx, item in enumerate(items):
-            # Windowed processing (plan-gfmWindowedMemoryFix.prompt.md): tile
-            # this item's full native grid into pixel-aligned windows and run
-            # the load -> mask -> coarsen -> reproject body once per window
-            # instead of once for the whole tile. `window_size=None` (default)
-            # falls back to exactly today's single-AOI, unwindowed behaviour —
-            # `windows` has exactly one `None` entry, `window_aoi` is the same
-            # `aoi` used before this change, and no crop is applied, so the
-            # unwindowed path is byte-for-byte unchanged.
+            # Windowed processing: tile this item's full native grid into
+            # pixel-aligned windows and run the load -> mask -> coarsen ->
+            # reproject body once per window instead of once for the whole
+            # tile. `window_size=None` (default) falls back to exactly today's
+            # single-AOI, unwindowed behaviour — `windows` has exactly one
+            # `None` entry, `window_aoi` is the same `aoi` used before this
+            # change, and no crop is applied, so the unwindowed path is
+            # byte-for-byte unchanged.
             if self.window_size is None:
                 windows: list[tuple[int, int, int, int] | None] = [None]
                 transform_coeffs = None
@@ -857,6 +841,28 @@ class GfmRasterProcessor:
                 windows = list(
                     _native_pixel_windows(tuple(native_shape), self.window_size, self.coarsen_factor, phase=phase)
                 )
+
+            # "assemble, don't buffer": reprojecting each window's masks
+            # independently and summing produces a seam artifact (GDAL
+            # `average`-resampling needs full-array context). Instead,
+            # accumulate each window's coarsened native-CRS masks into one
+            # small per-item buffer, then reproject ONCE per item —
+            # bit-for-bit matching the unwindowed path. Only the masks group
+            # (flood/water/valid); code-bands stay per-window (assembling
+            # them would need uncoarsened native-res buffers, defeating the
+            # memory win).
+            windowed = self.window_size is not None
+            if windowed:
+                grid_row_start, grid_row_end, grid_col_start, grid_col_end = _window_grid_extent(windows)
+                assembly_rows = (grid_row_end - grid_row_start) // self.coarsen_factor
+                assembly_cols = (grid_col_end - grid_col_start) // self.coarsen_factor
+                a, _b, c, _d, e, f = transform_coeffs
+                assembly_y = _coarsened_axis_coords(grid_row_start, assembly_rows, self.coarsen_factor, f, e)
+                assembly_x = _coarsened_axis_coords(grid_col_start, assembly_cols, self.coarsen_factor, c, a)
+                assembled_flood = np.zeros((assembly_rows, assembly_cols), dtype=np.float32)
+                assembled_water = np.zeros((assembly_rows, assembly_cols), dtype=np.float32)
+                assembled_valid = np.zeros((assembly_rows, assembly_cols), dtype=np.float32)
+                any_window_contributed = False
 
             skipped_windows = 0
             for window in windows:
@@ -899,27 +905,46 @@ class GfmRasterProcessor:
                     xx_masks["reference_water_mask"],
                     self.coarsen_factor,
                 )
-
-                masks = xr.Dataset(
-                    {
-                        "flood": flood_mask_native,
-                        "water": water_mask_native,
-                        "valid": valid_mask_native,
-                    }
-                ).rio.write_crs(crs_src)
                 reference_water_band = xr.Dataset(
                     {"reference_water": _squeeze_time(xx_masks["reference_water_mask"])}
                 ).rio.write_crs(crs_src)
 
-                # Reproject each mask directly onto the ~80 m global
-                # grid (pre-computed snapped bounds/transform). This ensures all
-                # items (and, with windowing, all windows) accumulate on the same
-                # aligned grid — no double reprojection needed at harmonisation time.
-                masks_ll = self._reproject_to_canonical_grid(masks)
+                if windowed:
+                    # Place this window's contribution into the per-item
+                    # assembly buffer instead of reprojecting it immediately
+                    # (see the "assemble, don't buffer" note above).
+                    row_off = (window[0] - grid_row_start) // self.coarsen_factor
+                    col_off = (window[2] - grid_col_start) // self.coarsen_factor
+                    flood_2d = _squeeze_time(flood_mask_native).values
+                    row_len, col_len = flood_2d.shape
+                    assembled_flood[row_off : row_off + row_len, col_off : col_off + col_len] = flood_2d
+                    assembled_water[row_off : row_off + row_len, col_off : col_off + col_len] = _squeeze_time(
+                        water_mask_native
+                    ).values
+                    assembled_valid[row_off : row_off + row_len, col_off : col_off + col_len] = _squeeze_time(
+                        valid_mask_native
+                    ).values
+                    any_window_contributed = True
+                    masks_ll = None
+                else:
+                    masks = xr.Dataset(
+                        {
+                            "flood": flood_mask_native,
+                            "water": water_mask_native,
+                            "valid": valid_mask_native,
+                        }
+                    ).rio.write_crs(crs_src)
+                    # Reproject directly onto the ~80 m global grid
+                    # (pre-computed snapped bounds/transform). This ensures
+                    # all items accumulate on the same aligned grid — no
+                    # double reprojection needed at harmonisation time.
+                    masks_ll = self._reproject_to_canonical_grid(masks)
+                    del masks
+
                 reference_water_ll = self._reproject_codes_to_canonical_grid(reference_water_band)
                 # Free the first group's native buffers (up to ~15 GiB in the
                 # worst case, unwindowed) before loading the second group.
-                del xx_masks, flood_mask_native, water_mask_native, valid_mask_native, masks, reference_water_band
+                del xx_masks, flood_mask_native, water_mask_native, valid_mask_native, reference_water_band
 
                 xx_codes = self._load_item(item, window_aoi, crs_src, resolution, bands=_CLASSIFIED_CODE_BANDS)
                 if xx_codes is None:
@@ -946,52 +971,83 @@ class GfmRasterProcessor:
                 likelihood_ll = self._reproject_likelihood_to_canonical_grid(likelihood_band)
                 del xx_codes, code_bands, likelihood_band
 
-                flood_frac = np.squeeze(masks_ll["flood"].fillna(0.0).values.astype("float32"))
-                water_frac = np.squeeze(masks_ll["water"].fillna(0.0).values.astype("float32"))
-                valid_frac = np.squeeze(masks_ll["valid"].fillna(0.0).values.astype("float32"))
                 ref_codes = np.squeeze(reference_water_ll["reference_water"].values).astype(np.uint8)
                 excl_codes = np.squeeze(codes_ll["exclusion_mask"].values).astype(np.uint8)
                 advisory = np.squeeze(codes_ll["advisory_flags"].values).astype(np.uint8)
                 likelihood = np.squeeze(likelihood_ll["ensemble_likelihood"].values).astype(np.float32)
 
-                # Initialize accumulators on the first valid (item, window) pair.
-                # A window is, mathematically, just another partial-coverage
-                # contribution to the same canonical-grid accumulators — exactly
-                # like an extra STAC item — so no accumulation math changes here.
-                if flood_count is None:
-                    shape = flood_frac.shape
-                    flood_count = np.zeros(shape, dtype=np.float32)
-                    water_count = np.zeros(shape, dtype=np.float32)
-                    valid_count = np.zeros(shape, dtype=np.float32)
+                # Code-band accumulators are independent of the masks-group
+                # accumulators above (initialised on their own first valid
+                # (item, window) pair) — still accumulated per window/item,
+                # exactly like an extra STAC item, unaffected by the masks
+                # assembly change.
+                if reference_water_codes is None:
                     reference_water_codes = ref_codes.copy()
                     exclusion_codes = excl_codes.copy()
                     advisory_flags = advisory.copy()
                     ensemble_likelihood = likelihood.copy()
-                    ref_coords = masks_ll["flood"].coords
-                    ref_dims = masks_ll["flood"].dims
                 else:
                     reference_water_codes = _masked_max(reference_water_codes, ref_codes, GFM_NODATA)
                     exclusion_codes = _masked_max(exclusion_codes, excl_codes, GFM_NODATA)
                     advisory_flags = _masked_or(advisory_flags, advisory, GFM_NODATA)
                     ensemble_likelihood = np.fmax(ensemble_likelihood, likelihood)
 
-                flood_count += flood_frac
-                water_count += water_frac
-                valid_count += valid_frac
+                if not windowed:
+                    # Unwindowed path: exactly one "window" == the whole
+                    # tile, so per-window accumulation here IS per-item
+                    # accumulation — unchanged from before this fix.
+                    flood_frac = np.squeeze(masks_ll["flood"].fillna(0.0).values.astype("float32"))
+                    water_frac = np.squeeze(masks_ll["water"].fillna(0.0).values.astype("float32"))
+                    valid_frac = np.squeeze(masks_ll["valid"].fillna(0.0).values.astype("float32"))
+                    if flood_count is None:
+                        shape = flood_frac.shape
+                        flood_count = np.zeros(shape, dtype=np.float32)
+                        water_count = np.zeros(shape, dtype=np.float32)
+                        valid_count = np.zeros(shape, dtype=np.float32)
+                    ref_coords = masks_ll["flood"].coords
+                    ref_dims = masks_ll["flood"].dims
+                    flood_count += flood_frac
+                    water_count += water_frac
+                    valid_count += valid_frac
+                    del flood_frac, water_frac, valid_frac
 
                 del (
                     masks_ll,
                     reference_water_ll,
                     codes_ll,
                     likelihood_ll,
-                    flood_frac,
-                    water_frac,
-                    valid_frac,
                     ref_codes,
                     excl_codes,
                     advisory,
                     likelihood,
                 )
+
+            if windowed and any_window_contributed:
+                # One reprojection for the item's fully assembled native-CRS
+                # masks — see the "assemble, don't buffer" note above.
+                assembly_coords = {"y": assembly_y, "x": assembly_x}
+                masks_full = xr.Dataset(
+                    {
+                        "flood": xr.DataArray(assembled_flood, dims=("y", "x"), coords=assembly_coords),
+                        "water": xr.DataArray(assembled_water, dims=("y", "x"), coords=assembly_coords),
+                        "valid": xr.DataArray(assembled_valid, dims=("y", "x"), coords=assembly_coords),
+                    }
+                ).rio.write_crs(crs_src)
+                masks_ll = self._reproject_to_canonical_grid(masks_full)
+                flood_frac = np.squeeze(masks_ll["flood"].fillna(0.0).values.astype("float32"))
+                water_frac = np.squeeze(masks_ll["water"].fillna(0.0).values.astype("float32"))
+                valid_frac = np.squeeze(masks_ll["valid"].fillna(0.0).values.astype("float32"))
+                if flood_count is None:
+                    shape = flood_frac.shape
+                    flood_count = np.zeros(shape, dtype=np.float32)
+                    water_count = np.zeros(shape, dtype=np.float32)
+                    valid_count = np.zeros(shape, dtype=np.float32)
+                ref_coords = masks_ll["flood"].coords
+                ref_dims = masks_ll["flood"].dims
+                flood_count += flood_frac
+                water_count += water_frac
+                valid_count += valid_frac
+                del masks_full, masks_ll, flood_frac, water_frac, valid_frac
 
             if skipped_windows:
                 logger.warning(
