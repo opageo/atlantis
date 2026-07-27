@@ -7,17 +7,17 @@
 
 **Source of truth**
 
-| Concern                                 | Module                                                                                                   |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Cube batch engine                       | [`src/atlantis/archive/cube_batch.py`](../../src/atlantis/archive/cube_batch.py)                         |
-| Granule processor (VIIRS)               | [`src/atlantis/fetchers/viirs/batch_processor.py`](../../src/atlantis/fetchers/viirs/batch_processor.py) |
-| Tile processor (MODIS)                  | [`src/atlantis/fetchers/modis/batch_processor.py`](../../src/atlantis/fetchers/modis/batch_processor.py) |
-| Cell processor (GFM)                    | [`src/atlantis/fetchers/gfm/batch_processor.py`](../../src/atlantis/fetchers/gfm/batch_processor.py)     |
-| Inventory loader + tasks                | [`.../viirs/inventory.py`](../../src/atlantis/fetchers/viirs/inventory.py) / [`.../modis/inventory.py`](../../src/atlantis/fetchers/modis/inventory.py) / [`.../gfm/inventory.py`](../../src/atlantis/fetchers/gfm/inventory.py) |
-| Catalogue builder                       | [`.../viirs/catalog.py`](../../src/atlantis/fetchers/viirs/catalog.py) / [`.../modis/catalog.py`](../../src/atlantis/fetchers/modis/catalog.py) / [`.../gfm/catalog.py`](../../src/atlantis/fetchers/gfm/catalog.py) |
-| Shared catalogue core                   | [`src/atlantis/batch/catalog.py`](../../src/atlantis/batch/catalog.py) (load/slice/write/date-range, reused by every source) |
-| CLI (`batch viirs …` / `batch modis …` / `batch gfm …`) | [`src/atlantis/cli.py`](../../src/atlantis/cli.py#L2448)                                  |
-| Underlying store layout                 | [`zarr-spec.md`](./zarr-spec.md)                                                                         |
+| Concern                                                 | Module                                                                                                                                                                                                                           |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cube batch engine                                       | [`src/atlantis/archive/cube_batch.py`](../../src/atlantis/archive/cube_batch.py)                                                                                                                                                 |
+| Granule processor (VIIRS)                               | [`src/atlantis/fetchers/viirs/batch_processor.py`](../../src/atlantis/fetchers/viirs/batch_processor.py)                                                                                                                         |
+| Tile processor (MODIS)                                  | [`src/atlantis/fetchers/modis/batch_processor.py`](../../src/atlantis/fetchers/modis/batch_processor.py)                                                                                                                         |
+| Cell processor (GFM)                                    | [`src/atlantis/fetchers/gfm/batch_processor.py`](../../src/atlantis/fetchers/gfm/batch_processor.py)                                                                                                                             |
+| Inventory loader + tasks                                | [`.../viirs/inventory.py`](../../src/atlantis/fetchers/viirs/inventory.py) / [`.../modis/inventory.py`](../../src/atlantis/fetchers/modis/inventory.py) / [`.../gfm/inventory.py`](../../src/atlantis/fetchers/gfm/inventory.py) |
+| Catalogue builder                                       | [`.../viirs/catalog.py`](../../src/atlantis/fetchers/viirs/catalog.py) / [`.../modis/catalog.py`](../../src/atlantis/fetchers/modis/catalog.py) / [`.../gfm/catalog.py`](../../src/atlantis/fetchers/gfm/catalog.py)             |
+| Shared catalogue core                                   | [`src/atlantis/batch/catalog.py`](../../src/atlantis/batch/catalog.py) (load/slice/write/date-range, reused by every source)                                                                                                     |
+| CLI (`batch viirs …` / `batch modis …` / `batch gfm …`) | [`src/atlantis/cli.py`](../../src/atlantis/cli.py#L2448)                                                                                                                                                                         |
+| Underlying store layout                                 | [`zarr-spec.md`](./zarr-spec.md)                                                                                                                                                                                                 |
 
 > After building the cube, use the [STAC + Visualization guide](./stac-and-viz.md) to
 > catalogue and explore it interactively.
@@ -33,12 +33,12 @@ source writes into its own group (`viirs`, `modis`, `gfm`, ...) inside the
 same store, so one archive can hold as many sources as you build into it. The
 pipeline is:
 
-| Property             | How it works                                                                                                                                 |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Parallel**         | Dask `LocalCluster` (2–6 adaptive workers). Each worker downloads/streams, classifies, and harmonises one granule/tile/cell at a time.        |
-| **Resume-safe**      | SQLite tracker records every `(task_id, status, output_uri)`. Re-running skips already-`DONE` tasks.                                         |
-| **Streaming**        | `as_completed()` feeds results into a single coordinator that writes to Zarr — no giant in-RAM accumulation.                                 |
-| **Crash-proof**      | Run in `tmux` / `nohup`. Kill at any time; re-run to resume from the tracker.                                                                |
+| Property             | How it works                                                                                                                                                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Parallel**         | Dask `LocalCluster` (2–6 adaptive workers). Each worker downloads/streams, classifies, and harmonises one granule/tile/cell at a time.                                                                                                                     |
+| **Resume-safe**      | SQLite tracker records every `(task_id, status, output_uri)`. Re-running skips already-`DONE` tasks.                                                                                                                                                       |
+| **Streaming**        | `as_completed()` feeds results into a single coordinator that writes to Zarr — no giant in-RAM accumulation.                                                                                                                                               |
+| **Crash-proof**      | Run in `tmux` / `nohup`. Kill at any time; re-run to resume from the tracker.                                                                                                                                                                              |
 | **Dataset-agnostic** | Same engine (`run_cube_batch`) drives VIIRS (`run_viirs_cube_batch`), MODIS (`run_modis_cube_batch`), and GFM (`run_gfm_cube_batch`) by plugging in a different inventory loader and per-task processor — a fourth source only needs its own thin wrapper. |
 
 ---
@@ -91,13 +91,13 @@ share the same underlying mechanics
 load/slice/write Parquet, walk an inclusive date range, retry a flaky listing
 call. They differ only in schema and remote source:
 
-| | VIIRS (`batch viirs catalog`) | MODIS (`batch modis catalog`) | GFM (`batch gfm catalog`) |
-| --- | --- | --- | --- |
-| Remote source          | NOAA JPSS public S3 bucket (anonymous)         | NASA LAADS DAAC (authenticated)               | EODC STAC API (public, `https://stac.eodc.eu/api/v1`) |
-| Auth                   | None                                            | `EARTHDATA_TOKEN` (§2.3)                       | None |
-| Output schema          | `date, aoi_id, s3_key, geometry` (GeoParquet)   | `date, h, v, task_id, source_uri` (Parquet)    | `date, equi7_tile, item_id, item_href, west, south, east, north` (Parquet, one row per STAC item) |
-| Default `--output`     | `viirs_archive_catalog.parquet` (local)         | `modis_archive_catalog.parquet` (local)        | `gfm_archive_catalog.parquet` (local) |
-| Canonical archive path | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | `s3://atlantis/assets/gfm/gfm_archive_catalog.parquet` |
+|                        | VIIRS (`batch viirs catalog`)                              | MODIS (`batch modis catalog`)                              | GFM (`batch gfm catalog`)                                                                         |
+| ---------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Remote source          | NOAA JPSS public S3 bucket (anonymous)                     | NASA LAADS DAAC (authenticated)                            | EODC STAC API (public, `https://stac.eodc.eu/api/v1`)                                             |
+| Auth                   | None                                                       | `EARTHDATA_TOKEN` (§2.3)                                   | None                                                                                              |
+| Output schema          | `date, aoi_id, s3_key, geometry` (GeoParquet)              | `date, h, v, task_id, source_uri` (Parquet)                | `date, equi7_tile, item_id, item_href, west, south, east, north` (Parquet, one row per STAC item) |
+| Default `--output`     | `viirs_archive_catalog.parquet` (local)                    | `modis_archive_catalog.parquet` (local)                    | `gfm_archive_catalog.parquet` (local)                                                             |
+| Canonical archive path | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | `s3://atlantis/assets/gfm/gfm_archive_catalog.parquet`                                            |
 
 ```bash
 # VIIRS — no credentials needed
@@ -127,7 +127,7 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm catalog \
 > items over just 6 days — so a full global, full-history (2015–present)
 > catalogue will be large; consider a bounded `--start`/`--end` window first
 > to gauge size before committing to the full history.
-
+>
 > **Unlike the cube build, the catalogue builder is a plain sequential,
 > network-bound loop** — one HTTP request (or STAC query) per calendar day,
 > no Dask workers, and **no SQLite resume tracker**, for any source. If it's
@@ -143,13 +143,13 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm catalog \
 > ```
 >
 > **Checking progress**: it prints automatically — a line like `MODIS
-> catalog: 2400/8597 (27.9%)` every ~30 processed dates — with **no
+catalog: 2400/8597 (27.9%)` every ~30 processed dates — with **no
 > `--verbose` flag needed** (it's routed through the CLI's console output,
 > not `loguru`, which the CLI disables by default). The same applies
 > verbatim to `batch viirs catalog` and `batch gfm catalog` (e.g. `GFM
-> catalog: 240/365 (65.8%)`). To confirm a detached run is still alive and
+catalog: 240/365 (65.8%)`). To confirm a detached run is still alive and
 > actually making requests rather than stuck: `pgrep -af "batch <source>
-> catalog"` and `ss -tnp | grep <pid>` (look for an `ESTABLISHED` connection
+catalog"` and `ss -tnp | grep <pid>` (look for an `ESTABLISHED` connection
 > to the source host).
 >
 > **GFM is dense enough that a full single-shot history build is risky** —
@@ -283,18 +283,31 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
   --log-every 50
 ```
 
-| Flag                | VIIRS default                        | MODIS default                       | GFM default                          | Purpose                                |
-| ------------------- | ------------------------------------- | ------------------------------------ | ------------------------------------- | --------------------------------------- |
-| `--partition`       | full catalogue                        | full catalogue                       | full catalogue                        | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows *before* the `(date, equi7_tile)` grouping (see §5) |
-| `--archive` / `-a`  | `s3://atlantis/zarr/viirs_2020_cube`  | `s3://atlantis/zarr/modis_cube`      | `s3://atlantis/zarr/gfm_cube`         | Cube root — a local dir or `s3://` URI |
-| `--log-every`       | `100`                                  | `50`                                  | `50`                                  | Progress line every N completions      |
-| `--workers-min/max` | `2` / `6`                              | `2` / `6`                             | `2` / `6`                             | Dask worker count (adaptive)           |
-| `--memory-limit`    | `4GB`                                  | `2.5GB`                               | `4GB`                                 | Memory cap per worker — GFM loads a full 15000×15000 EQUI7 tile at native ~20 m resolution before coarsening, so it needs VIIRS-level headroom |
-| `--dashboard-port`  | `8787`                                 | `8788`                                | `8789`                                | Distinct ports so all three dashboards can run at once |
-| `--db-path`         | `cube_tracker.db`                      | `cube_tracker.db`                     | `gfm_cube_tracker.db`                 | SQLite resume database — **use a different path per source** when writing into the same archive concurrently |
-| `--retries`         | `3`                                    | `3`                                   | `3`                                   | Retries per granule/tile/cell          |
-| `--composite`       | n/a                                    | `None` (→ `F2`)                      | n/a                                    | MODIS-only: MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`) |
-| `--gfm-coarsen-factor` / `--gfm-resampling` | n/a                    | n/a                                   | `4` / `average`                       | GFM-only: spatial coarsening factor and resampling method before reprojection (overrides `ATLANTIS_GFM_COARSEN_FACTOR` / `ATLANTIS_GFM_RESAMPLING`) |
+| Flag                                        | VIIRS default                        | MODIS default                   | GFM default                   | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------- | ------------------------------------ | ------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--partition`                               | full catalogue                       | full catalogue                  | full catalogue                | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows _before_ the `(date, equi7_tile)` grouping (see §5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `--archive` / `-a`                          | `s3://atlantis/zarr/viirs_2020_cube` | `s3://atlantis/zarr/modis_cube` | `s3://atlantis/zarr/gfm_cube` | Cube root — a local dir or `s3://` URI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `--log-every`                               | `100`                                | `50`                            | `50`                          | Progress line every N completions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `--workers-min/max`                         | `2` / `6`                            | `2` / `6`                       | `2` / `6`                     | Dask worker count (adaptive)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `--memory-limit`                            | `4GB`                                | `2.5GB`                         | `4GB`                         | Memory cap per worker — **GFM's default is known to be too low.** A single GFM `(date, equi7_tile)` cell processes a full ~15000×15000 EQUI7 tile at native ~20 m resolution; after a peak-memory fix (split band loads + sequential mask coarsening) the measured peak transient footprint is **~11 GiB** (down from an initial ~15 GiB), still well above VIIRS/MODIS-level headroom. Set `--memory-limit` to at least 12-14 GB per GFM worker (with a low `--workers-max`) until a further windowed-processing rewrite closes the remaining gap. See [GitHub issue #96](https://github.com/ECMWFCode4Earth/atlantis/issues/96) for current status |
+| `--dashboard-port`                          | `8787`                               | `8788`                          | `8789`                        | Distinct ports so all three dashboards can run at once                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `--db-path`                                 | `cube_tracker.db`                    | `cube_tracker.db`               | `gfm_cube_tracker.db`         | SQLite resume database — **use a different path per source** when writing into the same archive concurrently                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `--retries`                                 | `3`                                  | `3`                             | `3`                           | Retries per granule/tile/cell                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `--composite`                               | n/a                                  | `None` (→ `F2`)                 | n/a                           | MODIS-only: MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `--gfm-coarsen-factor` / `--gfm-resampling` | n/a                                  | n/a                             | `4` / `average`               | GFM-only: spatial coarsening factor and resampling method before reprojection (overrides `ATLANTIS_GFM_COARSEN_FACTOR` / `ATLANTIS_GFM_RESAMPLING`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+
+> **GFM memory, further work**: the ~11 GiB peak above is from splitting the
+> per-item native `odc.stac.load` into two smaller band groups and coarsening
+> each mask sequentially (see `GfmRasterProcessor._load_item` /
+> `_build_native_masks` in
+> [processor.py](../../src/atlantis/fetchers/gfm/processor.py)) — both
+> load-time and easy-to-verify. Closing the remaining gap to VIIRS/MODIS-level
+> memory would need a bigger, riskier change: process the native tile in
+> spatial windows/blocks (e.g. a real dask-lazy pipeline with
+> `chunks=` instead of `chunks={}`, deferring `.compute()` until after the
+> coarsen-mean step) so no single native-resolution band is ever fully
+> materialized in memory — not attempted yet, tracked under
+> [GitHub issue #96](https://github.com/ECMWFCode4Earth/atlantis/issues/96).
 
 The `--archive` value is the **parent** of the Zarr store — the engine creates
 `datacube.zarr` underneath it.
@@ -344,7 +357,7 @@ panes), as long as each run uses its own `--db-path`:
 
 **Adding GFM to an existing VIIRS+MODIS archive** needs no migration or
 special handling — it follows exactly the same rule as above, since the
-archive root you already built is *not* a brand-new/empty one:
+archive root you already built is _not_ a brand-new/empty one:
 
 ```bash
 PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
@@ -435,7 +448,7 @@ partition table computed today will be wrong after the next catalogue
 refresh.
 
 > **GFM caveat**: `--partition` slices the catalogue at individual STAC-item
-> granularity, *before* `to_tasks()` groups rows into `(date, equi7_tile)`
+> granularity, _before_ `to_tasks()` groups rows into `(date, equi7_tile)`
 > batch tasks (§3). A cell whose items straddle a partition boundary will
 > only partially accumulate on each side of the split. This is a low-impact,
 > known limitation — pick partition boundaries on whole-date boundaries where
@@ -524,10 +537,10 @@ rm -rf ./data/stac_my_cube
 The cube build is split into two layers so Zarr metadata consistency is
 guaranteed while granule/tile processing stays parallel:
 
-| Layer                                     | Runs on                 | Responsibility                                                        |
-| ------------------------------------------- | ----------------------- | --------------------------------------------------------------------- |
+| Layer                                                                                                                    | Runs on                 | Responsibility                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------ |
 | **Produce** — VIIRS: `harmonise_granule_payload`, MODIS: `harmonise_modis_granule_payload`, GFM: `harmonise_gfm_payload` | Dask workers (parallel) | Download/stream granule/tile/cell → classify → harmonise → return payload dict |
-| **Consume** (`ArchiveWriter.session`)     | Coordinator (serial)    | Receive payload → region-write into Zarr → mark task `DONE` in SQLite |
+| **Consume** (`ArchiveWriter.session`)                                                                                    | Coordinator (serial)    | Receive payload → region-write into Zarr → mark task `DONE` in SQLite          |
 
 ```text
 Catalogue (Parquet, per source)
@@ -554,13 +567,13 @@ VIIRS's, MODIS's, and GFM's coordinators concurrently is fine — see §4.1.
 
 ## 9. Runtime estimates
 
-| Granules (VIIRS)            | Approx. runtime (6 workers, ~5–15 min / 100 granules) |
-| ----------------------------- | ----------------------------------------------------- |
-| 100                          | 5–15 min                                              |
-| 1,000                        | 50 min – 2.5 hr                                       |
-| 8,855 (Oct–Nov 2024)         | 7–22 hr                                               |
-| 53,287 (full 2024)           | 44–133 hr                                             |
-| 174,252 (entire catalogue)   | 145–436 hr                                            |
+| Granules (VIIRS)           | Approx. runtime (6 workers, ~5–15 min / 100 granules) |
+| -------------------------- | ----------------------------------------------------- |
+| 100                        | 5–15 min                                              |
+| 1,000                      | 50 min – 2.5 hr                                       |
+| 8,855 (Oct–Nov 2024)       | 7–22 hr                                               |
+| 53,287 (full 2024)         | 44–133 hr                                             |
+| 174,252 (entire catalogue) | 145–436 hr                                            |
 
 > VIIRS runtime is dominated by NOAA HTTPS download speed (source TIFFs are
 > uncompressed one-row strips — pathological for range reads, so each ~20 MB

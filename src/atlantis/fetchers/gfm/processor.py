@@ -73,6 +73,23 @@ GFM_STAC_CFG: dict = {
     }
 }
 
+# Measured (see /memories/repo/gfm-investigation.md "Phase C.1 profiling results"):
+# a single eager odc.stac.load of all 6 GFM_BANDS at native ~20 m resolution over
+# a full EQUI7 tile peaks around ~6.8 GiB RSS, and _build_native_masks's native-res
+# float32 derivatives (while that 6-band dataset is still resident) add another
+# ~8 GiB on top — together, 100% of the measured ~15 GiB per-cell peak. Splitting
+# the load into these two smaller groups (and fully freeing the first group's
+# native buffers before loading the second) keeps at most 3 native bands + their
+# derivatives resident at once instead of 6 + 3.
+
+#: First `_load_item` group for the classified path — feeds `_build_native_masks`
+#: (flood/water/valid fractions) and the `reference_water` code layer.
+_CLASSIFIED_MASK_BANDS: list[str] = ["ensemble_flood_extent", "ensemble_water_extent", "reference_water_mask"]
+
+#: Second `_load_item` group for the classified path — not needed until after
+#: the first group's native buffers have been reprojected and freed.
+_CLASSIFIED_CODE_BANDS: list[str] = ["exclusion_mask", "advisory_flags", "ensemble_likelihood"]
+
 
 def _masked_max(a: np.ndarray, b: np.ndarray, nodata: int) -> np.ndarray:
     """Element-wise max of two uint8 arrays treating *nodata* as absent.
@@ -326,16 +343,27 @@ class GfmRasterProcessor:
         aoi,
         crs_src,
         resolution: float,
+        *,
+        bands: list[str] | None = None,
     ) -> "xr.Dataset | None":
-        """Load one STAC item into memory, retrying transient read failures."""
+        """Load one STAC item into memory, retrying transient read failures.
+
+        Args:
+            bands: Subset of :data:`GFM_BANDS` to load. Defaults to all of
+                them. The classified path loads two smaller groups instead
+                (see :data:`_CLASSIFIED_MASK_BANDS` / :data:`_CLASSIFIED_CODE_BANDS`)
+                to bound the native-resolution peak footprint.
+        """
         import odc.stac
+
+        load_bands = bands if bands is not None else GFM_BANDS
 
         def _do_load() -> "xr.Dataset":
             xx = odc.stac.load(
                 [item],
                 bbox=aoi.bounds,
                 crs=crs_src,
-                bands=GFM_BANDS,
+                bands=load_bands,
                 resolution=resolution,
                 dtype="uint8",
                 groupby="solar_day",
@@ -436,8 +464,16 @@ class GfmRasterProcessor:
         )
 
         for idx, item in enumerate(items):
-            xx = self._load_item(item, aoi, crs_src, resolution)
-            if xx is None:
+            # Split the native-resolution load into two smaller groups instead
+            # of one eager 6-band load, so at most half of GFM_BANDS' native
+            # buffers are resident at any one time. Measured (Phase C.1,
+            # /memories/repo/gfm-investigation.md): the single 6-band load
+            # followed by _build_native_masks (below) while it's still
+            # resident together accounted for the entire ~15 GiB per-cell
+            # peak — everything downstream is negligible by comparison, since
+            # the canonical/harmonised grid is far smaller than the native one.
+            xx_masks = self._load_item(item, aoi, crs_src, resolution, bands=_CLASSIFIED_MASK_BANDS)
+            if xx_masks is None:
                 continue
 
             # Build per-class 0/1 masks at native resolution, then mean-pool to
@@ -447,9 +483,9 @@ class GfmRasterProcessor:
             # categorical max would rank codes by number (and let nodata=255 win
             # every mixed block), which is meaningless for class labels.
             flood_mask_native, water_mask_native, valid_mask_native = self._build_native_masks(
-                xx["ensemble_flood_extent"],
-                xx["ensemble_water_extent"],
-                xx["reference_water_mask"],
+                xx_masks["ensemble_flood_extent"],
+                xx_masks["ensemble_water_extent"],
+                xx_masks["reference_water_mask"],
                 self.coarsen_factor,
             )
 
@@ -460,16 +496,8 @@ class GfmRasterProcessor:
                     "valid": valid_mask_native,
                 }
             ).rio.write_crs(crs_src)
-
-            code_bands = xr.Dataset(
-                {
-                    "reference_water": xx["reference_water_mask"].squeeze(drop=True),
-                    "exclusion_mask": xx["exclusion_mask"].squeeze(drop=True),
-                    "advisory_flags": xx["advisory_flags"].squeeze(drop=True),
-                }
-            ).rio.write_crs(crs_src)
-            likelihood_band = xr.Dataset(
-                {"ensemble_likelihood": xx["ensemble_likelihood"].squeeze(drop=True).astype("float32")}
+            reference_water_band = xr.Dataset(
+                {"reference_water": xx_masks["reference_water_mask"].squeeze(drop=True)}
             ).rio.write_crs(crs_src)
 
             # Reproject each mask directly onto the ~80 m global
@@ -477,14 +505,33 @@ class GfmRasterProcessor:
             # items accumulate on the same aligned grid — no double
             # reprojection needed at harmonisation time.
             masks_ll = self._reproject_to_canonical_grid(masks)
+            reference_water_ll = self._reproject_codes_to_canonical_grid(reference_water_band)
+            # Free the first group's native buffers (up to ~15 GiB in the
+            # worst case) before loading the second group.
+            del xx_masks, flood_mask_native, water_mask_native, valid_mask_native, masks, reference_water_band
+
+            xx_codes = self._load_item(item, aoi, crs_src, resolution, bands=_CLASSIFIED_CODE_BANDS)
+            if xx_codes is None:
+                continue
+
+            code_bands = xr.Dataset(
+                {
+                    "exclusion_mask": xx_codes["exclusion_mask"].squeeze(drop=True),
+                    "advisory_flags": xx_codes["advisory_flags"].squeeze(drop=True),
+                }
+            ).rio.write_crs(crs_src)
+            likelihood_band = xr.Dataset(
+                {"ensemble_likelihood": xx_codes["ensemble_likelihood"].squeeze(drop=True).astype("float32")}
+            ).rio.write_crs(crs_src)
+
             codes_ll = self._reproject_codes_to_canonical_grid(code_bands)
             likelihood_ll = self._reproject_likelihood_to_canonical_grid(likelihood_band)
-            del xx, flood_mask_native, water_mask_native, valid_mask_native, masks, code_bands, likelihood_band
+            del xx_codes, code_bands, likelihood_band
 
             flood_frac = np.squeeze(masks_ll["flood"].fillna(0.0).values.astype("float32"))
             water_frac = np.squeeze(masks_ll["water"].fillna(0.0).values.astype("float32"))
             valid_frac = np.squeeze(masks_ll["valid"].fillna(0.0).values.astype("float32"))
-            ref_codes = np.squeeze(codes_ll["reference_water"].values).astype(np.uint8)
+            ref_codes = np.squeeze(reference_water_ll["reference_water"].values).astype(np.uint8)
             excl_codes = np.squeeze(codes_ll["exclusion_mask"].values).astype(np.uint8)
             advisory = np.squeeze(codes_ll["advisory_flags"].values).astype(np.uint8)
             likelihood = np.squeeze(likelihood_ll["ensemble_likelihood"].values).astype(np.float32)
@@ -513,6 +560,7 @@ class GfmRasterProcessor:
 
             del (
                 masks_ll,
+                reference_water_ll,
                 codes_ll,
                 likelihood_ll,
                 flood_frac,
@@ -702,17 +750,41 @@ class GfmRasterProcessor:
         downsampling and is consistent with the ``average`` reprojection applied
         afterwards; a categorical ``max`` would impose a meaningless code
         ordering and let nodata (255) dominate any mixed block.
+
+        Each mask is binarized *and* coarsened before moving on to the next,
+        rather than binarizing all three first — measured (Phase C.2,
+        /memories/repo/gfm-investigation.md) to matter: holding all three
+        native-resolution float32 masks (each ~1.8 GiB on a full EQUI7 tile)
+        simultaneously before any coarsening was the single largest
+        contributor to GFM's per-cell peak memory. Coarsening one mask down to
+        its small final size before building the next keeps at most one
+        native-resolution float32 buffer resident at a time.
+
+        Further reduction (this + the split ``_load_item`` groups bring the
+        measured peak from ~15 GiB to ~11 GiB, still above VIIRS/MODIS levels)
+        would require processing each mask in spatial windows/blocks instead
+        of eagerly over the whole native tile at once — e.g. a real
+        dask-lazy pipeline (``chunks=`` instead of ``chunks={}`` in
+        ``_load_item``, deferring ``.compute()`` until after this coarsen-mean
+        step) so no single native-resolution band is ever fully materialized.
+        Not attempted here: bigger change, and running a dask array inside a
+        task already scheduled by the outer distributed cluster needs care
+        (see the "nested-scheduler gotcha" in
+        ``.github/prompts/plan-gfmPeakMemoryFix.prompt.md``).
         """
-        flood_mask = (flood_native == GFM_FLOOD).astype("float32")
-        water_mask = (water_native == GFM_WATER).astype("float32")
+
+        def _binarize_and_coarsen(native_bool_mask: "xr.DataArray") -> "xr.DataArray":
+            mask = native_bool_mask.astype("float32")
+            if coarsen_factor > 1:
+                mask = mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+            return mask
+
+        flood_mask = _binarize_and_coarsen(flood_native == GFM_FLOOD)
+        water_mask = _binarize_and_coarsen(water_native == GFM_WATER)
         # An observation contributes to "valid" if any core band has a non-nodata code.
-        valid_mask = (
+        valid_mask = _binarize_and_coarsen(
             (flood_native != GFM_NODATA) | (water_native != GFM_NODATA) | (reference_native != GFM_NODATA)
-        ).astype("float32")
-        if coarsen_factor > 1:
-            flood_mask = flood_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
-            water_mask = water_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
-            valid_mask = valid_mask.coarsen(y=coarsen_factor, x=coarsen_factor, boundary="trim").mean()
+        )
         return flood_mask, water_mask, valid_mask
 
     def _reproject_to_canonical_grid(self, masks: "xr.Dataset") -> "xr.Dataset":

@@ -30,6 +30,8 @@ Pipeline per ``(date, equi7_tile)`` task:
 from __future__ import annotations
 
 import gc
+import os
+import sys
 
 import numpy as np
 from loguru import logger
@@ -41,10 +43,39 @@ from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
 from atlantis.fetchers.gfm.processor import GfmRasterProcessor
 from atlantis.harmoniser import Harmoniser
 
+#: Bound GDAL's per-process raster block cache (MB). Unlike MODIS/VIIRS, GFM
+#: streams pixel data live from many distinct COGs per worker lifetime (no
+#: discrete "download" step), so an unbounded cache grows without limit and
+#: triggers distributed.worker.memory "Unmanaged memory... high" / "Pausing
+#: worker" warnings. Mirrors the ``GDAL_NUM_THREADS`` module-level pattern in
+#: atlantis.fetchers.modis.batch_processor / atlantis.fetchers.viirs.batch_processor.
+os.environ.setdefault("GDAL_CACHEMAX", "256")
+
 #: Cube-persisted GFM layers — matches the shared ArchiveWriter schema.
 #: ``ensemble_likelihood`` / ``advisory_flags`` are native-only companions and
 #: are not stored in the cube (see docs/layers.md).
 _CUBE_LAYERS = ("water_fraction", "exclusion_mask", "reference_water")
+
+
+def _trim_malloc() -> None:
+    """Release freed native heap memory back to the OS on glibc Linux.
+
+    ``gc.collect()`` only reclaims Python-tracked objects; native allocations
+    made by GDAL/numpy (malloc'd C buffers) are freed by libc but often kept
+    in the process heap rather than returned to the OS, which is what the
+    distributed.worker.memory "memory not released back to the OS" guidance
+    (see distributed.dask.org .../worker-memory.html) recommends working
+    around with ``malloc_trim``. Best-effort only: silently a no-op on
+    non-Linux platforms or if libc doesn't expose ``malloc_trim``.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except OSError:
+        pass
 
 
 def harmonise_gfm_payload(task: dict) -> dict:
@@ -120,6 +151,7 @@ def harmonise_gfm_payload(task: dict) -> dict:
     x = np.asarray(ds_harm["x"].values, dtype="float64")
     del ds_harm
     gc.collect()
+    _trim_malloc()
 
     logger.debug("gfm cell {} {} → shape {}", task_id, equi7_tile, water_u8.shape)
     return {
