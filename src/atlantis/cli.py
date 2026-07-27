@@ -3234,8 +3234,26 @@ def batch_gfm_cube(
         help="Resampling method for reprojection (defaults to ATLANTIS_GFM_RESAMPLING / average).",
     ),
     workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
-    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
-    memory_limit: str = typer.Option("4GB", "--memory-limit", help="Memory cap per worker."),
+    workers_max: int = typer.Option(
+        3,
+        "--workers-max",
+        help=(
+            "Maximum Dask worker processes (adaptive). Kept low by default for GFM: a single "
+            "(date, equi7_tile) cell has a measured ~11-14 GiB peak transient footprint (see "
+            "GitHub issue #96), so a high worker count multiplies host RAM pressure fast."
+        ),
+    ),
+    memory_limit: str = typer.Option(
+        "12GB",
+        "--memory-limit",
+        help=(
+            "Memory cap per worker. GFM needs much more headroom than VIIRS/MODIS: a single "
+            "(date, equi7_tile) cell processes a full ~15000x15000 EQUI7 tile at native ~20m "
+            "resolution, with a measured peak transient footprint of ~11-14 GiB (see GitHub "
+            "issue #96). Do not lower this below ~11GB without re-measuring against "
+            "tmp/profile_gfm_peak_memory.py first."
+        ),
+    ),
     dashboard_port: int = typer.Option(8789, "--dashboard-port", help="Dask dashboard port."),
     db_path: Path = typer.Option(Path("gfm_cube_tracker.db"), "--db-path", help="SQLite resume database path."),
     retries: int = typer.Option(3, "--retries", help="Dask retry count per cell."),
