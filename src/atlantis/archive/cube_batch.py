@@ -36,7 +36,8 @@ def run_cube_batch(
     """Stream Dask-produced payloads into a single consumer, tracked in SQLite.
 
     The produce/consume split keeps the cube write serial (one coordinator) while
-    the heavy lifting runs in parallel:
+    the heavy lifting runs in parallel. Worker submissions are capped at
+    ``4 * cfg.workers_max`` to avoid materialising a full-catalogue task graph:
 
     * ``produce_fn`` runs **on Dask workers** — it must be picklable and
       self-contained (e.g. download + harmonise a granule), returning a payload
@@ -91,9 +92,27 @@ def run_cube_batch(
             # which makes its dependent task unrecoverable even when retries are
             # configured. Literal task arguments let Dask reschedule the task on
             # a replacement worker after an OOM restart.
-            futures = client.map(produce_fn, pending, retries=cfg.retries, pure=False)
-            key_to_id = {future.key: task["task_id"] for future, task in zip(futures, pending)}
-            for future in as_completed(futures):
+            max_in_flight = max(1, 4 * cfg.workers_max)
+            pending_iter = iter(pending)
+            completed = as_completed()
+            key_to_id: dict[str, str] = {}
+
+            def submit_next() -> bool:
+                """Submit one scheduler-owned task literal, if work remains."""
+                try:
+                    task = next(pending_iter)
+                except StopIteration:
+                    return False
+                future = client.submit(produce_fn, task, retries=cfg.retries, pure=False)
+                completed.add(future)
+                key_to_id[future.key] = task["task_id"]
+                return True
+
+            for _ in range(max_in_flight):
+                if not submit_next():
+                    break
+
+            for future in completed:
                 task_id = key_to_id.get(future.key, "unknown")
                 try:
                     payload = future.result()
@@ -106,6 +125,9 @@ def run_cube_batch(
                     logger.warning("FAILED {}: {}", task_id, exc)
                 finally:
                     future.release()
+                    key_to_id.pop(future.key, None)
+
+                submit_next()
 
                 processed = done + failed
                 if processed % cfg.log_every == 0:
