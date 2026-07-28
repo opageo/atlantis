@@ -167,8 +167,8 @@ class TestBuildCatalog:
 
     @patch("atlantis.fetchers.modis.catalog.earthdata_auth_headers")
     @patch("atlantis.fetchers.modis.catalog._list_tiles_for_date")
-    def test_continues_on_request_exception(self, mock_list, mock_auth, tmp_path):
-        """A failed date listing should be skipped, not crash the whole run."""
+    def test_aborts_on_persistent_date_failure(self, mock_list, mock_auth, tmp_path):
+        """A date listing that still fails after retries must abort the whole build, not silently truncate it."""
         mock_auth.return_value = {"Authorization": "Bearer token"}
         mock_list.side_effect = [
             requests.RequestException("network error"),
@@ -183,11 +183,9 @@ class TestBuildCatalog:
             ],
         ]
         output = tmp_path / "catalog.parquet"
-        result = build_catalog("2024-08-22", "2024-08-23", output)
-
-        assert result == output
-        df = pd.read_parquet(output)
-        assert len(df) == 1
+        with pytest.raises(RuntimeError, match="MODIS catalog build aborted.*2024-08-22"):
+            build_catalog("2024-08-22", "2024-08-23", output)
+        assert not output.exists()
 
     @patch("atlantis.fetchers.modis.catalog.earthdata_auth_headers")
     @patch("atlantis.fetchers.modis.catalog._list_tiles_for_date")

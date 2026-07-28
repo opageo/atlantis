@@ -102,6 +102,7 @@ class GFMFetcher(AbstractFloodFetcher):
         max_observations: int = 0,
         peak_priority: str = "post",
         max_retries: int | None = None,
+        window_size: int | None = None,
     ) -> None:
         """Initialize the GFM fetcher.
 
@@ -129,6 +130,11 @@ class GFMFetcher(AbstractFloodFetcher):
                 or ``"balanced"`` (alternating ±1, ±2, …).
             max_retries: Number of retries for transient GFM tile-read failures.
                 Defaults to ``FetcherConfig.max_retries`` (3).
+            window_size: Native pixels per window for the classified path's
+                windowed processing (see ``GfmRasterProcessor``). ``None``
+                (default) preserves the unwindowed path; the production batch
+                path sets this from ``FetcherConfig.gfm_window_size``
+                (default 5000).
         """
         self.api_url = api_url or DEFAULT_GFM_STAC_URL
         self.coarsen_factor = coarsen_factor
@@ -153,6 +159,7 @@ class GFMFetcher(AbstractFloodFetcher):
         self.peak_days_before = peak_days_before
         self.peak_days_after = peak_days_after
         self.max_observations = max_observations
+        self.window_size = window_size
         self.peak_priority = peak_priority
 
     def search(self, event: FloodEvent) -> list[SearchResult]:
@@ -245,6 +252,7 @@ class GFMFetcher(AbstractFloodFetcher):
             resampling=self.resampling,
             classify=self.classify,
             max_retries=self.max_retries,
+            window_size=self.window_size,
         )
 
         date_results: list[tuple[str, GfmProcessedTile]] = []

@@ -73,7 +73,6 @@ def _install_fake_dask(monkeypatch, futures: list[_FakeFuture]):
     fake_client = MagicMock(name="Client")
     fake_client_instance = MagicMock(name="client_instance")
     fake_client_instance.dashboard_link = "http://localhost:8787"
-    fake_client_instance.scatter.return_value = [f.key for f in futures]
     fake_client_instance.map.return_value = futures
     fake_client_instance.register_plugin = MagicMock()
     fake_client.return_value = fake_client_instance
@@ -180,7 +179,7 @@ def test_run_cube_batch_mixed(cfg, monkeypatch):
 
 
 def test_run_cube_batch_resume_skips_done(cfg, monkeypatch):
-    """Pre-seeded DONE tasks are filtered out; only pending ones are submitted."""
+    """Pre-seeded DONE tasks are filtered out; only pending literals are mapped."""
     tasks = _make_tasks(10)
     init_db(cfg.db_path)
     for t in tasks[:4]:
@@ -192,11 +191,12 @@ def test_run_cube_batch_resume_skips_done(cfg, monkeypatch):
 
     final = run_cube_batch(tasks, _produce_ok, _consume_ok, cfg)
 
-    # Only 6 pending tasks should have been scattered
+    # Keeping task dicts in the scheduler graph makes them recoverable after a
+    # worker restart; only the six pending task literals should be submitted.
     fake_client_instance = fake_client.return_value
-    assert fake_client_instance.scatter.call_count == 1
-    scattered_arg = fake_client_instance.scatter.call_args[0][0]
-    assert len(scattered_arg) == 6
+    fake_client_instance.scatter.assert_not_called()
+    mapped_arg = fake_client_instance.map.call_args[0][1]
+    assert len(mapped_arg) == 6
     assert final["DONE"] == 10
 
 
