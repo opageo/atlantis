@@ -86,12 +86,12 @@ def run_cube_batch(
     try:
         with Client(cluster) as client:
             logger.info("Dask dashboard: {}", client.dashboard_link)
-            # Scatter the task dicts to workers once up front instead of letting client.map()
-            # embed each dict as a literal graph argument — for 100k+ tasks that literal
-            # embedding is what triggers Dask's "Sending large graph" warning and the
-            # associated (de)serialization overhead on every submission.
-            scattered = client.scatter(pending)
-            futures = client.map(produce_fn, scattered, retries=cfg.retries, pure=False)
+            # Keep task dictionaries in the scheduler-owned task graph instead of
+            # scattering them to workers. A nanny restart loses scattered data,
+            # which makes its dependent task unrecoverable even when retries are
+            # configured. Literal task arguments let Dask reschedule the task on
+            # a replacement worker after an OOM restart.
+            futures = client.map(produce_fn, pending, retries=cfg.retries, pure=False)
             key_to_id = {future.key: task["task_id"] for future, task in zip(futures, pending)}
             for future in as_completed(futures):
                 task_id = key_to_id.get(future.key, "unknown")
@@ -225,6 +225,53 @@ def run_modis_cube_batch(
             return f"{archive_root}#{source_id}/{payload['date']}/h{payload['h']:02d}v{payload['v']:02d}"
 
         return run_cube_batch(tasks, harmonise_modis_granule_payload, consume, cfg)
+
+
+def run_gfm_cube_batch(
+    tasks: list[dict[str, Any]],
+    *,
+    archive_root: str,
+    cfg: BatchConfig,
+    archive_config: Any = None,
+    storage_options: dict[str, Any] | None = None,
+    source_id: str = "gfm",
+) -> dict[str, Any]:
+    """Build the GFM datacube from a catalogue, resume-safe and streaming.
+
+    Wires the GFM produce step (:func:`harmonise_gfm_payload`, run on Dask
+    workers) to a single held-open
+    :meth:`~atlantis.archive.writer.ArchiveWriter.session` on the coordinator:
+    each harmonised ``(date, equi7_tile)`` cell is region-written as it
+    arrives. Only the shared derived layers (``water_fraction``,
+    ``exclusion_mask``, ``reference_water``) are persisted — GFM's
+    native-only companions (``ensemble_likelihood``, ``advisory_flags``) are
+    not part of the cube schema.
+
+    Args:
+        tasks: GFM task dicts (from
+            :func:`atlantis.fetchers.gfm.inventory.to_tasks`), one per
+            ``(date, equi7_tile)`` cell.
+        archive_root: Cube root — a local path or an ``s3://`` URI.
+        cfg: Batch configuration.
+        archive_config: Optional :class:`~atlantis.config.ArchiveConfig`.
+        storage_options: fsspec options for a remote ``archive_root``.
+        source_id: Cube group name (default ``"gfm"``).
+
+    Returns:
+        Final tracker stats for the run.
+    """
+    from atlantis.archive.writer import ArchiveWriter
+    from atlantis.fetchers.gfm.batch_processor import harmonise_gfm_payload
+
+    writer = ArchiveWriter(archive_root, archive_config, storage_options=storage_options)
+    var_names = ("water_fraction", "exclusion_mask", "reference_water")
+    with writer.session(source_id, var_names) as session:
+
+        def consume(payload: dict[str, Any]) -> str:
+            session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
+            return f"{archive_root}#{source_id}/{payload['date']}/{payload['equi7_tile']}"
+
+        return run_cube_batch(tasks, harmonise_gfm_payload, consume, cfg)
 
 
 def _payload_to_dataset(payload: dict[str, Any]):

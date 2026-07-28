@@ -231,6 +231,11 @@ class FetcherConfig(BaseSettings):
     gfm_api_url: str | None = None
     gfm_coarsen_factor: int = 4
     gfm_resampling: str = "average"
+    # Production default: 5000 native px (3x3 window grid over a 15000x15000
+    # Equi7 tile). Bounds per-item peak memory to ~2.5 GiB (from ~13 GiB
+    # unwindowed) at wall-clock-neutral cost. None/0 preserves the unwindowed
+    # path.
+    gfm_window_size: int | None = 5000
     viirs_backend: Literal["noaa_s3", "gmu_legacy"] = "noaa_s3"
     viirs_base_url: str | None = None
     viirs_legacy_base_url: str | None = None

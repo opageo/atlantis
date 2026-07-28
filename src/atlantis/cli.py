@@ -1086,6 +1086,17 @@ def fetch(
         "--gfm-resampling",
         help="GFM resampling method for reprojection to EPSG:4326.",
     ),
+    gfm_window_size: int | None = typer.Option(
+        None,
+        "--gfm-window-size",
+        help=(
+            "GFM native pixels per window for windowed processing (classified path only). "
+            "Reduces per-item peak memory from ~13 GiB to ~2.5 GiB. "
+            "Must be a positive exact multiple of --gfm-coarsen-factor. "
+            "Default: ATLANTIS_GFM_WINDOW_SIZE / 5000 (production default). "
+            "Pass 0 to force the unwindowed path."
+        ),
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -1256,6 +1267,7 @@ def fetch(
                 "peak_priority": peak_priority,
             }
         elif src == "gfm":
+            effective_window_size = gfm_window_size if gfm_window_size else None
             fetcher_kwargs = {
                 "coarsen_factor": gfm_coarsen_factor,
                 "resampling": gfm_resampling_enum,
@@ -1266,6 +1278,7 @@ def fetch(
                 "peak_days_after": effective_days_after,
                 "max_observations": max_observations,
                 "peak_priority": peak_priority,
+                "window_size": effective_window_size,
             }
         fetcher = fetcher_cls(**fetcher_kwargs)
         if flood_event is None:
@@ -2690,7 +2703,11 @@ def viirs_build_catalog(
             raise typer.Exit(code=1)
         storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
 
-    build_catalog(start=start, end=end, output=output, storage_options=storage_options, on_progress=info)
+    try:
+        build_catalog(start=start, end=end, output=output, storage_options=storage_options, on_progress=info)
+    except Exception as exc:  # noqa: BLE001 - surface a clean CLI error instead of a bare traceback
+        fail(f"Catalog build failed: {exc}")
+        raise typer.Exit(code=1) from exc
     ok(f"Catalog written → {output}")
 
 
@@ -2978,7 +2995,11 @@ def modis_build_catalog(
             raise typer.Exit(code=1)
         storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
 
-    build_catalog(start=start, end=end, output=output, storage_options=storage_options, on_progress=info)
+    try:
+        build_catalog(start=start, end=end, output=output, storage_options=storage_options, on_progress=info)
+    except Exception as exc:  # noqa: BLE001 - surface a clean CLI error instead of a bare traceback
+        fail(f"Catalog build failed: {exc}")
+        raise typer.Exit(code=1) from exc
     ok(f"Catalog written → {output}")
 
 
@@ -3136,6 +3157,248 @@ def batch_modis_cube_status(
         ok("All tasks complete.")
     elif remaining:
         info(f"{remaining} task(s) remaining — re-run `batch modis cube run` to resume.")
+
+
+gfm_batch_app = typer.Typer(help="Batch-process GFM flood products to 1-arcmin Zarr cubes.")
+batch_app.add_typer(gfm_batch_app, name="gfm")
+
+
+@gfm_batch_app.command("catalog", help="Build the GFM tile/date catalog from the EODC STAC API.")
+def gfm_build_catalog(
+    output: str = typer.Option(
+        "gfm_archive_catalog.parquet",
+        "--output",
+        "-o",
+        help="Output Parquet path (local or S3 URI).",
+    ),
+    start: str = typer.Option(
+        ...,
+        "--start",
+        help="Start date YYYY-MM-DD (inclusive).",
+    ),
+    end: str = typer.Option(
+        ...,
+        "--end",
+        help="End date YYYY-MM-DD (inclusive).",
+    ),
+) -> None:
+    """Build a Parquet catalog of available GFM STAC items from the EODC API.
+
+    Queries the public EODC STAC API for each date in the range (global, no
+    bbox filter) and writes a Parquet file with one row per STAC item:
+    date, equi7_tile, item_id, item_href, west, south, east, north.
+
+    No credentials required — the EODC STAC API is public.
+    """
+    from atlantis.fetchers.gfm.catalog import build_catalog
+    from atlantis.utils.setup import AWS_PROFILES
+
+    command_header("batch gfm catalog build", subtitle=f"{start} → {end}")
+
+    storage_options = None
+    if output.startswith("s3://"):
+        ecmwf_profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+        if ecmwf_profile is None or not ecmwf_profile.endpoint_url:
+            fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+            raise typer.Exit(code=1)
+        storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
+
+    try:
+        build_catalog(start=start, end=end, output=output, storage_options=storage_options, on_progress=info)
+    except Exception as exc:  # noqa: BLE001 - surface a clean CLI error instead of a bare traceback
+        fail(f"Catalog build failed: {exc}")
+        raise typer.Exit(code=1) from exc
+    ok(f"Catalog written → {output}")
+
+
+gfm_cube_app = typer.Typer(help="Build the GFM 1-arcmin Zarr datacube (resume-safe, streaming).")
+gfm_batch_app.add_typer(gfm_cube_app, name="cube")
+
+_GFM_CATALOGUE = "s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet"
+
+
+@gfm_cube_app.command("run")
+def batch_gfm_cube(
+    inventory: str = typer.Option(
+        _GFM_CATALOGUE,
+        "--inventory",
+        "-i",
+        help="Path or S3 URI to the GFM catalog Parquet file.",
+    ),
+    archive: str = typer.Option(
+        "s3://atlantis/zarr/gfm_cube",
+        "--archive",
+        "-a",
+        help="Datacube root — a local directory or an s3:// URI.",
+    ),
+    partition: str | None = typer.Option(
+        None,
+        "--partition",
+        help="Row slice of the catalog to process, e.g. '0:10000'. None = full catalog.",
+    ),
+    coarsen_factor: int | None = typer.Option(
+        None,
+        "--gfm-coarsen-factor",
+        help="Spatial coarsening factor before reprojection (defaults to ATLANTIS_GFM_COARSEN_FACTOR / 4).",
+    ),
+    resampling: str | None = typer.Option(
+        None,
+        "--gfm-resampling",
+        help="Resampling method for reprojection (defaults to ATLANTIS_GFM_RESAMPLING / average).",
+    ),
+    window_size: int | None = typer.Option(
+        None,
+        "--gfm-window-size",
+        help=(
+            "Native pixels per window for windowed processing. Bounds per-item "
+            "peak memory to ~2.5 GiB (from ~13 GiB unwindowed). Must be a positive exact "
+            "multiple of --gfm-coarsen-factor. Defaults to ATLANTIS_GFM_WINDOW_SIZE / 5000. "
+            "Pass 0 to force the unwindowed path."
+        ),
+    ),
+    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+    workers_max: int = typer.Option(
+        3,
+        "--workers-max",
+        help=(
+            "Maximum Dask worker processes (adaptive). With windowed processing "
+            "(--gfm-window-size 5000, default), this is validated for the 48-cell "
+            "Africa-heavy 2025 catalogue partition at --memory-limit 8GB. Inner odc.stac "
+            "loads run synchronously within their owning worker to avoid nested Dask work "
+            "multiplying GDAL buffers. See GitHub issue #96."
+        ),
+    ),
+    memory_limit: str = typer.Option(
+        "8GB",
+        "--memory-limit",
+        help=(
+            "Memory cap per worker. With windowed processing (--gfm-window-size 5000, "
+            "default), --workers-max 3 / 8GB completed the 48-cell Africa-heavy 2025 "
+            "catalogue partition with DONE=48 and FAILED=0. Do not lower this without "
+            "re-measuring representative production tiles. See GitHub issue #96."
+        ),
+    ),
+    dashboard_port: int = typer.Option(8789, "--dashboard-port", help="Dask dashboard port."),
+    db_path: Path = typer.Option(Path("gfm_cube_tracker.db"), "--db-path", help="SQLite resume database path."),
+    retries: int = typer.Option(3, "--retries", help="Dask retry count per cell."),
+    log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+) -> None:
+    """Build the GFM datacube from the catalog — resume-safe and streaming.
+
+    Dask harmonises ``(date, equi7_tile)`` cells in parallel while a single
+    coordinator streams each result into the consolidated Zarr cube. Every
+    finished cell is recorded in --db-path, so the run can be interrupted and
+    resumed.
+
+    Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
+
+        tmux new -s cube
+        atlantis batch gfm cube run --partition 0:10000
+
+    Check progress at any time with::
+
+        atlantis batch gfm cube status --partition 0:10000
+    """
+    import os
+
+    from atlantis.archive.cube_batch import run_gfm_cube_batch
+    from atlantis.batch import BatchConfig
+    from atlantis.config import reload_config
+    from atlantis.fetchers.gfm.inventory import load_inventory, slice_partition, to_tasks
+    from atlantis.utils.setup import AWS_PROFILES
+
+    command_header("batch gfm cube", subtitle=archive)
+
+    # ── Override config from CLI flags (re-read after setting env) ───────
+    if coarsen_factor is not None:
+        os.environ["ATLANTIS_GFM_COARSEN_FACTOR"] = str(coarsen_factor)
+    if resampling is not None:
+        os.environ["ATLANTIS_GFM_RESAMPLING"] = resampling
+    if window_size is not None:
+        os.environ["ATLANTIS_GFM_WINDOW_SIZE"] = str(window_size)
+    cfg_obj = reload_config().fetcher
+
+    storage_options = None
+    if archive.startswith("s3://"):
+        ecmwf_profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+        if ecmwf_profile is None or not ecmwf_profile.endpoint_url:
+            fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+            raise typer.Exit(code=1)
+        storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
+
+    info(f"Loading catalog from {inventory} …")
+    df = slice_partition(load_inventory(inventory), partition)
+    tasks = to_tasks(df)
+    console.print(
+        f"  [bold]{len(tasks)}[/bold] cells → {archive}" + (f"  (partition {partition})" if partition else "")
+    )
+    console.print(f"  [bold]tracker:[/bold] {db_path}")
+    console.print(
+        f"  [bold]coarsen factor:[/bold] {cfg_obj.gfm_coarsen_factor}  "
+        f"[bold]resampling:[/bold] {cfg_obj.gfm_resampling}  "
+        f"[bold]window size:[/bold] {cfg_obj.gfm_window_size}"
+    )
+    warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
+
+    cfg = BatchConfig(
+        db_path=db_path,
+        workers_min=workers_min,
+        workers_max=workers_max,
+        memory_limit_per_worker=memory_limit,
+        dashboard_port=dashboard_port,
+        retries=retries,
+        log_every=log_every,
+    )
+
+    final = run_gfm_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
+
+
+@gfm_cube_app.command("status")
+def batch_gfm_cube_status(
+    db_path: Path = typer.Option(Path("gfm_cube_tracker.db"), "--db-path", help="SQLite resume database path."),
+    inventory: str = typer.Option(
+        _GFM_CATALOGUE,
+        "--inventory",
+        help="Catalog used to compute the expected total.",
+    ),
+    partition: str | None = typer.Option(None, "--partition", help="Row slice the run used, if any."),
+) -> None:
+    """Report GFM cube-build completion from the tracker — works offline / after a disconnect."""
+    from atlantis.batch.tracker import get_pending, init_db, stats
+    from atlantis.fetchers.gfm.inventory import load_inventory, slice_partition, to_tasks
+
+    command_header("batch gfm cube status", subtitle=str(db_path))
+    init_db(db_path)
+    s = stats(db_path)
+    done = s.get("DONE", 0)
+    failed = s.get("FAILED", 0)
+
+    total: int
+    remaining: int | None
+    try:
+        df = slice_partition(load_inventory(inventory), partition)
+        tasks = to_tasks(df)
+        total = len(tasks)
+        remaining = len(get_pending(db_path, {t["task_id"] for t in tasks}))
+    except Exception as exc:
+        warn(f"Could not load catalog ({exc}); showing tracker counts only.")
+        total = done + failed
+        remaining = None
+
+    pct = f"{100 * done / total:.1f}%" if total else "—"
+    rows = [
+        ["Total (catalog)", str(total)],
+        ["DONE", str(done)],
+        ["FAILED (retried on resume)", str(failed)],
+        ["Remaining", "—" if remaining is None else str(remaining)],
+        ["Complete", pct],
+    ]
+    console.print(summary_table("GFM cube — build status", ["Metric", "Count"], rows))
+    if remaining == 0 and failed == 0 and total:
+        ok("All tasks complete.")
+    elif remaining:
+        info(f"{remaining} task(s) remaining — re-run `batch gfm cube run` to resume.")
 
 
 # ── STAC subcommand ───────────────────────────────────────────────────────────

@@ -76,7 +76,11 @@ def build_catalog(
 
     Raises:
         FileNotFoundError: If the packaged AOI grid is missing.
-        RuntimeError: If no tiles are found in the requested range.
+        RuntimeError: If no tiles are found in the requested range, or if the
+            NOAA listing for a day still fails after :data:`_MAX_RETRIES`
+            attempts — a partial catalog is never silently written; the whole
+            build aborts so a truncated result can't be mistaken for a
+            complete one.
     """
     if not _AOI_GRID_PATH.exists():
         raise FileNotFoundError(f"VIIRS AOI grid not found at {_AOI_GRID_PATH} (run `atlantis setup`).")
@@ -105,10 +109,11 @@ def build_catalog(
                 backoff_base=_BACKOFF_BASE,
                 label=f"NOAA listing for {date_str}",
             )
-        except Exception as exc:  # noqa: BLE001 - log and continue past a bad day
-            logger.warning("Failed to list {}: {}", date_str, exc)
-            log_progress(i, len(days), label="VIIRS catalog", on_progress=on_progress)
-            continue
+        except Exception as exc:
+            raise RuntimeError(
+                f"VIIRS catalog build aborted: NOAA listing for {date_str} failed after "
+                f"{_MAX_RETRIES} attempt(s) ({len(rows)} row(s) collected from {i} prior day(s)): {exc}"
+            ) from exc
 
         for key in entries:
             aoi_id = _parse_aoi_id(key)

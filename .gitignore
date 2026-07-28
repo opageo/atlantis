@@ -251,10 +251,8 @@ docs/mcdwd_laads_desc.md
 docs/mcdwd_vcdwd_userguide_revF.md
 docs/mod44w_userguide_atbd_v61.md
 tmp/
-.github/prompts/
 *.db
 *.db-journal
 .kilo/
 .nicegui/
-.github/agents/
-.github/hooks/
+tmp_gfm_test_cube/
