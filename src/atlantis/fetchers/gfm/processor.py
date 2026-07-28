@@ -655,8 +655,13 @@ class GfmRasterProcessor:
                 groupby="solar_day",
                 chunks={},
             )
-            # Force eager load so all HTTP reads happen here, inside the retry.
-            return xx.load()
+            # Force eager loading in this worker's thread.  ``chunks={}``
+            # produces Dask-backed arrays; without an explicit synchronous
+            # scheduler, their inner ``.load()`` computations can be submitted
+            # to the outer LocalCluster while it is already running GFM cells.
+            # That nested scheduling multiplies native GDAL buffers across
+            # workers and defeats the one-cell-per-worker memory bound.
+            return xx.load(scheduler="synchronous")
 
         return self._retry_read(
             _do_load,

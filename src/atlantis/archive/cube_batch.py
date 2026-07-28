@@ -86,12 +86,12 @@ def run_cube_batch(
     try:
         with Client(cluster) as client:
             logger.info("Dask dashboard: {}", client.dashboard_link)
-            # Scatter the task dicts to workers once up front instead of letting client.map()
-            # embed each dict as a literal graph argument — for 100k+ tasks that literal
-            # embedding is what triggers Dask's "Sending large graph" warning and the
-            # associated (de)serialization overhead on every submission.
-            scattered = client.scatter(pending)
-            futures = client.map(produce_fn, scattered, retries=cfg.retries, pure=False)
+            # Keep task dictionaries in the scheduler-owned task graph instead of
+            # scattering them to workers. A nanny restart loses scattered data,
+            # which makes its dependent task unrecoverable even when retries are
+            # configured. Literal task arguments let Dask reschedule the task on
+            # a replacement worker after an OOM restart.
+            futures = client.map(produce_fn, pending, retries=cfg.retries, pure=False)
             key_to_id = {future.key: task["task_id"] for future, task in zip(futures, pending)}
             for future in as_completed(futures):
                 task_id = key_to_id.get(future.key, "unknown")

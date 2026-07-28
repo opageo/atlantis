@@ -283,35 +283,75 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
   --log-every 50
 ```
 
-| Flag                                        | VIIRS default                        | MODIS default                   | GFM default                   | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------------------------- | ------------------------------------ | ------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--partition`                               | full catalogue                       | full catalogue                  | full catalogue                | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows _before_ the `(date, equi7_tile)` grouping (see §5)                                                                                                                                                                                                                                                                                                                                                                  |
-| `--archive` / `-a`                          | `s3://atlantis/zarr/viirs_2020_cube` | `s3://atlantis/zarr/modis_cube` | `s3://atlantis/zarr/gfm_cube` | Cube root — a local dir or `s3://` URI                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `--log-every`                               | `100`                                | `50`                            | `50`                          | Progress line every N completions                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `--workers-min/max`                         | `2` / `6`                            | `2` / `6`                       | `2` / `6`                     | Dask worker count (adaptive) — GFM's max was previously lowered to `3` due to ~11-14 GiB/worker memory pressure; with windowed processing (`--gfm-window-size 5000`, ~2.5 GiB/worker peak) it's now back to `6`, matching VIIRS/MODIS                                                                                                                                                                                                                                                            |
-| `--memory-limit`                            | `4GB`                                | `2.5GB`                         | `4GB`                         | Memory cap per worker — **GFM's default dropped from `12GB` to `4GB`** now that windowed processing (`--gfm-window-size`, default `5000`) bounds the per-item peak to **~2.5 GiB** (down from ~13 GiB unwindowed). `4GB` leaves a safety margin over the measured ~2.5 GiB peak. Don't set it below ~3GB without re-measuring against `scripts/profile_gfm_peak_memory.py --window-size` first. See [GitHub issue #96](https://github.com/ECMWFCode4Earth/atlantis/issues/96) for current status |
-| `--dashboard-port`                          | `8787`                               | `8788`                          | `8789`                        | Distinct ports so all three dashboards can run at once                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `--db-path`                                 | `cube_tracker.db`                    | `cube_tracker.db`               | `gfm_cube_tracker.db`         | SQLite resume database — **use a different path per source** when writing into the same archive concurrently                                                                                                                                                                                                                                                                                                                                                                                     |
-| `--retries`                                 | `3`                                  | `3`                             | `3`                           | Retries per granule/tile/cell                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `--composite`                               | n/a                                  | `None` (→ `F2`)                 | n/a                           | MODIS-only: MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`)                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `--gfm-coarsen-factor` / `--gfm-resampling` | n/a                                  | n/a                             | `4` / `average`               | GFM-only: spatial coarsening factor and resampling method before reprojection (overrides `ATLANTIS_GFM_COARSEN_FACTOR` / `ATLANTIS_GFM_RESAMPLING`)                                                                                                                                                                                                                                                                                                                                              |
-| `--gfm-window-size`                         | n/a                                  | n/a                             | `5000`                        | GFM-only: native pixels per window for windowed processing. Bounds per-item peak memory to ~2.5 GiB (from ~13 GiB unwindowed) at wall-clock-neutral cost. Must be a positive exact multiple of `--gfm-coarsen-factor`. Pass `0` to force the unwindowed path. See `scripts/verify_gfm_windowed_correctness.py` for the correctness gate and `scripts/profile_gfm_peak_memory.py` for memory/wall-clock measurements across window sizes (overrides `ATLANTIS_GFM_WINDOW_SIZE`)                   |
+#### Run the full GFM catalogue
 
-> **GFM memory**: the per-item peak is now **~2.5 GiB** (down from ~13 GiB
-> unwindowed) thanks to windowed processing (`--gfm-window-size 5000`,
-> default). The windowed path processes each item's native ~15000×15000 EQUI7
-> tile in a 3×3 grid of pixel-aligned windows, bounding the dominant
-> `_load_item` + `_build_native_masks` stages to one window at a time, then
-> reprojects the fully assembled coarsened masks exactly once per item
-> (the "assemble, don't buffer" approach). `flood_fraction` is byte-exact vs.
-> the unwindowed reference; `water_fraction` has a tiny, well-understood,
-> gated residual (7-11 pixels out of ~18M, max diff ~1e-3 to ~4e-3,
-> window-size-invariant — a GDAL `average`-resampling canvas-size
-> sensitivity near the tile's true edge, not an atlantis logic bug). The
-> correctness gate (`scripts/verify_gfm_windowed_correctness.py`) passes
-> cleanly across all tested window sizes (5000, 3000, 1500) and both
-> single-/multi-item reference cells. Tracked under
-> [GitHub issue #96](https://github.com/ECMWFCode4Earth/atlantis/issues/96).
+Omit `--partition` to process every row in the catalogue. Run this in `tmux`
+or another persistent session: the SQLite tracker makes the command safe to
+restart, and a restart skips cells already marked `DONE`.
+
+```bash
+tmux new -s gfm_cube_2025
+PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
+  --inventory s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet \
+  --archive s3://atlantis/zarr/2025 \
+  --db-path gfm_cube_tracker_2025.db \
+  --log-every 50
+```
+
+Use an archive and tracker path appropriate to the catalogue being ingested.
+Do not reuse a tracker for a different source or catalogue revision: `DONE`
+means only that its recorded task id completed, not that the task came from the
+same inventory file.
+
+| Flag                                        | VIIRS default                        | MODIS default                   | GFM default                   | Purpose                                                                                                                                                                          |
+| ------------------------------------------- | ------------------------------------ | ------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--partition`                               | full catalogue                       | full catalogue                  | full catalogue                | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows _before_ the `(date, equi7_tile)` grouping (see §5)                                                  |
+| `--archive` / `-a`                          | `s3://atlantis/zarr/viirs_2020_cube` | `s3://atlantis/zarr/modis_cube` | `s3://atlantis/zarr/gfm_cube` | Cube root — a local dir or `s3://` URI                                                                                                                                           |
+| `--log-every`                               | `100`                                | `50`                            | `50`                          | Progress line every N completions                                                                                                                                                |
+| `--workers-min/max`                         | `2` / `6`                            | `2` / `6`                       | `2` / `3`                     | Dask worker count (adaptive). GFM's defaults reserve up to three 8GB workers; increase only after measuring the target host and catalogue.                                       |
+| `--memory-limit`                            | `4GB`                                | `2.5GB`                         | `8GB`                         | Memory cap per GFM worker. Keep this paired with the GFM worker count: the default three-worker configuration needs roughly 24GB for workers before coordinator and OS overhead. |
+| `--dashboard-port`                          | `8787`                               | `8788`                          | `8789`                        | Distinct ports so all three dashboards can run at once                                                                                                                           |
+| `--db-path`                                 | `cube_tracker.db`                    | `cube_tracker.db`               | `gfm_cube_tracker.db`         | SQLite resume database — **use a different path per source** when writing into the same archive concurrently                                                                     |
+| `--retries`                                 | `3`                                  | `3`                             | `3`                           | Retries per granule/tile/cell                                                                                                                                                    |
+| `--composite`                               | n/a                                  | `None` (→ `F2`)                 | n/a                           | MODIS-only: MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`)                                                                                                                    |
+| `--gfm-coarsen-factor` / `--gfm-resampling` | n/a                                  | n/a                             | `4` / `average`               | GFM-only: spatial coarsening factor and resampling method before reprojection (overrides `ATLANTIS_GFM_COARSEN_FACTOR` / `ATLANTIS_GFM_RESAMPLING`)                              |
+| `--gfm-window-size`                         | n/a                                  | n/a                             | `5000`                        | GFM-only: native pixels per window. It must be a positive exact multiple of `--gfm-coarsen-factor`; `0` disables windowing and is not suitable for production-sized cells.       |
+
+#### GFM settings: recommended values and change risks
+
+Use the defaults together for a typical 32GB host:
+
+```text
+--workers-min 2 --workers-max 3 --memory-limit 8GB --gfm-window-size 5000
+```
+
+- **Workers and memory limit are one capacity decision.** Each worker streams
+  and processes one cell at a time, but GDAL, NumPy, and the worker runtime
+  all contribute to its resident memory. Do not raise `--workers-max` without
+  enough physical RAM for every worker plus the coordinator and OS. Do not
+  lower `--memory-limit` just to suppress host contention: Dask pauses at 80%
+  and the Nanny restarts a worker near 95%, interrupting its active cells.
+- **Leave `--gfm-window-size 5000` in place unless it is measured on the
+  target data.** Windowing keeps the native 20m tile out of memory all at
+  once. A value must be a positive multiple of the coarsen factor (default
+  `4`). Smaller windows increase the number of COG range reads; `0` takes the
+  unwindowed path and can require substantially more memory.
+- **Treat `--gfm-coarsen-factor` and `--gfm-resampling` as output-definition
+  settings, not throughput knobs.** They change the grid produced before the
+  common 1-arcmin harmonisation step. Use the defaults for comparable output;
+  validate scientific output before changing either value.
+- **Keep the inner raster work local to its worker.**
+  `GfmRasterProcessor._load_item` deliberately uses
+  `.load(scheduler="synchronous")`. Removing that scheduler lets `odc.stac`
+  submit nested raster tasks to the outer Dask cluster, which can run several
+  native reads at once and exhaust worker memory.
+- **Watch the dashboard on new infrastructure or a new catalogue region.**
+  GFM's dashboard is `http://localhost:8789` by default. Repeated pause/resume
+  messages or Nanny restarts mean capacity is too tight; reduce concurrency or
+  increase available memory before continuing.
+
+The default settings above completed the 48-cell Africa-heavy 2025 validation
+partition with `DONE=48` and `FAILED=0`.
 
 The `--archive` value is the **parent** of the Zarr store — the engine creates
 `datacube.zarr` underneath it.

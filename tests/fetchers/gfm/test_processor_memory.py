@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import gc
 import resource
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -120,6 +121,31 @@ def test_load_is_split_into_two_band_groups(fake_odc_load):
     all_native_bands = set(gfm_processor_module.GFM_BANDS)
     assert set(fake_odc_load[0]) | set(fake_odc_load[1]) == all_native_bands
     assert set(fake_odc_load[0]) & set(fake_odc_load[1]) == set()
+
+
+def test_load_item_uses_synchronous_inner_scheduler(monkeypatch):
+    """Nested odc/xarray loading must stay inside the outer Dask worker."""
+    import odc.stac
+
+    loaded_with: list[object] = []
+    dataset = xr.Dataset()
+
+    def _load(*_args, **_kwargs):
+        return dataset
+
+    original_load = xr.Dataset.load
+
+    def _record_scheduler(self, *args, **kwargs):
+        loaded_with.append(kwargs.get("scheduler"))
+        return original_load(self, *args, **kwargs)
+
+    monkeypatch.setattr(odc.stac, "load", _load)
+    monkeypatch.setattr(xr.Dataset, "load", _record_scheduler)
+
+    processor = GfmRasterProcessor(bbox=_BBOX)
+    aoi = SimpleNamespace(bounds=_BBOX)
+    assert processor._load_item(_FakeItem(), aoi, "EPSG:4326", 20.0, bands=["ensemble_flood_extent"]) is dataset
+    assert loaded_with == ["synchronous"]
 
 
 def test_process_items_peak_rss_within_scaled_bound(fake_odc_load):

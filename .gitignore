@@ -255,3 +255,4 @@ tmp/
 *.db-journal
 .kilo/
 .nicegui/
+tmp_gfm_test_cube/

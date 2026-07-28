@@ -3214,7 +3214,7 @@ def gfm_build_catalog(
 gfm_cube_app = typer.Typer(help="Build the GFM 1-arcmin Zarr datacube (resume-safe, streaming).")
 gfm_batch_app.add_typer(gfm_cube_app, name="cube")
 
-_GFM_CATALOGUE = "s3://atlantis/assets/gfm/gfm_archive_catalog.parquet"
+_GFM_CATALOGUE = "s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet"
 
 
 @gfm_cube_app.command("run")
@@ -3258,24 +3258,24 @@ def batch_gfm_cube(
     ),
     workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
     workers_max: int = typer.Option(
-        6,
+        3,
         "--workers-max",
         help=(
             "Maximum Dask worker processes (adaptive). With windowed processing "
-            "(--gfm-window-size 5000, default) the per-item peak is ~2.5 GiB, so GFM "
-            "can now use the same worker count as VIIRS/MODIS. Lower this if you "
-            "disable windowing (--gfm-window-size 0) or use a smaller window size. "
-            "See GitHub issue #96."
+            "(--gfm-window-size 5000, default), this is validated for the 48-cell "
+            "Africa-heavy 2025 catalogue partition at --memory-limit 8GB. Inner odc.stac "
+            "loads run synchronously within their owning worker to avoid nested Dask work "
+            "multiplying GDAL buffers. See GitHub issue #96."
         ),
     ),
     memory_limit: str = typer.Option(
-        "4GB",
+        "8GB",
         "--memory-limit",
         help=(
             "Memory cap per worker. With windowed processing (--gfm-window-size 5000, "
-            "default) the per-item peak is ~2.5 GiB (down from ~13 GiB unwindowed; see "
-            "GitHub issue #96 and scripts/profile_gfm_peak_memory.py). 4GB leaves a safety "
-            "margin. Don't lower below ~3GB without re-measuring first."
+            "default), --workers-max 3 / 8GB completed the 48-cell Africa-heavy 2025 "
+            "catalogue partition with DONE=48 and FAILED=0. Do not lower this without "
+            "re-measuring representative production tiles. See GitHub issue #96."
         ),
     ),
     dashboard_port: int = typer.Option(8789, "--dashboard-port", help="Dask dashboard port."),
