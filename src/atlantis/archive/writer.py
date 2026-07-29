@@ -36,7 +36,9 @@ _X_DIMS = ("x", "lon", "longitude")
 #: caller passes ``ensure_masks=True``. ``cloud_mask``, ``snow_ice`` and
 #: ``shadow`` are VIIRS-only derived masks (per-pixel 0/1); they materialise
 #: when a source writes them (the per-session ``var_names`` is the actual
-#: write-side filter).
+#: write-side filter). This is the union of all possible cube vars across
+#: sources, not a per-session declaration — ``recurring_flood`` is MODIS-sourced
+#: only; VIIRS and GFM do not declare it and raise ``KeyError`` on access.
 _CUBE_VARS = (
     "water_fraction",
     "exclusion_mask",

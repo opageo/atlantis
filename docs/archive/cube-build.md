@@ -467,7 +467,8 @@ PYTHONPATH=src pixi run -e viz python -m atlantis.cli viz serve gfm \
 
 Open `http://localhost:5006` in a browser (SSH-tunnel if remote: `ssh -L 5006:localhost:5006 <host>`).
 `--var recurring_flood` only has meaningful content in the **MODIS** group — see
-§6 below; GFM's cube group doesn't declare `recurring_flood` at all (see §6).
+§6 below; the `viirs` and `gfm` groups don't declare `recurring_flood` at all
+(see §6).
 
 For tighter AOI and date range:
 
@@ -530,24 +531,20 @@ numbers are only valid for that exact Parquet file's current contents.
 
 ---
 
-## 6. `recurring_flood` — a MODIS-only layer, present in both groups
+## 6. `recurring_flood` — a MODIS-only layer
 
 MODIS's cube session declares `recurring_flood` in its `var_names` (composite
-class `2`, see [`derived.py`](../../src/atlantis/fetchers/modis/derived.py)),
-and so does VIIRS's — for schema parity across source groups, so downstream
-code can select `recurring_flood` from either group without a `KeyError`.
-VIIRS's per-granule payload never populates it, though, so the **VIIRS**
-group's `recurring_flood` array stays at the Zarr fill value (nodata) for
-every region ever written — by design, not because it is "missing yet."
-Treat a MODIS `recurring_flood` read as real data and a VIIRS one as
-structurally-always-nodata.
+class `2`, see [`derived.py`](../../src/atlantis/fetchers/modis/derived.py)).
+VIIRS and GFM do **not** declare it — selecting `recurring_flood` from the
+`viirs` or `gfm` group raises `KeyError`, the same way GFM already behaved.
+Treat `recurring_flood` as a MODIS-only channel: read it from the `modis`
+group, and guard any cross-source access with a membership check
+(`"recurring_flood" in ds`) rather than assuming it exists.
 
-**GFM's cube group doesn't declare `recurring_flood` at all** — selecting it
-from `gfm` raises `KeyError`, unlike the VIIRS/MODIS parity above. GFM's own
-`reference_water` layer already folds the seasonal/permanent split into its
-native 3-class codes (`0` = no water, `1` = permanent, `2` = seasonal — the
-seasonal class is the GFM analog of MODIS's `recurring_flood`), so there was
-no separate channel to add for schema parity. See the
+GFM's own `reference_water` layer already folds the seasonal/permanent split
+into its native 3-class codes (`0` = no water, `1` = permanent, `2` =
+seasonal — the seasonal class is the GFM analog of MODIS's
+`recurring_flood`), so there is no separate channel to add. See the
 [layer reference](../layers.md#layers-cross-source) for the full cross-source
 comparison, including `exclusion_mask`, which is a clean binary `0`/`1` mask
 for VIIRS/MODIS but GFM's own native, multi-valued SAR codes (`nodata=255`)
