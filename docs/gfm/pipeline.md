@@ -288,7 +288,7 @@ harmonised GeoTIFF + PNG.
         <event_id>_<YYYYMMDD>_gfm_reference_water_mask.tif    # uint8, nodata=255
         <event_id>_<YYYYMMDD>_gfm_exclusion_mask.tif          # uint8 native codes
         <event_id>_<YYYYMMDD>_gfm_advisory_flags.tif          # uint8 native bitmask
-        <event_id>_<YYYYMMDD>_gfm_ensemble_likelihood.tif     # uint8 0–100
+        <event_id>_<YYYYMMDD>_gfm_ensemble_likelihood.tif     # uint8 values 0–100, nodata=255
       plots/
         processed/
           derived/      # --classify (default) + --plot
@@ -360,7 +360,7 @@ This mirrors the VIIRS (375 m) and MODIS (250 m) ladders: a source-resolution
 | `*_reference_water_mask.tif`  | uint8 | 255    | 0 = no water, 1 = permanent water, 2 = seasonal water, 255 = nodata |
 | `*_exclusion_mask.tif`        | uint8 | 255    | Native GFM exclusion-mask codes                                     |
 | `*_advisory_flags.tif`        | uint8 | 255    | Native advisory bitmask                                             |
-| `*_ensemble_likelihood.tif`   | uint8 | 255    | Native ensemble likelihood values (0–100)                           |
+| `*_ensemble_likelihood.tif`   | uint8 | 255    | Native ensemble likelihood values (0–100; 255 = nodata)             |
 
 All processed outputs use **CRS**: EPSG:4326 (WGS84), **Compression**: LZW.
 
