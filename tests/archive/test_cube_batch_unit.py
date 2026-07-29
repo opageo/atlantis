@@ -59,6 +59,29 @@ class _FakeFuture:
         self.released = True
 
 
+class _FakeAsCompleted:
+    """Completion queue that records the active submission window."""
+
+    def __init__(self):
+        self.active: list[_FakeFuture] = []
+        self.active_counts: list[int] = []
+        self.first_completion_submit_count: int | None = None
+        self.submission_counts: list[int] = []
+        self._submit_count = 0
+
+    def add(self, future: _FakeFuture) -> None:
+        self.submission_counts.append(self._submit_count)
+        self._submit_count += 1
+        self.active.append(future)
+        self.active_counts.append(len(self.active))
+
+    def __iter__(self):
+        if self.first_completion_submit_count is None:
+            self.first_completion_submit_count = self._submit_count
+        while self.active:
+            yield self.active.pop(0)
+
+
 def _install_fake_dask(monkeypatch, futures: list[_FakeFuture]):
     """Inject a fake ``dask.distributed`` module into ``sys.modules``."""
 
@@ -73,20 +96,24 @@ def _install_fake_dask(monkeypatch, futures: list[_FakeFuture]):
     fake_client = MagicMock(name="Client")
     fake_client_instance = MagicMock(name="client_instance")
     fake_client_instance.dashboard_link = "http://localhost:8787"
-    fake_client_instance.map.return_value = futures
+    future_iter = iter(futures)
+    fake_client_instance.submit.side_effect = lambda *_args, **_kwargs: next(future_iter)
     fake_client_instance.register_plugin = MagicMock()
     fake_client.return_value = fake_client_instance
     fake_client_instance.__enter__ = MagicMock(return_value=fake_client_instance)
     fake_client_instance.__exit__ = MagicMock(return_value=False)
 
-    def fake_as_completed(futs):
-        return iter(futs)
+    completed = _FakeAsCompleted()
+
+    def fake_as_completed():
+        return completed
 
     fake_mod.Client = fake_client
     fake_mod.LocalCluster = fake_cluster
     fake_mod.as_completed = fake_as_completed
 
     monkeypatch.setitem(sys.modules, "dask.distributed", fake_mod)
+    fake_client_instance.completed = completed
     return fake_client, fake_cluster
 
 
@@ -179,7 +206,7 @@ def test_run_cube_batch_mixed(cfg, monkeypatch):
 
 
 def test_run_cube_batch_resume_skips_done(cfg, monkeypatch):
-    """Pre-seeded DONE tasks are filtered out; only pending literals are mapped."""
+    """Pre-seeded DONE tasks are filtered out before scheduler submission."""
     tasks = _make_tasks(10)
     init_db(cfg.db_path)
     for t in tasks[:4]:
@@ -195,8 +222,9 @@ def test_run_cube_batch_resume_skips_done(cfg, monkeypatch):
     # worker restart; only the six pending task literals should be submitted.
     fake_client_instance = fake_client.return_value
     fake_client_instance.scatter.assert_not_called()
-    mapped_arg = fake_client_instance.map.call_args[0][1]
-    assert len(mapped_arg) == 6
+    submitted = [call.args[1] for call in fake_client_instance.submit.call_args_list]
+    assert submitted == pending
+    assert fake_client_instance.completed.first_completion_submit_count == len(pending)
     assert final["DONE"] == 10
 
 
@@ -306,6 +334,46 @@ def test_run_cube_batch_futures_released(cfg, monkeypatch):
     run_cube_batch(tasks, _produce_ok, _consume_ok, cfg)
 
     assert all(f.released for f in futures)
+
+
+def test_run_cube_batch_submission_is_bounded_and_replenished(cfg, monkeypatch):
+    """Only a fixed window is queued, then one task follows each completion."""
+    cfg.workers_max = 2
+    tasks = _make_tasks(12)
+    futures = [_FakeFuture(t["task_id"], _produce_ok(t)) for t in tasks]
+    fake_client, _ = _install_fake_dask(monkeypatch, futures)
+
+    final = run_cube_batch(tasks, _produce_ok, _consume_ok, cfg)
+
+    client = fake_client.return_value
+    completed = client.completed
+    assert completed.first_completion_submit_count == 8
+    assert client.submit.call_count == len(tasks)
+    assert completed.submission_counts == list(range(len(tasks)))
+    assert completed.active_counts == list(range(1, 9)) + [8] * 4
+    assert max(completed.active_counts) == 8
+    assert final["DONE"] == len(tasks)
+
+
+def test_run_cube_batch_failure_releases_and_replenishes(cfg, monkeypatch):
+    """A failed worker task is tracked, released, and replaced from pending work."""
+    cfg.workers_max = 2
+    tasks = _make_tasks(10)
+    futures = [
+        _FakeFuture(tasks[0]["task_id"], _produce_ok(tasks[0])),
+        _FakeFuture(tasks[1]["task_id"], None, exc=RuntimeError("boom")),
+        *[_FakeFuture(t["task_id"], _produce_ok(t)) for t in tasks[2:]],
+    ]
+    fake_client, _ = _install_fake_dask(monkeypatch, futures)
+
+    final = run_cube_batch(tasks, _produce_ok, _consume_ok, cfg)
+
+    client = fake_client.return_value
+    assert final["FAILED"] == 1
+    assert final["DONE"] == 9
+    assert futures[1].released
+    assert client.submit.call_count == len(tasks)
+    assert max(client.completed.active_counts) <= 4 * cfg.workers_max
 
 
 def test_run_cube_batch_cluster_configured_from_cfg(cfg, monkeypatch):

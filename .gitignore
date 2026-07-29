@@ -255,4 +255,6 @@ tmp/
 *.db-journal
 .kilo/
 .nicegui/
+.github/agents/
+.github/hooks/
 tmp_gfm_test_cube/
