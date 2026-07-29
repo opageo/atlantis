@@ -197,7 +197,6 @@ def run_viirs_cube_batch(
             "cloud_mask",
             "snow_ice",
             "shadow",
-            "recurring_flood",
         ),
     ) as session:
 
