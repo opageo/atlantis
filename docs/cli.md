@@ -436,9 +436,9 @@ pixi run atlantis batch viirs cube run [OPTIONS]
 | `--inventory`      | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Path or S3 URI to the VIIRS JPSS catalogue Parquet file. |
 | `--archive`, `-a`  | `s3://atlantis/zarr/viirs_2020_cube`                       | Cube root — a local directory or an `s3://` URI.         |
 | `--partition`      | full catalogue                                             | Row slice of the catalogue, e.g. `0:1000`.               |
-| `--workers-min`    | `2`                                                        | Minimum Dask worker processes.                           |
-| `--workers-max`    | `6`                                                        | Maximum Dask worker processes (adaptive).                |
-| `--memory-limit`   | `4GB`                                                      | Memory cap per worker.                                   |
+| `--workers-min`    | `4`                                                        | Minimum Dask worker processes.                           |
+| `--workers-max`    | `8`                                                        | Maximum Dask worker processes (adaptive).                |
+| `--memory-limit`   | `6GB`                                                      | Memory cap per worker.                                   |
 | `--dashboard-port` | `8787`                                                     | Dask dashboard port.                                     |
 | `--db-path`        | `cube_tracker.db`                                          | SQLite resume database path.                             |
 | `--retries`        | `3`                                                        | Dask retry count per granule.                            |
