@@ -95,9 +95,12 @@ registry.add_native(
         dtype="uint8",
         nodata=GFM_NODATA,
         description=(
-            "Reference water mask, passed through untouched. Codes follow GFM PDD "
-            "Table 20: 0 = no water, 1 = permanent water, 2 = seasonal water. The "
-            "seasonal class (2) is the GFM analog of MODIS recurring_flood."
+            "Static multi-year baseline of non-flood surface water computed once "
+            "by the GFM service over a fixed 2017-2021 reference period "
+            "(permanent from median backscatter; seasonal from 12 monthly "
+            "sub-masks). Codes follow GFM PDD Table 20. The seasonal class (2) "
+            "is the GFM analog of MODIS recurring_flood. See [GFM overview]"
+            "(gfm/overview.md#reference-water-mask)."
         ),
         codes={
             GFM_LAND: "no water",
@@ -124,7 +127,13 @@ registry.add_native(
         name="ensemble_likelihood",
         dtype="uint8",
         nodata=GFM_NODATA,
-        description="Native GFM ensemble flood-likelihood values (0-100; 255=nodata), passed through untouched.",
+        description=(
+            "Native GFM ensemble flood-likelihood values (0-100; 255=nodata), "
+            "passed through untouched. See [GFM overview]"
+            "(gfm/overview.md#ensemble-likelihood) for the likelihood scale and "
+            "the IEEE paper reference."
+        ),
+        codes={0: "high-confidence dry", 100: "high-confidence flood"},
         resampling="average",
         aggregation="masked_max",
     )
