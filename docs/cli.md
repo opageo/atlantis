@@ -177,10 +177,10 @@ for pixel-level semantics.
 
 ### VIIRS-specific
 
-| Option            | Default   | Description                                                                                 |
-| ----------------- | --------- | ------------------------------------------------------------------------------------------- |
-| `--viirs-backend` | `noaa_s3` | `noaa_s3` (2012–2020, 2023–2026) or `gmu_legacy` (covers 2021–2022 gap; intermittent host). |
-| `--viirs-format`  | `tif`     | `tif`, `netcdf`, `shapezip`, `png`. Only `tif` is implemented.                              |
+| Option            | Default   | Description                                                                                                    |
+| ----------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
+| `--viirs-backend` | `noaa_s3` | `noaa_s3` (2012–2020, 2023-08-10 onward, 2024–2026) or `gmu_legacy` (covers 2021–2022 gap; intermittent host). |
+| `--viirs-format`  | `tif`     | `tif`, `netcdf`, `shapezip`, `png`. Only `tif` is implemented.                                                 |
 
 ### MODIS-specific
 

@@ -155,8 +155,8 @@ pixi run atlantis fetch --event Valencia_2024 --source viirs \
 
 ### 5. Backend for the 2021–2022 gap (`--viirs-backend gmu_legacy`)
 
-NOAA S3 covers 2012–2020 and 2023–2026. For events in the 2021–2022 gap, use the
-GMU legacy backend (download-only, intermittent host):
+NOAA S3 covers 2012–2020 and 2023-08-10 onward (2024–2026 full years). For events in the
+2021–2022 gap, use the GMU legacy backend (download-only, intermittent host):
 
 ```bash
 pixi run atlantis fetch --event Pakistan_2022 --source viirs \
@@ -352,8 +352,9 @@ pixi run atlantis fetch-kurosiwo-viirs --case KuroSiwo_470 --harmonise --plot
 
 ## VIIRS availability notes
 
-The default `noaa_s3` backend publishes VFM tiles for **2012–2020 and 2023–2026**.
-**2021 and 2022 are not published** on the public NOAA bucket. For events in that
+The default `noaa_s3` backend publishes VFM tiles for **2012–2020 and 2023-08-10 onward
+(2024–2026 full years)**. **2021 and 2022 are not published** on the public NOAA bucket,
+and **2023 starts on Aug 10** (Jan 1–Aug 9, 2023 is also missing). For events in that
 gap (e.g. Pakistan 2022), use `--viirs-backend gmu_legacy --no-stream` (the GMU
 host is intermittently offline — retry from a non-cloud network).
 

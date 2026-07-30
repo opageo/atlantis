@@ -345,7 +345,7 @@ def _report_empty_fetch(source_id: str, fetcher) -> None:
             info(
                 "Hint: jpssflood.gmu.edu is intermittently offline. Retry later "
                 "(ideally from a non-cloud network), or use --viirs-backend noaa_s3 "
-                "for years 2012–2020 / 2023–2026."
+                "for years 2012–2020 / 2023-08-10 onward / 2024–2026."
             )
         else:
             info("Hint: check your network connection or retry shortly.")
@@ -1306,7 +1306,7 @@ def fetch(
                 if src == "viirs" and viirs_backend == "gmu_legacy":
                     info(
                         "Hint: jpssflood.gmu.edu is intermittently offline. Retry later, or "
-                        "use --viirs-backend noaa_s3 for years 2012–2020 / 2023–2026."
+                        "use --viirs-backend noaa_s3 for years 2012–2020 / 2023-08-10 onward / 2024–2026."
                     )
                 continue
 
