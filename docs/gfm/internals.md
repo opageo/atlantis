@@ -37,6 +37,14 @@ Atlantis now exposes the core native GFM bands plus the auxiliary
 `advisory_flags` layers. The algorithm-specific DLR / TUW / LIST intermediate
 flood-extent and likelihood assets remain unexposed.
 
+The GFM PDD §4 also lists three derived layers that are not currently surfaced
+by Atlantis: **Affected Population** (PDD §4.9, gridded people in flooded
+areas), **Affected Land Cover** (PDD §4.10, GLS land cover in flooded areas),
+and **Sentinel-1 Footprint and Schedule** (PDD §4.7–4.8, KML metadata).
+Adding them is a deliberate out-of-scope decision today — they are not part of
+the per-pixel raster API and exposing them would require a separate KML/
+ancillary fetch path.
+
 The classified pipeline keeps the shared semantics narrow and explicit:
 `water_fraction` comes from accumulated water coverage, `flood_fraction` comes
 from accumulated flood coverage, and `reference_water` carries the native
