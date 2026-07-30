@@ -37,6 +37,14 @@ Atlantis now exposes the core native GFM bands plus the auxiliary
 `advisory_flags` layers. The algorithm-specific DLR / TUW / LIST intermediate
 flood-extent and likelihood assets remain unexposed.
 
+The GFM PDD §4 also lists three derived layers that are not currently surfaced
+by Atlantis: **Affected Population** (PDD §4.9, gridded people in flooded
+areas), **Affected Land Cover** (PDD §4.10, GLS land cover in flooded areas),
+and **Sentinel-1 Footprint and Schedule** (PDD §4.7–4.8, KML metadata).
+Adding them is a deliberate out-of-scope decision today — they are not part of
+the per-pixel raster API and exposing them would require a separate KML/
+ancillary fetch path.
+
 The classified pipeline keeps the shared semantics narrow and explicit:
 `water_fraction` comes from accumulated water coverage, `flood_fraction` comes
 from accumulated flood coverage, and `reference_water` carries the native
@@ -164,11 +172,18 @@ GFM uses discrete codes, so classification happens before reprojection. The
 processor builds three float32 masks at native resolution, then mean-pools them
 by the coarsen factor:
 
-| Mask    | Rule                                                                              |
-| ------- | --------------------------------------------------------------------------------- |
-| `flood` | `ensemble_flood_extent == 1`                                                      |
-| `water` | `ensemble_water_extent == 1`                                                      |
-| `valid` | Any of the three core bands is not `255` (flood, water, or `reference_water_mask`) |
+| Mask    | Rule                                                                                             |
+| ------- | ------------------------------------------------------------------------------------------------ |
+| `flood` | `ensemble_flood_extent == 1`                                                                     |
+| `water` | `ensemble_water_extent == 1`                                                                     |
+| `valid` | Either SAR classification band is not `255` (`ensemble_flood_extent` or `ensemble_water_extent`) |
+
+`reference_water_mask` is deliberately excluded from `valid`. It is an
+ancillary permanent/seasonal-water reference layer, not a SAR observation: it
+can have a valid code where both SAR classification bands are `255` (nodata).
+Counting those reference-only pixels would increase `valid_count` without a
+water/flood observation and dilute a real water observation into artificial
+fractions such as `1/3` or `1/2` along source-footprint boundaries.
 
 Mean-pooling the 0/1 masks (rather than `max`-pooling the nominal codes) keeps
 discrete classes meaningful and avoids nodata dominating mixed blocks. After
@@ -197,7 +212,7 @@ The three count arrays are:
 
 - `ensemble_flood_extent_count` (accumulated from native `ensemble_flood_extent`)
 - `ensemble_water_extent_count` (accumulated from native `ensemble_water_extent`)
-- `valid_count` (accumulated validity of any of the three core bands: `ensemble_flood_extent`, `ensemble_water_extent`, `reference_water_mask`)
+- `valid_count` (accumulated validity of either SAR classification band: `ensemble_flood_extent` or `ensemble_water_extent`; never `reference_water_mask`)
 
 Each item contributes a fractional amount in `[0, 1]` to those accumulators.
 These are the exact keys exposed on the `DerivationContext` passed to the

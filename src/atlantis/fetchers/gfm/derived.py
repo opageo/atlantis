@@ -45,8 +45,8 @@ def _fraction_from_count(numerator: np.ndarray, denominator: np.ndarray) -> np.n
         "Fraction of valid SAR observations flagged as water "
         "(ensemble_water_extent_count / valid_count); ensemble_water_extent_count is "
         "accumulated from native ensemble_water_extent, and valid_count from the "
-        "combined per-pixel validity of ensemble_flood_extent, ensemble_water_extent, "
-        "and reference_water_mask, across the date group; NaN where unobserved."
+        "combined per-pixel validity of ensemble_flood_extent and ensemble_water_extent "
+        "across the date group; NaN where unobserved."
     ),
     resampling="average",
     aggregation="nanmean",
@@ -65,8 +65,8 @@ def water_fraction(ctx: DerivationContext) -> np.ndarray:
         "Fraction of valid SAR observations flagged as flood "
         "(ensemble_flood_extent_count / valid_count); ensemble_flood_extent_count is "
         "accumulated from native ensemble_flood_extent, and valid_count from the "
-        "combined per-pixel validity of ensemble_flood_extent, ensemble_water_extent, "
-        "and reference_water_mask, across the date group; NaN where unobserved."
+        "combined per-pixel validity of ensemble_flood_extent and ensemble_water_extent "
+        "across the date group; NaN where unobserved."
     ),
     resampling="average",
     aggregation="nanmean",

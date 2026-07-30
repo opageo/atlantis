@@ -53,10 +53,10 @@ GFM_BANDS: list[str] = [
 #: Derivation input keys: accumulated per-class coverage counts (float32),
 #: summed across the SAR observations in a date group (one contribution in
 #: ``[0, 1]`` per observation). Named after the native band each accumulates,
-#: except :data:`VALID_COUNT`, which combines the per-pixel validity of all
-#: three core bands (``ensemble_flood_extent``, ``ensemble_water_extent``, and
-#: ``reference_water_mask``) — an observation counts as valid if *any* of the
-#: three has a non-nodata code.
+#: except :data:`VALID_COUNT`, which combines the per-pixel validity of the two
+#: SAR classification bands (``ensemble_flood_extent`` and
+#: ``ensemble_water_extent``). The ancillary ``reference_water_mask`` is not a
+#: SAR observation and therefore cannot contribute to the denominator.
 ENSEMBLE_FLOOD_EXTENT_COUNT = "ensemble_flood_extent_count"
 ENSEMBLE_WATER_EXTENT_COUNT = "ensemble_water_extent_count"
 VALID_COUNT = "valid_count"
@@ -95,9 +95,12 @@ registry.add_native(
         dtype="uint8",
         nodata=GFM_NODATA,
         description=(
-            "Reference water mask, passed through untouched. Codes follow GFM PDD "
-            "Table 20: 0 = no water, 1 = permanent water, 2 = seasonal water. The "
-            "seasonal class (2) is the GFM analog of MODIS recurring_flood."
+            "Static multi-year baseline of non-flood surface water computed once "
+            "by the GFM service over a fixed 2017-2021 reference period "
+            "(permanent from median backscatter; seasonal from 12 monthly "
+            "sub-masks). Codes follow GFM PDD Table 20. The seasonal class (2) "
+            "is the GFM analog of MODIS recurring_flood. See [GFM overview]"
+            "(gfm/overview.md#reference-water-mask)."
         ),
         codes={
             GFM_LAND: "no water",
@@ -124,7 +127,13 @@ registry.add_native(
         name="ensemble_likelihood",
         dtype="uint8",
         nodata=GFM_NODATA,
-        description="Native GFM ensemble flood-likelihood values (0-100), passed through untouched.",
+        description=(
+            "Native GFM ensemble flood-likelihood values (0-100; 255=nodata), "
+            "passed through untouched. See [GFM overview]"
+            "(gfm/overview.md#ensemble-likelihood) for the likelihood scale and "
+            "the IEEE paper reference."
+        ),
+        codes={0: "high-confidence dry", 100: "high-confidence flood"},
         resampling="average",
         aggregation="masked_max",
     )
