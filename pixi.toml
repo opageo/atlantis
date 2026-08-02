@@ -255,6 +255,15 @@ validate-gfm = "PYTHONPATH=src python -m atlantis.cli validate-gfm --require-raw
 web = "PYTHONPATH=src python -m atlantis.cli web launch --host 0.0.0.0 --port 8080"
 
 # ============================================================================
+# Incremental MODIS archive updates (atlantis archive modis update)
+# ============================================================================
+
+modis-archive-update = "PYTHONPATH=src python -m atlantis.cli archive modis update --foreground"
+modis-archive-update-dry-run = "PYTHONPATH=src python -m atlantis.cli archive modis update --foreground --dry-run"
+modis-archive-status = "PYTHONPATH=src python -m atlantis.cli archive modis status"
+modis-archive-seed-tracker = "PYTHONPATH=src python -m atlantis.cli archive modis seed-tracker"
+
+# ============================================================================
 # VIIRS examples
 # ============================================================================
 
