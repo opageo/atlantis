@@ -244,10 +244,10 @@ VIIRS coverage differs per backend. Atlantis queries the backend's published
 years before fetching and aborts early with an explanation if the requested
 window falls outside that range.
 
-| Backend      | Published calendar years (as of 2026-06) | Notes                                                                                                                                               |
-| ------------ | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `noaa_s3`    | 2012–2020, 2023–2026                     | **2021 and 2022 are not published** on the public NOAA JPSS bucket. Verified via S3 listing of `JPSS_Blended_Products/VFM_1day_GLB/TIF/`.           |
-| `gmu_legacy` | Best-effort (not declared)               | The GMU archive does not enumerate cheaply; Atlantis attempts each requested date directly. May cover the 2021–2022 gap when the host is reachable. |
+| Backend      | Published calendar years (as of 2026-06) | Notes                                                                                                                                                                                                    |
+| ------------ | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noaa_s3`    | 2012–2020, 2023-08-10 onward, 2024–2026  | **2021 and 2022 are not published** on the public NOAA JPSS bucket. **2023 starts on Aug 10** — Jan 1–Aug 9, 2023 is also missing. Verified via S3 listing of `JPSS_Blended_Products/VFM_1day_GLB/TIF/`. |
+| `gmu_legacy` | Best-effort (not declared)               | The GMU archive does not enumerate cheaply; Atlantis attempts each requested date directly. May cover the 2021–2022 gap when the host is reachable.                                                      |
 
 The `noaa_s3` coverage set is read at runtime from `JPSS_Blended_Products/VFM_1day_GLB/<FORMAT>/`,
 so it will pick up new years automatically as NOAA publishes them. When a request
@@ -260,13 +260,13 @@ Nowhere. The 2021–2022 gap is **bucket-wide on the public NOAA mirror**, not s
 `VFM_1day_GLB/TIF`. We verified every plausible alternative S3 location and all
 exhibit the same gap:
 
-| Bucket / prefix                                                            | Years present        |
-| -------------------------------------------------------------------------- | -------------------- |
-| `s3://noaa-jpss/JPSS_Blended_Products/VFM_1day_GLB/{TIF,NETCDF,SHAPEZIP}/` | 2012–2020, 2023–2026 |
-| `s3://noaa-jpss/JPSS_Blended_Products/VFM_5day_GLB/{TIF,NETCDF,PNG}/`      | 2012–2020, 2023–2026 |
-| `s3://noaa-jpss/JPSS_Blended_Products/SNPP_DECOM/NetCDF/`                  | 2018–2020 only       |
-| `s3://noaa-jpss/JPSS_Blended_Products/VIIRS-ABI-Flood-Day*/` (3 variants)  | 2025–2026 only       |
-| `s3://noaa-nesdis-{n20,snpp}-pds/VIIRS_VFM_MWS_MOSAIC/`                    | 2024–2026 only       |
+| Bucket / prefix                                                            | Years present                           |
+| -------------------------------------------------------------------------- | --------------------------------------- |
+| `s3://noaa-jpss/JPSS_Blended_Products/VFM_1day_GLB/{TIF,NETCDF,SHAPEZIP}/` | 2012–2020, 2023-08-10 onward, 2024–2026 |
+| `s3://noaa-jpss/JPSS_Blended_Products/VFM_5day_GLB/{TIF,NETCDF,PNG}/`      | 2012–2020, 2023-08-10 onward, 2024–2026 |
+| `s3://noaa-jpss/JPSS_Blended_Products/SNPP_DECOM/NetCDF/`                  | 2018–2020 only                          |
+| `s3://noaa-jpss/JPSS_Blended_Products/VIIRS-ABI-Flood-Day*/` (3 variants)  | 2025–2026 only                          |
+| `s3://noaa-nesdis-{n20,snpp}-pds/VIIRS_VFM_MWS_MOSAIC/`                    | 2024–2026 only                          |
 
 For events in 2021–2022 the only routes are:
 

@@ -177,10 +177,10 @@ for pixel-level semantics.
 
 ### VIIRS-specific
 
-| Option            | Default   | Description                                                                                 |
-| ----------------- | --------- | ------------------------------------------------------------------------------------------- |
-| `--viirs-backend` | `noaa_s3` | `noaa_s3` (2012–2020, 2023–2026) or `gmu_legacy` (covers 2021–2022 gap; intermittent host). |
-| `--viirs-format`  | `tif`     | `tif`, `netcdf`, `shapezip`, `png`. Only `tif` is implemented.                              |
+| Option            | Default   | Description                                                                                                    |
+| ----------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
+| `--viirs-backend` | `noaa_s3` | `noaa_s3` (2012–2020, 2023-08-10 onward, 2024–2026) or `gmu_legacy` (covers 2021–2022 gap; intermittent host). |
+| `--viirs-format`  | `tif`     | `tif`, `netcdf`, `shapezip`, `png`. Only `tif` is implemented.                                                 |
 
 ### MODIS-specific
 
@@ -436,9 +436,9 @@ pixi run atlantis batch viirs cube run [OPTIONS]
 | `--inventory`      | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Path or S3 URI to the VIIRS JPSS catalogue Parquet file. |
 | `--archive`, `-a`  | `s3://atlantis/zarr/viirs_2020_cube`                       | Cube root — a local directory or an `s3://` URI.         |
 | `--partition`      | full catalogue                                             | Row slice of the catalogue, e.g. `0:1000`.               |
-| `--workers-min`    | `2`                                                        | Minimum Dask worker processes.                           |
-| `--workers-max`    | `6`                                                        | Maximum Dask worker processes (adaptive).                |
-| `--memory-limit`   | `4GB`                                                      | Memory cap per worker.                                   |
+| `--workers-min`    | `4`                                                        | Minimum Dask worker processes.                           |
+| `--workers-max`    | `8`                                                        | Maximum Dask worker processes (adaptive).                |
+| `--memory-limit`   | `6GB`                                                      | Memory cap per worker.                                   |
 | `--dashboard-port` | `8787`                                                     | Dask dashboard port.                                     |
 | `--db-path`        | `cube_tracker.db`                                          | SQLite resume database path.                             |
 | `--retries`        | `3`                                                        | Dask retry count per granule.                            |

@@ -10,7 +10,7 @@ from atlantis.fetchers.gfm.layers import (
     REFERENCE_WATER_MASK_CODES,
     VALID_COUNT,
 )
-from atlantis.layers import DerivationContext, get_source_registry
+from atlantis.layers import DerivationContext, aggregate_layer, get_source_registry
 
 
 def _ctx(
@@ -70,6 +70,20 @@ def test_reference_water_is_passed_through_under_shared_name() -> None:
         _ctx(np.zeros((1, 4)), np.zeros((1, 4)), np.ones((1, 4)), reference)
     )
     np.testing.assert_array_equal(out, reference)
+
+
+def test_reference_water_masked_max_preserves_monthly_signal() -> None:
+    # ponytail: month selection is upstream (each STAC item carries its own
+    # acquisition-month reference_water_mask). Atlantis only flows the per-month
+    # codes through masked_max, so this is the code-level invariant: permanent
+    # water (1) stays 1 across any two months; a seasonal wetland that is 2 in
+    # the wet month and 0 in the dry month resolves to 2, never collapsing to
+    # permanent or dry.
+    nodata = 255
+    jan = np.array([[1, 2, 0, 255]], dtype=np.uint8)  # permanent / seasonal / dry / nodata
+    jul = np.array([[1, 0, 0, 255]], dtype=np.uint8)  # same permanent, seasonal gone dry
+    out = aggregate_layer(np.stack([jan, jul]), "masked_max", nodata=nodata)
+    np.testing.assert_array_equal(out, np.array([[1, 2, 0, 255]], dtype=np.uint8))
 
 
 def test_native_bands_use_nearest_and_masked_max() -> None:

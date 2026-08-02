@@ -198,7 +198,37 @@ class TestGfmProcessorNativeMasks:
 
         np.testing.assert_array_equal(flood_mask.values, np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
         np.testing.assert_array_equal(water_mask.values, np.array([[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float32))
-        np.testing.assert_array_equal(valid_mask.values, np.array([[1.0, 1.0, 0.0], [1.0, 1.0, 1.0]], dtype=np.float32))
+        np.testing.assert_array_equal(valid_mask.values, np.array([[1.0, 1.0, 0.0], [1.0, 0.0, 1.0]], dtype=np.float32))
+
+    def test_reference_water_without_sar_classification_is_not_valid_observation(self):
+        """Reference-water coverage must not dilute a valid SAR water fraction.
+
+        This reproduces the Valencia 2024-11-01 wedge failure: one item has a
+        water classification while two reference-only items have nodata SAR
+        bands. The latter must not turn a fully observed water pixel into 1/3.
+        """
+        flood_native = xr.DataArray(
+            np.array([[GFM_NODATA, GFM_NODATA, GFM_DRY]], dtype=np.uint8),
+            dims=("y", "x"),
+        )
+        water_native = xr.DataArray(
+            np.array([[GFM_WATER, GFM_NODATA, GFM_NODATA]], dtype=np.uint8),
+            dims=("y", "x"),
+        )
+        reference_native = xr.DataArray(
+            np.array([[GFM_PERMANENT_WATER, GFM_PERMANENT_WATER, GFM_PERMANENT_WATER]], dtype=np.uint8),
+            dims=("y", "x"),
+        )
+
+        flood_mask, water_mask, valid_mask = GfmRasterProcessor._build_native_masks(
+            flood_native,
+            water_native,
+            reference_native,
+        )
+
+        np.testing.assert_array_equal(flood_mask.values, np.array([[0.0, 0.0, 0.0]], dtype=np.float32))
+        np.testing.assert_array_equal(water_mask.values, np.array([[1.0, 0.0, 0.0]], dtype=np.float32))
+        np.testing.assert_array_equal(valid_mask.values, np.array([[1.0, 0.0, 1.0]], dtype=np.float32))
 
     def test_mean_pool_preserves_flood_fraction_not_max_code(self):
         """Coarsening must mean-pool 0/1 masks, not max-pool nominal codes.
@@ -227,10 +257,12 @@ class TestGfmProcessorNativeMasks:
             coarsen_factor=2,
         )
 
-        # 2 of 4 sub-pixels are flood, 2 of 4 are water, all 4 valid.
+        # 2 of 4 sub-pixels are flood, 2 of 4 are water, and 3 of 4 have
+        # a non-nodata SAR classification. The remaining reference-only pixel
+        # must not contribute to valid coverage.
         np.testing.assert_allclose(flood_mask.values, np.array([[0.5]], dtype=np.float32))
         np.testing.assert_allclose(water_mask.values, np.array([[0.5]], dtype=np.float32))
-        np.testing.assert_allclose(valid_mask.values, np.array([[1.0]], dtype=np.float32))
+        np.testing.assert_allclose(valid_mask.values, np.array([[0.75]], dtype=np.float32))
 
     def test_canonical_grid_snaps_bbox_outward(self):
         proc = GfmRasterProcessor(bbox=(10.003, 20.002, 10.031, 20.029))

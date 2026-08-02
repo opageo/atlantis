@@ -62,6 +62,7 @@ from atlantis.utils.ui import (  # noqa: E402
     summary_table,
     warn,
 )
+from atlantis.validation.gfm import DEFAULT_REFERENCE_BASE, validate_gfm_artifacts  # noqa: E402
 
 cli = typer.Typer(help="Atlantis — ML-ready flood inundation archive pipeline.")
 
@@ -344,7 +345,7 @@ def _report_empty_fetch(source_id: str, fetcher) -> None:
             info(
                 "Hint: jpssflood.gmu.edu is intermittently offline. Retry later "
                 "(ideally from a non-cloud network), or use --viirs-backend noaa_s3 "
-                "for years 2012–2020 / 2023–2026."
+                "for years 2012–2020 / 2023-08-10 onward / 2024–2026."
             )
         else:
             info("Hint: check your network connection or retry shortly.")
@@ -1305,7 +1306,7 @@ def fetch(
                 if src == "viirs" and viirs_backend == "gmu_legacy":
                     info(
                         "Hint: jpssflood.gmu.edu is intermittently offline. Retry later, or "
-                        "use --viirs-backend noaa_s3 for years 2012–2020 / 2023–2026."
+                        "use --viirs-backend noaa_s3 for years 2012–2020 / 2023-08-10 onward / 2024–2026."
                     )
                 continue
 
@@ -2145,6 +2146,67 @@ def validate(
     warn("Validation not yet implemented")
 
 
+@cli.command("validate-gfm")
+def validate_gfm(
+    input_dir: Path = typer.Option(
+        Path("data/Valencia_2024/gfm/harmonised"),
+        "--input-dir",
+        help="Directory containing harmonised GFM GeoTIFFs.",
+    ),
+    event: str = typer.Option("Valencia_2024", "--event", help="Flood event ID in artifact filenames."),
+    date_token: str = typer.Option("2024-11-01", "--date", help="Artifact date in YYYY-MM-DD format."),
+    reference_base: str = typer.Option(
+        DEFAULT_REFERENCE_BASE,
+        "--reference-base",
+        help="S3 or local directory holding the classified reference GeoTIFFs.",
+    ),
+    require_raw: bool = typer.Option(False, "--require-raw", help="Require the paired raw-mode GFM artifacts."),
+    strict_reference_bytes: bool = typer.Option(
+        False,
+        "--strict-reference-bytes",
+        help="Also require exact reference GeoTIFF size and SHA-256 identity.",
+    ),
+) -> None:
+    """Validate harmonised classified and optional raw GFM artifacts.
+
+    The classified layers must match the configured S3 reference within the
+    published live-data tolerance. Raw/classified cross-run measurements are
+    reported as diagnostics because their source reads and resampling differ.
+    """
+    command_header("validate-gfm", subtitle=f"{event} · {date_token}")
+    console.print(f"[bold]Input:[/bold] {input_dir}")
+    console.print(f"[bold]Reference:[/bold] {reference_base}")
+    report = validate_gfm_artifacts(
+        input_dir,
+        event_id=event,
+        date_token=date_token,
+        reference_base=reference_base,
+        require_raw=require_raw,
+        strict_reference_bytes=strict_reference_bytes,
+    )
+
+    rows = [
+        [
+            "PASS" if check.passed else "FAIL",
+            "required" if check.required else "diagnostic",
+            check.name,
+            check.message,
+        ]
+        for check in report.checks
+    ]
+    console.print(summary_table("GFM validation", ["Status", "Type", "Check", "Result"], rows))
+    for check in report.checks:
+        if check.details and (not check.required or check.name.startswith(("domain_", "reference_"))):
+            console.print(f"  [dim]{check.name}: {check.details}[/dim]")
+
+    if report.passed:
+        ok("GFM validation passed")
+        return
+
+    fail(f"GFM validation failed: {len(report.failures)} required check(s) did not pass")
+    raise typer.Exit(code=1)
+
+
 @cli.command("list-sources")
 def list_sources_cmd() -> None:
     """List all available data sources."""
@@ -2833,9 +2895,9 @@ def batch_viirs_cube(
         "--partition",
         help="Row slice of the catalogue to process, e.g. '0:1000'. None = full catalogue.",
     ),
-    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
-    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
-    memory_limit: str = typer.Option("4GB", "--memory-limit", help="Memory cap per worker."),
+    workers_min: int = typer.Option(4, "--workers-min", help="Minimum Dask worker processes."),
+    workers_max: int = typer.Option(8, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+    memory_limit: str = typer.Option("6GB", "--memory-limit", help="Memory cap per worker."),
     dashboard_port: int = typer.Option(8787, "--dashboard-port", help="Dask dashboard port."),
     db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
     retries: int = typer.Option(3, "--retries", help="Dask retry count per granule."),

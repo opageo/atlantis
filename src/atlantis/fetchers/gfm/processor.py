@@ -1272,10 +1272,11 @@ class GfmRasterProcessor:
 
         flood_mask = _binarize_and_coarsen(flood_native == GFM_FLOOD)
         water_mask = _binarize_and_coarsen(water_native == GFM_WATER)
-        # An observation contributes to "valid" if any core band has a non-nodata code.
-        valid_mask = _binarize_and_coarsen(
-            (flood_native != GFM_NODATA) | (water_native != GFM_NODATA) | (reference_native != GFM_NODATA)
-        )
+        # The reference-water mask is ancillary/static metadata, not a SAR
+        # observation. Counting reference-only pixels here dilutes water/flood
+        # fractions wherever a tile carries the reference layer but the SAR
+        # classification bands are nodata.
+        valid_mask = _binarize_and_coarsen((flood_native != GFM_NODATA) | (water_native != GFM_NODATA))
         return flood_mask, water_mask, valid_mask
 
     def _reproject_to_canonical_grid(self, masks: "xr.Dataset") -> "xr.Dataset":
