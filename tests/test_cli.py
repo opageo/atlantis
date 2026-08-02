@@ -524,6 +524,7 @@ def test_archive_command(tmp_path):
         cli,
         [
             "archive",
+            "event",
             "--event",
             "Valencia_2024",
             "--input",
