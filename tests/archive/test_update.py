@@ -439,10 +439,12 @@ class TestCatalogueRefresh:
 
 class TestLock:
     def test_live_lock_blocks(self, tmp_path):
+        from datetime import datetime, timezone
+
         opts = _opts(tmp_path)
         lock = tmp_path / "state" / "2026" / "update.lock"
         lock.parent.mkdir(parents=True, exist_ok=True)
-        lock.write_text(json.dumps({"pid": os.getpid(), "started_at": "2026-08-02T00:00:00+00:00"}))
+        lock.write_text(json.dumps({"pid": os.getpid(), "started_at": datetime.now(timezone.utc).isoformat()}))
         with pytest.raises(UpdateError, match="another update"):
             with YearLock(opts, 2026):
                 pass
@@ -591,6 +593,167 @@ class TestReindex:
         _, axis = read_archive_dates(_opts(tmp_path, archive_base=str(tmp_path / "zarr")), 2026)
         assert axis == [date(2026, 1, 1)]
         assert not (tmp_path / "zarr" / "2026" / "datacube.zarr" / "_modis_sorted").exists()
+
+    def test_reindex_resumes_from_complete_temp_group(self, tmp_path, monkeypatch):
+        """A leftover complete temp group (e.g. after a failed swap) is reused, not re-copied."""
+        from atlantis.archive import _store
+        from atlantis.archive.reindex_time import reindex_group_time
+        from atlantis.archive.writer import ArchiveWriter
+
+        root = tmp_path / "zarr" / "2026"
+        writer = ArchiveWriter(root)
+        with writer.session("modis", ("water_fraction",)) as session:
+            session.write(
+                _payload_to_dataset(_payload_for({"task_id": "x1", "date": "2026-01-01", "h": 10, "v": 3}, value=10)),
+                time=date(2026, 1, 1),
+            )
+            session.write(
+                _payload_to_dataset(_payload_for({"task_id": "x3", "date": "2026-01-03", "h": 10, "v": 3}, value=30)),
+                time=date(2026, 1, 3),
+            )
+        store = _store.store_for(str(root), "datacube.zarr", None)
+        expected = [date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3)]
+
+        # first run: swap fails (like the async-fs S3 failure) → temp group left behind
+        import atlantis.archive.reindex_time as reindex_mod
+
+        real_swap = reindex_mod._swap_group
+        monkeypatch.setattr(
+            "atlantis.archive.reindex_time._swap_group",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("swap failed")),
+        )
+        with pytest.raises(RuntimeError, match="swap failed"):
+            reindex_group_time(store, "modis", ("water_fraction",), expected_dates=expected)
+        monkeypatch.setattr("atlantis.archive.reindex_time._swap_group", real_swap)
+        temp = root / "datacube.zarr" / "_modis_sorted"
+        assert temp.exists()
+        _, axis = read_archive_dates(_opts(tmp_path, archive_base=str(tmp_path / "zarr")), 2026)
+        assert axis == [date(2026, 1, 1), date(2026, 1, 3)]  # archive untouched
+
+        # second run: temp group is complete → copy is skipped (create_group must NOT be called)
+        monkeypatch.setattr(
+            "atlantis.archive.reindex_time.zarr.Group.create_group",
+            lambda *a, **k: (_ for _ in ()).throw(AssertionError("copy path taken")),
+        )
+        target = reindex_group_time(store, "modis", ("water_fraction",), expected_dates=expected)
+        assert len(target) == 3
+        _, axis = read_archive_dates(_opts(tmp_path, archive_base=str(tmp_path / "zarr")), 2026)
+        assert axis == expected
+        assert not temp.exists()  # promoted into place
+
+    def test_remote_swap_copies_verified_then_removes_temp(self, tmp_path, monkeypatch):
+        """The swap copies onto the live group, verifies the count, and only then removes temp."""
+        from atlantis.archive.reindex_time import _swap_group
+
+        calls = []
+
+        class _FakeFS:
+            def find(self, path):
+                calls.append(("find", path))
+                return ["a", "b", "c"]
+
+            def copy(self, src, dst, recursive=False, on_error=None):
+                calls.append(("copy", src, dst, recursive, on_error))
+
+            def rm(self, path, recursive=False):
+                calls.append(("rm", path, recursive))
+
+        class _FakeStore:
+            path = "s3://atlantis/zarr/2025/datacube.zarr"
+
+        monkeypatch.setattr(
+            "atlantis.archive.reindex_time.s3fs.S3FileSystem", lambda **kw: calls.append(("fs", kw)) or _FakeFS()
+        )
+        _swap_group(_FakeStore(), "modis", "_modis_sorted", {"endpoint_url": "http://store"})
+        assert calls[0] == ("fs", {"endpoint_url": "http://store"})
+        assert ("find", "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted") in calls
+        assert (
+            "copy",
+            "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted",
+            "s3://atlantis/zarr/2025/datacube.zarr/modis",
+            True,
+            "raise",
+        ) in calls
+        assert ("rm", "s3://atlantis/zarr/2025/datacube.zarr/modis", True) not in calls  # never rm the live group
+        assert calls[-1] == ("rm", "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted", True)  # temp removed last
+
+    def test_remote_swap_retries_silently_empty_copy(self, tmp_path, monkeypatch):
+        """A copy that silently sees an empty listing (lagging store) must retry, not succeed."""
+        from atlantis.archive.reindex_time import _swap_group
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.time.sleep", lambda _s: None)
+
+        class _FakeFS:
+            def __init__(self):
+                self.dst_count = 0
+
+            def find(self, path):
+                if path.endswith("/_modis_sorted"):
+                    return ["a", "b", "c"]
+                return ["x"] * self.dst_count
+
+            def copy(self, src, dst, recursive=False, on_error=None):
+                pass  # silently copies nothing — the incident failure mode
+
+            def rm(self, path, recursive=False):
+                raise AssertionError("rm called while the copy is incomplete")
+
+        class _FakeStore:
+            path = "s3://atlantis/zarr/2025/datacube.zarr"
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.s3fs.S3FileSystem", lambda **kw: _FakeFS())
+        with pytest.raises(RuntimeError, match="could not promote"):
+            _swap_group(_FakeStore(), "modis", "_modis_sorted", {})
+
+    def test_remote_swap_refuses_empty_source_listing(self, tmp_path, monkeypatch):
+        """A zero source count is never trusted — the swap must not delete anything."""
+        from atlantis.archive.reindex_time import _swap_group
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.time.sleep", lambda _s: None)
+
+        class _FakeFS:
+            def find(self, path):
+                return []
+
+            def copy(self, src, dst, recursive=False, on_error=None):
+                raise AssertionError("copy must not run without a verified source count")
+
+            def rm(self, path, recursive=False):
+                raise AssertionError("rm must not run")
+
+        class _FakeStore:
+            path = "s3://atlantis/zarr/2025/datacube.zarr"
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.s3fs.S3FileSystem", lambda **kw: _FakeFS())
+        with pytest.raises(RuntimeError, match="refusing to swap"):
+            _swap_group(_FakeStore(), "modis", "_modis_sorted", {})
+
+    def test_consolidate_retries_until_group_visible(self, tmp_path, monkeypatch):
+        """Consolidation is verified through the consolidated root readers will open."""
+        from atlantis.archive.reindex_time import _consolidate_verified
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.time.sleep", lambda _s: None)
+        attempts = []
+
+        def fake_consolidate(store):
+            attempts.append(1)
+
+        def fake_open_group(store, mode="r"):
+            if len(attempts) < 2:
+                return {"modis": None}  # stale consolidated root: no group yet
+            return {"modis": type("G", (), {"__getitem__": lambda s, k: type("T", (), {"shape": (333,)})()})()}
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.datacube.consolidate", fake_consolidate)
+        monkeypatch.setattr("atlantis.archive.reindex_time.zarr.open_group", fake_open_group)
+        _consolidate_verified(object(), "modis", 333)
+        assert len(attempts) == 2
+
+        def fake_open_group_never(store, mode="r"):
+            return {}
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.zarr.open_group", fake_open_group_never)
+        with pytest.raises(RuntimeError, match="does not contain"):
+            _consolidate_verified(object(), "modis", 333)
 
 
 class TestLauncher:

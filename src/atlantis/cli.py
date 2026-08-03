@@ -2583,7 +2583,13 @@ def archive_modis_reindex_time(
         expected_dates = sorted(set(pd.to_datetime(df["date"]).dt.date))
 
     store = store_for(archive_root(opts, year), "datacube.zarr", opts.storage_options)
-    target = reindex_group_time(store, "modis", list(MODIS_VAR_NAMES), expected_dates=expected_dates)
+    target = reindex_group_time(
+        store,
+        "modis",
+        list(MODIS_VAR_NAMES),
+        expected_dates=expected_dates,
+        storage_options=opts.storage_options,
+    )
     ok(f"Reindexed {year} modis group: {len(target)} time slot(s), ascending.")
 
 
