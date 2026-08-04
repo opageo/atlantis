@@ -652,6 +652,10 @@ class TestReindex:
                 calls.append(("find", path))
                 return ["a", "b", "c"]
 
+            def exists(self, path):
+                calls.append(("exists", path))
+                return False
+
             def copy(self, src, dst, recursive=False, on_error=None):
                 calls.append(("copy", src, dst, recursive, on_error))
 
@@ -675,7 +679,36 @@ class TestReindex:
             "raise",
         ) in calls
         assert ("rm", "s3://atlantis/zarr/2025/datacube.zarr/modis", True) not in calls  # never rm the live group
+        assert ("exists", "s3://atlantis/zarr/2025/datacube.zarr/modis/_modis_sorted") in calls  # nesting guard
         assert calls[-1] == ("rm", "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted", True)  # temp removed last
+
+    def test_remote_swap_aborts_when_copy_nests_under_destination(self, tmp_path, monkeypatch):
+        """A copy that nests under the existing dest (s3fs quirk) must fail, never rm the temp."""
+        from atlantis.archive.reindex_time import _swap_group
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.time.sleep", lambda _s: None)
+
+        class _FakeFS:
+            def find(self, path):
+                if path.endswith("/_modis_sorted"):
+                    return ["a", "b", "c"]
+                return ["a", "b", "c"]  # count check alone passes
+
+            def exists(self, path):
+                return path.endswith("/modis/_modis_sorted")  # copy landed nested
+
+            def copy(self, src, dst, recursive=False, on_error=None):
+                pass  # nests: files land at dst/_modis_sorted/...
+
+            def rm(self, path, recursive=False):
+                raise AssertionError("rm must not run - the temp group is the only good copy")
+
+        class _FakeStore:
+            path = "s3://atlantis/zarr/2025/datacube.zarr"
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.s3fs.S3FileSystem", lambda **kw: _FakeFS())
+        with pytest.raises(RuntimeError, match="could not promote"):
+            _swap_group(_FakeStore(), "modis", "_modis_sorted", {})
 
     def test_remote_swap_retries_silently_empty_copy(self, tmp_path, monkeypatch):
         """A copy that silently sees an empty listing (lagging store) must retry, not succeed."""

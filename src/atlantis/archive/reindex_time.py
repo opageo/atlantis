@@ -169,10 +169,14 @@ def _swap_group(store: Any, old: str, new: str, storage_options: dict[str, Any] 
     for attempt in range(5):
         try:
             fs.copy(src, dst, recursive=True, on_error="raise")
-            if _wait_for_file_count(fs, dst, n):
+            # s3fs nests the source under an existing destination (copies
+            # INTO the dir); the count check alone cannot tell — verify the
+            # promoted group is not a nested copy before trusting it.
+            if _wait_for_file_count(fs, dst, n) and not fs.exists(f"{dst}/{new}"):
                 fs.rm(src, recursive=True)
                 return
-            last_error = RuntimeError(f"promote {new} -> {old}: saw {len(fs.find(dst))} of {n} files")
+            nested = fs.exists(f"{dst}/{new}")
+            last_error = RuntimeError(f"promote {new} -> {old}: {len(fs.find(dst))}/{n} files, nested={nested}")
         except Exception as exc:  # noqa: BLE001 - retry the idempotent copy
             last_error = exc
         logger.warning("attempt %d: promote %s -> %s failed (%s) — retrying", attempt, new, old, last_error)
