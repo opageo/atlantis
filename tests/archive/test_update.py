@@ -641,26 +641,40 @@ class TestReindex:
         assert axis == expected
         assert not temp.exists()  # promoted into place
 
-    def test_remote_swap_copies_verified_then_removes_temp(self, tmp_path, monkeypatch):
-        """The swap copies onto the live group, verifies the count, and only then removes temp."""
+    def test_remote_swap_deletes_old_verified_then_copies_and_removes_temp(self, tmp_path, monkeypatch):
+        """The swap deletes the old group (verified zero), copies onto the absent dest, removes temp last."""
         from atlantis.archive.reindex_time import _swap_group
 
         calls = []
+        src = "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted"
+        dst = "s3://atlantis/zarr/2025/datacube.zarr/modis"
 
         class _FakeFS:
+            def __init__(self):
+                self.dst_keys = ["a", "b", "c"]  # old group exists initially
+                self.src_keys = ["a", "b", "c"]
+
             def find(self, path):
                 calls.append(("find", path))
-                return ["a", "b", "c"]
+                if path.endswith("/_modis_sorted"):
+                    return list(self.src_keys)
+                return list(self.dst_keys)
 
             def exists(self, path):
                 calls.append(("exists", path))
-                return False
+                return path.endswith("/modis/zarr.json") and bool(self.dst_keys)
 
             def copy(self, src, dst, recursive=False, on_error=None):
                 calls.append(("copy", src, dst, recursive, on_error))
+                if not self.dst_keys:  # only lands directly when the dest is absent
+                    self.dst_keys = list(self.src_keys)
 
             def rm(self, path, recursive=False):
                 calls.append(("rm", path, recursive))
+                if path.endswith("/modis"):
+                    self.dst_keys = []
+                elif path.endswith("/_modis_sorted"):
+                    self.src_keys = []
 
         class _FakeStore:
             path = "s3://atlantis/zarr/2025/datacube.zarr"
@@ -670,20 +684,54 @@ class TestReindex:
         )
         _swap_group(_FakeStore(), "modis", "_modis_sorted", {"endpoint_url": "http://store"})
         assert calls[0] == ("fs", {"endpoint_url": "http://store"})
-        assert ("find", "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted") in calls
-        assert (
-            "copy",
-            "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted",
-            "s3://atlantis/zarr/2025/datacube.zarr/modis",
-            True,
-            "raise",
-        ) in calls
-        assert ("rm", "s3://atlantis/zarr/2025/datacube.zarr/modis", True) not in calls  # never rm the live group
-        assert ("exists", "s3://atlantis/zarr/2025/datacube.zarr/modis/_modis_sorted") in calls  # nesting guard
-        assert calls[-1] == ("rm", "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted", True)  # temp removed last
+        order = [c[0] for c in calls]
+        last_rm = len(order) - 1 - order[::-1].index("rm")
+        assert order.index("find") < order.index("rm") < order.index("copy") < last_rm
+        assert ("find", src) in calls  # source counted before anything is deleted
+        assert ("rm", dst, True) in calls  # old group deleted...
+        assert ("copy", src, dst, True, "raise") in calls  # ...before the copy runs
+        assert calls[-1] == ("rm", src, True)  # temp removed last, only after verification
+        assert ("exists", f"{dst}/zarr.json") in calls
 
-    def test_remote_swap_aborts_when_copy_nests_under_destination(self, tmp_path, monkeypatch):
-        """A copy that nests under the existing dest (s3fs quirk) must fail, never rm the temp."""
+    def test_remote_swap_aborts_when_copy_lands_nested(self, tmp_path, monkeypatch):
+        """A copy that nests under the dest (zarr.json never at the right path) must fail, keep temp."""
+        from atlantis.archive.reindex_time import _swap_group
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.time.sleep", lambda _s: None)
+        calls = []
+
+        class _FakeFS:
+            def __init__(self):
+                self.deleted = True  # old group deleted; copy then re-populates (nested)
+
+            def find(self, path):
+                calls.append(("find", path))
+                if path.endswith("/_modis_sorted"):
+                    return ["a", "b", "c"]
+                return [] if self.deleted else ["a", "b", "c"]
+
+            def exists(self, path):
+                if path.endswith("/modis/zarr.json"):
+                    return False  # zarr.json sits one level down — copy landed nested
+                return path.endswith("/modis/_modis_sorted")
+
+            def copy(self, src, dst, recursive=False, on_error=None):
+                self.deleted = False  # files reappear under dst/_modis_sorted (count passes)
+
+            def rm(self, path, recursive=False):
+                if path.endswith("/_modis_sorted"):
+                    raise AssertionError("rm(src) must not run - the temp group is the only good copy")
+                self.deleted = True
+
+        class _FakeStore:
+            path = "s3://atlantis/zarr/2025/datacube.zarr"
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.s3fs.S3FileSystem", lambda **kw: _FakeFS())
+        with pytest.raises(RuntimeError, match="could not promote"):
+            _swap_group(_FakeStore(), "modis", "_modis_sorted", {})
+
+    def test_remote_swap_refuses_to_promote_onto_residue(self, tmp_path, monkeypatch):
+        """A destination that never reaches zero files aborts the swap before any copy."""
         from atlantis.archive.reindex_time import _swap_group
 
         monkeypatch.setattr("atlantis.archive.reindex_time.time.sleep", lambda _s: None)
@@ -692,22 +740,19 @@ class TestReindex:
             def find(self, path):
                 if path.endswith("/_modis_sorted"):
                     return ["a", "b", "c"]
-                return ["a", "b", "c"]  # count check alone passes
-
-            def exists(self, path):
-                return path.endswith("/modis/_modis_sorted")  # copy landed nested
-
-            def copy(self, src, dst, recursive=False, on_error=None):
-                pass  # nests: files land at dst/_modis_sorted/...
+                return ["x", "y"]  # never zero
 
             def rm(self, path, recursive=False):
-                raise AssertionError("rm must not run - the temp group is the only good copy")
+                pass  # flaky delete: nothing gets removed
+
+            def copy(self, src, dst, recursive=False, on_error=None):
+                raise AssertionError("copy must not run onto a non-empty destination")
 
         class _FakeStore:
             path = "s3://atlantis/zarr/2025/datacube.zarr"
 
         monkeypatch.setattr("atlantis.archive.reindex_time.s3fs.S3FileSystem", lambda **kw: _FakeFS())
-        with pytest.raises(RuntimeError, match="could not promote"):
+        with pytest.raises(RuntimeError, match="refusing to promote onto residue"):
             _swap_group(_FakeStore(), "modis", "_modis_sorted", {})
 
     def test_remote_swap_retries_silently_empty_copy(self, tmp_path, monkeypatch):

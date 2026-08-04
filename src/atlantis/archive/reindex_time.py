@@ -149,12 +149,17 @@ def _swap_group(store: Any, old: str, new: str, storage_options: dict[str, Any] 
 
     On a remote store the Zarr store's filesystem is async-mode (sync calls
     raise outside a running event loop), so a fresh synchronous filesystem is
-    used for the swap. The promoted group is **copied onto** *old* (idempotent
-    PUTs — *old* is never absent, so a reader never sees a missing group),
-    then the file count is verified against the source with
-    listing-consistency retries, and only then is the temp group removed.
-    A silently-empty source listing (this store's listings lag) is treated as
-    a failure and retried, never as "nothing to copy".
+    used for the swap. S3 has no rename and s3fs's directory copy nests the
+    source under an **existing** destination, so the swap is:
+
+    1. count the fully-written temp group (a zero listing is never trusted);
+    2. delete the old group and verify its count reaches zero;
+    3. copy the temp group onto the now-absent destination (proven to land
+       directly under *old*) and verify the count and ``zarr.json``;
+    4. only then remove the temp group.
+
+    A failure at any step leaves the temp group intact, so the recovery
+    source is never lost and the migration stays re-runnable.
     """
     if isinstance(store, Path):
         old_dir, new_dir = store / old, store / new
@@ -165,22 +170,35 @@ def _swap_group(store: Any, old: str, new: str, storage_options: dict[str, Any] 
     base = store.path
     src, dst = f"{base}/{new}", f"{base}/{old}"
     n = _count_files(fs, src)
+    _delete_until_zero(fs, dst)
     last_error: Exception | None = None
     for attempt in range(5):
         try:
             fs.copy(src, dst, recursive=True, on_error="raise")
-            # s3fs nests the source under an existing destination (copies
-            # INTO the dir); the count check alone cannot tell — verify the
-            # promoted group is not a nested copy before trusting it.
-            if _wait_for_file_count(fs, dst, n) and not fs.exists(f"{dst}/{new}"):
+            if _wait_for_file_count(fs, dst, n) and fs.exists(f"{dst}/zarr.json") and not fs.exists(f"{dst}/{new}"):
                 fs.rm(src, recursive=True)
                 return
-            nested = fs.exists(f"{dst}/{new}")
-            last_error = RuntimeError(f"promote {new} -> {old}: {len(fs.find(dst))}/{n} files, nested={nested}")
+            last_error = RuntimeError(
+                f"promote {new} -> {old}: {len(fs.find(dst))}/{n} files, zarr.json={fs.exists(f'{dst}/zarr.json')}"
+            )
         except Exception as exc:  # noqa: BLE001 - retry the idempotent copy
             last_error = exc
         logger.warning("attempt %d: promote %s -> %s failed (%s) — retrying", attempt, new, old, last_error)
     raise RuntimeError(f"could not promote {new} over {old}: {last_error}") from last_error
+
+
+def _delete_until_zero(fs: s3fs.S3FileSystem, path: str) -> None:
+    """Delete *path* and retry until it verifiably lists zero files.
+
+    Never promote onto residue: a partially-deleted destination would make
+    s3fs nest the copy under it again.
+    """
+    for _ in range(12):
+        if len(fs.find(path)) == 0:
+            return
+        fs.rm(path, recursive=True)
+        time.sleep(5)
+    raise RuntimeError(f"could not delete {path!r} down to zero files — refusing to promote onto residue")
 
 
 def _count_files(fs: s3fs.S3FileSystem, path: str) -> int:
