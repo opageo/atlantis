@@ -310,7 +310,7 @@ class VizConfig(BaseSettings):
         extra="ignore",
     )
 
-    variable: str = "flood_fraction"
+    variable: str = "water_fraction"
     cmap: str = "Blues"
     host: str = "localhost"
     port: int = 5006
