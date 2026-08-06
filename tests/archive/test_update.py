@@ -730,6 +730,106 @@ class TestReindex:
         with pytest.raises(RuntimeError, match="could not promote"):
             _swap_group(_FakeStore(), "modis", "_modis_sorted", {})
 
+    def test_remote_swap_self_heals_nested_attempt(self, tmp_path, monkeypatch):
+        """A copy that lands nested is cleaned up; the retry copies flat onto the absent dest."""
+        from atlantis.archive.reindex_time import _swap_group
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.time.sleep", lambda _s: None)
+        calls = []
+
+        class _FakeFS:
+            def __init__(self):
+                self.src_keys = ["a", "b", "c"]
+                self.dst_keys = []
+                self.nested = False
+                self.copies = 0
+
+            def find(self, path):
+                calls.append(("find", path))
+                if path.endswith("/_modis_sorted"):
+                    return list(self.src_keys)
+                if self.nested:
+                    return ["nested/a", "nested/b", "nested/c"]
+                return list(self.dst_keys)
+
+            def exists(self, path):
+                calls.append(("exists", path))
+                if path.endswith("/modis/zarr.json"):
+                    return not self.nested and bool(self.dst_keys)
+                return False
+
+            def copy(self, src, dst, recursive=False, on_error=None):
+                calls.append(("copy", src, dst))
+                self.copies += 1
+                if self.copies == 1:
+                    self.nested = True  # first attempt lands nested (incident mode)
+                else:
+                    self.nested = False
+                    self.dst_keys = list(self.src_keys)
+
+            def rm(self, path, recursive=False):
+                calls.append(("rm", path, recursive))
+                if path.endswith("/modis"):
+                    self.nested = False
+                    self.dst_keys = []
+                elif path.endswith("/_modis_sorted"):
+                    self.src_keys = []
+
+        class _FakeStore:
+            path = "s3://atlantis/zarr/2025/datacube.zarr"
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.s3fs.S3FileSystem", lambda **kw: _FakeFS())
+        _swap_group(_FakeStore(), "modis", "_modis_sorted", {})
+        assert [c[0] for c in calls].count("copy") == 2  # nested attempt retried, not doomed
+        assert calls[-1] == ("rm", "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted", True)
+
+    def test_remote_swap_keeps_complete_landing_on_retry(self, tmp_path, monkeypatch):
+        """A retry re-verifies the destination first: a complete flat landing is kept, not re-copied."""
+        from atlantis.archive.reindex_time import _swap_group
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.time.sleep", lambda _s: None)
+        calls = []
+
+        class _FakeFS:
+            def __init__(self):
+                self.src_keys = ["a", "b", "c"]
+                self.dst_keys = []
+                self.hidden = True  # attempt 0 verification sees a lagging listing
+
+            def find(self, path):
+                calls.append(("find", path))
+                if path.endswith("/_modis_sorted"):
+                    return list(self.src_keys)
+                return list(self.dst_keys)
+
+            def exists(self, path):
+                calls.append(("exists", path))
+                if not path.endswith("/modis/zarr.json"):
+                    return False
+                if self.hidden:
+                    self.hidden = False  # zarr.json exists but was not listed yet
+                    return False
+                return bool(self.dst_keys)
+
+            def copy(self, src, dst, recursive=False, on_error=None):
+                calls.append(("copy", src, dst))
+                self.dst_keys = list(self.src_keys)  # copy lands flat and complete
+
+            def rm(self, path, recursive=False):
+                calls.append(("rm", path, recursive))
+                if path.endswith("/modis"):
+                    self.dst_keys = []
+                elif path.endswith("/_modis_sorted"):
+                    self.src_keys = []
+
+        class _FakeStore:
+            path = "s3://atlantis/zarr/2025/datacube.zarr"
+
+        monkeypatch.setattr("atlantis.archive.reindex_time.s3fs.S3FileSystem", lambda **kw: _FakeFS())
+        _swap_group(_FakeStore(), "modis", "_modis_sorted", {})
+        assert [c[0] for c in calls].count("copy") == 1  # the good landing is reused, not re-copied
+        assert calls[-1] == ("rm", "s3://atlantis/zarr/2025/datacube.zarr/_modis_sorted", True)
+
     def test_remote_swap_refuses_to_promote_onto_residue(self, tmp_path, monkeypatch):
         """A destination that never reaches zero files aborts the swap before any copy."""
         from atlantis.archive.reindex_time import _swap_group
