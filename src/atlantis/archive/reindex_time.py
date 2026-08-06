@@ -159,7 +159,10 @@ def _swap_group(store: Any, old: str, new: str, storage_options: dict[str, Any] 
     4. only then remove the temp group.
 
     A failure at any step leaves the temp group intact, so the recovery
-    source is never lost and the migration stays re-runnable.
+    source is never lost and the migration stays re-runnable. A copy that
+    lands nested (src under an existing dst) is detected by the post-copy
+    checks; on retry the destination is re-verified first and only cleared
+    when it did not land, so every copy runs onto an absent destination.
     """
     if isinstance(store, Path):
         old_dir, new_dir = store / old, store / new
@@ -170,12 +173,18 @@ def _swap_group(store: Any, old: str, new: str, storage_options: dict[str, Any] 
     base = store.path
     src, dst = f"{base}/{new}", f"{base}/{old}"
     n = _count_files(fs, src)
-    _delete_until_zero(fs, dst)
     last_error: Exception | None = None
     for attempt in range(5):
         try:
+            if attempt and _promotion_verified(fs, dst, new, n):
+                fs.rm(src, recursive=True)
+                return
+            # A previous attempt may have landed nested or partially, and s3fs
+            # nests a copy under an existing destination (the incident failure
+            # mode), so every copy runs onto a verifiably absent destination.
+            _delete_until_zero(fs, dst)
             fs.copy(src, dst, recursive=True, on_error="raise")
-            if _wait_for_file_count(fs, dst, n) and fs.exists(f"{dst}/zarr.json") and not fs.exists(f"{dst}/{new}"):
+            if _promotion_verified(fs, dst, new, n):
                 fs.rm(src, recursive=True)
                 return
             last_error = RuntimeError(
@@ -185,6 +194,11 @@ def _swap_group(store: Any, old: str, new: str, storage_options: dict[str, Any] 
             last_error = exc
         logger.warning("attempt %d: promote %s -> %s failed (%s) — retrying", attempt, new, old, last_error)
     raise RuntimeError(f"could not promote {new} over {old}: {last_error}") from last_error
+
+
+def _promotion_verified(fs: s3fs.S3FileSystem, dst: str, new: str, n: int) -> bool:
+    """True when *dst* lists at least *n* files with ``zarr.json`` at the root, not nested under ``dst/{new}``."""
+    return _wait_for_file_count(fs, dst, n) and fs.exists(f"{dst}/zarr.json") and not fs.exists(f"{dst}/{new}")
 
 
 def _delete_until_zero(fs: s3fs.S3FileSystem, path: str) -> None:
