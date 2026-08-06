@@ -1,6 +1,15 @@
 """Utility functions for Atlantis."""
 
 from atlantis.utils.geo import bbox_intersects, tile_bbox, validate_bbox
+from atlantis.utils.geoidflood import (
+    GEOIDFLOOD_DEFAULT_CATALOGUE,
+    GEOIDFLOOD_DEFAULT_METADATA,
+    derive_geoidflood_metadata,
+    fetch_geoidflood_catalog,
+    load_geoidflood_catalog,
+    load_geoidflood_metadata,
+    write_geoidflood_metadata_csv,
+)
 from atlantis.utils.io import HtmlResponseError, download_file, ensure_dir, get_cache_path
 from atlantis.utils.kurosiwo import (
     KUROSIWO_DEFAULT_CATALOGUE,
@@ -33,6 +42,13 @@ __all__ = [
     "get_cache_path",
     "ensure_dir",
     "HtmlResponseError",
+    "GEOIDFLOOD_DEFAULT_CATALOGUE",
+    "GEOIDFLOOD_DEFAULT_METADATA",
+    "load_geoidflood_catalog",
+    "fetch_geoidflood_catalog",
+    "load_geoidflood_metadata",
+    "derive_geoidflood_metadata",
+    "write_geoidflood_metadata_csv",
     "KUROSIWO_DEFAULT_CATALOGUE",
     "KUROSIWO_DEFAULT_METADATA",
     "load_kurosiwo_catalogue",

@@ -246,6 +246,7 @@ docs/viirs_atbd.md
 .ignore
 assets/kurosiwo/**
 assets/ks_catalogue.gpkg
+assets/geoidflood_tile_catalog.parquet
 *.debug/**
 docs/mcdwd_laads_desc.md
 docs/mcdwd_vcdwd_userguide_revF.md

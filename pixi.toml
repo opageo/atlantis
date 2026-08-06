@@ -264,6 +264,15 @@ modis-archive-status = "PYTHONPATH=src python -m atlantis.cli archive modis stat
 modis-archive-seed-tracker = "PYTHONPATH=src python -m atlantis.cli archive modis seed-tracker"
 
 # ============================================================================
+# GEOID-Flood event archive (metadata → AOI blocks → GFM cube)
+# ============================================================================
+
+download-geoidflood-catalog = "PYTHONPATH=src python scripts/download_geoidflood_catalog.py"
+estimate-geoidflood-aois = "PYTHONPATH=src python scripts/estimate_geoidflood_aois.py"
+estimate-geoidflood-aois-with-items = "PYTHONPATH=src python scripts/estimate_geoidflood_aois.py --with-items"
+build-geoidflood-gfm-archive = "PYTHONPATH=src python scripts/build_geoidflood_gfm_archive.py"
+
+# ============================================================================
 # VIIRS examples
 # ============================================================================
 
