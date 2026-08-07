@@ -1,22 +1,30 @@
 """Build the GEOID-Flood events GFM Zarr archive.
 
-Generates one task per (event-AoI block, date) for the full GEOID-Flood
-event-AoI set (windows = metadata range + 14-day post-flood pad), then
-streams them through the production GFM cube batch
+Generates one task per (event-AoI, date, EQUI7 tile) for the full
+GEOID-Flood event-AoI set (windows = metadata range + 14-day post-flood
+pad), then streams them through the production GFM cube batch
 (:func:`run_gfm_cube_batch`) into a new sparse Zarr cube — same schema/layout
 as the year and KuroSiwo cubes, so the existing reader, STAC and viz tooling
 work unchanged. Resume-safe via a per-run SQLite tracker: re-running skips
 DONE tasks.
 
+The task unit is the EQUI7 tile — GFM's native storage unit (one STAC item
+per (tile, date), streamed as a whole COG from EODC). Each task carries one
+tile's items for one date with the tile's own bbox, so every task reads
+exactly the COGs it needs and writes one per-tile cell into the cube, exactly
+like the year cubes. Events only select which tiles/dates are in scope.
+
 Task items come from the per-year S3 catalogues where one exists (2021–2025),
 and from live EODC STAC searches otherwise (GEOID-Flood spans 2016–2026, so
 windows outside the catalogue years are searched day by day — days without
 GFM items are skipped, mirroring the KuroSiwo build exactly, including the
-empty pre-2021 searches).
+empty pre-2021 searches). Items whose STAC metadata lacks a valid
+``Equi7Tile``/bbox are recorded to ``<tasks>.dropped.json`` for post-run
+coverage reconciliation.
 
-Task ids embed the event, the native AoI and the block
-(``gfm-EMSR712-10-a512_r09c022-20241029``) so two AoIs of one activation
-sharing a block never collide in the tracker.
+Task ids embed the event, the native AoI, the tile and the date
+(``gfm-EMSR712-10-EU020M_E036N009T3-20241029``) so two AoIs of one activation
+never collide in the tracker.
 
 Usage::
 
@@ -30,9 +38,9 @@ Run detached (tmux) — an SSH disconnect must not stop the coordinator.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
-from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -40,101 +48,70 @@ import pandas as pd
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from atlantis.fetchers.gfm.backend import GfmStacBackend  # noqa: E402
-from atlantis.models.event import FloodEvent  # noqa: E402
+from atlantis.archive.cube_batch import run_gfm_cube_batch  # noqa: E402
+from atlantis.batch import BatchConfig  # noqa: E402
+from atlantis.fetchers.gfm.event_tasks import (  # noqa: E402
+    build_tasks_from_catalogues,
+    build_tasks_live,
+    is_valid_tile,
+    task_id,
+)
+from atlantis.utils.setup import AWS_PROFILES  # noqa: E402
 
 AOI_TABLE = _REPO_ROOT / "data" / "metadata" / "geoidflood_aois.csv"
 TASKS_ALL_PATH = _REPO_ROOT / "data" / "benchmark" / "gfm_aoi_tasks_geoidflood_all.json"
 
-#: Years with a published GFM catalogue on S3 (offline task building).
-CATALOGUE_YEARS = {"2021", "2022", "2023", "2024", "2025"}
 
-
-def task_id(row, day: str, tile: str | None = None) -> str:
-    """Unique task id embedding event, native AoI, block, date (and EQUI7 tile)."""
-    base = f"gfm-{row.event_id}-{row.aoi_id}-{row.block_id}-{day.replace('-', '')}"
-    return f"{base}-{tile}" if tile else base
-
-
-def build_tasks_from_catalogues(aoi_table: pd.DataFrame) -> tuple[list[dict], set[str]]:
-    """Build (block, date, EQUI7-tile) tasks for catalogue-covered years, offline."""
-    from atlantis.fetchers.gfm.inventory import load_inventory
-
-    tasks: list[dict] = []
-    for year, rows in aoi_table.groupby(aoi_table["date_start"].str[:4]):
-        if year not in CATALOGUE_YEARS:
-            continue
-        catalogue = load_inventory(f"s3://atlantis/assets/gfm/gfm_archive_catalog_{year}.parquet")
-        for row in rows.itertuples(index=False):
-            in_window = (catalogue["date"].astype(str) >= row.date_start) & (
-                catalogue["date"].astype(str) <= row.date_end
-            )
-            intersects = (
-                (catalogue["west"] < row.aoi_east)
-                & (catalogue["east"] > row.aoi_west)
-                & (catalogue["south"] < row.aoi_north)
-                & (catalogue["north"] > row.aoi_south)
-            )
-            for (day, tile), group in catalogue[in_window & intersects].groupby(["date", "equi7_tile"]):
-                tasks.append(
-                    {
-                        "task_id": task_id(row, str(day), tile),
-                        "date": str(day),
-                        "equi7_tile": row.block_id,
-                        "item_hrefs": list(group["item_href"]),
-                        "bbox": [float(row.aoi_west), float(row.aoi_south), float(row.aoi_east), float(row.aoi_north)],
-                        "event_id": row.event_id,
-                        "aoi_id": row.aoi_id,
-                        "block_id": row.block_id,
-                    }
-                )
-    return tasks, set(aoi_table.loc[~aoi_table["date_start"].str[:4].isin(CATALOGUE_YEARS), "event_id"])
-
-
-def build_tasks_live(aoi_table: pd.DataFrame, events: set[str]) -> list[dict]:
-    """Live STAC search per (block, date) for events in years without catalogues."""
-    backend = GfmStacBackend()
-    tasks: list[dict] = []
-    for row in aoi_table[aoi_table["event_id"].isin(events)].itertuples(index=False):
-        day = date.fromisoformat(row.date_start)
-        while day <= date.fromisoformat(row.date_end):
-            items = backend.search(
-                FloodEvent(
-                    event_id=row.event_id,
-                    bbox=(row.aoi_west, row.aoi_south, row.aoi_east, row.aoi_north),
-                    start_date=day,
-                    end_date=day,
-                )
-            )
-            if items:
-                tasks.append(
-                    {
-                        "task_id": task_id(row, day.isoformat()),
-                        "date": day.isoformat(),
-                        "equi7_tile": row.block_id,
-                        "item_hrefs": [item.self_href for item in items],
-                        "bbox": [float(row.aoi_west), float(row.aoi_south), float(row.aoi_east), float(row.aoi_north)],
-                        "event_id": row.event_id,
-                        "aoi_id": row.aoi_id,
-                        "block_id": row.block_id,
-                    }
-                )
-            day += timedelta(days=1)
-        print(
-            f"  {row.event_id}-{row.aoi_id} {row.block_id}: "
-            f"{sum(1 for t in tasks if t['block_id'] == row.block_id)} tasks"
-        )
-    return tasks
-
-
-def generate_tasks() -> list[dict]:
+def generate_tasks() -> tuple[list[dict], list[dict]]:
     """Full GEOID-Flood task list: catalogues where available, live search otherwise."""
     aoi_table = pd.read_csv(AOI_TABLE)
-    tasks, live_events = build_tasks_from_catalogues(aoi_table)
+    tasks, live_events = build_tasks_from_catalogues(aoi_table, task_id)
+    dropped: list[dict] = []
     if live_events:
-        tasks += build_tasks_live(aoi_table, live_events)
-    tasks.sort(key=lambda t: (t["event_id"], t["aoi_id"], t["block_id"], t["date"]))
-    return tasks
+        live_tasks, dropped = build_tasks_live(aoi_table, live_events, task_id)
+        tasks += live_tasks
+    tasks.sort(key=lambda t: (t["event_id"], t["aoi_id"], t["date"], t["equi7_tile"]))
+    return tasks, dropped
+
+
+def write_tasks(path: Path, tasks: list[dict], dropped: list[dict]) -> None:
+    """Write the task list, plus any dropped items to ``<path>.dropped.json``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(tasks, indent=1))
+    if dropped:
+        drop_path = path.with_name(f"{path.stem}.dropped.json")
+        drop_path.write_text(json.dumps(dropped, indent=1))
+        print(f"  {len(dropped)} item(s) dropped for missing/invalid metadata → {drop_path}")
+
+
+def load_or_build_tasks(path: Path) -> tuple[list[dict], list[dict]]:
+    """Load the cached task list, regenerating it if it is stale or invalid.
+
+    Cached task lists from before the per-tile task scheme (512-arcmin block
+    tasks, ``equi7_tile`` = block id) are silently accepted by the batch
+    engine, so they are detected here — via the EQUI7 tile-id format check —
+    and rebuilt rather than run as-is.
+    """
+    if not path.exists():
+        print("Building task list (catalogues + live search)…")
+        tasks, dropped = generate_tasks()
+        write_tasks(path, tasks, dropped)
+        return tasks, dropped
+
+    tasks = json.loads(path.read_text())
+    stale = not isinstance(tasks, list) or any(
+        not isinstance(t, dict) or not is_valid_tile(t.get("equi7_tile")) for t in tasks
+    )
+    if stale:
+        print(
+            f"WARNING: {path} contains tasks in the old 512-arcmin-block format; "
+            "regenerating per-tile tasks. If the tracker DB was created by a previous "
+            "block-based run, delete it so the new task ids are not skipped as DONE."
+        )
+        tasks, dropped = generate_tasks()
+        write_tasks(path, tasks, dropped)
+        return tasks, dropped
+    return tasks, []
 
 
 def main() -> None:
@@ -151,21 +128,7 @@ def main() -> None:
     parser.add_argument("--tasks", type=Path, default=TASKS_ALL_PATH, help="task list (built if missing)")
     args = parser.parse_args()
 
-    from atlantis.archive.cube_batch import run_gfm_cube_batch
-    from atlantis.batch import BatchConfig
-    from atlantis.utils.setup import AWS_PROFILES
-
-    if not args.tasks.exists():
-        print("Building task list (catalogues + live search)…")
-        tasks = generate_tasks()
-        args.tasks.parent.mkdir(parents=True, exist_ok=True)
-        import json
-
-        args.tasks.write_text(json.dumps(tasks, indent=1))
-    else:
-        import json
-
-        tasks = json.loads(args.tasks.read_text())
+    tasks, dropped = load_or_build_tasks(args.tasks)
     print(f"Tasks: {len(tasks):,} ({sum(len(t['item_hrefs']) for t in tasks):,} items)")
 
     if args.tasks_only:
