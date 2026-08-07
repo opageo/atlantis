@@ -1,12 +1,12 @@
-"""Benchmark GFM processing of 512×512-arcmin KuroSiwo event AOIs.
+"""Benchmark GFM processing of KuroSiwo event AOIs.
 
 Answers: how heavy is one (AOI, date) task, and how many run in parallel on
 this host? Three subcommands, sharing a task-JSON exchange file:
 
 * ``sample`` — pick 8 deterministic test events (2 largest extents, 2
-  smallest, 4 spread across latitude bands), resolve their 512×512-arcmin
-  AOI blocks, and build tasks (one per (AOI, date), items found via live
-  EODC STAC searches) → ``data/benchmark/gfm_aoi_tasks.json``.
+  smallest, 4 spread across latitude bands) and build tasks from the AOI
+  table (one per (AOI, date), items found via live EODC STAC searches)
+  → ``data/benchmark/gfm_aoi_tasks.json``.
 * ``run-a`` — process the tasks sequentially through the production produce
   function (:func:`atlantis.fetchers.gfm.batch_processor.harmonise_gfm_payload`),
   recording per-task wall time, item count, peak RSS (VmHWM) and output
@@ -15,7 +15,7 @@ this host? Three subcommands, sharing a task-JSON exchange file:
   (:func:`atlantis.archive.cube_batch.run_cube_batch`) at a given worker
   count, with its own SQLite tracker per sweep → one summary row per sweep
   in ``data/benchmark/gfm_aoi_run_b.csv`` plus a projected full-event-set
-  runtime (11,773 tasks from the AOI estimate).
+  runtime (11,773 tasks from the legacy 512-arcmin-block AOI estimate).
 
 Usage::
 
@@ -49,28 +49,36 @@ TASKS_PATH = BENCH_DIR / "gfm_aoi_tasks.json"
 RUN_A_CSV = BENCH_DIR / "gfm_aoi_run_a.csv"
 RUN_B_CSV = BENCH_DIR / "gfm_aoi_run_b.csv"
 N_SAMPLE_EVENTS = 8
-TOTAL_TASKS_FULL_SET = 11773  # Σ dates × blocks from estimate_kurosiwo_aois.py
+TOTAL_TASKS_FULL_SET = 11773  # legacy 512-arcmin-block estimate (Σ dates × blocks) from estimate_kurosiwo_aois.py
 
 
 # ── Sample selection ─────────────────────────────────────────────────────────
 
 
 def select_sample_events(aoi_table: pd.DataFrame, n: int = N_SAMPLE_EVENTS) -> list[str]:
-    """Deterministic pick: 2 largest, 2 smallest, rest spread across lat bands."""
+    """Deterministic pick: 2 largest, 2 smallest, rest spread across lat bands.
+
+    Extent is computed per row (the current AOI table has one row per event,
+    so a max-minus-min span over the group is always zero) and aggregated as
+    the per-event maximum.
+    """
+    per_row = aoi_table.assign(
+        extent=(aoi_table["aoi_east"] - aoi_table["aoi_west"]) * (aoi_table["aoi_north"] - aoi_table["aoi_south"])
+    )
     per_event = (
-        aoi_table.groupby("event_id")
+        per_row.groupby("event_id")
         .agg(
             lon_span=("aoi_east", lambda s: s.max() - s.min()),
             lat_span=("aoi_north", lambda s: s.max() - s.min()),
             centroid_lat=("aoi_north", lambda s: s.max() - s.min()),
             n_blocks=("aoi_id", "count"),
+            extent=("extent", "max"),
         )
         .reset_index()
     )
     per_event["centroid_lat"] = (
         aoi_table.groupby("event_id").apply(lambda g: (g["aoi_south"].min() + g["aoi_north"].max()) / 2).values
     )
-    per_event["extent"] = per_event["lon_span"] * per_event["lat_span"]
     per_event = per_event.sort_values("extent")
 
     chosen: list[str] = []
@@ -100,10 +108,16 @@ def sample_dates(start: str, end: str, max_dates: int) -> list[str]:
 
 
 def task_id_for(row, day: str) -> str:
-    """Task id embedding the AOI table's key columns (event, AoI, block when present)."""
+    """Task id embedding the AOI table's key columns (event, AoI, block when present).
+
+    The fallback embeds ``event_id`` too: with the block-free AOI tables,
+    ``aoi_id`` is not globally unique (GEOID-Flood AoI numbers repeat across
+    activations), so without it two events on the same date collide in the
+    tracker and get silently deduped.
+    """
     if "block_id" in row._fields:
         return f"gfm-{row.event_id}-{row.aoi_id}-{row.block_id}-{day.replace('-', '')}"
-    return f"gfm-{row.aoi_id}-{day.replace('-', '')}"
+    return f"gfm-{row.event_id}-{row.aoi_id}-{day.replace('-', '')}"
 
 
 def build_tasks(
