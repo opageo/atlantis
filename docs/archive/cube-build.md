@@ -513,6 +513,16 @@ PYTHONPATH=src pixi run python -m atlantis.cli archive modis status --year 2025
   year, and its completion-order writer can leave the time axis unsorted. The
   update path (§4.1's engine wrapped in an ascending-order writer) is the
   supported way to complete an existing year.
+- After a full rebuild (or a fresh build of a new year) with `batch modis cube
+run` (§4.1), the year's **state-root tracker** must be the build's tracker or
+  `archive modis status` / `update` will not see the year: either point
+  `--db-path` at the state-root file
+  (`/mnt/atlantis-state/modis/<year>/cube_tracker.db`, after deleting any
+  stale file), or afterwards move the build's tracker into place
+  (`mv rebuild_tracker.db …/cube_tracker.db`). Do not use `seed-tracker` as a
+  substitute for a fresh build's tracker — it manufactures rows from the Zarr
+  time axis, not per-`(date, h, v)` task truth (see
+  `.github/prompts/plan-modis-incremental-archive-update.md`).
 - Every command must see the same state root (`--state-root`, or the default
   `/mnt/atlantis-state/modis` once created and seeded — `seed-tracker` is
   idempotent).
