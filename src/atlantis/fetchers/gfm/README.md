@@ -51,6 +51,11 @@ gfm/
 Classified mode also preserves native-code extras such as `exclusion_mask`,
 `ensemble_likelihood`, `advisory_flags`, and `ensemble_water_extent` when present.
 
+For validation runs, the processor can also persist
+`ensemble_flood_extent_count`, `ensemble_water_extent_count`, and `valid_count`.
+These are the audit inputs for the classified fraction equations; a separately
+resampled native water raster is not a byte-exact derivation oracle.
+
 ### With `--no-classify` (native/raw mode)
 
 | Variable                | Source                         |

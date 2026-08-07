@@ -1098,6 +1098,11 @@ def fetch(
             "Pass 0 to force the unwindowed path."
         ),
     ),
+    gfm_persist_diagnostics: bool = typer.Option(
+        False,
+        "--gfm-persist-diagnostics/--no-gfm-persist-diagnostics",
+        help="Persist GFM flood/water/valid count rasters for derivation validation.",
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -1268,7 +1273,14 @@ def fetch(
                 "peak_priority": peak_priority,
             }
         elif src == "gfm":
-            effective_window_size = gfm_window_size if gfm_window_size else None
+            # ``None`` means use the configured production default (5000
+            # native pixels). An explicit ``0`` remains the escape hatch for
+            # the legacy unwindowed path; using a truthiness check here used
+            # to silently turn the CLI default into an unwindowed 15k×15k
+            # native read, which can appear stalled for several minutes.
+            effective_window_size = (
+                config.fetcher.gfm_window_size if gfm_window_size is None else (gfm_window_size or None)
+            )
             fetcher_kwargs = {
                 "coarsen_factor": gfm_coarsen_factor,
                 "resampling": gfm_resampling_enum,
@@ -1280,6 +1292,7 @@ def fetch(
                 "max_observations": max_observations,
                 "peak_priority": peak_priority,
                 "window_size": effective_window_size,
+                "persist_diagnostics": gfm_persist_diagnostics,
             }
         fetcher = fetcher_cls(**fetcher_kwargs)
         if flood_event is None:

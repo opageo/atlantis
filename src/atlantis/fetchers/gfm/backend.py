@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -35,11 +36,15 @@ class GfmStacBackend:
         api_url: str = DEFAULT_GFM_STAC_URL,
         collection_id: str = GFM_COLLECTION_ID,
         max_items: int = 1000,
+        request_timeout: float = 30.0,
+        max_retries: int = 1,
     ) -> None:
         """Initialise the backend with STAC endpoint, collection, and result cap."""
         self.api_url = api_url
         self.collection_id = collection_id
         self.max_items = max_items
+        self.request_timeout = request_timeout
+        self.max_retries = max_retries
 
     def search(self, event: FloodEvent) -> "ItemCollection":
         """Search the EODC STAC for GFM items matching the flood event.
@@ -51,6 +56,7 @@ class GfmStacBackend:
             pystac ItemCollection of matching items.
         """
         from pystac_client import Client
+        from pystac_client.stac_api_io import StacApiIO
 
         west, south, east, north = event.bbox
         aoi = box(west, south, east, north)
@@ -65,7 +71,26 @@ class GfmStacBackend:
             end.isoformat(),
         )
 
-        catalog = Client.open(self.api_url)
+        started = perf_counter()
+        logger.info(
+            "Connecting to GFM STAC API (timeout={}s, max_retries={})",
+            self.request_timeout,
+            self.max_retries,
+        )
+        try:
+            catalog = Client.open(
+                self.api_url,
+                timeout=self.request_timeout,
+                stac_io=StacApiIO(timeout=self.request_timeout, max_retries=self.max_retries),
+            )
+        except Exception as exc:
+            logger.error(
+                "GFM STAC connection failed after {:.1f}s: {}",
+                perf_counter() - started,
+                exc,
+            )
+            raise
+        logger.info("Connected to GFM STAC API in {:.1f}s", perf_counter() - started)
         search = catalog.search(
             max_items=self.max_items,
             collections=self.collection_id,
@@ -73,8 +98,9 @@ class GfmStacBackend:
             datetime=(start, end),
         )
 
+        logger.info("Executing GFM STAC search")
         items = search.item_collection()
-        logger.info("Found {} GFM items", len(items))
+        logger.info("Found {} GFM items in {:.1f}s", len(items), perf_counter() - started)
         return items
 
     @staticmethod

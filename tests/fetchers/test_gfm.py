@@ -143,10 +143,14 @@ class TestGfmStacBackend:
             api_url="https://custom.api/v1",
             collection_id="CUSTOM",
             max_items=500,
+            request_timeout=12.0,
+            max_retries=2,
         )
         assert backend.api_url == "https://custom.api/v1"
         assert backend.collection_id == "CUSTOM"
         assert backend.max_items == 500
+        assert backend.request_timeout == 12.0
+        assert backend.max_retries == 2
 
     @patch("pystac_client.Client")
     def test_search_calls_stac_client(self, mock_client_cls, valencia_event):
@@ -159,7 +163,12 @@ class TestGfmStacBackend:
         backend = GfmStacBackend()
         result = backend.search(valencia_event)
 
-        mock_client_cls.open.assert_called_once_with(DEFAULT_GFM_STAC_URL)
+        mock_client_cls.open.assert_called_once()
+        open_kwargs = mock_client_cls.open.call_args.kwargs
+        assert open_kwargs["timeout"] == 30.0
+        assert open_kwargs["stac_io"].timeout == 30.0
+        retry = open_kwargs["stac_io"].session.get_adapter("https://").max_retries
+        assert retry.total == 1
         mock_catalog.search.assert_called_once()
         call_kwargs = mock_catalog.search.call_args[1]
         assert call_kwargs["max_items"] == 1000

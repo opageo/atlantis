@@ -4,6 +4,7 @@ import numpy as np
 import xarray as xr
 from rasterio.transform import from_bounds
 
+from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
 from atlantis.fetchers.gfm.processor import (
     GFM_DRY,
     GFM_FLOOD,
@@ -153,6 +154,46 @@ class TestGfmProcessorClassify:
         )
 
         np.testing.assert_array_equal(tile.reference_water, reference_codes)
+
+    def test_exclusion_does_not_change_published_fraction_denominator(self):
+        """Exclusion is a quality flag; extent nodata defines observability."""
+        proc = GfmRasterProcessor(bbox=(0, 0, 1, 1))
+        import xarray as xr
+
+        coords = {"x": np.linspace(0, 1, 2), "y": np.linspace(1, 0, 2)}
+        mock_coords = xr.DataArray(np.zeros((2, 2)), coords=coords, dims=("y", "x")).coords
+        tile = proc._classify(
+            np.array([[1.0, 0.0], [0.0, 0.0]], dtype=np.float32),
+            np.array([[1.0, 0.0], [0.0, 0.0]], dtype=np.float32),
+            np.ones((2, 2), dtype=np.float32),
+            mock_coords,
+            ("y", "x"),
+            reference_water_codes=np.zeros((2, 2), dtype=np.uint8),
+            extra_layers={"exclusion_mask": np.array([[1, 0], [0, 0]], dtype=np.uint8)},
+        )
+        assert tile.flood_fraction[0, 0] == 1.0
+        assert tile.water_fraction[0, 0] == 1.0
+
+    def test_processed_dataset_preserves_native_extra_nodata(self):
+        """GFM code extras carry nodata metadata into xarray/rioxarray."""
+        transform = from_bounds(0, 0, 1, 1, 2, 2)
+        tile = GfmProcessedTile(
+            water_fraction=np.zeros((2, 2), dtype=np.float32),
+            flood_fraction=np.zeros((2, 2), dtype=np.float32),
+            reference_water=np.zeros((2, 2), dtype=np.uint8),
+            extra_layers={
+                "ensemble_likelihood": np.array([[0, 255], [50, 100]], dtype=np.uint8),
+                "exclusion_mask": np.array([[0, 1], [255, 0]], dtype=np.uint8),
+                "advisory_flags": np.array([[0, 2], [255, 0]], dtype=np.uint8),
+            },
+            transform=transform,
+            crs="EPSG:4326",
+            shape=(2, 2),
+        )
+        ds = processed_tile_to_dataset(tile, event_id="event")
+        for name in ("ensemble_likelihood", "exclusion_mask", "advisory_flags"):
+            assert ds[name].attrs["nodata"] == 255
+            assert ds[name].rio.nodata == 255
 
 
 class TestGfmProcessorNativeMasks:
@@ -332,6 +373,31 @@ class TestGfmProcessorWriteOutputs:
             expected = np.rint(np.clip(flood_fraction, 0.0, 1.0) * 100).astype(np.uint8)
             np.testing.assert_array_equal(data, expected)
             assert data.max() <= 100
+
+    def test_count_diagnostics_round_trip(self, tmp_path):
+        """Validation counts are written as float32 without percent scaling."""
+        counts = {
+            "ensemble_flood_extent_count": np.array([[0.0, 1.0], [2.5, -9999.0]], dtype=np.float32),
+            "ensemble_water_extent_count": np.array([[1.0, 0.0], [2.5, -9999.0]], dtype=np.float32),
+            "valid_count": np.array([[2.0, 2.0], [4.0, -9999.0]], dtype=np.float32),
+        }
+        tile = GfmProcessedTile(
+            water_fraction=np.array([[0.5, 0.0], [0.625, np.nan]], dtype=np.float32),
+            flood_fraction=np.array([[0.0, 0.5], [0.625, np.nan]], dtype=np.float32),
+            reference_water=np.zeros((2, 2), dtype=np.uint8),
+            diagnostics=counts,
+            transform=from_bounds(10, 20, 11, 21, 2, 2),
+            crs="EPSG:4326",
+            shape=(2, 2),
+        )
+        paths = GfmRasterProcessor(bbox=(10, 20, 11, 21))._write_outputs(tile, "event", "20240101", tmp_path)
+
+        import rasterio
+
+        with rasterio.open(paths.diagnostics["valid_count"]) as ds:
+            assert ds.dtypes[0] == "float32"
+            assert ds.nodata == -9999.0
+            np.testing.assert_array_equal(ds.read(1), counts["valid_count"])
 
 
 class TestGfmProcessorAggregation:
