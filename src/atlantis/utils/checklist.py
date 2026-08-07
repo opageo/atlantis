@@ -348,6 +348,9 @@ _SUBSTEP_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"HDF4 subdataset for"), "Open HDF4"),
     (re.compile(r"Item \d+/\d+ processed"), "Process STAC item"),
     (re.compile(r"Replacing NaN with nodata"), "Fill nodata"),
+    (re.compile(r"Processing GFM date \d{8}"), "Process GFM date"),
+    (re.compile(r"GFM item \d+/\d+ starting"), "Read GFM item"),
+    (re.compile(r"GFM item \d+/\d+ processed"), "Process GFM item"),
 )
 
 
@@ -369,6 +372,7 @@ class LoguruChecklistHandler(logging.Handler):
         self._parent = current_parent
         # Cache (label → item_id) so we don't add the same sub-step twice.
         self._active: dict[str, str] = {}
+        self._last_gfm_progress: str | None = None
 
     def emit(self, record: logging.LogRecord) -> None:
         """Stdlib ``logging`` API — not used by loguru, but kept for parity."""
@@ -389,6 +393,19 @@ class LoguruChecklistHandler(logging.Handler):
         if parent_id is None:
             return
         self._checklist.append_log(msg)
+        gfm_match = re.search(r"GFM item (\d+)/(\d+) (starting|processed)", msg)
+        if gfm_match is not None:
+            current = f"{gfm_match.group(1)}/{gfm_match.group(2)}"
+            label = f"GFM item {current}"
+            if gfm_match.group(3) == "starting" and current != self._last_gfm_progress:
+                self._last_gfm_progress = current
+                self._active[label] = self._checklist.add_substep(parent_id, label)
+                self._checklist.set_substep_status(parent_id, label, Status.RUNNING)
+            elif gfm_match.group(3) == "processed":
+                item_id = self._active.get(label)
+                if item_id is not None:
+                    self._checklist.complete_substep(item_id)
+            return
         profile = _current_profile.get()
         if profile is not None and self._advance_profile(profile, parent_id, msg):
             return
