@@ -206,4 +206,9 @@ class TestGfmStacBackendSearch:
             backend = GfmStacBackend(api_url="https://custom.stac.example/api/v1")
             backend.search(small_event)
 
-        mock_open.assert_called_once_with("https://custom.stac.example/api/v1")
+        mock_open.assert_called_once()
+        open_args, open_kwargs = mock_open.call_args
+        assert open_args[0] == "https://custom.stac.example/api/v1"
+        assert open_kwargs["timeout"] == 30.0
+        retry = open_kwargs["stac_io"].session.get_adapter("https://").max_retries
+        assert retry.total == 1
