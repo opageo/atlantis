@@ -97,6 +97,7 @@ nav:
       - "End-to-End Examples": cli-examples.md
   - "Batch Processing":
       - "VIIRS JPSS": batch/viirs/jpss.md
+      - "Incremental MODIS Archive Updates": archive/modis-archive-update.md
   - Development: development.md
   - API Reference:
       - Config: api/config.md

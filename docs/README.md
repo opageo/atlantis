@@ -23,6 +23,9 @@ layers Atlantis computes from them.
   schema and data-flow diagrams (review brief for the ML team).
 - [Cube build guide](./archive/cube-build.md) - Building the Zarr datacube from
   VIIRS granules (batch pipeline, resume-safe, streaming).
+- [Incremental MODIS archive updates](./archive/modis-archive-update.md) -
+  Weekly, resume-safe ingestion of newly published MODIS tiles into the yearly
+  archive (reconciliation, ordered time axis, manifests, state backups).
 - [COG build guide](./archive/cog-build.md) - Building per-granule Cloud-Optimised
   GeoTIFFs from VIIRS granules (batch pipeline, one COG per granule on S3).
 - [STAC + Visualization layer](./archive/stac-and-viz.md) - STAC discovery layer over the

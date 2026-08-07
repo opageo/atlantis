@@ -479,6 +479,38 @@ PYTHONPATH=src pixi run -e viz python -m atlantis.cli viz serve viirs \
   --port 5006
 ```
 
+### 4.4 Filling gaps in an existing MODIS year (no full rebuild)
+
+To process missing dates in an already-built year (e.g. 2025-02-18 …
+2025-04-13, 55 dates / ~15,840 tiles) without rebuilding the cube: seed the
+tracker from the archive, insert the missing time slots, then run the update —
+it resolves the window from the watermark and processes only pending dates
+(`DONE` dates are skipped via the tracker):
+
+```bash
+# 0. One-time onboarding for years built before the update flow (2023/2024/2025):
+PYTHONPATH=src pixi run python -m atlantis.cli archive modis seed-tracker --year 2025
+
+# 1. Insert the missing date slots into the year's time axis (one-off; copies
+#    the shifted planes on the object store — run detached)
+PYTHONPATH=src pixi run python -m atlantis.cli archive modis _reindex-time --year 2025
+
+# 2. Process the pending work (LAADS download, Dask batch — run detached)
+PYTHONPATH=src pixi run python -m atlantis.cli archive modis update --year 2025 --foreground
+
+# 3. Track completion
+PYTHONPATH=src pixi run python -m atlantis.cli archive modis status --year 2025
+```
+
+- Do **not** rebuild with `batch modis cube run`: it re-downloads the whole
+  year, and its completion-order writer can leave the time axis unsorted. The
+  update path (§4.1's engine wrapped in an ascending-order writer) is the
+  supported way to complete an existing year.
+- Every command must see the same state root (`--state-root`, or the default
+  `/mnt/atlantis-state/modis` once created and seeded — `seed-tracker` is
+  idempotent).
+- Full guide: [`modis-archive-update.md`](./modis-archive-update.md).
+
 ---
 
 ## 5. Picking a partition — slicing by date
