@@ -142,6 +142,11 @@ def aoi_blocks(
     window can be region-written into the global cube and read back as an
     exact ``block_size × block_size`` (or trimmed, at the globe's edge) array.
 
+    Note: the GFM event archives do NOT use this — tasks are one per EQUI7
+    tile (GFM's native storage unit) with the tile's own bbox. These helpers
+    are retained as generic grid utilities (tested; usable for any future
+    arcmin-tiled output).
+
     Args:
         west: Western edge of the bbox (degrees).
         south: Southern edge of the bbox (degrees).
