@@ -185,6 +185,12 @@ Counting those reference-only pixels would increase `valid_count` without a
 water/flood observation and dilute a real water observation into artificial
 fractions such as `1/3` or `1/2` along source-footprint boundaries.
 
+The `exclusion_mask` is a reliability-quality layer, not a current-observation
+nodata mask. Published fractions therefore retain pixels with an exclusion flag
+when either current extent band is observed; only extent nodata contributes zero
+to `valid_count`. A reliability-filtered fraction, if required by a downstream
+use case, must be computed as a separate explicit metric.
+
 Mean-pooling the 0/1 masks (rather than `max`-pooling the nominal codes) keeps
 discrete classes meaningful and avoids nodata dominating mixed blocks. After
 reprojection with `average`, each mask becomes a coverage fraction on the
