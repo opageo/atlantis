@@ -96,9 +96,7 @@ class OrderedConsume:
         ignored.
         """
         with sqlite3.connect(self._db_path) as conn:
-            rows = conn.execute(
-                "SELECT task_id FROM tasks WHERE status IN ('DONE', 'FAILED')"
-            ).fetchall()
+            rows = conn.execute("SELECT task_id FROM tasks WHERE status IN ('DONE', 'FAILED')").fetchall()
         resolved = Counter()
         for (task_id,) in rows:
             key = self._by_id.get(task_id)

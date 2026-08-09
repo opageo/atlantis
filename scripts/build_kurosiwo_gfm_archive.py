@@ -90,8 +90,7 @@ def filter_aoi_rows(table: pd.DataFrame, events: set[str]) -> pd.DataFrame:
     matching = table[ids.isin(events) | combos.isin(events)]
     if matching.empty:
         raise SystemExit(
-            f"No AOI rows match --events {sorted(events)}. "
-            f"Available event ids: {', '.join(sorted(ids.unique()))}"
+            f"No AOI rows match --events {sorted(events)}. Available event ids: {', '.join(sorted(ids.unique()))}"
         )
     return matching
 
@@ -100,10 +99,7 @@ def filter_tasks(tasks: list[dict], events: set[str], year: int | None) -> list[
     """Filter tasks by event (id or ``event_id-aoi_id``) and calendar year."""
     if events:
         tasks = [
-            t
-            for t in tasks
-            if str(t.get("event_id")) in events
-            or f"{t.get('event_id')}-{t.get('aoi_id')}" in events
+            t for t in tasks if str(t.get("event_id")) in events or f"{t.get('event_id')}-{t.get('aoi_id')}" in events
         ]
     if year:
         tasks = [t for t in tasks if str(t["date"])[:4] == str(year)]
@@ -225,9 +221,7 @@ def main() -> None:
         # Rows with no overlap with the backfill year contribute no tasks for
         # it; dropping them up front also avoids pointless live STAC searches
         # for windows entirely outside the year.
-        aoi_table = aoi_table[
-            (aoi_table["date_start"] <= f"{year}-12-31") & (aoi_table["date_end"] >= f"{year}-01-01")
-        ]
+        aoi_table = aoi_table[(aoi_table["date_start"] <= f"{year}-12-31") & (aoi_table["date_end"] >= f"{year}-01-01")]
 
     tasks, dropped = load_or_build_tasks(args.tasks, aoi_table)
     tasks = filter_tasks(tasks, events, year)
