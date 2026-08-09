@@ -519,6 +519,45 @@ class TestOrderedConsume:
         consumer.write(object(), date(2026, 1, 2))
         assert session.writes == [date(2026, 1, 2)]  # date 1 resolved (FAILED) → not a blocker
 
+    @staticmethod
+    def _gfm_tasks(days):
+        return [
+            {
+                "task_id": f"gfm-EMSR712-10-EU020M_E036N009T3-202410{d:02d}",
+                "date": f"2024-10-{d:02d}",
+                "equi7_tile": "EU020M_E036N009T3",
+            }
+            for d in days
+        ]
+
+    def test_gfm_style_task_ids(self, tmp_path):
+        """Dates are resolved via the task map, not parsed out of the id."""
+        db = tmp_path / "tracker.db"
+        init_db(db)
+        tasks = self._gfm_tasks([29, 30, 31])
+        session = self._FakeSession(db, tasks)
+        consumer = OrderedConsume(session, db, tasks)
+        consumer.write(object(), date(2024, 10, 31))  # completions arrive in reverse order
+        consumer.write(object(), date(2024, 10, 30))
+        assert session.writes == []  # buffered: earlier dates unresolved
+        mark_done(db, tasks[0]["task_id"], "x")
+        consumer.write(object(), date(2024, 10, 29))  # resolves date 29 → flush ascending
+        assert session.writes == [date(2024, 10, 29), date(2024, 10, 30), date(2024, 10, 31)]
+
+    def test_foreign_tracker_rows_do_not_resolve_run_dates(self, tmp_path):
+        """Tracker rows for tasks outside the run never count towards resolution."""
+        db = tmp_path / "tracker.db"
+        init_db(db)
+        tasks = self._tasks([1, 2])
+        mark_done(db, "modis-20260101-h10v04", "x")  # date-1 row for a different tile, not in this run
+        session = self._FakeSession(db, tasks)
+        consumer = OrderedConsume(session, db, tasks)
+        consumer.write(object(), date(2026, 1, 2))
+        assert session.writes == []  # date 1 of this run still unresolved
+        mark_done(db, tasks[0]["task_id"], "x")
+        consumer.write(object(), date(2026, 1, 1))
+        assert session.writes == [date(2026, 1, 1), date(2026, 1, 2)]
+
 
 class TestSpansAndHoles:
     def test_unsorted_spans(self):

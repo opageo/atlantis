@@ -97,7 +97,10 @@ def build_tasks_from_catalogues(
 
     One task per (event-AoI, date, tile): the tile's items for that date,
     with the tile's own bbox — the same per-cell layout as the year cubes
-    (:func:`atlantis.fetchers.gfm.inventory.to_tasks`).
+    (:func:`atlantis.fetchers.gfm.inventory.to_tasks`). Every catalogue year
+    inside an event's date window contributes tasks, so events straddling a
+    year boundary produce tasks for each of their catalogue years (the
+    per-year backfill then filters by ``--year``).
 
     Args:
         aoi_table: AOI table with ``event_id``, ``aoi_id``, ``date_start``,
@@ -106,17 +109,27 @@ def build_tasks_from_catalogues(
 
     Returns:
         ``(tasks, live_events)`` — the tasks plus the set of event ids whose
-        date window starts outside the catalogue years and must be searched
+        date window includes non-catalogue years and must be searched
         live.
     """
     from atlantis.fetchers.gfm.inventory import load_inventory
 
     tasks: list[dict] = []
-    for year, rows in aoi_table.groupby(aoi_table["date_start"].str[:4]):
-        if year not in CATALOGUE_YEARS:
-            continue
-        catalogue = load_inventory(catalogue_uri(year))
-        for row in rows.itertuples(index=False):
+    catalogues: dict[str, pd.DataFrame] = {}
+
+    def catalogue_for(year: str) -> pd.DataFrame:
+        if year not in catalogues:
+            catalogues[year] = load_inventory(catalogue_uri(year))
+        return catalogues[year]
+
+    for row in aoi_table.itertuples(index=False):
+        start_year = int(str(row.date_start)[:4])
+        end_year = int(str(row.date_end)[:4])
+        for year in range(start_year, end_year + 1):
+            year_key = str(year)
+            if year_key not in CATALOGUE_YEARS:
+                continue
+            catalogue = catalogue_for(year_key)
             in_window = (catalogue["date"].astype(str) >= row.date_start) & (
                 catalogue["date"].astype(str) <= row.date_end
             )
@@ -173,6 +186,12 @@ def build_tasks_live(
     for row in aoi_table[aoi_table["event_id"].isin(events)].itertuples(index=False):
         day = date.fromisoformat(row.date_start)
         while day <= date.fromisoformat(row.date_end):
+            # Catalogue-covered days are already built by
+            # `build_tasks_from_catalogues`; skipping them here keeps the task
+            # ids unique when a live event's window crosses catalogue years.
+            if str(day.year) in CATALOGUE_YEARS:
+                day += timedelta(days=1)
+                continue
             items = backend.search(
                 FloodEvent(
                     event_id=row.event_id,

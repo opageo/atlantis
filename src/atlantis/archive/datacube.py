@@ -14,7 +14,7 @@ coordinator (the archive CLI runs single-process, satisfying this).
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -70,6 +70,7 @@ def ensure_source_group(
     shard: int | None,
     scale_factor: float,
     time_units: str,
+    prefill_year: int | None = None,
 ) -> zarr.Group:
     """Return the per-source group, creating it on the global grid if absent.
 
@@ -81,6 +82,10 @@ def ensure_source_group(
         shard: Spatial shard size (pixels), or ``None`` to disable sharding.
         scale_factor: CF ``scale_factor`` applied to ``water_fraction``.
         time_units: CF time units string for the ``time`` coordinate.
+        prefill_year: If set, pre-fill the ``time`` axis with the full
+            calendar year (366 metadata-only slots) right after the data
+            arrays are ensured, so any event date lands in a pre-existing
+            slot and writes never move the axis.
 
     Returns:
         The per-source :class:`zarr.Group`.
@@ -88,6 +93,8 @@ def ensure_source_group(
     if source_id in root:
         group = root[source_id]
         _ensure_data_arrays(group, var_names, chunk=chunk, shard=shard, scale_factor=scale_factor)
+        if prefill_year is not None:
+            prefill_year_axis(group, prefill_year, time_units)
         return group
 
     group = root.create_group(source_id)
@@ -110,6 +117,8 @@ def ensure_source_group(
     crs.attrs.update(_crs_grid_mapping_attrs())
 
     _ensure_data_arrays(group, var_names, chunk=chunk, shard=shard, scale_factor=scale_factor)
+    if prefill_year is not None:
+        prefill_year_axis(group, prefill_year, time_units)
     group.attrs.update({"crs": grid.GLOBAL_CRS, "atlantis_events": {}})
     return group
 
@@ -145,6 +154,37 @@ def _ensure_data_arrays(
         else:
             attrs["long_name"] = name.replace("_", " ")
         arr.attrs.update(attrs)
+
+
+def prefill_year_axis(group: zarr.Group, year: int, time_units: str) -> bool:
+    """Pre-fill the ``time`` axis with every day of *year* (metadata-only).
+
+    Resizes the time axis and every time-major data array to 366 slots and
+    writes the day integers, so any event date lands in a pre-existing slot:
+    writes never move the axis and no reindex is ever needed. Existing chunk
+    data is untouched (a V3 resize is shape/metadata only) — only use it on
+    empty groups (the 2025 scaffold, ``time`` shape 0 → 366) or fresh
+    creations; pre-filling a group with already-written data would leave that
+    data at its old index, misaligned with the new time values. Idempotent —
+    an axis already at 366 (or beyond) is left as-is. Unwritten slots read
+    NODATA.
+
+    Returns:
+        True if the axis was resized (metadata changed); False for a no-op.
+    """
+    epoch = str(time_units).rsplit("since ", 1)[-1].strip()
+    time_arr = group["time"]
+    n = int(time_arr.shape[0])
+    if n >= 366:
+        return False
+    days = np.asarray([date_to_int(date(year, 1, 1) + timedelta(days=i), epoch) for i in range(366)], dtype="int64")
+    time_arr.resize((366,))
+    time_arr[:] = days
+    for name in group.array_keys():
+        arr = group[name]
+        if len(arr.shape) == 3 and arr.shape[0] == n:
+            arr.resize((366, arr.shape[1], arr.shape[2]))
+    return True
 
 
 def get_handles(group: zarr.Group, var_names: list[str]) -> tuple[Any, dict[str, Any]]:

@@ -162,6 +162,8 @@ class ArchiveWriter:
             "shadow",
             "recurring_flood",
         ),
+        *,
+        prefill_year: int | None = None,
     ) -> _WriteSession:
         """Open a streaming write session over a single source group.
 
@@ -181,11 +183,14 @@ class ArchiveWriter:
             var_names: Data variables the session will write (held in the group's
                 canonical order). Channels absent from an individual ``write``
                 input are skipped.
+            prefill_year: If set, pre-fill the source group's ``time`` axis with
+                the full calendar year (metadata-only) when the group is
+                (re)opened, so every written date lands in a pre-existing slot.
 
         Returns:
             A :class:`_WriteSession` bound to this writer.
         """
-        return _WriteSession(self, source_id, list(var_names))
+        return _WriteSession(self, source_id, list(var_names), prefill_year=prefill_year)
 
     # ── Internal write pipeline ────────────────────────────────────────────
 
@@ -211,13 +216,14 @@ class ArchiveWriter:
         datacube.consolidate(store)
         return store
 
-    def _open_group_handles(self, source_id: str, var_names: list[str]):
+    def _open_group_handles(self, source_id: str, var_names: list[str], prefill_year: int | None = None):
         """Open the store, ensure the source group, and return write handles.
 
         Returns ``(store, group, time_arr, data_arrs)``. The array handles must be
         held for the lifetime of the writes — ``group[name]`` yields a fresh
         handle each call, so a resize on one would not be seen by the next (see
-        :mod:`atlantis.archive.datacube`).
+        :mod:`atlantis.archive.datacube`). ``prefill_year`` pre-fills the time
+        axis inside ``ensure_source_group``, before the held handles are fetched.
         """
         store = self._store()
         root = datacube.open_root(store, mode="a")
@@ -229,7 +235,16 @@ class ArchiveWriter:
             shard=self.config.shard_size,
             scale_factor=self.config.scale_factor,
             time_units=datacube.epoch_units(self.config.time_epoch),
+            prefill_year=prefill_year,
         )
+        if prefill_year is not None:
+            # Zarr v3 stores consolidated metadata inline in the root group;
+            # a pre-fill resize inside `ensure_source_group` is invisible to
+            # handles fetched from the current group object. Re-consolidate
+            # and re-open so the handles below see the resized arrays.
+            datacube.consolidate(store)
+            root = datacube.open_root(store, mode="a")
+            group = root[source_id]
         time_arr, data_arrs = datacube.get_handles(group, var_names)
         return store, group, time_arr, data_arrs
 
@@ -372,11 +387,20 @@ class _WriteSession:
     would dominate S3 runtime.
     """
 
-    def __init__(self, writer: ArchiveWriter, source_id: str, var_names: list[str]) -> None:
+    def __init__(
+        self,
+        writer: ArchiveWriter,
+        source_id: str,
+        var_names: list[str],
+        *,
+        prefill_year: int | None = None,
+    ) -> None:
         self._writer = writer
         self._source_id = source_id
         self._var_names = var_names
-        self._store, self._group, self._time_arr, self._data_arrs = writer._open_group_handles(source_id, var_names)
+        self._store, self._group, self._time_arr, self._data_arrs = writer._open_group_handles(
+            source_id, var_names, prefill_year
+        )
         self._closed = False
 
     def write(self, dataset: "xr.Dataset", *, time: date | None = None) -> list[date]:

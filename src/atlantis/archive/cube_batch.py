@@ -256,6 +256,8 @@ def run_gfm_cube_batch(
     archive_config: Any = None,
     storage_options: dict[str, Any] | None = None,
     source_id: str = "gfm",
+    ordered: bool = False,
+    prefill_year: int | None = None,
 ) -> dict[str, Any]:
     """Build the GFM datacube from a catalogue, resume-safe and streaming.
 
@@ -277,22 +279,41 @@ def run_gfm_cube_batch(
         archive_config: Optional :class:`~atlantis.config.ArchiveConfig`.
         storage_options: fsspec options for a remote ``archive_root``.
         source_id: Cube group name (default ``"gfm"``).
+        ordered: Buffer completions in ascending date order
+            (:class:`~atlantis.archive.ordering.OrderedConsume`). With a
+            pre-filled axis this is a belt-and-braces safety net — dates
+            already exist, so order never moves.
+        prefill_year: Pre-fill the ``time`` axis with the full calendar year
+            (metadata-only) when the group is opened, so every event date
+            lands in a pre-existing slot.
 
     Returns:
         Final tracker stats for the run.
     """
+    from atlantis.archive.ordering import OrderedConsume
     from atlantis.archive.writer import ArchiveWriter
     from atlantis.fetchers.gfm.batch_processor import harmonise_gfm_payload
 
     writer = ArchiveWriter(archive_root, archive_config, storage_options=storage_options)
     var_names = ("water_fraction", "exclusion_mask", "reference_water")
-    with writer.session(source_id, var_names) as session:
+    with writer.session(source_id, var_names, prefill_year=prefill_year) as session:
+        if ordered:
+            ordered_consume = OrderedConsume(session, cfg.db_path, tasks)
 
-        def consume(payload: dict[str, Any]) -> str:
-            session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
-            return f"{archive_root}#{source_id}/{payload['date']}/{payload['equi7_tile']}"
+            def consume(payload: dict[str, Any]) -> str:
+                ordered_consume.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
+                return f"{archive_root}#{source_id}/{payload['date']}/{payload['equi7_tile']}"
 
-        return run_cube_batch(tasks, harmonise_gfm_payload, consume, cfg)
+            final = run_cube_batch(tasks, harmonise_gfm_payload, consume, cfg)
+            ordered_consume.drain()
+        else:
+
+            def consume(payload: dict[str, Any]) -> str:
+                session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
+                return f"{archive_root}#{source_id}/{payload['date']}/{payload['equi7_tile']}"
+
+            final = run_cube_batch(tasks, harmonise_gfm_payload, consume, cfg)
+    return final
 
 
 def _payload_to_dataset(payload: dict[str, Any]):

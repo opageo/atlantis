@@ -192,6 +192,70 @@ class TestArchiveReader:
         assert out.sizes["y"] == 32 and out.sizes["x"] == 32
 
 
+# ── Pre-filled year axis (per-event GFM backfill) ─────────────────────────────
+
+
+class TestPrefillYear:
+    def _assert_date_value(self, tmp_path, day, expected):
+        ds = ArchiveReader(tmp_path).read("gfm", bbox=window_bbox(), start=day, end=day)
+        np.testing.assert_allclose(float(ds["water_fraction"].mean()), expected, atol=1e-6)
+
+    def test_prefill_full_year_and_out_of_order_writes(self, tmp_path):
+        from atlantis.archive import datacube
+        from atlantis.archive.ordering import unsorted_spans
+
+        writer = ArchiveWriter(tmp_path)
+        with writer.session("gfm", ["water_fraction"], prefill_year=2024) as session:
+            session.write(aligned_dataset(0.3), time=date(2024, 10, 29))
+            session.write(aligned_dataset(0.7), time=date(2024, 9, 15))
+
+        import zarr
+
+        group = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        times = np.asarray(group["time"][:])
+        assert times.shape == (366,)
+        assert group["water_fraction"].shape[0] == 366
+        epoch = ArchiveConfig().time_epoch
+        written = {datacube.date_to_int(d, epoch) for d in (date(2024, 9, 15), date(2024, 10, 29))}
+        assert written <= set(times.tolist())
+        assert unsorted_spans(times) == []
+        self._assert_date_value(tmp_path, date(2024, 9, 15), 0.7)
+        self._assert_date_value(tmp_path, date(2024, 10, 29), 0.3)
+
+        # second run: pre-fill is a no-op and a re-write overwrites in place
+        with writer.session("gfm", ["water_fraction"], prefill_year=2024) as session:
+            session.write(aligned_dataset(0.9), time=date(2024, 10, 29))
+        group = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        assert group["time"].shape[0] == 366
+        assert group["water_fraction"].shape[0] == 366
+        self._assert_date_value(tmp_path, date(2024, 10, 29), 0.9)
+        self._assert_date_value(tmp_path, date(2024, 9, 15), 0.7)
+
+    def test_prefill_upgrades_empty_scaffold_in_place(self, tmp_path):
+        """The 2025-style empty scaffold (shape 0, no data) upgrades to 366."""
+        writer = ArchiveWriter(tmp_path)
+        with writer.session("gfm", ["water_fraction"]):
+            pass  # creates the empty scaffold: time (0,), data (0, ...)
+
+        import zarr
+
+        group = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        assert group["time"].shape[0] == 0
+        assert group["water_fraction"].shape[0] == 0
+
+        with writer.session("gfm", ["water_fraction"], prefill_year=2024) as session:
+            session.write(aligned_dataset(0.5), time=date(2024, 10, 29))
+            session.write(aligned_dataset(0.6), time=date(2024, 9, 15))
+
+        group = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        times = np.asarray(group["time"][:])
+        assert times.shape == (366,)
+        assert group["water_fraction"].shape[0] == 366
+        # out-of-order dates land in their pre-filled slots
+        self._assert_date_value(tmp_path, date(2024, 10, 29), 0.5)
+        self._assert_date_value(tmp_path, date(2024, 9, 15), 0.6)
+
+
 # ── Optional event bookmarks ──────────────────────────────────────────────────
 
 
