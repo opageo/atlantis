@@ -127,6 +127,14 @@ bokeh = ">=3.0"
 rio-cogeo = ">=5.0"
 
 # ============================================================================
+# Feature: events (per-event GFM backfill into the year cubes)
+# ============================================================================
+
+[feature.events.dependencies]
+dask = ">=2024.10"
+distributed = "*"
+
+# ============================================================================
 # Feature: notebooks (Jupyter / ECMWF benchmarking)
 # ============================================================================
 
@@ -187,6 +195,7 @@ default = { features = ["dev", "ui"], solve-group = "default" }
 ml = { features = ["dev", "ml"], solve-group = "default" }
 notebooks = { features = ["dev", "ml", "notebooks"], solve-group = "default" }
 batch = { features = ["dev", "batch"], solve-group = "default" }
+events = { features = ["dev", "events"], solve-group = "default" }
 ui = { features = ["dev", "ui"], solve-group = "default" }
 stac = { features = ["dev", "stac"] }
 docs = { features = ["docs"], solve-group = "default" }
@@ -253,6 +262,69 @@ precommit = "pre-commit run --all-files"
 verify-gdal = """python -c "from osgeo import gdal; assert gdal.GetDriverByName('HDF4'), 'HDF4 driver missing'; print('GDAL', gdal.__version__, '— HDF4 driver: OK')" """
 validate-gfm = "PYTHONPATH=src python -m atlantis.cli validate-gfm --require-raw"
 web = "PYTHONPATH=src python -m atlantis.cli web launch --host 0.0.0.0 --port 8080"
+
+# ============================================================================
+# Incremental MODIS archive updates (atlantis archive modis update)
+# ============================================================================
+
+modis-archive-update = "PYTHONPATH=src python -m atlantis.cli archive modis update --foreground"
+modis-archive-update-dry-run = "PYTHONPATH=src python -m atlantis.cli archive modis update --foreground --dry-run"
+modis-archive-status = "PYTHONPATH=src python -m atlantis.cli archive modis status"
+modis-archive-seed-tracker = "PYTHONPATH=src python -m atlantis.cli archive modis seed-tracker"
+
+# ============================================================================
+# GEOID-Flood event archive (metadata → AOI blocks → GFM cube)
+# ============================================================================
+
+[tasks.download-geoidflood-catalog]
+cmd = "PYTHONPATH=src python scripts/download_geoidflood_catalog.py"
+default-environment = "events"
+
+[tasks.estimate-geoidflood-aois]
+cmd = "PYTHONPATH=src python scripts/estimate_geoidflood_aois.py"
+default-environment = "events"
+
+[tasks.estimate-geoidflood-aois-with-items]
+cmd = "PYTHONPATH=src python scripts/estimate_geoidflood_aois.py --with-items"
+default-environment = "events"
+
+[tasks.build-geoidflood-gfm-archive]
+cmd = "PYTHONPATH=src python scripts/build_geoidflood_gfm_archive.py"
+default-environment = "events"
+
+# ============================================================================
+# KuroSiwo event archive (catalogue → AOI blocks → GFM cube)
+# ============================================================================
+
+[tasks.download-kurosiwo-catalog]
+cmd = "PYTHONPATH=src python scripts/download_kurosiwo.py"
+default-environment = "events"
+
+[tasks.estimate-kurosiwo-aois]
+cmd = "PYTHONPATH=src python scripts/estimate_kurosiwo_aois.py"
+default-environment = "events"
+
+[tasks.estimate-kurosiwo-aois-with-items]
+cmd = "PYTHONPATH=src python scripts/estimate_kurosiwo_aois.py --with-items"
+default-environment = "events"
+
+[tasks.build-kurosiwo-gfm-archive]
+cmd = "PYTHONPATH=src python scripts/build_kurosiwo_gfm_archive.py"
+default-environment = "events"
+
+# ============================================================================
+# Per-event GFM backfill into the per-year cubes (s3://atlantis/zarr/{year})
+# ============================================================================
+
+[tasks.backfill-geoidflood-gfm]
+cmd = "PYTHONPATH=src python scripts/build_geoidflood_gfm_archive.py --year {{ year }} --events {{ events }}"
+args = [{ arg = "year" }, { arg = "events" }]
+default-environment = "events"
+
+[tasks.backfill-kurosiwo-gfm]
+cmd = "PYTHONPATH=src python scripts/build_kurosiwo_gfm_archive.py --year {{ year }} --events {{ events }}"
+args = [{ arg = "year" }, { arg = "events" }]
+default-environment = "events"
 
 # ============================================================================
 # VIIRS examples

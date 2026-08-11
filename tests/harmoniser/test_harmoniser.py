@@ -425,6 +425,52 @@ class TestDiscoverNodata:
         da.attrs = {"nodata": "0"}
         assert _integer_nodata(da) == 0
 
+    def test_native_float_likelihood_is_not_fraction_scaled(self, tmp_path) -> None:
+        """Average-resampled native likelihood remains in its 0-100 domain."""
+        import rasterio
+        import rioxarray  # noqa: F401
+        import xarray as xr
+
+        da = xr.DataArray(
+            np.array([[0.0, 50.0], [100.0, np.nan]], dtype=np.float32),
+            dims=("y", "x"),
+            coords={"x": [0.25, 0.75], "y": [0.75, 0.25]},
+            name="ensemble_likelihood",
+        )
+        da.rio.write_crs("EPSG:4326", inplace=True)
+        da.rio.write_transform(from_bounds(0, 0, 1, 1, 2, 2), inplace=True)
+        da.rio.write_nodata(np.nan, inplace=True)
+        path = tmp_path / "likelihood.tif"
+
+        from atlantis.harmoniser import write_harmonised_raster
+
+        write_harmonised_raster(da, path)
+        with rasterio.open(path) as ds:
+            np.testing.assert_array_equal(ds.read(1), [[0, 50], [100, 255]])
+            assert ds.nodata == 255
+
+    def test_fraction_float_is_percent_scaled(self, tmp_path) -> None:
+        import rasterio
+        import rioxarray  # noqa: F401
+        import xarray as xr
+
+        da = xr.DataArray(
+            np.array([[0.0, 0.5], [1.0, np.nan]], dtype=np.float32),
+            dims=("y", "x"),
+            coords={"x": [0.25, 0.75], "y": [0.75, 0.25]},
+            name="water_fraction",
+        )
+        da.rio.write_crs("EPSG:4326", inplace=True)
+        da.rio.write_transform(from_bounds(0, 0, 1, 1, 2, 2), inplace=True)
+        da.rio.write_nodata(np.nan, inplace=True)
+        path = tmp_path / "fraction.tif"
+
+        from atlantis.harmoniser import write_harmonised_raster
+
+        write_harmonised_raster(da, path)
+        with rasterio.open(path) as ds:
+            np.testing.assert_array_equal(ds.read(1), [[0, 50], [100, 255]])
+
 
 class TestNormaliserBranches:
     """Tests for Normaliser branches not exercised by integration tests."""

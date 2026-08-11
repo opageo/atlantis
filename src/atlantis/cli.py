@@ -1,5 +1,6 @@
 """CLI entrypoints for Atlantis."""
 
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -1098,6 +1099,11 @@ def fetch(
             "Pass 0 to force the unwindowed path."
         ),
     ),
+    gfm_persist_diagnostics: bool = typer.Option(
+        False,
+        "--gfm-persist-diagnostics/--no-gfm-persist-diagnostics",
+        help="Persist GFM flood/water/valid count rasters for derivation validation.",
+    ),
 ) -> None:
     """Fetch raw inundation data from specified source(s).
 
@@ -1268,7 +1274,14 @@ def fetch(
                 "peak_priority": peak_priority,
             }
         elif src == "gfm":
-            effective_window_size = gfm_window_size if gfm_window_size else None
+            # ``None`` means use the configured production default (5000
+            # native pixels). An explicit ``0`` remains the escape hatch for
+            # the legacy unwindowed path; using a truthiness check here used
+            # to silently turn the CLI default into an unwindowed 15k×15k
+            # native read, which can appear stalled for several minutes.
+            effective_window_size = (
+                config.fetcher.gfm_window_size if gfm_window_size is None else (gfm_window_size or None)
+            )
             fetcher_kwargs = {
                 "coarsen_factor": gfm_coarsen_factor,
                 "resampling": gfm_resampling_enum,
@@ -1280,6 +1293,7 @@ def fetch(
                 "max_observations": max_observations,
                 "peak_priority": peak_priority,
                 "window_size": effective_window_size,
+                "persist_diagnostics": gfm_persist_diagnostics,
             }
         fetcher = fetcher_cls(**fetcher_kwargs)
         if flood_event is None:
@@ -2008,21 +2022,22 @@ def harmonise(
     ok(f"Wrote {harmonised_count} harmonised file(s) to {output_path}")
 
 
-@cli.command()
-def archive(
-    event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
-    source: str | None = typer.Option(None, "--source", "-s", help="Data source (default: all available)"),
-    input_dir: Path | None = typer.Option(
-        None, "--input", "-i", help="Harmonised data directory (default: ./data/<event>)"
-    ),
-    archive_root: str | None = typer.Option(None, "--archive", "-a", help="Archive root (local path or s3:// URI)"),
-    ensure_masks: bool = typer.Option(
-        False, "--ensure-masks", help="Synthesise quality/permanent-water masks if absent in the input"
-    ),
-) -> None:
-    """Write harmonised GeoTIFFs into the consolidated Zarr datacube.
+archive_app = typer.Typer(
+    help="Write and maintain the consolidated Zarr datacube.",
+    no_args_is_help=True,
+)
 
-    Reads harmonised rasters from ``<input>/<source>/harmonised/*.tif`` and
+
+def _archive_event_impl(
+    event: str,
+    source: str | None,
+    input_dir: Path | None,
+    archive_root: str | None,
+    ensure_masks: bool,
+) -> None:
+    """Write harmonised event rasters into the consolidated datacube.
+
+    Reads harmonised GeoTIFFs from ``<input>/<source>/harmonised/*.tif`` and
     region-writes each into the per-source group of the consolidated global
     1-arcmin datacube.
 
@@ -2107,6 +2122,581 @@ def archive(
             progress.advance(task)
 
     ok(f"Archived {len(items)} raster(s) from {len(sources)} source(s) into datacube at {root}")
+
+
+# ── archive sub-app: legacy event import (alias) + incremental MODIS updates ──
+
+
+@archive_app.command("event", help="Write harmonised event GeoTIFFs into the consolidated datacube.")
+def archive_event(
+    event: str = typer.Option(..., "--event", "-e", help="Flood event ID"),
+    source: str | None = typer.Option(None, "--source", "-s", help="Data source (default: all available)"),
+    input_dir: Path | None = typer.Option(
+        None, "--input", "-i", help="Harmonised data directory (default: ./data/<event>)"
+    ),
+    archive_root: str | None = typer.Option(None, "--archive", "-a", help="Archive root (local path or s3:// URI)"),
+    ensure_masks: bool = typer.Option(
+        False, "--ensure-masks", help="Synthesise quality/permanent-water masks if absent in the input"
+    ),
+) -> None:
+    """Write harmonised GeoTIFFs into the consolidated Zarr datacube."""
+    _archive_event_impl(event, source, input_dir, archive_root, ensure_masks)
+
+
+modis_archive_app = typer.Typer(help="Incremental MODIS yearly archive updates.")
+archive_app.add_typer(modis_archive_app, name="modis")
+
+
+def _archive_storage_options(uri: str) -> dict[str, str] | None:
+    """ECMWF object-store options for ``s3://`` URIs (None for local paths)."""
+    if not uri.startswith("s3://"):
+        return None
+    from atlantis.utils.setup import AWS_PROFILES
+
+    profile = next((p for p in AWS_PROFILES if p.name == "default"), None)
+    if profile is None or not profile.endpoint_url:
+        fail("The 'default' AWS profile is not configured. Run `atlantis setup` first.")
+        raise typer.Exit(code=1)
+    return {"endpoint_url": profile.endpoint_url}
+
+
+def _resolve_update_options(
+    *,
+    year: int | None,
+    start: str | None,
+    end: str | None,
+    lookback_days: int,
+    availability_lag_days: int,
+    archive_base: str,
+    state_root: Path,
+    catalogue_base: str,
+    backup_base: str,
+    workers_min: int,
+    workers_max: int,
+    memory_limit: str,
+    dashboard_port: int,
+    retries: int,
+    log_every: int,
+    dry_run: bool,
+    retry_failed: bool,
+):
+    from atlantis.archive.update import UpdateOptions
+
+    return UpdateOptions(
+        year=year,
+        start=date.fromisoformat(start) if start else None,
+        end=date.fromisoformat(end) if end else None,
+        lookback_days=lookback_days,
+        availability_lag_days=availability_lag_days,
+        archive_base=archive_base,
+        state_root=state_root,
+        catalogue_base=catalogue_base,
+        backup_base=backup_base,
+        workers_min=workers_min,
+        workers_max=workers_max,
+        memory_limit=memory_limit,
+        dashboard_port=dashboard_port,
+        retries=retries,
+        log_every=log_every,
+        dry_run=dry_run,
+        retry_failed=retry_failed,
+        storage_options=_archive_storage_options(archive_base),
+    )
+
+
+@modis_archive_app.command("update", help="Launch a detached tmux MODIS archive update for the resolved window(s).")
+def archive_modis_update(
+    year: int | None = typer.Option(None, "--year", help="Restrict to one archive year."),
+    start: str | None = typer.Option(None, "--start", help="Explicit inclusive start YYYY-MM-DD (repair/backfill)."),
+    end: str | None = typer.Option(None, "--end", help="Explicit inclusive end YYYY-MM-DD."),
+    lookback_days: int = typer.Option(14, "--lookback-days", help="Weekly-run lookback (late LAADS publications)."),
+    availability_lag_days: int = typer.Option(
+        7, "--availability-lag-days", help="Avoid querying data still being published."
+    ),
+    archive_base: str = typer.Option(
+        "s3://atlantis/zarr", "--archive-base", help="Archive base: <base>/<year>/datacube.zarr."
+    ),
+    state_root: Path = typer.Option(
+        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
+    ),
+    catalogue_base: str = typer.Option(
+        "s3://atlantis/assets/modis",
+        "--catalogue-base",
+        help="Yearly catalogue base: <base>/modis_archive_catalog_<year>.parquet.",
+    ),
+    backup_base: str = typer.Option(
+        "s3://atlantis/archive-state/modis",
+        "--backup-base",
+        help="Tracker/manifest/catalogue backup root.",
+    ),
+    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+    memory_limit: str = typer.Option("2.5GB", "--memory-limit", help="Memory cap per worker."),
+    dashboard_port: int = typer.Option(8788, "--dashboard-port", help="Dask dashboard port."),
+    retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
+    log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Resolve and print the plan without launching."),
+    retry_failed: bool = typer.Option(
+        True, "--retry-failed/--no-retry-failed", help="Retry previously FAILED tasks (default on)."
+    ),
+    session_name: str | None = typer.Option(None, "--session-name", help="Override the generated tmux session name."),
+    attach: bool = typer.Option(False, "--attach", help="Attach to the tmux session after launch."),
+    foreground: bool = typer.Option(False, "--foreground", help="Run the worker in this terminal (no tmux)."),
+) -> None:
+    """Resolve the update window and run it — detached tmux by default.
+
+    The actual work runs through ``_run-update`` (an internal foreground
+    worker); this command only starts that worker in a named tmux session and
+    reports where to inspect it. Never launches ``update`` recursively.
+    """
+    from datetime import datetime, timezone
+
+    from atlantis.archive.update import (
+        UpdateError,
+        build_worker_command,
+        launch_tmux_update,
+        resolve_windows,
+        run_update,
+    )
+
+    opts = _resolve_update_options(
+        year=year,
+        start=start,
+        end=end,
+        lookback_days=lookback_days,
+        availability_lag_days=availability_lag_days,
+        archive_base=archive_base,
+        state_root=state_root,
+        catalogue_base=catalogue_base,
+        backup_base=backup_base,
+        workers_min=workers_min,
+        workers_max=workers_max,
+        memory_limit=memory_limit,
+        dashboard_port=dashboard_port,
+        retries=retries,
+        log_every=log_every,
+        dry_run=dry_run,
+        retry_failed=retry_failed,
+    )
+
+    windows = resolve_windows(opts)
+    if dry_run:
+        for window in windows:
+            console.print(f"  {window.year} {window.kind}: {window.start} → {window.end}")
+        worker = build_worker_command(opts, datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+        console.print(f"  worker: PYTHONPATH=src pixi run -e batch {' '.join(worker)}")
+        return
+    if not windows:
+        warn("Resolved window is empty — nothing to do.")
+        return
+
+    if foreground:
+        try:
+            summary = run_update(opts)
+        except UpdateError as exc:
+            fail(str(exc))
+            raise typer.Exit(code=1) from exc
+        ok(f"Update finished: {summary['status']}")
+        return
+
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    try:
+        name, log_path, _ = launch_tmux_update(
+            opts, run_id=run_id, repo_root=Path(__file__).resolve().parents[2], session_name=session_name
+        )
+    except UpdateError as exc:
+        fail(str(exc))
+        raise typer.Exit(code=1) from exc
+    ok(f"Launched tmux session {name}")
+    console.print(f"  log:        {log_path}")
+    console.print(f"  archive:    {windows[0].year} → {archive_base}/{windows[0].year}")
+    console.print(f"  tracker:    {state_root}/{windows[0].year}/cube_tracker.db")
+    console.print(f"  follow-up:  tmux attach -t {name}")
+    console.print(f"  status:     atlantis archive modis status --year {windows[0].year}")
+    if attach:
+        import subprocess
+
+        subprocess.run(["tmux", "attach-session", "-t", name], check=False)
+
+
+@modis_archive_app.command(
+    "_run-update",
+    hidden=True,
+    help="Run the MODIS archive update in the foreground (internal worker).",
+)
+def archive_modis_run_update(
+    year: int | None = typer.Option(None, "--year", help="Restrict to one archive year."),
+    start: str | None = typer.Option(None, "--start", help="Explicit inclusive start YYYY-MM-DD (repair/backfill)."),
+    end: str | None = typer.Option(None, "--end", help="Explicit inclusive end YYYY-MM-DD."),
+    lookback_days: int = typer.Option(14, "--lookback-days", help="Weekly-run lookback (late LAADS publications)."),
+    availability_lag_days: int = typer.Option(
+        7, "--availability-lag-days", help="Avoid querying data still being published."
+    ),
+    archive_base: str = typer.Option(
+        "s3://atlantis/zarr", "--archive-base", help="Archive base: <base>/<year>/datacube.zarr."
+    ),
+    state_root: Path = typer.Option(
+        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
+    ),
+    catalogue_base: str = typer.Option(
+        "s3://atlantis/assets/modis",
+        "--catalogue-base",
+        help="Yearly catalogue base: <base>/modis_archive_catalog_<year>.parquet.",
+    ),
+    backup_base: str = typer.Option(
+        "s3://atlantis/archive-state/modis",
+        "--backup-base",
+        help="Tracker/manifest/catalogue backup root.",
+    ),
+    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+    memory_limit: str = typer.Option("2.5GB", "--memory-limit", help="Memory cap per worker."),
+    dashboard_port: int = typer.Option(8788, "--dashboard-port", help="Dask dashboard port."),
+    retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
+    log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Resolve and report the plan without processing."),
+    retry_failed: bool = typer.Option(
+        True, "--retry-failed/--no-retry-failed", help="Retry previously FAILED tasks (default on)."
+    ),
+) -> None:
+    """Foreground worker: refresh catalogue, reconcile, ingest, validate, manifest."""
+    from atlantis.archive.update import UpdateError, run_update
+
+    opts = _resolve_update_options(
+        year=year,
+        start=start,
+        end=end,
+        lookback_days=lookback_days,
+        availability_lag_days=availability_lag_days,
+        archive_base=archive_base,
+        state_root=state_root,
+        catalogue_base=catalogue_base,
+        backup_base=backup_base,
+        workers_min=workers_min,
+        workers_max=workers_max,
+        memory_limit=memory_limit,
+        dashboard_port=dashboard_port,
+        retries=retries,
+        log_every=log_every,
+        dry_run=dry_run,
+        retry_failed=retry_failed,
+    )
+    try:
+        summary = run_update(opts)
+    except UpdateError as exc:
+        fail(str(exc))
+        raise typer.Exit(code=1) from exc
+    if summary["status"] == "noop":
+        warn("Resolved window is empty — nothing to do.")
+        return
+    years = [entry["year"] for entry in summary.get("years", [])]
+    ok(f"Update {summary['status']} for year(s) {years}")
+
+
+@modis_archive_app.command("status", help="Inspect yearly tracker, catalogue, archive, and manifest state.")
+def archive_modis_status(
+    year: int | None = typer.Option(
+        None, "--year", help="Archive year to inspect (default: all years with local state)."
+    ),
+    state_root: Path = typer.Option(
+        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
+    ),
+    archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
+    catalogue_base: str = typer.Option("s3://atlantis/assets/modis", "--catalogue-base", help="Yearly catalogue base."),
+) -> None:
+    """Report completion, gaps, recent failures, watermark, and lock state.
+
+    With no ``--year``, every year with local state under ``--state-root`` is
+    summarised in one table plus a monthly overview strip.
+    """
+    from atlantis.archive.update import UpdateOptions, status_report
+
+    opts = UpdateOptions(
+        state_root=state_root,
+        archive_base=archive_base,
+        catalogue_base=catalogue_base,
+        storage_options=_archive_storage_options(archive_base),
+    )
+
+    if year is not None:
+        _print_year_status(opts, year)
+        return
+    if not state_root.exists():
+        warn(f"No state under {state_root} — run `archive modis update` first, or pass --year.")
+        return
+    years = sorted(int(p.name) for p in state_root.iterdir() if p.is_dir() and p.name.isdigit())
+    if not years:
+        warn(f"No yearly state under {state_root} — run `archive modis update` first, or pass --year.")
+        return
+
+    command_header("archive modis status", subtitle="all years")
+    reports = {y: status_report(opts, y) for y in years}
+    rows = [
+        [
+            str(y),
+            f"{reports[y].get('DONE', 0)} / {reports[y].get('FAILED', 0)} / {reports[y].get('total', 0)}",
+            "—" if reports[y]["watermark"] is None else reports[y]["watermark"].isoformat(),
+            str(reports[y]["time_axis_sorted"]) if reports[y]["archive_dates"] else "—",
+            "—" if reports[y]["last_manifest"] is None else reports[y]["last_manifest"].get("status", "—"),
+        ]
+        for y in years
+    ]
+    console.print(
+        summary_table(
+            "MODIS archive — all years",
+            ["Year", "DONE/FAILED/total", "Watermark", "Axis sorted", "Last run"],
+            rows,
+        )
+    )
+    section_rule("Monthly overview (dominant state)")
+    for y in years:
+        console.print(_render_year_overview(reports[y]["date_states"], y))
+    console.print(_render_heatmap_legend())
+    info("Pass --year for the full per-date heatmap, recent failures, and manifest.")
+
+
+@modis_archive_app.command(
+    "seed-tracker",
+    help="Build a year's tracker from the archive (DONE for every date on the time axis).",
+)
+def archive_modis_seed_tracker(
+    year: int = typer.Option(..., "--year", help="Archive year to seed."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report what would be seeded without writing."),
+    state_root: Path = typer.Option(
+        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
+    ),
+    archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
+    catalogue_base: str = typer.Option("s3://atlantis/assets/modis", "--catalogue-base", help="Yearly catalogue base."),
+) -> None:
+    """Onboard an already-archived year that has no tracker.
+
+    Marks every catalogue task whose date is present on the archive time axis
+    as ``DONE`` (the archive cannot be decomposed per tile, but a date on the
+    axis proves it was written). Catalogue dates missing from the axis stay
+    pending and are reported, so the next ``update`` run only processes
+    genuinely missing work. Idempotent — existing task rows are never
+    overwritten.
+    """
+    from atlantis.archive.update import UpdateError, UpdateOptions, date_ranges, seed_tracker
+
+    opts = UpdateOptions(
+        state_root=state_root,
+        archive_base=archive_base,
+        catalogue_base=catalogue_base,
+        storage_options=_archive_storage_options(archive_base),
+    )
+    try:
+        summary = seed_tracker(opts, year, dry_run=dry_run)
+    except UpdateError as exc:
+        fail(str(exc))
+        raise typer.Exit(code=1) from exc
+    verb = "Would seed" if dry_run else "Seeded"
+    ok(f"{verb} {summary['seeded']} DONE task(s) for {year} (axis {summary['axis_dates']} date(s))")
+    if summary["pending_dates"]:
+        ranges = _format_missing_ranges(date_ranges(summary["pending_dates"]))
+        warn(f"{len(summary['pending_dates'])} catalogue date(s) missing from the archive: {ranges}")
+        info(f"Run `archive modis _reindex-time --year {year}` then `archive modis update --year {year}` to fill them.")
+
+
+def _print_year_status(opts, year: int) -> None:
+    """Full per-year status view: metrics table, per-date heatmap, failures."""
+    from atlantis.archive.update import status_report
+
+    report = status_report(opts, year)
+
+    command_header("archive modis status", subtitle=str(year))
+    done_failed_total = (
+        f"{report.get('DONE', 0)} / {report.get('FAILED', 0)} / {report.get('total', 0)}"
+        if report["tracker_exists"]
+        else "— (no tracker yet)"
+    )
+    rows = [
+        ["Tracker", report["tracker"]],
+        ["Tracker exists", str(report["tracker_exists"])],
+        ["Catalogue rows", "—" if report["catalogue_rows"] is None else str(report["catalogue_rows"])],
+        ["DONE / FAILED / total", done_failed_total],
+        [
+            "Watermark (contiguous complete)",
+            "—" if report["watermark"] is None else report["watermark"].isoformat(),
+        ],
+        ["Archive dates", str(report["archive_dates"])],
+        [
+            "Archive span",
+            "—" if not report.get("archive_first") else f"{report['archive_first']} … {report['archive_last']}",
+        ],
+        ["Time axis ascending", str(report["time_axis_sorted"])],
+        ["Missing ranges", _format_missing_ranges(report.get("missing_ranges"))],
+    ]
+    lock = report.get("lock")
+    if lock is not None:
+        lock_label = f"pid {lock.get('pid')} since {lock.get('started_at')}"
+        rows.append(["Lock", lock_label + (" (STALE)" if lock.get("stale") else "")])
+    console.print(summary_table(f"MODIS {year} — update status", ["Metric", "Value"], rows))
+
+    if report["date_states"]:
+        section_rule("Per-date completion")
+        console.print(_render_year_heatmap(report["date_states"], year))
+        console.print(_render_heatmap_legend())
+        _print_state_detail(report)
+
+    if report["recent_failed"]:
+        section_rule("Most recent FAILED tasks")
+        for task_id, error, attempts, finished_at in report["recent_failed"]:
+            console.print(f"  [red]{task_id}[/red] ({attempts} attempts, {finished_at})")
+            console.print(f"    {error}")
+
+    last = report.get("last_manifest")
+    if last is not None:
+        section_rule("Last run manifest")
+        console.print(
+            f"  run_id {last.get('run_id')} · {last.get('status')} · window {last.get('window')}"
+            f" · watermark {last.get('watermark')}"
+        )
+    if report.get("time_axis_sorted") is False and report["archive_dates"]:
+        warn(f"Time axis not ascending — run `atlantis archive modis _reindex-time --year {year}` to repair.")
+
+
+@modis_archive_app.command(
+    "_reindex-time", hidden=True, help="Sort a year's modis group time axis in place (one-off migration)."
+)
+def archive_modis_reindex_time(
+    year: int = typer.Option(..., "--year", help="Archive year to reindex."),
+    archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
+    catalogue_base: str = typer.Option(
+        "s3://atlantis/assets/modis", "--catalogue-base", help="Yearly catalogue base (optional)."
+    ),
+    state_root: Path = typer.Option(
+        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
+    ),
+) -> None:
+    """Rewrite the year's ``modis`` group time axis strictly ascending.
+
+    Inserts empty NODATA slots for catalogue dates missing from the axis, so a
+    subsequent update run can fill them without violating append-only ordering.
+    """
+    import pandas as pd
+
+    from atlantis.archive._store import store_for
+    from atlantis.archive.reindex_time import reindex_group_time
+    from atlantis.archive.update import MODIS_VAR_NAMES, UpdateOptions, archive_root, catalogue_uri
+    from atlantis.batch.catalog import load_catalogue
+
+    opts = UpdateOptions(
+        archive_base=archive_base,
+        catalogue_base=catalogue_base,
+        state_root=state_root,
+        storage_options=_archive_storage_options(archive_base),
+    )
+    expected_dates = None
+    uri = catalogue_uri(opts, year)
+    try:
+        df = load_catalogue(uri)
+    except FileNotFoundError:
+        info(f"No catalogue at {uri} — sorting only (no slot insertion).")
+    else:
+        expected_dates = sorted(set(pd.to_datetime(df["date"]).dt.date))
+
+    store = store_for(archive_root(opts, year), "datacube.zarr", opts.storage_options)
+    target = reindex_group_time(
+        store,
+        "modis",
+        list(MODIS_VAR_NAMES),
+        expected_dates=expected_dates,
+        storage_options=opts.storage_options,
+    )
+    ok(f"Reindexed {year} modis group: {len(target)} time slot(s), ascending.")
+
+
+def _format_missing_ranges(ranges: list[tuple[date, date]] | None) -> str:
+    if not ranges:
+        return "none"
+    return ", ".join(a.isoformat() if a == b else f"{a}…{b}" for a, b in ranges)
+
+
+_HEATMAP_COLORS = {"done": "green", "failed": "red", "pending": "yellow", "empty": "bright_black"}
+#: Distinct ASCII glyphs per state: some terminals render block-shade chars
+#: (U+2591-2593) as a full block, so the grid must stay readable with plain ASCII.
+_HEATMAP_GLYPHS = {"done": "#", "failed": "x", "pending": "o", "empty": "."}
+_STATE_LABELS = {"done": "complete", "failed": "failed", "pending": "pending", "empty": "no data"}
+
+
+def _render_year_heatmap(states: dict[date, str], year: int):
+    """Per-date completion grid, one row per month (GitHub-contributions style).
+
+    Each cell is one calendar day of *year*, coloured by its state from
+    :func:`atlantis.archive.update.date_states`; dates without catalogue
+    coverage render as ``empty``. Block glyphs keep the grid readable even in
+    monochrome terminals.
+    """
+    import calendar
+
+    from rich.text import Text
+
+    text = Text()
+    for month in range(1, 13):
+        text.append(f"{date(year, month, 1):%b} ", style="bold")
+        for day in range(1, calendar.monthrange(year, month)[1] + 1):
+            state = states.get(date(year, month, day), "empty")
+            text.append(f"{_HEATMAP_GLYPHS[state]} ", style=_HEATMAP_COLORS[state])
+        text.append("\n")
+    return text
+
+
+def _render_heatmap_legend():
+    """Colour + glyph legend for the heatmap and the monthly overview."""
+    from rich.text import Text
+
+    text = Text("legend: ")
+    for state in ("done", "failed", "pending", "empty"):
+        text.append(_HEATMAP_GLYPHS[state], style=_HEATMAP_COLORS[state])
+        text.append(f" {_STATE_LABELS[state]}   ")
+    return text
+
+
+def _print_state_detail(report: dict) -> None:
+    """Per-state day counts and contiguous ranges (complete / failed / pending / no data)."""
+    counts, ranges = report["state_counts"], report["state_ranges"]
+    section_rule("State detail")
+    for state in ("done", "failed", "pending", "empty"):
+        shown = ranges[state][:8]
+        listing = ", ".join(a.isoformat() if a == b else f"{a}…{b}" for a, b in shown)
+        if len(ranges[state]) > len(shown):
+            listing += f" … (+{len(ranges[state]) - len(shown)} more)"
+        console.print(f"  {_STATE_LABELS[state]:<10} {counts[state]:>4} day(s)   {listing or '—'}")
+    console.print(
+        f"  expected   {report['expected_tasks']} task(s) · incomplete "
+        f"{report['pending_tasks']} · failed {report.get('FAILED', 0)}"
+    )
+
+
+def _render_year_overview(states: dict[date, str], year: int):
+    """One-line per-year strip: one block per month (dominant state).
+
+    A month is ``done`` when every covered day is complete, ``failed`` when any
+    day failed, ``pending`` when work remains, ``empty`` when the catalogue has
+    no coverage at all that month.
+    """
+    import calendar
+
+    from rich.text import Text
+
+    text = Text(f"{year}  ", style="bold")
+    for month in range(1, 13):
+        days = [states.get(date(year, month, d), "empty") for d in range(1, calendar.monthrange(year, month)[1] + 1)]
+        covered = [s for s in days if s != "empty"]
+        if not covered:
+            state = "empty"
+        elif all(s == "done" for s in covered):
+            state = "done"
+        elif any(s == "failed" for s in covered):
+            state = "failed"
+        else:
+            state = "pending"
+        text.append(f"{_HEATMAP_GLYPHS[state]} ", style=_HEATMAP_COLORS[state])
+    return text
+
+
+cli.add_typer(archive_app, name="archive")
 
 
 @cli.command()
@@ -2877,6 +3467,95 @@ viirs_batch_app.add_typer(viirs_cube_app, name="cube")
 _VIIRS_CATALOGUE = "s3://atlantis/assets/viirs/viirs_archive_catalog.parquet"
 
 
+def _detect_prefill_year(archive: str) -> int | None:
+    """Auto-detect the prefill year from a ``zarr/<YYYY>`` archive root.
+
+    Matches ``s3://atlantis/zarr/2025`` and local ``.../zarr/2020`` but not
+    legacy roots like ``viirs_2020_cube`` or non-year names like ``my_cube``.
+    """
+    match = re.search(r"(?:^|/)zarr/(\d{4})$", str(archive).rstrip("/"))
+    return int(match.group(1)) if match else None
+
+
+def _resolve_prefill_year(archive: str, prefill_year: int | None, no_prefill: bool) -> int | None:
+    """Resolve ``--prefill-year`` / auto-detection / ``--no-prefill`` for a cube run.
+
+    ``--prefill-year`` wins over auto-detection; ``--no-prefill`` disables both.
+    Giving both flags is an operator error and fails loudly.
+    """
+    if no_prefill and prefill_year is not None:
+        fail("--prefill-year and --no-prefill are mutually exclusive.")
+        raise typer.Exit(code=1)
+    if no_prefill:
+        return None
+    if prefill_year is not None:
+        return prefill_year
+    return _detect_prefill_year(archive)
+
+
+def _check_task_dates_in_year(tasks: list[dict], year: int) -> None:
+    """Fail loudly when any task date falls outside the prefill year.
+
+    Out-of-year dates would append at the tail of the prefilled axis and break
+    its strictly-ascending invariant — a validation error, never a silent
+    filter.
+    """
+    from atlantis.archive.cube_batch import _to_date
+
+    first, last = date(year, 1, 1), date(year, 12, 31)
+    task_dates = [_to_date(t["date"]) for t in tasks]
+    offending = sorted({d for d in task_dates if not (first <= d <= last)})
+    days = (date(year + 1, 1, 1) - first).days
+    info(f"Pre-filled time axis: {days} day(s) of {year} (all task dates must fall inside the year).")
+    if offending:
+        shown = ", ".join(d.isoformat() for d in offending[:10])
+        fail(f"{len(offending)} task date(s) outside prefill year {year}: {shown}")
+        raise typer.Exit(code=1)
+
+
+def _validate_prefilled_axis(
+    archive: str,
+    source_id: str,
+    tasks: list[dict],
+    year: int,
+    storage_options: dict | None = None,
+) -> None:
+    """Post-run check: the prefilled axis is ascending and holds every task date.
+
+    Reads the time axis back once and mirrors the GFM scripts' ``validate_cube``:
+    strictly ascending order, the full days-in-year length, and presence of
+    every written date. Only runs when the group actually carries this year's
+    prefill marker — a skipped prefill (legacy partially-written group) is
+    reported and left alone, so a run that pre-dates the feature behaves
+    exactly as before.
+    """
+    from atlantis.archive import datacube
+    from atlantis.archive._store import store_for
+    from atlantis.archive.cube_batch import _to_date
+    from atlantis.archive.ordering import unsorted_spans
+
+    store = store_for(archive, "datacube.zarr", storage_options)
+    group = datacube.open_root(store, mode="r")[source_id]
+    if group.attrs.get("atlantis_time_prefill") != str(year):
+        warn(f"prefill skipped for {source_id} (existing or non-prefilled group) — skipping post-run axis validation")
+        return
+    axis = datacube.decode_axis_dates(group)
+    spans = unsorted_spans(axis)
+    if spans:
+        fail(f"{source_id} time axis is not strictly ascending at index range(s) {spans}")
+        raise typer.Exit(code=1)
+    days = (date(year + 1, 1, 1) - date(year, 1, 1)).days
+    if len(axis) != days:
+        fail(f"{source_id} prefilled axis has {len(axis)} slot(s), expected {days} for {year}")
+        raise typer.Exit(code=1)
+    missing = sorted({_to_date(t["date"]) for t in tasks} - set(axis))
+    if missing:
+        shown = ", ".join(d.isoformat() for d in missing[:10])
+        fail(f"{len(missing)} task date(s) missing from the prefilled {source_id} axis: {shown}")
+        raise typer.Exit(code=1)
+    ok(f"prefilled {source_id} time axis validated: {len(axis)} day(s) of {year}, ascending, all dates present")
+
+
 @viirs_cube_app.command("run")
 def batch_viirs_cube(
     inventory: str = typer.Option(
@@ -2902,6 +3581,16 @@ def batch_viirs_cube(
     db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
     retries: int = typer.Option(3, "--retries", help="Dask retry count per granule."),
     log_every: int = typer.Option(100, "--log-every", help="Log a progress line every N completions."),
+    prefill_year: int | None = typer.Option(
+        None,
+        "--prefill-year",
+        help="Pre-fill the time axis with every day of this year (auto-detected from zarr/<YYYY> roots).",
+    ),
+    no_prefill: bool = typer.Option(
+        False,
+        "--no-prefill",
+        help="Disable time-axis prefill (overrides auto-detection and --prefill-year).",
+    ),
 ) -> None:
     """Build the VIIRS datacube from the catalogue — resume-safe and streaming.
 
@@ -2909,6 +3598,11 @@ def batch_viirs_cube(
     result into the consolidated Zarr cube (bounded memory — no giant in-RAM
     accumulation). Every finished granule is recorded in --db-path, so the run
     can be interrupted and resumed (already-DONE tasks are skipped on re-run).
+
+    With a ``zarr/<YYYY>`` archive root the ``time`` axis is pre-filled with
+    every day of the year (365/366 slots) by default, so later backfills land
+    in pre-existing slots; pass ``--no-prefill`` to disable, or
+    ``--prefill-year`` to override the auto-detected year.
 
     Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
 
@@ -2935,6 +3629,9 @@ def batch_viirs_cube(
             raise typer.Exit(code=1)
         storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
 
+    # ── Resolve time-axis prefill (--prefill-year / auto-detect / --no-prefill)
+    prefill_year = _resolve_prefill_year(archive, prefill_year, no_prefill)
+
     # ── Load & slice catalogue ────────────────────────────────────────────
     info(f"Loading catalogue from {inventory} …")
     df = slice_partition(load_inventory(inventory), partition)
@@ -2943,6 +3640,8 @@ def batch_viirs_cube(
         f"  [bold]{len(tasks)}[/bold] granules → {archive}" + (f"  (partition {partition})" if partition else "")
     )
     console.print(f"  [bold]tracker:[/bold] {db_path}")
+    if prefill_year is not None:
+        _check_task_dates_in_year(tasks, prefill_year)
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
 
     cfg = BatchConfig(
@@ -2956,7 +3655,11 @@ def batch_viirs_cube(
     )
 
     # ── Run ───────────────────────────────────────────────────────────────
-    final = run_viirs_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    final = run_viirs_cube_batch(
+        tasks, archive_root=archive, cfg=cfg, storage_options=storage_options, prefill_year=prefill_year
+    )
+    if prefill_year is not None:
+        _validate_prefilled_axis(archive, "viirs", tasks, prefill_year, storage_options)
     ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
 
 
@@ -3109,12 +3812,27 @@ def batch_modis_cube(
     db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
     retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
     log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+    prefill_year: int | None = typer.Option(
+        None,
+        "--prefill-year",
+        help="Pre-fill the time axis with every day of this year (auto-detected from zarr/<YYYY> roots).",
+    ),
+    no_prefill: bool = typer.Option(
+        False,
+        "--no-prefill",
+        help="Disable time-axis prefill (overrides auto-detection and --prefill-year).",
+    ),
 ) -> None:
     """Build the MODIS datacube from the catalog — resume-safe and streaming.
 
     Dask harmonises tiles in parallel while a single coordinator streams each
     result into the consolidated Zarr cube. Every finished tile is recorded in
     --db-path, so the run can be interrupted and resumed.
+
+    With a ``zarr/<YYYY>`` archive root the ``time`` axis is pre-filled with
+    every day of the year (365/366 slots) by default, so later backfills land
+    in pre-existing slots; pass ``--no-prefill`` to disable, or
+    ``--prefill-year`` to override the auto-detected year.
 
     Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
 
@@ -3150,6 +3868,9 @@ def batch_modis_cube(
             raise typer.Exit(code=1)
         storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
 
+    # ── Resolve time-axis prefill (--prefill-year / auto-detect / --no-prefill)
+    prefill_year = _resolve_prefill_year(archive, prefill_year, no_prefill)
+
     info(f"Loading catalog from {inventory} …")
     df = slice_partition(load_inventory(inventory), partition)
     tasks = to_tasks(df)
@@ -3158,6 +3879,8 @@ def batch_modis_cube(
     )
     console.print(f"  [bold]tracker:[/bold] {db_path}")
     console.print(f"  [bold]composite:[/bold] {cfg_obj.modis_composite}  [bold]backend:[/bold] {cfg_obj.modis_backend}")
+    if prefill_year is not None:
+        _check_task_dates_in_year(tasks, prefill_year)
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
 
     cfg = BatchConfig(
@@ -3170,7 +3893,11 @@ def batch_modis_cube(
         log_every=log_every,
     )
 
-    final = run_modis_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    final = run_modis_cube_batch(
+        tasks, archive_root=archive, cfg=cfg, storage_options=storage_options, prefill_year=prefill_year
+    )
+    if prefill_year is not None:
+        _validate_prefilled_axis(archive, "modis", tasks, prefill_year, storage_options)
     ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
 
 
@@ -3344,6 +4071,16 @@ def batch_gfm_cube(
     db_path: Path = typer.Option(Path("gfm_cube_tracker.db"), "--db-path", help="SQLite resume database path."),
     retries: int = typer.Option(3, "--retries", help="Dask retry count per cell."),
     log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+    prefill_year: int | None = typer.Option(
+        None,
+        "--prefill-year",
+        help="Pre-fill the time axis with every day of this year (auto-detected from zarr/<YYYY> roots).",
+    ),
+    no_prefill: bool = typer.Option(
+        False,
+        "--no-prefill",
+        help="Disable time-axis prefill (overrides auto-detection and --prefill-year).",
+    ),
 ) -> None:
     """Build the GFM datacube from the catalog — resume-safe and streaming.
 
@@ -3351,6 +4088,11 @@ def batch_gfm_cube(
     coordinator streams each result into the consolidated Zarr cube. Every
     finished cell is recorded in --db-path, so the run can be interrupted and
     resumed.
+
+    With a ``zarr/<YYYY>`` archive root the ``time`` axis is pre-filled with
+    every day of the year (365/366 slots) by default, so later backfills land
+    in pre-existing slots; pass ``--no-prefill`` to disable, or
+    ``--prefill-year`` to override the auto-detected year.
 
     Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
 
@@ -3388,6 +4130,9 @@ def batch_gfm_cube(
             raise typer.Exit(code=1)
         storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
 
+    # ── Resolve time-axis prefill (--prefill-year / auto-detect / --no-prefill)
+    prefill_year = _resolve_prefill_year(archive, prefill_year, no_prefill)
+
     info(f"Loading catalog from {inventory} …")
     df = slice_partition(load_inventory(inventory), partition)
     tasks = to_tasks(df)
@@ -3400,6 +4145,8 @@ def batch_gfm_cube(
         f"[bold]resampling:[/bold] {cfg_obj.gfm_resampling}  "
         f"[bold]window size:[/bold] {cfg_obj.gfm_window_size}"
     )
+    if prefill_year is not None:
+        _check_task_dates_in_year(tasks, prefill_year)
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
 
     cfg = BatchConfig(
@@ -3412,7 +4159,11 @@ def batch_gfm_cube(
         log_every=log_every,
     )
 
-    final = run_gfm_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    final = run_gfm_cube_batch(
+        tasks, archive_root=archive, cfg=cfg, storage_options=storage_options, prefill_year=prefill_year
+    )
+    if prefill_year is not None:
+        _validate_prefilled_axis(archive, "gfm", tasks, prefill_year, storage_options)
     ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
 
 

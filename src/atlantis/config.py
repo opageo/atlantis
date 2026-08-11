@@ -130,6 +130,15 @@ class ArchiveConfig(BaseSettings):
         scale_factor: CF ``scale_factor`` for ``water_fraction`` so the uint8
             ``[0, 100]`` storage decodes to float ``[0, 1]``.
         time_epoch: CF epoch (``YYYY-MM-DD``) for the integer ``time`` axis.
+
+    Config-identity guarantee: ``chunk_size``, ``shard_size``, ``scale_factor``,
+    and ``time_epoch`` are baked into a source group's arrays and encoded values
+    the first time it is written, and recorded in its ``archive_config`` attr.
+    Do **not** change these for an archive that already has data — every
+    subsequent write is checked against the recorded values and raises
+    :class:`~atlantis.archive.datacube.ConfigMismatchError` on drift. See
+    ``docs/archive/zarr-spec.md`` ("Config-identity guarantee") before changing
+    any of these defaults or the schema they define.
     """
 
     model_config = SettingsConfigDict(

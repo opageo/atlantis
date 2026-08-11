@@ -71,6 +71,17 @@ def mark_failed(db_path: Path, task_id: str, error: str, attempts: int) -> None:
         conn.commit()
 
 
+def requeue(db_path: Path, task_id: str) -> None:
+    """Delete a task row so it is treated as pending on the next run.
+
+    Used by the archive update reconciliation to requeue a task that is ``DONE``
+    in the tracker but missing from the archive (an absent row == pending).
+    """
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
+        conn.commit()
+
+
 def get_pending(db_path: Path, all_task_ids: Iterable[str]) -> set[str]:
     """Return the subset of *all_task_ids* that are not yet marked DONE.
 

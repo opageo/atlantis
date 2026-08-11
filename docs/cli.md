@@ -22,6 +22,12 @@ environment).
 - [`build-kurosiwo-metadata`](#build-kurosiwo-metadata)
 - [`harmonise`](#harmonise)
 - [`archive`](#archive)
+- [`archive event`](#archive-event)
+- [`archive modis update`](#archive-modis-update)
+- [`archive modis status`](#archive-modis-status)
+- [`archive modis _run-update`](#archive-modis-_run-update)
+- [`archive modis seed-tracker`](#archive-modis-seed-tracker)
+- [`archive modis _reindex-time`](#archive-modis-_reindex-time)
 - [`validate`](#validate) _(placeholder)_
 - [`list-sources`](#list-sources)
 - [`list-layers`](#list-layers)
@@ -29,6 +35,7 @@ environment).
 - [`batch viirs run`](#batch-viirs-run)
 - [`batch viirs cube run`](#batch-viirs-cube-run)
 - [`batch viirs cube status`](#batch-viirs-cube-status)
+- [`batch gfm cube run`](#batch-gfm-cube-run)
 
 ## Global options
 
@@ -45,23 +52,23 @@ Example: `pixi run atlantis --verbose fetch --event ...`
 
 ## Command summary
 
-| Command                   | Purpose                                                                  | Status      |
-| ------------------------- | ------------------------------------------------------------------------ | ----------- |
-| `setup`                   | Bootstrap data assets and credentials.                                   | implemented |
-| `demo`                    | Run the Valencia 2024 end-to-end VIIRS example.                          | implemented |
-| `fetch`                   | Fetch raw inundation data for an explicit `--bbox` + date window.        | implemented |
-| `fetch-kurosiwo-viirs`    | Fetch VIIRS for KuroSiwo cases (catalogue or precomputed metadata CSV).  | implemented |
-| `fetch-kurosiwo-modis`    | Fetch MODIS for KuroSiwo cases (catalogue or precomputed metadata CSV).  | implemented |
-| `build-kurosiwo-metadata` | Derive the KuroSiwo metadata CSV from the GeoPackage catalogue.          | implemented |
-| `harmonise`               | Resample fetched outputs to a uniform 1 arcmin grid with normalisation.  | implemented |
-| `archive`                 | Write harmonised data to Zarr (raw + ML-ready).                          | placeholder |
-| `validate`                | Validate archive integrity (optionally with ML smoke test).              | placeholder |
-| `list-sources`            | List all registered data sources.                                        | implemented |
-| `list-layers`             | List the native and derived layers available per source.                 | implemented |
-| `list-events`             | List events in the archive.                                              | placeholder |
-| `batch viirs run`         | Batch-process the VIIRS JPSS catalogue → 1 arcmin COGs on S3 via Dask.   | implemented |
-| `batch viirs cube run`    | Build a consolidated Zarr v3 datacube from VIIRS granules (resume-safe). | implemented |
-| `batch viirs cube status` | Report cube-build progress from the SQLite tracker (works offline).      | implemented |
+| Command                   | Purpose                                                                   | Status      |
+| ------------------------- | ------------------------------------------------------------------------- | ----------- |
+| `setup`                   | Bootstrap data assets and credentials.                                    | implemented |
+| `demo`                    | Run the Valencia 2024 end-to-end VIIRS example.                           | implemented |
+| `fetch`                   | Fetch raw inundation data for an explicit `--bbox` + date window.         | implemented |
+| `fetch-kurosiwo-viirs`    | Fetch VIIRS for KuroSiwo cases (catalogue or precomputed metadata CSV).   | implemented |
+| `fetch-kurosiwo-modis`    | Fetch MODIS for KuroSiwo cases (catalogue or precomputed metadata CSV).   | implemented |
+| `build-kurosiwo-metadata` | Derive the KuroSiwo metadata CSV from the GeoPackage catalogue.           | implemented |
+| `harmonise`               | Resample fetched outputs to a uniform 1 arcmin grid with normalisation.   | implemented |
+| `archive`                 | Zarr datacube commands: event import + incremental MODIS archive updates. | implemented |
+| `validate`                | Validate archive integrity (optionally with ML smoke test).               | placeholder |
+| `list-sources`            | List all registered data sources.                                         | implemented |
+| `list-layers`             | List the native and derived layers available per source.                  | implemented |
+| `list-events`             | List events in the archive.                                               | placeholder |
+| `batch viirs run`         | Batch-process the VIIRS JPSS catalogue → 1 arcmin COGs on S3 via Dask.    | implemented |
+| `batch viirs cube run`    | Build a consolidated Zarr v3 datacube from VIIRS granules (resume-safe).  | implemented |
+| `batch viirs cube status` | Report cube-build progress from the SQLite tracker (works offline).       | implemented |
 
 ## `setup`
 
@@ -302,10 +309,146 @@ files are found.
 
 ## `archive`
 
-> The `archive` subcommand is a placeholder — Zarr archive writing is handled
-> by the batch pipeline. See [`batch viirs cube run`](#batch-viirs-cube-run) for
-> building a consolidated datacube, or [`batch viirs run`](#batch-viirs-run) for
-> per-granule COGs on S3.
+Typer sub-application for Zarr datacube maintenance: the event import flow and
+the incremental MODIS archive updates.
+
+### `archive event`
+
+Write harmonised event GeoTIFFs into the consolidated Zarr datacube. Reads
+harmonised rasters from `<input>/<source>/harmonised/*.tif` and region-writes
+each into the per-source group of the global 1-arcmin cube.
+
+```bash
+pixi run atlantis archive event \
+  --event Valencia_2024 \
+  --input ./data/Valencia_2024 \
+  --archive /mnt/atlantis/zarr
+```
+
+| Option            | Default                 | Description                                                         |
+| ----------------- | ----------------------- | ------------------------------------------------------------------- |
+| `--event`, `-e`   | — (required)            | Flood event ID to archive.                                          |
+| `--source`, `-s`  | all sources found       | Data source to archive (default: all under the input dir).          |
+| `--input`, `-i`   | `./data/<event>`        | Harmonised data directory.                                          |
+| `--archive`, `-a` | `<config.archive_root>` | Archive root — local path or `s3://` URI.                           |
+| `--ensure-masks`  | off                     | Synthesise quality/permanent-water masks when the input lacks them. |
+
+### `archive modis update`
+
+Launch the incremental MODIS yearly archive update. By default it resolves the
+update window, starts a detached tmux session running the worker
+(`_run-update`) through the Pixi batch environment, and returns immediately;
+use `--foreground` for schedulers/CI/tests. See
+[archive/modis-archive-update.md](archive/modis-archive-update.md) for the
+full operational guide.
+
+```bash
+pixi run atlantis archive modis update --year 2026
+tmux attach -t atlantis-modis-update-2026-<runid>
+```
+
+| Option                                 | Default                             | Description                                                           |
+| -------------------------------------- | ----------------------------------- | --------------------------------------------------------------------- |
+| `--year`                               | resolved from today                 | Restrict to one archive year.                                         |
+| `--start`                              | derived                             | Explicit inclusive start `YYYY-MM-DD` (repair/backfill).              |
+| `--end`                                | `today - lag`                       | Explicit inclusive end `YYYY-MM-DD`.                                  |
+| `--lookback-days`                      | `14`                                | Weekly-run lookback (late LAADS publications, failed prior runs).     |
+| `--availability-lag-days`              | `7`                                 | Avoid querying data still being published.                            |
+| `--archive-base`                       | `s3://atlantis/zarr`                | Archive base: `<base>/<year>/datacube.zarr`.                          |
+| `--state-root`                         | `/mnt/atlantis-state/modis`         | Persistent state root (per-year subdirs).                             |
+| `--catalogue-base`                     | `s3://atlantis/assets/modis`        | Yearly catalogue base: `<base>/modis_archive_catalog_<year>.parquet`. |
+| `--backup-base`                        | `s3://atlantis/archive-state/modis` | Tracker/manifest/catalogue backup root.                               |
+| `--workers-min` / `--workers-max`      | `2` / `6`                           | Dask worker count (adaptive).                                         |
+| `--memory-limit`                       | `2.5GB`                             | Memory cap per worker.                                                |
+| `--dashboard-port`                     | `8788`                              | Dask dashboard port.                                                  |
+| `--retries`                            | `3`                                 | Dask retry count per tile.                                            |
+| `--log-every`                          | `50`                                | Log a progress line every N completions.                              |
+| `--retry-failed` / `--no-retry-failed` | on                                  | Retry previously `FAILED` tasks (off: leave them, watermark stalls).  |
+| `--dry-run`                            | off                                 | Resolve and print the plan without launching.                         |
+| `--session-name`                       | generated                           | Override the tmux session name.                                       |
+| `--attach`                             | off                                 | Attach to the tmux session after launch.                              |
+| `--foreground`                         | off                                 | Run the worker in this terminal (no tmux).                            |
+
+### `archive modis status`
+
+Inspect a year's update state: expected / `DONE` / `FAILED` counts, watermark
+(highest contiguous complete date), first/last archive date, missing date
+ranges, time-axis sortedness, recent failed tasks, last manifest, lock state —
+plus:
+
+- a per-date completion heatmap (one row per month, one cell per day:
+  `#` complete / `x` failed / `o` pending / `.` no data; ASCII glyphs keep it
+  readable in any terminal),
+- a state detail section with day counts and the full contiguous range list
+  per state, plus expected / incomplete / failed task totals.
+
+Without `--year`, every year with local state under `--state-root` is shown at
+once: one summary row per year plus a one-line monthly overview strip (one
+block per month, dominant state) — a scan-friendly picture of the whole
+archive.
+
+```bash
+pixi run modis-archive-status                       # all years at a glance
+pixi run atlantis archive modis status --year 2026  # full per-date view
+```
+
+(`pixi run modis-archive-status -- --year 2026` also works; the plain
+`python -m atlantis.cli` form accepts `--year` directly.)
+
+| Option             | Default                      | Description              |
+| ------------------ | ---------------------------- | ------------------------ |
+| `--year`           | all years with local state   | Archive year to inspect. |
+| `--state-root`     | `/mnt/atlantis-state/modis`  | Persistent state root.   |
+| `--archive-base`   | `s3://atlantis/zarr`         | Archive base.            |
+| `--catalogue-base` | `s3://atlantis/assets/modis` | Yearly catalogue base.   |
+
+### `archive modis _run-update`
+
+Internal foreground worker spawned by `update` (and run directly by
+`--foreground` / the `modis-archive-update` pixi task). Accepts the same
+options as `update` minus `--session-name`, `--attach`, and `--foreground`.
+Hidden from `--help`.
+
+### `archive modis seed-tracker`
+
+Build a year's tracker from the archive itself — for years that were
+processed before the update flow existed and have no tracker. Marks every
+catalogue task whose date is present on the archive time axis as `DONE`
+(a date on the axis proves it was written; the mosaic cannot be decomposed
+per tile) and leaves catalogue dates missing from the axis pending, so the
+next `update` run only processes genuinely missing work. Idempotent —
+existing task rows are never overwritten.
+
+```bash
+pixi run atlantis archive modis seed-tracker --year 2024
+pixi run atlantis archive modis seed-tracker --year 2024 --dry-run  # preview
+```
+
+| Option             | Default                      | Description                                  |
+| ------------------ | ---------------------------- | -------------------------------------------- |
+| `--year`           | — (required)                 | Archive year to seed.                        |
+| `--dry-run`        | off                          | Report what would be seeded without writing. |
+| `--state-root`     | `/mnt/atlantis-state/modis`  | Persistent state root.                       |
+| `--archive-base`   | `s3://atlantis/zarr`         | Archive base.                                |
+| `--catalogue-base` | `s3://atlantis/assets/modis` | Yearly catalogue base.                       |
+
+### `archive modis _reindex-time`
+
+One-off offline migration: rewrite a year's `modis` group time axis into
+strictly ascending order, inserting empty NODATA slots for catalogue dates
+missing from the axis. Required before an earlier hole can be filled
+(append-only policy). Hidden from `--help`.
+
+```bash
+pixi run atlantis archive modis _reindex-time --year 2026
+```
+
+| Option             | Default                      | Description                                              |
+| ------------------ | ---------------------------- | -------------------------------------------------------- |
+| `--year`           | — (required)                 | Archive year to reindex.                                 |
+| `--archive-base`   | `s3://atlantis/zarr`         | Archive base.                                            |
+| `--catalogue-base` | `s3://atlantis/assets/modis` | Yearly catalogue base (optional; sort-only when absent). |
+| `--state-root`     | `/mnt/atlantis-state/modis`  | Persistent state root.                                   |
 
 ## `validate`
 
@@ -431,22 +574,31 @@ tasks are skipped on re-run.
 pixi run atlantis batch viirs cube run [OPTIONS]
 ```
 
-| Option             | Default                                                    | Description                                              |
-| ------------------ | ---------------------------------------------------------- | -------------------------------------------------------- |
-| `--inventory`      | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Path or S3 URI to the VIIRS JPSS catalogue Parquet file. |
-| `--archive`, `-a`  | `s3://atlantis/zarr/viirs_2020_cube`                       | Cube root — a local directory or an `s3://` URI.         |
-| `--partition`      | full catalogue                                             | Row slice of the catalogue, e.g. `0:1000`.               |
-| `--workers-min`    | `4`                                                        | Minimum Dask worker processes.                           |
-| `--workers-max`    | `8`                                                        | Maximum Dask worker processes (adaptive).                |
-| `--memory-limit`   | `6GB`                                                      | Memory cap per worker.                                   |
-| `--dashboard-port` | `8787`                                                     | Dask dashboard port.                                     |
-| `--db-path`        | `cube_tracker.db`                                          | SQLite resume database path.                             |
-| `--retries`        | `3`                                                        | Dask retry count per granule.                            |
-| `--log-every`      | `100`                                                      | Log a progress line every N completions.                 |
+| Option             | Default                                                    | Description                                                                                                          |
+| ------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--inventory`      | `s3://atlantis/assets/viirs/viirs_archive_catalog.parquet` | Path or S3 URI to the VIIRS JPSS catalogue Parquet file.                                                             |
+| `--archive`, `-a`  | `s3://atlantis/zarr/viirs_2020_cube`                       | Cube root — a local directory or an `s3://` URI.                                                                     |
+| `--partition`      | full catalogue                                             | Row slice of the catalogue, e.g. `0:1000`.                                                                           |
+| `--workers-min`    | `4`                                                        | Minimum Dask worker processes.                                                                                       |
+| `--workers-max`    | `8`                                                        | Maximum Dask worker processes (adaptive).                                                                            |
+| `--memory-limit`   | `6GB`                                                      | Memory cap per worker.                                                                                               |
+| `--dashboard-port` | `8787`                                                     | Dask dashboard port.                                                                                                 |
+| `--db-path`        | `cube_tracker.db`                                          | SQLite resume database path.                                                                                         |
+| `--retries`        | `3`                                                        | Dask retry count per granule.                                                                                        |
+| `--log-every`      | `100`                                                      | Log a progress line every N completions.                                                                             |
+| `--prefill-year`   | auto-detect from `zarr/<YYYY>` archive root                | Pre-fill the `time` axis with every day of this year (365/366 slots) so any event date lands in a pre-existing slot. |
+| `--no-prefill`     | `False`                                                    | Disable time-axis prefill (overrides auto-detection and `--prefill-year`).                                           |
 
 `--archive` is the **parent** of the Zarr store — the engine creates
 `datacube.zarr` underneath it. Always run detached (`tmux` / `nohup`) so an
 SSH disconnect cannot kill the coordinator.
+
+With a `zarr/<YYYY>` archive root the run pre-fills the source group's `time`
+axis with the full year by default (see
+[archive/cube-build.md](archive/cube-build.md) → "Pre-filled time axis for
+year builds"): backfills land in pre-existing slots, empty days read NODATA,
+and the run validates every task date against the year before starting and
+the axis after finishing.
 
 **Example — Oct–Nov 2024 (~8,855 granules):**
 
@@ -518,20 +670,30 @@ workflow and why the defaults below diverge from VIIRS's.
 pixi run atlantis batch modis cube run [OPTIONS]
 ```
 
-| Option              | Default                                                    | Description                                                                            |
-| ------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `--inventory`, `-i` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Path or S3 URI to the MODIS catalog Parquet file.                                      |
-| `--archive`, `-a`   | `s3://atlantis/zarr/modis_cube`                            | Cube root — a local directory or an `s3://` URI.                                       |
-| `--partition`       | full catalog                                               | Row slice of the catalog, e.g. `0:10000`.                                              |
-| `--composite`       | `None` (→ config default, `F2`)                            | MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`).                                     |
-| `--backend`         | `None` (→ `ATLANTIS_MODIS_BACKEND`)                        | Informational only — the catalog's URLs determine the source.                          |
-| `--workers-min`     | `2`                                                        | Minimum Dask worker processes.                                                         |
-| `--workers-max`     | `6`                                                        | Maximum Dask worker processes (adaptive).                                              |
-| `--memory-limit`    | `2.5GB`                                                    | Memory cap per worker (lower than VIIRS — MODIS tiles are physically smaller).         |
-| `--dashboard-port`  | `8788`                                                     | Dask dashboard port (distinct from VIIRS's `8787`).                                    |
-| `--db-path`         | `cube_tracker.db`                                          | SQLite resume database path — use a different path than VIIRS when sharing an archive. |
-| `--retries`         | `3`                                                        | Dask retry count per tile.                                                             |
-| `--log-every`       | `50`                                                       | Log a progress line every N completions.                                               |
+| Option              | Default                                                    | Description                                                                                                          |
+| ------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--inventory`, `-i` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Path or S3 URI to the MODIS catalog Parquet file.                                                                    |
+| `--archive`, `-a`   | `s3://atlantis/zarr/modis_cube`                            | Cube root — a local directory or an `s3://` URI.                                                                     |
+| `--partition`       | full catalog                                               | Row slice of the catalog, e.g. `0:10000`.                                                                            |
+| `--composite`       | `None` (→ config default, `F2`)                            | MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`).                                                                   |
+| `--backend`         | `None` (→ `ATLANTIS_MODIS_BACKEND`)                        | Informational only — the catalog's URLs determine the source.                                                        |
+| `--workers-min`     | `2`                                                        | Minimum Dask worker processes.                                                                                       |
+| `--workers-max`     | `6`                                                        | Maximum Dask worker processes (adaptive).                                                                            |
+| `--memory-limit`    | `2.5GB`                                                    | Memory cap per worker (lower than VIIRS — MODIS tiles are physically smaller).                                       |
+| `--dashboard-port`  | `8788`                                                     | Dask dashboard port (distinct from VIIRS's `8787`).                                                                  |
+| `--db-path`         | `cube_tracker.db`                                          | SQLite resume database path — use a different path than VIIRS when sharing an archive.                               |
+| `--retries`         | `3`                                                        | Dask retry count per tile.                                                                                           |
+| `--log-every`       | `50`                                                       | Log a progress line every N completions.                                                                             |
+| `--prefill-year`    | auto-detect from `zarr/<YYYY>` archive root                | Pre-fill the `time` axis with every day of this year (365/366 slots) so any event date lands in a pre-existing slot. |
+| `--no-prefill`      | `False`                                                    | Disable time-axis prefill (overrides auto-detection and `--prefill-year`).                                           |
+
+With a `zarr/<YYYY>` archive root the run pre-fills the source group's `time`
+axis with the full year by default (see
+[archive/cube-build.md](archive/cube-build.md) → "Pre-filled time axis for
+year builds"). On prefilled years the `archive modis` update flow treats axis
+dates as _not_ evidence of data: `seed-tracker` refuses, and `status` reports
+missing ranges from the tracker (see
+[archive/modis-archive-update.md](archive/modis-archive-update.md)).
 
 ## `batch modis cube status`
 
@@ -547,3 +709,37 @@ pixi run atlantis batch modis cube status [OPTIONS]
 | `--db-path`   | `cube_tracker.db`                                          | SQLite resume database path.                |
 | `--inventory` | `s3://atlantis/assets/modis/modis_archive_catalog.parquet` | Catalog used to compute the expected total. |
 | `--partition` | —                                                          | Row slice the run used, if any.             |
+
+## `batch gfm cube run`
+
+Build a consolidated Zarr v3 datacube (`datacube.zarr`) from the GFM
+catalog. Same resume-safe, streaming engine as `batch viirs cube run` — see
+[archive/cube-build.md](archive/cube-build.md) for the shared-archive
+workflow and the GFM-specific settings below.
+
+```bash
+pixi run atlantis batch gfm cube run [OPTIONS]
+```
+
+| Option                 | Default                                                     | Description                                                                                                          |
+| ---------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--inventory`, `-i`    | `s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet` | Path or S3 URI to the GFM catalog Parquet file.                                                                      |
+| `--archive`, `-a`      | `s3://atlantis/zarr/gfm_cube`                               | Cube root — a local directory or an `s3://` URI.                                                                     |
+| `--partition`          | full catalog                                                | Row slice of the catalog, e.g. `0:10000` (slices STAC-item rows, see cube-build.md §5).                              |
+| `--gfm-coarsen-factor` | `None` (→ `ATLANTIS_GFM_COARSEN_FACTOR` / `4`)              | Spatial coarsening factor before reprojection.                                                                       |
+| `--gfm-resampling`     | `None` (→ `ATLANTIS_GFM_RESAMPLING` / `average`)            | Resampling method for reprojection.                                                                                  |
+| `--gfm-window-size`    | `None` (→ `ATLANTIS_GFM_WINDOW_SIZE` / `5000`)              | Native pixels per window; `0` disables windowing.                                                                    |
+| `--workers-min`        | `2`                                                         | Minimum Dask worker processes.                                                                                       |
+| `--workers-max`        | `3`                                                         | Maximum Dask worker processes (adaptive).                                                                            |
+| `--memory-limit`       | `8GB`                                                       | Memory cap per worker.                                                                                               |
+| `--dashboard-port`     | `8789`                                                      | Dask dashboard port (distinct from VIIRS's `8787` / MODIS's `8788`).                                                 |
+| `--db-path`            | `gfm_cube_tracker.db`                                       | SQLite resume database path.                                                                                         |
+| `--retries`            | `3`                                                         | Dask retry count per cell.                                                                                           |
+| `--log-every`          | `50`                                                        | Log a progress line every N completions.                                                                             |
+| `--prefill-year`       | auto-detect from `zarr/<YYYY>` archive root                 | Pre-fill the `time` axis with every day of this year (365/366 slots) so any event date lands in a pre-existing slot. |
+| `--no-prefill`         | `False`                                                     | Disable time-axis prefill (overrides auto-detection and `--prefill-year`).                                           |
+
+With a `zarr/<YYYY>` archive root the run pre-fills the source group's `time`
+axis with the full year by default (see
+[archive/cube-build.md](archive/cube-build.md) → "Pre-filled time axis for
+year builds").

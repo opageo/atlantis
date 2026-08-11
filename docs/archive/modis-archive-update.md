@@ -1,0 +1,273 @@
+# Incremental MODIS Archive Updates — Operational Guide
+
+> Weekly, resume-safe ingestion of newly published MODIS MCDWD tiles into the
+> yearly Atlantis Zarr archive. Reconciles the expected task inventory against
+> the SQLite tracker and the archive, processes only the missing/failed work,
+> keeps the time axis strictly ascending, and records every run in an
+> immutable manifest with an S3-backed copy of the state.
+
+**Source of truth**
+
+| Concern                              | Module                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------ |
+| Orchestration (worker, reconcile, …) | [`src/atlantis/archive/update.py`](../../src/atlantis/archive/update.py)             |
+| Ascending-order writer wrapper       | [`src/atlantis/archive/ordering.py`](../../src/atlantis/archive/ordering.py)         |
+| Offline time-axis reindex migration  | [`src/atlantis/archive/reindex_time.py`](../../src/atlantis/archive/reindex_time.py) |
+| Task requeue helper                  | [`src/atlantis/batch/tracker.py`](../../src/atlantis/batch/tracker.py)               |
+| Underlying cube engine               | [`src/atlantis/archive/cube_batch.py`](../../src/atlantis/archive/cube_batch.py)     |
+| Tests                                | [`tests/archive/test_update.py`](../../tests/archive/test_update.py)                 |
+
+---
+
+## 1. What this feature does
+
+The yearly archive is one cube per calendar year:
+
+```text
+s3://atlantis/zarr/
+├── 2025/datacube.zarr/{gfm,modis,viirs,zarr.json}
+├── 2026/datacube.zarr/{gfm,modis,viirs,zarr.json}
+└── ...
+```
+
+`atlantis archive modis update` keeps a year's `modis` group complete and
+current:
+
+1. **Refreshes the year's catalogue** — lists LAADS for the update window,
+   merges the result into `modis_archive_catalog_<year>.parquet`
+   (candidate-then-promote), so newly published tiles are always discovered —
+   even when the tracker shows nothing pending.
+2. **Reconciles** every expected task ID (`modis-YYYYMMDD-hHHvVV`) against the
+   tracker and the archive: `DONE` tasks that are missing from the archive are
+   requeued after a warning; archive dates with no catalogue coverage are
+   reported as orphans (never deleted).
+3. **Processes only unresolved work** through the existing resume-safe cube
+   batch engine, wrapped in an ascending-order writer so the time axis never
+   grows out of chronological order.
+4. **Validates** (all expected tasks `DONE`, dates present on the axis, axis
+   strictly ascending), advances a **contiguous watermark**, and writes an
+   **immutable run manifest**.
+5. **Backs up** tracker, manifest, and catalogue to `s3://atlantis/archive-state/`
+   in a `finally` path — also on failure.
+
+VIIRS and GFM are untouched: only the `modis` group and its metadata change.
+
+## 2. CLI surface
+
+`archive` is a Typer sub-application:
+
+```text
+atlantis archive event ...            # write harmonised event GeoTIFFs into the cube
+atlantis archive modis update ...     # launch the incremental update (detached tmux by default)
+atlantis archive modis status ...     # inspect yearly tracker / catalogue / archive state
+atlantis archive modis _run-update    # internal foreground worker (spawned by `update`)
+atlantis archive modis seed-tracker   # build a tracker from the archive (onboarding pre-update years)
+atlantis archive modis _reindex-time  # one-off time-axis migration (earlier-hole repair)
+```
+
+See [the CLI reference](../cli.md) for the full option tables.
+
+### Detached execution by default
+
+`atlantis archive modis update` resolves the window, then starts a new detached
+tmux session and returns immediately:
+
+```text
+tmux attach -t atlantis-modis-update-2026-<runid>     # watch the worker
+atlantis archive modis status --year 2026             # inspect progress
+```
+
+The worker runs from the repository root through the Pixi batch environment and
+writes its log to `<state-root>/<year>/logs/<runid>.log`. It never launches
+`update` recursively; `--foreground` runs the same worker path in the current
+terminal (for schedulers/CI/tests). The launcher fails clearly when tmux is
+missing or the session already exists — it never falls back to a background
+shell process.
+
+All execution is Pixi-only:
+
+```text
+PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis _run-update ...
+pixi run -e batch modis-archive-update           # foreground, production defaults
+pixi run -e batch modis-archive-update-dry-run   # resolve + report only
+```
+
+## 3. Persistent state (per year)
+
+```text
+/mnt/atlantis-state/modis/
+├── 2025/
+│   ├── cube_tracker.db        # live SQLite task tracker (the task-level source of truth)
+│   ├── update.lock            # pid + timestamp; one writer per year
+│   ├── catalogues/modis-2025.parquet
+│   ├── manifests/<runid>.json # immutable per-run manifest
+│   └── logs/<runid>.log
+└── 2026/ ...
+```
+
+After every run (success **or** failure) the tracker, manifest, and catalogue
+are mirrored to `<backup-base>/<year>/`
+(`s3://atlantis/archive-state/modis/<year>/` by default). The mounted local
+tracker is the live database during a run — SQLite is never used directly on
+S3.
+
+## 4. How a run works
+
+For each resolved year, in chronological order, under the year lock:
+
+1. **Window resolution** — explicit `--start/--end` for repair/backfill;
+   otherwise `start = max(year start, last_complete + 1 - lookback)` and
+   `end = today - availability lag` (weekly defaults: 14 / 7 days). Windows
+   spanning 31 December split across both years; each year runs under its own
+   lock, tracker, and manifest.
+2. **Catalogue refresh** — build the fresh LAADS range locally, merge with the
+   existing yearly catalogue, dedupe on `(date, h, v)` (the freshest row wins),
+   drop rows outside the year, validate schema/coverage, write a local
+   candidate, then promote it to the canonical per-year object in a single
+   replacement. A failed build leaves the previous catalogue intact and stops
+   the run before any cube work.
+3. **Task selection** — convert the window's catalogue rows with
+   `to_tasks()`. With `--no-retry-failed`, previously `FAILED` tasks are left
+   unretried (they still block the watermark).
+4. **Append-only hole check** — a date with expected tasks that is missing
+   from the archive axis _below_ the axis tail is a repair condition: the run
+   refuses to append it out of order and points to `_reindex-time`.
+5. **Reconciliation** — classify every expected task as `DONE` / `FAILED` /
+   absent; requeue (delete the row of) tasks whose date is `DONE` in the
+   tracker but missing from the archive; report orphans. The engine itself
+   skips `DONE` and retries `FAILED`, so only genuinely unresolved tiles are
+   submitted.
+6. **Ordered batch** — the cube engine streams completed tiles through
+   `OrderedConsume`, which buffers payloads and only writes a date once every
+   earlier date in the window is fully resolved. New time slots are therefore
+   always appended in ascending order regardless of Dask completion order.
+7. **Validation** — every expected task `DONE` and none `FAILED`; expected
+   dates present on the axis; axis strictly ascending; a sample of DONE tile
+   windows checked for all-NODATA (warning only).
+8. **Watermark + manifest** — `last_complete` advances only through the
+   highest contiguous fully-`DONE` date range from the window start; a later
+   completed date never skips an earlier gap. The manifest records the window,
+   catalogue checksum, tracker path, Dask settings, task totals, watermark,
+   and pipeline revision.
+9. **Backup** — tracker, manifest, and catalogue copied to the backup root in
+   a `finally` block; a failed backup fails a successful run.
+
+A failed run (validation, stale-lock conflict, catalogue inconsistency, backup
+failure) exits non-zero and writes a `status: "failed"` manifest.
+
+## 5. Time-axis ordering policy
+
+The cube engine consumes `as_completed`, so a naive writer would append unseen
+dates in completion order — not chronological order. The update worker enforces
+**append-only ascending**: new dates are always written after every earlier
+date in the window, and an older missing date is never appended at the physical
+end of the axis.
+
+When an earlier hole must be filled (for example a date whose tiles all failed
+in a previous run, or disorder inherited from an older build), run the one-off
+migration first:
+
+```text
+atlantis archive modis _reindex-time --year 2026
+```
+
+It rewrites the year's `modis` group into strictly ascending order, inserting
+empty NODATA slots for catalogue dates missing from the axis, then swaps the
+group into place. The next `update` run fills those slots in order. On a remote
+store this copies the group's materialised data once — it is a deliberate
+one-off, not part of the weekly path.
+
+## 6. Failure handling and inspection
+
+- `atlantis archive modis status --year YYYY` reports: expected / `DONE` /
+  `FAILED` counts, watermark (highest contiguous complete date), first/last
+  archive date, missing date ranges, time-axis sortedness, the most recent
+  failed task IDs with error messages, the last manifest, and lock state —
+  plus a per-date completion heatmap (one row per month, one cell per day:
+  `#` complete / `x` failed / `o` pending / `.` no data; ASCII glyphs keep it
+  readable in any terminal) and a state-detail section with day
+  counts and the full contiguous range list per state, alongside
+  expected / incomplete / failed task totals.
+- **Prefilled years** (marker `atlantis_time_prefill`, i.e. built via
+  `batch modis cube run` with a `zarr/<YYYY>` archive root — see
+  [cube-build.md](./cube-build.md) → "Pre-filled time axis for year builds"):
+  the report sets `prefilled_year: true` and computes **missing date ranges
+  from the tracker** — dates whose expected tasks are not all `DONE`/`FAILED`
+  — instead of `expected − axis` (the axis always contains every date, so the
+  axis-based computation would be empty by construction).
+- `atlantis archive modis status` (no `--year`) summarises **all** years with
+  local state at once: one row per year (counts, watermark, axis sortedness,
+  last run status) plus a one-line monthly overview strip (one block per
+  month, dominant state). `pixi run modis-archive-status` is the shortcut.
+- Read the tracker directly on the mounted volume:
+
+  ```sql
+  SELECT status, COUNT(*) FROM tasks GROUP BY status;
+  SELECT task_id, error, attempts, finished_at FROM tasks
+  WHERE status = 'FAILED' ORDER BY finished_at DESC;
+  ```
+
+- Never delete or recreate a tracker to "fix" a failed run: re-run the same
+  year/window under its lock — `DONE` tasks are skipped, `FAILED` tasks are
+  retried.
+- A lock left by a dead PID (or older than 24 h) is stale and is reclaimed
+  automatically; a live lock fails the run.
+
+## 7. Deployment phases
+
+The first scheduled work is deliberately staged:
+
+1. **Phase 1 — reconcile 2025:** `atlantis archive modis update --year 2025`.
+   Validates the existing 2025 yearly catalogue, locates the durable 2025
+   tracker, and fills every missing/failed task. If the original 2025 tracker
+   cannot be recovered, build one from the archive with `seed-tracker` first
+   (see below).
+2. **Phase 1b — onboard pre-update years without a tracker:** years archived
+   before the update flow existed (2024, 2025, …) get their tracker built from
+   the archive with `atlantis archive modis seed-tracker --year YYYY`: every
+   catalogue task whose date is on the time axis is marked `DONE` (a date on
+   the axis proves it was written; the mosaic cannot be decomposed per tile),
+   and catalogue dates missing from the axis stay pending and are reported.
+   The next `update` run then only processes genuinely missing work.
+   **`seed-tracker` refuses a prefilled year** (marker
+   `atlantis_time_prefill`): on a full-year axis, "date on axis" proves
+   nothing, so seeding would mark never-written tasks `DONE` and skip them
+   forever. For a prefilled year, re-run the (resume-safe) cube build to
+   rebuild a lost tracker, or use the tracker from the original build.
+3. **Phase 2 — initial 2026 catch-up:** builds and publishes
+   `modis_archive_catalog_2026.parquet` for `2026-01-01` through
+   `today - lag`, then ingests in ascending order. Establishes the
+   chronological 2026 time axis, the yearly catalogue, and the tracker
+   baseline.
+4. **Phase 3 — weekly runs:** start the VM and invoke
+   `atlantis archive modis update`. The effective window is
+   `max(2026-01-01, last_complete + 1 - lookback)` → `today - lag`; the
+   lookback covers late LAADS publications and failed prior runs. At year
+   rollover the job finishes outstanding December tasks in the old year before
+   starting January tasks in the new one.
+
+## 8. Archive invariants
+
+1. **One writer per MODIS year** — the per-year lock serialises all updates.
+2. **The tracker is the task-level source of truth**, not the latest Zarr time
+   coordinate.
+3. **The archive and tracker must agree** — a `DONE` task is trusted only when
+   its date is present on the archive axis; a mismatch is a repair condition,
+   never a reason to advance the watermark.
+4. **SQLite stays on a local POSIX filesystem** — the tracker lives on the
+   mounted state volume and is backed up to S3 after each run.
+5. **Tracker lineage is stable** — a year's tracker is reused only with its
+   canonical yearly catalogue; the manifest records the catalogue checksum. A
+   changed source interpretation or replacement catalogue requires an explicit
+   migration or a new tracker.
+6. **A year is complete only when every expected task is `DONE`** with no
+   unresolved `FAILED` tasks.
+
+## 9. Out of scope
+
+- VIIRS/GFM updates and a generic multi-source scheduler.
+- Concurrent MODIS writers for the same archive year.
+- Automatic deletion of archive dates, tracker rows, or orphaned data.
+- Maintaining the full-history `modis_archive_catalog.parquet` (a future
+  end-of-year process may derive it from the frozen yearly catalogues).
+- ETag/fingerprint-based reprocessing of sources already marked `DONE`.

@@ -103,6 +103,7 @@ class GFMFetcher(AbstractFloodFetcher):
         peak_priority: str = "post",
         max_retries: int | None = None,
         window_size: int | None = None,
+        persist_diagnostics: bool = False,
     ) -> None:
         """Initialize the GFM fetcher.
 
@@ -135,6 +136,7 @@ class GFMFetcher(AbstractFloodFetcher):
                 (default) preserves the unwindowed path; the production batch
                 path sets this from ``FetcherConfig.gfm_window_size``
                 (default 5000).
+            persist_diagnostics: Retain classified count rasters for validation.
         """
         self.api_url = api_url or DEFAULT_GFM_STAC_URL
         self.coarsen_factor = coarsen_factor
@@ -143,8 +145,9 @@ class GFMFetcher(AbstractFloodFetcher):
         self.strategy = strategy
         self.keep_processed = keep_processed
         self.max_retries = max_retries if max_retries is not None else FetcherConfig().max_retries
-        self._backend = GfmStacBackend(api_url=self.api_url)
+        self._backend = GfmStacBackend(api_url=self.api_url, request_timeout=30.0, max_retries=1)
         self.last_diagnostics: GfmSearchDiagnostics | None = None
+        self.last_coverage: dict[str, object] = {}
         self._peak_token: str | None = None
 
         if peak_days_before < 0:
@@ -160,6 +163,7 @@ class GFMFetcher(AbstractFloodFetcher):
         self.peak_days_after = peak_days_after
         self.max_observations = max_observations
         self.window_size = window_size
+        self.persist_diagnostics = persist_diagnostics
         self.peak_priority = peak_priority
 
     def search(self, event: FloodEvent) -> list[SearchResult]:
@@ -253,10 +257,19 @@ class GFMFetcher(AbstractFloodFetcher):
             classify=self.classify,
             max_retries=self.max_retries,
             window_size=self.window_size,
+            persist_diagnostics=self.persist_diagnostics,
         )
 
         date_results: list[tuple[str, GfmProcessedTile]] = []
+        self.last_coverage = {}
         for date_token, date_items in sorted(date_groups.items()):
+            logger.info(
+                "Processing GFM date {}: {} item(s) (window_size={}, classify={})",
+                date_token,
+                len(date_items),
+                processor.window_size,
+                self.classify,
+            )
             result = processor.process_items(
                 date_items,
                 event_id=event.event_id,
@@ -265,7 +278,25 @@ class GFMFetcher(AbstractFloodFetcher):
                 write_outputs=False,
             )
             if result is not None:
-                date_results.append((date_token, result.processed))
+                if result.coverage is not None:
+                    self.last_coverage[date_token] = result.coverage
+                if result.coverage is not None and not result.coverage.has_usable_sar:
+                    logger.warning(
+                        "GFM date {} has no usable in-AOI SAR coverage; retaining an explicit all-nodata observation",
+                        date_token,
+                    )
+                elif result.coverage is not None:
+                    logger.info(
+                        "GFM date {} coverage: {} usable item(s), flood pixels={}, water pixels={}",
+                        date_token,
+                        result.coverage.usable_item_count,
+                        result.coverage.flood_valid_pixels,
+                        result.coverage.water_valid_pixels,
+                    )
+                if self.classify and not result.processed.usable_sar:
+                    continue
+                if result.processed.usable_sar or not self.classify:
+                    date_results.append((date_token, result.processed))
 
         if not date_results:
             logger.warning("No valid data after processing for event {}", event.event_id)
@@ -457,6 +488,7 @@ class GFMFetcher(AbstractFloodFetcher):
                 paths.ensemble_flood_extent,
                 paths.reference_water_mask,
                 *paths.extra.values(),
+                *paths.diagnostics.values(),
             )
             if path is not None
         ]
@@ -548,6 +580,15 @@ class GFMFetcher(AbstractFloodFetcher):
                 else:
                     layer = layer.astype(spec.dtype)
                 variables[name] = layer.rename(name)
+
+            for path in result.files:
+                stem = path.stem
+                if "_gfm_" not in stem:
+                    continue
+                name = stem.split("_gfm_")[-1]
+                if name not in {"ensemble_flood_extent_count", "ensemble_water_extent_count", "valid_count"}:
+                    continue
+                variables[name] = rxr.open_rasterio(path).squeeze(drop=True).astype("float32").rename(name)
 
             dataset = xr.Dataset(variables)
             dataset.attrs["source_id"] = self.source_id

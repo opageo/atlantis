@@ -95,11 +95,10 @@ registry.add_native(
         dtype="uint8",
         nodata=GFM_NODATA,
         description=(
-            "Static multi-year baseline of non-flood surface water computed once "
-            "by the GFM service over a fixed 2017-2021 reference period "
-            "(permanent from median backscatter; seasonal from 12 monthly "
-            "sub-masks). Codes follow GFM PDD Table 20. The seasonal class (2) "
-            "is the GFM analog of MODIS recurring_flood. See [GFM overview]"
+            "Five-year 2017-2021 reference baseline delivered as a calendar-month "
+            "family: code 1 is permanent water and code 2 is seasonal water for "
+            "the acquisition month. Codes follow GFM PDD Table 20. The seasonal "
+            "class is the GFM analog of MODIS recurring_flood. See [GFM overview]"
             "(gfm/overview.md#reference-water-mask)."
         ),
         codes={
