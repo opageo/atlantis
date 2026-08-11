@@ -303,19 +303,77 @@ Do not reuse a tracker for a different source or catalogue revision: `DONE`
 means only that its recorded task id completed, not that the task came from the
 same inventory file.
 
-| Flag                                        | VIIRS default                        | MODIS default                   | GFM default                   | Purpose                                                                                                                                                                          |
-| ------------------------------------------- | ------------------------------------ | ------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--partition`                               | full catalogue                       | full catalogue                  | full catalogue                | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows _before_ the `(date, equi7_tile)` grouping (see §5)                                                  |
-| `--archive` / `-a`                          | `s3://atlantis/zarr/viirs_2020_cube` | `s3://atlantis/zarr/modis_cube` | `s3://atlantis/zarr/gfm_cube` | Cube root — a local dir or `s3://` URI                                                                                                                                           |
-| `--log-every`                               | `100`                                | `50`                            | `50`                          | Progress line every N completions                                                                                                                                                |
-| `--workers-min/max`                         | `2` / `6`                            | `2` / `6`                       | `2` / `3`                     | Dask worker count (adaptive). GFM's defaults reserve up to three 8GB workers; increase only after measuring the target host and catalogue.                                       |
-| `--memory-limit`                            | `4GB`                                | `2.5GB`                         | `8GB`                         | Memory cap per GFM worker. Keep this paired with the GFM worker count: the default three-worker configuration needs roughly 24GB for workers before coordinator and OS overhead. |
-| `--dashboard-port`                          | `8787`                               | `8788`                          | `8789`                        | Distinct ports so all three dashboards can run at once                                                                                                                           |
-| `--db-path`                                 | `cube_tracker.db`                    | `cube_tracker.db`               | `gfm_cube_tracker.db`         | SQLite resume database — **use a different path per source** when writing into the same archive concurrently                                                                     |
-| `--retries`                                 | `3`                                  | `3`                             | `3`                           | Retries per granule/tile/cell                                                                                                                                                    |
-| `--composite`                               | n/a                                  | `None` (→ `F2`)                 | n/a                           | MODIS-only: MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`)                                                                                                                    |
-| `--gfm-coarsen-factor` / `--gfm-resampling` | n/a                                  | n/a                             | `4` / `average`               | GFM-only: spatial coarsening factor and resampling method before reprojection (overrides `ATLANTIS_GFM_COARSEN_FACTOR` / `ATLANTIS_GFM_RESAMPLING`)                              |
-| `--gfm-window-size`                         | n/a                                  | n/a                             | `5000`                        | GFM-only: native pixels per window. It must be a positive exact multiple of `--gfm-coarsen-factor`; `0` disables windowing and is not suitable for production-sized cells.       |
+| Flag                                        | VIIRS default                        | MODIS default                       | GFM default                         | Purpose                                                                                                                                                                               |
+| ------------------------------------------- | ------------------------------------ | ----------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--partition`                               | full catalogue                       | full catalogue                      | full catalogue                      | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows _before_ the `(date, equi7_tile)` grouping (see §5)                                                       |
+| `--archive` / `-a`                          | `s3://atlantis/zarr/viirs_2020_cube` | `s3://atlantis/zarr/modis_cube`     | `s3://atlantis/zarr/gfm_cube`       | Cube root — a local dir or `s3://` URI                                                                                                                                                |
+| `--log-every`                               | `100`                                | `50`                                | `50`                                | Progress line every N completions                                                                                                                                                     |
+| `--workers-min/max`                         | `2` / `6`                            | `2` / `6`                           | `2` / `3`                           | Dask worker count (adaptive). GFM's defaults reserve up to three 8GB workers; increase only after measuring the target host and catalogue.                                            |
+| `--memory-limit`                            | `4GB`                                | `2.5GB`                             | `8GB`                               | Memory cap per GFM worker. Keep this paired with the GFM worker count: the default three-worker configuration needs roughly 24GB for workers before coordinator and OS overhead.      |
+| `--dashboard-port`                          | `8787`                               | `8788`                              | `8789`                              | Distinct ports so all three dashboards can run at once                                                                                                                                |
+| `--db-path`                                 | `cube_tracker.db`                    | `cube_tracker.db`                   | `gfm_cube_tracker.db`               | SQLite resume database — **use a different path per source** when writing into the same archive concurrently                                                                          |
+| `--retries`                                 | `3`                                  | `3`                                 | `3`                                 | Retries per granule/tile/cell                                                                                                                                                         |
+| `--composite`                               | n/a                                  | `None` (→ `F2`)                     | n/a                                 | MODIS-only: MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`)                                                                                                                         |
+| `--gfm-coarsen-factor` / `--gfm-resampling` | n/a                                  | n/a                                 | `4` / `average`                     | GFM-only: spatial coarsening factor and resampling method before reprojection (overrides `ATLANTIS_GFM_COARSEN_FACTOR` / `ATLANTIS_GFM_RESAMPLING`)                                   |
+| `--gfm-window-size`                         | n/a                                  | n/a                                 | `5000`                              | GFM-only: native pixels per window. It must be a positive exact multiple of `--gfm-coarsen-factor`; `0` disables windowing and is not suitable for production-sized cells.            |
+| `--prefill-year`                            | auto-detect from `zarr/<YYYY>` root  | auto-detect from `zarr/<YYYY>` root | auto-detect from `zarr/<YYYY>` root | Pre-fill the source group's `time` axis with every day of this year (365/366 slots) so any event date lands in a pre-existing slot — see "Pre-filled time axis for year builds" below |
+| `--no-prefill`                              | `False`                              | `False`                             | `False`                             | Disable time-axis prefill (overrides auto-detection and `--prefill-year`)                                                                                                             |
+
+#### Pre-filled time axis for year builds
+
+When the `--archive` root ends in `zarr/<YYYY>` (e.g. `s3://atlantis/zarr/2025`
+or a local `/data/zarr/2020`), the cube run **pre-fills the `time` axis by
+default**: as soon as the source group is created, the axis is resized to the
+exact number of days in that year — 366 for leap years, 365 otherwise — and
+every day's integer is written, before any data is ingested. Legacy roots like
+`viirs_2020_cube`, `modis_cube` or `my_cube` are untouched (no prefill) unless
+`--prefill-year` is passed explicitly.
+
+What this buys:
+
+- **Backfills land in pre-existing slots.** A date discovered later (e.g.
+  newly published NOAA gaps) region-writes into its already-allocated slot —
+  the axis never moves, writes stay strictly ascending by construction, and no
+  `_reindex-time` migration is ever needed.
+- **The group marker `atlantis_time_prefill`** is written to the group
+  attributes on the pre-fill (the year, e.g. `"2024"`). Downstream tooling —
+  the MODIS update flow (§4.4) and the CLI's post-run validation — keys off it
+  to tell "axis proven by data" from "axis full by construction".
+- **Days never ingested read NODATA** (255). The axis lists every day of the
+  year regardless of data coverage, so STAC/`--no-compute-bbox` and the viz
+  time slider will list full-year dates, and empty days read 255.
+
+Behaviour details (idempotent and safe):
+
+- An axis already at (or beyond) the full day count is left as-is — a re-run,
+  or a pre-existing prefilled group, is a silent no-op.
+- A group that already contains **some** data (`0 < n < days` slots) is never
+  pre-filled — it logs a warning and skips. Pre-filling a partially-written
+  group would leave the existing data at misaligned indices.
+- Both `--prefill-year` and `--no-prefill` together is an error.
+- **Pre-run validation**: every task date must fall inside the prefill year —
+  out-of-year dates would append at the tail and break ascending order, so the
+  run fails loudly listing the offending dates (the check is a validation, not
+  a silent filter).
+- **Post-run validation**: the time axis is read back once and must be
+  strictly ascending and contain every task date; the run fails loudly on a
+  violation, else reports the axis length.
+
+Example:
+
+```bash
+# 2020 (leap year): axis gets 366 slots, marker atlantis_time_prefill="2020"
+PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
+  --partition 0:1000 \
+  --archive s3://atlantis/zarr/2020 \
+  --log-every 50
+
+# same archive, no prefill (axis grows sparse, as before)
+PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
+  --partition 0:1000 --no-prefill \
+  --archive s3://atlantis/zarr/2020 \
+  --log-every 50
+```
 
 #### GFM settings: recommended values and change risks
 
@@ -389,6 +447,10 @@ panes), as long as each run uses its own `--db-path`:
 - Every source writes only its own group subtree (`{archive}/viirs/*` vs.
   `{archive}/modis/*` vs. `{archive}/gfm/*`) — there is no shared mutable
   array state to race on.
+- On a `zarr/<YYYY>` root, **each source run pre-fills its own group
+  independently** — the VIIRS run prefills `viirs`, the MODIS run `modis`, the
+  GFM run `gfm` — each with the same full-year axis. There is no cross-group
+  interaction; the per-group marker is written per source.
 - Each run consolidates the store's metadata **once**, when its session
   closes (`ArchiveWriter.session(...).close()`), not per write — a
   best-effort optimisation, never required for correctness of the data
@@ -509,6 +571,19 @@ PYTHONPATH=src pixi run python -m atlantis.cli archive modis status --year 2025
 - Every command must see the same state root (`--state-root`, or the default
   `/mnt/atlantis-state/modis` once created and seeded — `seed-tracker` is
   idempotent).
+- **On years built with a prefilled axis** (marker `atlantis_time_prefill`,
+  i.e. built via `batch modis cube run` with a `zarr/<YYYY>` archive root):
+  the update flow still works — its ordered writer simply lands dates in their
+  existing slots — but the evidence heuristics change, because "date on axis"
+  no longer proves data:
+  - `seed-tracker` **refuses** a prefilled year (axis dates are not evidence
+    of data); re-run the resume-safe cube build to rebuild a lost tracker, or
+    use the tracker from the original build.
+  - `archive modis status` reports `missing_ranges` from the **tracker**
+    (dates whose expected tasks are not all `DONE`/`FAILED`) instead of from
+    the axis, and sets `prefilled_year: true`.
+  - The DONE-but-missing requeue heuristic is inert — the axis always
+    contains the date.
 - Full guide: [`modis-archive-update.md`](./modis-archive-update.md).
 
 ---

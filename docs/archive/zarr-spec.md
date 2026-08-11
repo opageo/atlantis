@@ -17,14 +17,14 @@ The archive is a **single sharded Zarr v3 store** (`datacube.zarr`), with **one
 group per source** (`gfm`, `modis`, `viirs`, …), all co-registered on a shared
 **canonical global 1-arcmin grid** (EPSG:4326).
 
-| Store | Channels | Inner chunk | Shard | Serves |
-| --- | --- | --- | --- | --- |
-| `datacube.zarr` | `flood_fraction`, `quality_mask`, `permanent_water` (+ `recurring_flood`, MODIS) | `256²` | `2048²` | analysis (whole-shard windows) **and** ML (random `256²` tiles) |
+| Store           | Channels                                                                         | Inner chunk | Shard   | Serves                                                          |
+| --------------- | -------------------------------------------------------------------------------- | ----------- | ------- | --------------------------------------------------------------- |
+| `datacube.zarr` | `flood_fraction`, `quality_mask`, `permanent_water` (+ `recurring_flood`, MODIS) | `256²`      | `2048²` | analysis (whole-shard windows) **and** ML (random `256²` tiles) |
 
 One sharded store serves both jobs: Zarr v3 sharding decouples the **read unit**
 (256² inner chunk — a data-loader tile, fetched by ranged GET) from the **object
 unit** (2048² shard — a few large cloud objects for analysis windows). There is
-no separate ML store; an ML-ready *view* is produced on read
+no separate ML store; an ML-ready _view_ is produced on read
 (`read(..., tiles=…)`) or, in future, as an on-demand derived snapshot.
 
 Each `(source, date)` AOI is placed into the global grid by an **integer-index
@@ -55,14 +55,14 @@ every source group. Identical to the grid used by ECMWF
 `Globe_flood_area_*.grb` / `CMF_all.zarr`, so outputs stack with global
 products.
 
-| Property | Value |
-| --- | --- |
-| CRS | `EPSG:4326` (WGS84 lat/lon) |
-| Resolution | `1/60°` = 1 arc-minute (≈ 1.85 km at equator) |
-| Shape | `10800` rows (lat, N→S) × `21600` cols (lon, W→E) |
-| Origin | west edge `-180°`, north edge `+90°` |
+| Property         | Value                                                                 |
+| ---------------- | --------------------------------------------------------------------- |
+| CRS              | `EPSG:4326` (WGS84 lat/lon)                                           |
+| Resolution       | `1/60°` = 1 arc-minute (≈ 1.85 km at equator)                         |
+| Shape            | `10800` rows (lat, N→S) × `21600` cols (lon, W→E)                     |
+| Origin           | west edge `-180°`, north edge `+90°`                                  |
 | Pixel convention | **pixel-centre**: `lon = -180 + (i+0.5)/60`, `lat = +90 - (j+0.5)/60` |
-| Row order | north → south (latitude decreases with row index) |
+| Row order        | north → south (latitude decreases with row index)                     |
 
 AOI bounds snap **outward** to the nearest grid edges (`snap_bounds`), mirroring
 the harmoniser's `snap_to_global_grid`, then map to a half-open integer
@@ -76,15 +76,18 @@ Every source group has the same structure. Dimensions are `(time, y, x)`.
 
 ### 3.1 Coordinates
 
-| Name | Dtype | Shape | Chunk | Key attributes |
-| --- | --- | --- | --- | --- |
-| `time` | `int64` | `(T,)` append-only | `512` | `units="days since 2020-01-01"`, `calendar="proleptic_gregorian"`, `standard_name="time"` |
-| `y` | `float64` | `(10800,)` | `10800` | `standard_name="latitude"`, `units="degrees_north"`, `axis="Y"` |
-| `x` | `float64` | `(21600,)` | `21600` | `standard_name="longitude"`, `units="degrees_east"`, `axis="X"` |
-| `crs` | `int64` | `()` scalar | — | CF grid mapping (`grid_mapping_name`, `crs_wkt`, `spatial_ref`) → `EPSG:4326` |
+| Name   | Dtype     | Shape              | Chunk   | Key attributes                                                                            |
+| ------ | --------- | ------------------ | ------- | ----------------------------------------------------------------------------------------- |
+| `time` | `int64`   | `(T,)` append-only | `512`   | `units="days since 2020-01-01"`, `calendar="proleptic_gregorian"`, `standard_name="time"` |
+| `y`    | `float64` | `(10800,)`         | `10800` | `standard_name="latitude"`, `units="degrees_north"`, `axis="Y"`                           |
+| `x`    | `float64` | `(21600,)`         | `21600` | `standard_name="longitude"`, `units="degrees_east"`, `axis="X"`                           |
+| `crs`  | `int64`   | `()` scalar        | —       | CF grid mapping (`grid_mapping_name`, `crs_wkt`, `spatial_ref`) → `EPSG:4326`             |
 
 `time` starts empty (`T=0`) and grows as a **metadata-only resize**; each unique
-date adds one slot.
+date adds one slot. On a **prefilled year** (built via the cube CLI with a
+`zarr/<YYYY>` archive root) the axis instead contains every day of the year at
+creation (365/366 slots, group marker `atlantis_time_prefill="<year>"`); empty
+slots read NODATA and later backfills region-write into their existing slot.
 
 ### 3.2 Data variables
 
@@ -92,18 +95,19 @@ All data variables are **`uint8`** with **`fill_value = 255`** (`NODATA`), dims
 `(time, y, x)`, `grid_mapping="crs"`. The three **core channels** are shared
 across all sources (Issue #63); `recurring_flood` is a MODIS-only extension.
 
-| Variable | Source | Encoding | Notes |
-| --- | --- | --- | --- |
-| `flood_fraction` | all | `scale_factor=0.01`, `add_offset=0.0`, `units="1"` | stored `[0, 100]` → decodes to float `[0, 1]` |
-| `quality_mask` | all | raw `uint8` codes | validity / cloud / snow flags |
-| `permanent_water` | all | raw `uint8` (0/1) | binary mask |
-| `recurring_flood` | modis | raw `uint8` | MODIS-specific extension |
+| Variable          | Source | Encoding                                           | Notes                                         |
+| ----------------- | ------ | -------------------------------------------------- | --------------------------------------------- |
+| `flood_fraction`  | all    | `scale_factor=0.01`, `add_offset=0.0`, `units="1"` | stored `[0, 100]` → decodes to float `[0, 1]` |
+| `quality_mask`    | all    | raw `uint8` codes                                  | validity / cloud / snow flags                 |
+| `permanent_water` | all    | raw `uint8` (0/1)                                  | binary mask                                   |
+| `recurring_flood` | modis  | raw `uint8`                                        | MODIS-specific extension                      |
 
 **uint8 encoding** (`_encode_uint8`): float `flood_fraction ∈ [0,1]` →
 `round(v*100) ∈ [0,100]` (percent), `NaN → 255`; integer masks pass through.
 This is 4× smaller than float32 and CMF-comparable after CF decode.
 
 > **Implementation caveats (verified against the store):**
+>
 > - **Channels follow the input.** `write()` stores exactly the variables present
 >   in the harmonised input. The harmoniser emits all three core channels, so the
 >   canonical (harmonise → write) path yields `flood_fraction` + `quality_mask` +
@@ -111,7 +115,7 @@ This is 4× smaller than float32 and CMF-comparable after CF decode.
 >   `flood_fraction`; pass `--ensure-masks` (writer `ensure_masks=True`) to
 >   synthesise the masks when absent.
 > - **Mask dtype on read.** Every variable carries `_FillValue=255`, so a default
->   `open_zarr` (CF decode on) returns **float64 with `NaN`** for *all* variables
+>   `open_zarr` (CF decode on) returns **float64 with `NaN`** for _all_ variables
 >   — masks included — not `uint8`. Use `mask_and_scale=False` for raw `uint8`.
 > - **`grid_mapping="crs"` resolves to a real variable.** Each group holds a
 >   scalar `crs` grid-mapping variable (CF attrs from `pyproj.CRS.to_cf()` plus a
@@ -128,12 +132,12 @@ codec pipeline).
 
 Group attributes are **bounded** (fixed keys, never per-write growth):
 
-| Attribute | Purpose |
-| --- | --- |
-| `crs` | human-readable CRS string (`"EPSG:4326"`); distinct from the scalar `crs` grid-mapping *variable* in §3.1 |
-| `source_id` | the source this group holds |
-| `last_updated` | ISO timestamp of the most recent write |
-| `atlantis_events` | **optional** named-event bookmarks — empty `{}` for the daily archive |
+| Attribute         | Purpose                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `crs`             | human-readable CRS string (`"EPSG:4326"`); distinct from the scalar `crs` grid-mapping _variable_ in §3.1 |
+| `source_id`       | the source this group holds                                                                               |
+| `last_updated`    | ISO timestamp of the most recent write                                                                    |
+| `atlantis_events` | **optional** named-event bookmarks — empty `{}` for the daily archive                                     |
 
 The **daily archive is label-free**: routine writes record only `source_id` /
 `last_updated` and leave `atlantis_events` empty. Access is by `(source, time,
@@ -141,7 +145,7 @@ space)` — temporal selection on the `time` axis, spatial selection from a bbox
 mapped to an index window via `grid.bounds_to_window`. No registry is scanned.
 
 **Optional event bookmarks** are a convenience overlay for case studies /
-benchmarks, written *only* when an explicit `event` is passed to `write()`. They
+benchmarks, written _only_ when an explicit `event` is passed to `write()`. They
 store just a bbox + dates (the reader derives the window from the bbox), so the
 schema is bounded by the number of distinct named events:
 
@@ -172,12 +176,12 @@ graph LR
     end
 ```
 
-| Concern | datacube |
-| --- | --- |
-| Read unit (inner chunk) | `256²` tile (power-of-two, `/32`-friendly for U-Nets) |
-| Object unit (shard) | `2048²` shard = 64 inner tiles in one object |
-| Sparsity | only inner chunks overlapping an AOI materialise (within their shard) |
-| Write concurrency | **single coordinator** — `write()` resizes the time axis, records bounded provenance and consolidates; intra-timestep writes mosaic per `(source, date)`. Parallelism is across the *produce* step (e.g. Dask) and across dates. |
+| Concern                 | datacube                                                                                                                                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read unit (inner chunk) | `256²` tile (power-of-two, `/32`-friendly for U-Nets)                                                                                                                                                                            |
+| Object unit (shard)     | `2048²` shard = 64 inner tiles in one object                                                                                                                                                                                     |
+| Sparsity                | only inner chunks overlapping an AOI materialise (within their shard)                                                                                                                                                            |
+| Write concurrency       | **single coordinator** — `write()` resizes the time axis, records bounded provenance and consolidates; intra-timestep writes mosaic per `(source, date)`. Parallelism is across the _produce_ step (e.g. Dask) and across dates. |
 
 Config knobs ([`ArchiveConfig`](../../src/atlantis/config.py#L101)):
 `store="datacube.zarr"`, `chunk_size=256`, `shard_size=2048`,
