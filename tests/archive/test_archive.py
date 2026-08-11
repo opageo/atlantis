@@ -1,6 +1,6 @@
 """Tests for the consolidated Zarr datacube archive."""
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -254,6 +254,68 @@ class TestPrefillYear:
         # out-of-order dates land in their pre-filled slots
         self._assert_date_value(tmp_path, date(2024, 10, 29), 0.5)
         self._assert_date_value(tmp_path, date(2024, 9, 15), 0.6)
+
+    def test_prefill_writes_exact_days_per_year(self, tmp_path):
+        """365 slots for a common year, 366 for a leap year, first/last ints correct."""
+        from atlantis.archive import datacube
+
+        epoch = ArchiveConfig().time_epoch
+        for year, expected_days in ((2020, 366), (2021, 365), (2024, 366), (2025, 365)):
+            root = tmp_path / str(year)
+            writer = ArchiveWriter(root)
+            with writer.session("gfm", ["water_fraction"], prefill_year=year):
+                pass
+
+            import zarr
+
+            group = zarr.open_group(root / "datacube.zarr", mode="r")["gfm"]
+            times = np.asarray(group["time"][:], dtype="int64")
+            assert times.shape == (expected_days,)
+            assert group["water_fraction"].shape[0] == expected_days
+            assert times[0] == datacube.date_to_int(date(year, 1, 1), epoch)
+            assert times[-1] == datacube.date_to_int(date(year + 1, 1, 1) - timedelta(days=1), epoch)
+            assert (np.diff(times) == 1).all()
+
+    def test_prefill_sets_marker_on_resize_not_noop(self, tmp_path):
+        """``atlantis_time_prefill`` is written on the resize, never on a no-op."""
+        import zarr
+
+        writer = ArchiveWriter(tmp_path)
+        with writer.session("gfm", ["water_fraction"], prefill_year=2024):
+            pass
+        group = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        assert group.attrs["atlantis_time_prefill"] == "2024"
+
+        # a re-run is a no-op: axis stays 366, marker unchanged
+        with writer.session("gfm", ["water_fraction"], prefill_year=2025):
+            pass
+        group = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        assert group["time"].shape[0] == 366  # legacy 366-slot group untouched
+        assert group.attrs["atlantis_time_prefill"] == "2024"
+
+        # a never-prefilled group carries no marker
+        other = ArchiveWriter(tmp_path / "plain")
+        with other.session("gfm", ["water_fraction"]):
+            pass
+        group = zarr.open_group(tmp_path / "plain" / "datacube.zarr", mode="r")["gfm"]
+        assert "atlantis_time_prefill" not in group.attrs
+
+    def test_prefill_skips_partially_written_group(self, tmp_path):
+        """0 < n < days is never prefilled (existing data would misalign)."""
+        import zarr
+
+        writer = ArchiveWriter(tmp_path)
+        with writer.session("gfm", ["water_fraction"]) as session:
+            session.write(aligned_dataset(0.5), time=date(2024, 3, 1))
+
+        with writer.session("gfm", ["water_fraction"], prefill_year=2024):
+            pass
+
+        group = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        assert group["time"].shape[0] == 1
+        assert group["water_fraction"].shape[0] == 1
+        assert "atlantis_time_prefill" not in group.attrs
+        self._assert_date_value(tmp_path, date(2024, 3, 1), 0.5)
 
 
 # ── Optional event bookmarks ──────────────────────────────────────────────────
