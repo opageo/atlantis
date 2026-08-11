@@ -15,8 +15,8 @@
 
 **Source of truth**
 
-| Concern                                   | Module                                                                              |
-| ----------------------------------------- | ----------------------------------------------------------------------------------- |
+| Concern                                   | Module                                                                                 |
+| ----------------------------------------- | -------------------------------------------------------------------------------------- |
 | STAC catalog builder                      | [`src/atlantis/stac/datacube_catalog.py`](../../src/atlantis/stac/datacube_catalog.py) |
 | stac-geoparquet index                     | [`src/atlantis/stac/geoparquet.py`](../../src/atlantis/stac/geoparquet.py)             |
 | Visualization (hvplot/Panel)              | [`src/atlantis/viz/dashboard.py`](../../src/atlantis/viz/dashboard.py)                 |
@@ -120,9 +120,10 @@ Collection-level fields live in the collection body; item-level fields live in
 | `y`              | spatial (axis y) | `[south, north]`     | `-1/60` | north→south              |
 | `time`           | temporal         | `[start, end]` (ISO) | —       | per-item: a single day   |
 
-`cube:variables` mirror the cube's data variables (`flood_fraction`,
-`quality_mask`, `permanent_water`, `+ recurring_flood` for MODIS), each with
-`dimensions: [time, y, x]`, `type: data`; `flood_fraction` carries `unit: "1"`.
+`cube:variables` mirror the cube's data variables (`water_fraction`,
+`exclusion_mask`, `reference_water`, `+ recurring_flood` for MODIS, `+
+cloud_mask`/`snow_ice`/`shadow` for VIIRS), each with
+`dimensions: [time, y, x]`, `type: data`; `water_fraction` carries `unit: "1"`.
 
 ### 4.2 xarray-assets — `v1.0.0`
 
@@ -168,7 +169,7 @@ group and selects the item's `datetime`.
 
 ### Benefits specifically from the `datacube` + `xarray-assets` extensions
 
-- **`datacube` extension (`cube:dimensions` / `cube:variables`)** — makes the Zarr's dimensional structure (x/y/time extents, resolution/step, CRS) and its channels (`flood_fraction`, `quality_mask`, etc., with units/dtype intent) **queryable and self-describing** directly in STAC metadata. Tools that understand the datacube extension (or generic STAC clients) can reason about temporal/spatial resolution and available variables _before_ touching the array data — useful for catalog browsers, cross-dataset search, or automated pipeline validation.
+- **`datacube` extension (`cube:dimensions` / `cube:variables`)** — makes the Zarr's dimensional structure (x/y/time extents, resolution/step, CRS) and its channels (`water_fraction`, `exclusion_mask`, etc., with units/dtype intent) **queryable and self-describing** directly in STAC metadata. Tools that understand the datacube extension (or generic STAC clients) can reason about temporal/spatial resolution and available variables _before_ touching the array data — useful for catalog browsers, cross-dataset search, or automated pipeline validation.
 
 - **`xarray-assets` extension (`xarray:open_kwargs`, `xarray:storage_options`)** — makes each asset **directly openable** via `xarray.open_dataset(asset, engine="stac")` (via `xpystac`) without the client needing to know the group name, consolidation flag, decode options, or S3 credentials in advance. This turns STAC into a genuine "handoff" layer: discover an Item → hand its asset straight to xarray → get a ready-to-use lazy Dataset, with zero manual wiring of Zarr open parameters.
 
@@ -188,7 +189,7 @@ catalog/collection/item links are relativised).
 For a sparse global cube, a per-date global bbox would be meaningless, so item
 bboxes are derived from the data:
 
-1. **Per source, once** — reduce `flood_fraction` to a `(y, x)` validity mask
+1. **Per source, once** — reduce `water_fraction` to a `(y, x)` validity mask
    (`notnull().any("time")`) and take its bounding index window
    ([`_populated_window`](../src/atlantis/stac/datacube_catalog.py)). The cube is
    subset to this window so the next step stays cheap.
@@ -350,7 +351,7 @@ serve_dashboard(
 
 # Discover through STAC, then render
 ds = from_stac("./data/stac", "viirs")
-dashboard = build_cube_dashboard(ds=ds, var="flood_fraction")
+dashboard = build_cube_dashboard(ds=ds, var="water_fraction")
 ```
 
 `from_stac` resolves the source's Collection, then opens its `zarr` asset with
@@ -395,7 +396,7 @@ atlantis viz serve viirs --stac ./data/stac
 
 | Field         | Env var                | Default          |
 | ------------- | ---------------------- | ---------------- |
-| `variable`    | `ATLANTIS_VARIABLE`    | `flood_fraction` |
+| `variable`    | `ATLANTIS_VARIABLE`    | `water_fraction` |
 | `cmap`        | `ATLANTIS_CMAP`        | `Blues`          |
 | `host`        | `ATLANTIS_HOST`        | `localhost`      |
 | `port`        | `ATLANTIS_PORT`        | `5006`           |

@@ -17,9 +17,9 @@ The archive is a **single sharded Zarr v3 store** (`datacube.zarr`), with **one
 group per source** (`gfm`, `modis`, `viirs`, …), all co-registered on a shared
 **canonical global 1-arcmin grid** (EPSG:4326).
 
-| Store           | Channels                                                                         | Inner chunk | Shard   | Serves                                                          |
-| --------------- | -------------------------------------------------------------------------------- | ----------- | ------- | --------------------------------------------------------------- |
-| `datacube.zarr` | `flood_fraction`, `quality_mask`, `permanent_water` (+ `recurring_flood`, MODIS) | `256²`      | `2048²` | analysis (whole-shard windows) **and** ML (random `256²` tiles) |
+| Store           | Channels                                                                                                                  | Inner chunk | Shard   | Serves                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------- | ------- | --------------------------------------------------------------- |
+| `datacube.zarr` | `water_fraction`, `exclusion_mask`, `reference_water` (+ `recurring_flood` MODIS; `cloud_mask`/`snow_ice`/`shadow` VIIRS) | `256²`      | `2048²` | analysis (whole-shard windows) **and** ML (random `256²` tiles) |
 
 One sharded store serves both jobs: Zarr v3 sharding decouples the **read unit**
 (256² inner chunk — a data-loader tile, fetched by ranged GET) from the **object
@@ -42,7 +42,7 @@ graph TD
     CUBE --> RG3["📁 group: viirs"]
 
     RG3 --> COORDS["🧭 coords<br/>time (int64) · y (f64) · x (f64) · crs"]
-    RG3 --> VARS["🧱 data vars (uint8, fill=255)<br/>flood_fraction · quality_mask<br/>permanent_water · recurring_flood"]
+    RG3 --> VARS["🧱 data vars (uint8, fill=255)<br/>water_fraction · exclusion_mask<br/>reference_water (+ source extensions)"]
     RG3 --> ATTRS["🏷 group attrs<br/>crs · source_id · last_updated<br/>atlantis_events (optional bookmarks)"]
 ```
 
@@ -92,28 +92,38 @@ slots read NODATA and later backfills region-write into their existing slot.
 ### 3.2 Data variables
 
 All data variables are **`uint8`** with **`fill_value = 255`** (`NODATA`), dims
-`(time, y, x)`, `grid_mapping="crs"`. The three **core channels** are shared
-across all sources (Issue #63); `recurring_flood` is a MODIS-only extension.
+`(time, y, x)`, `grid_mapping="crs"`. `water_fraction`, `exclusion_mask` and
+`reference_water` are the **core channels** shared across all sources (Issue
+\#63, [`writer._CUBE_VARS`](../../src/atlantis/archive/writer.py)); everything
+else below is a source-specific extension or a legacy pair.
 
-| Variable          | Source | Encoding                                           | Notes                                         |
-| ----------------- | ------ | -------------------------------------------------- | --------------------------------------------- |
-| `flood_fraction`  | all    | `scale_factor=0.01`, `add_offset=0.0`, `units="1"` | stored `[0, 100]` → decodes to float `[0, 1]` |
-| `quality_mask`    | all    | raw `uint8` codes                                  | validity / cloud / snow flags                 |
-| `permanent_water` | all    | raw `uint8` (0/1)                                  | binary mask                                   |
-| `recurring_flood` | modis  | raw `uint8`                                        | MODIS-specific extension                      |
+| Variable                             | Source | Encoding                                           | Notes                                                                                                                                                                                                                  |
+| ------------------------------------ | ------ | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `water_fraction`                     | all    | `scale_factor=0.01`, `add_offset=0.0`, `units="1"` | stored `[0, 100]` → decodes to float `[0, 1]`. The only scaled channel — see §3.5.                                                                                                                                     |
+| `exclusion_mask`                     | all    | raw `uint8` codes                                  | binary `0`/`1` for MODIS/VIIRS; GFM passes through its own native multi-valued codes untouched — see [layers.md](../layers.md#layers-cross-source)                                                                     |
+| `reference_water`                    | all    | raw `uint8` codes                                  | binary `0`/`1` for MODIS/VIIRS; GFM is 3-class (`0`=no water, `1`=permanent, `2`=seasonal) — see [layers.md](../layers.md#layers-cross-source)                                                                         |
+| `recurring_flood`                    | modis  | raw `uint8` (0/1)                                  | MODIS-only extension                                                                                                                                                                                                   |
+| `cloud_mask` / `snow_ice` / `shadow` | viirs  | raw `uint8` (0/1)                                  | VIIRS-only extensions                                                                                                                                                                                                  |
+| `quality_mask` / `permanent_water`   | legacy | raw `uint8`                                        | **Not** written by the resume-safe cube batch — only synthesised by the single-shot CLI archive-from-tif path (`ensure_masks=True`); kept for backward compatibility, not part of the canonical harmonise→write schema |
 
-**uint8 encoding** (`_encode_uint8`): float `flood_fraction ∈ [0,1]` →
+`flood_fraction` is a **separate harmoniser-level derived layer** (see
+[layers.md](../layers.md)), computed per source alongside `water_fraction` —
+it is **not** persisted in the cube; only `water_fraction` is written.
+
+**uint8 encoding** (`_encode_uint8`): float `water_fraction ∈ [0,1]` →
 `round(v*100) ∈ [0,100]` (percent), `NaN → 255`; integer masks pass through.
 This is 4× smaller than float32 and CMF-comparable after CF decode.
 
 > **Implementation caveats (verified against the store):**
 >
-> - **Channels follow the input.** `write()` stores exactly the variables present
->   in the harmonised input. The harmoniser emits all three core channels, so the
->   canonical (harmonise → write) path yields `flood_fraction` + `quality_mask` +
->   `permanent_water`. The CLI archive-from-tif path supplies single-band
->   `flood_fraction`; pass `--ensure-masks` (writer `ensure_masks=True`) to
->   synthesise the masks when absent.
+> - **Channels follow the input.** `write()`/`session()` store exactly the
+>   variables present in the harmonised input, filtered through each source's
+>   `var_names` (see [`cube_batch.py`](../../src/atlantis/archive/cube_batch.py)):
+>   GFM writes `water_fraction` + `exclusion_mask` + `reference_water`; MODIS
+>   adds `recurring_flood`; VIIRS adds `cloud_mask` + `snow_ice` + `shadow`
+>   instead. The CLI archive-from-tif path supplies single-band `water_fraction`;
+>   pass `--ensure-masks` (writer `ensure_masks=True`) to synthesise the legacy
+>   `quality_mask` / `permanent_water` pair when absent.
 > - **Mask dtype on read.** Every variable carries `_FillValue=255`, so a default
 >   `open_zarr` (CF decode on) returns **float64 with `NaN`** for _all_ variables
 >   — masks included — not `uint8`. Use `mask_and_scale=False` for raw `uint8`.
@@ -132,12 +142,14 @@ codec pipeline).
 
 Group attributes are **bounded** (fixed keys, never per-write growth):
 
-| Attribute         | Purpose                                                                                                   |
-| ----------------- | --------------------------------------------------------------------------------------------------------- |
-| `crs`             | human-readable CRS string (`"EPSG:4326"`); distinct from the scalar `crs` grid-mapping _variable_ in §3.1 |
-| `source_id`       | the source this group holds                                                                               |
-| `last_updated`    | ISO timestamp of the most recent write                                                                    |
-| `atlantis_events` | **optional** named-event bookmarks — empty `{}` for the daily archive                                     |
+| Attribute               | Purpose                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `crs`                   | human-readable CRS string (`"EPSG:4326"`); distinct from the scalar `crs` grid-mapping _variable_ in §3.1        |
+| `source_id`             | the source this group holds                                                                                      |
+| `last_updated`          | ISO timestamp of the most recent write                                                                           |
+| `atlantis_events`       | **optional** named-event bookmarks — empty `{}` for the daily archive                                            |
+| `atlantis_time_prefill` | **prefilled-year marker** — the year the `time` axis was pre-filled with (see §3.1); absent on data-proven axes  |
+| `archive_config`        | fingerprint of `chunk_size` / `shard_size` / `scale_factor` / `time_units` the group was created with — see §3.5 |
 
 The **daily archive is label-free**: routine writes record only `source_id` /
 `last_updated` and leave `atlantis_events` empty. Access is by `(source, time,
@@ -162,6 +174,33 @@ schema is bounded by the number of distinct named events:
 `read(source, event="Valencia_2024")` resolves the bookmark (bbox → window,
 dates → time selection); the daily pipeline never writes here.
 
+### 3.5 Config-identity guarantee
+
+> **Anyone changing `chunk_size`, `shard_size`, `scale_factor`, or `time_epoch`
+> in [`ArchiveConfig`](../../src/atlantis/config.py#L101) — or the schema they
+> define — must read this first.**
+
+`chunk`/`shard` fix the on-disk array layout at group creation; `scale_factor`/
+`time_epoch` are baked into every value already encoded under them (uint8
+percent, integer days-since-epoch). None of the four can change for a group
+that already has data without silently misencoding new writes relative to old
+ones, or breaking the cheap shard-copy cross-store merge described in
+[cube-build.md](./cube-build.md) (identical config is what makes a shard's
+bytes portable, unchanged, between stores).
+
+A group's first write records these four values as a bounded `archive_config`
+attr (§3.4). Every later `ensure_source_group()` call — the single choke point
+every write path goes through (`ArchiveWriter.write`, `.session`, the cube
+batch engine) — compares the caller's current config against that recorded
+fingerprint and raises `atlantis.archive.datacube.ConfigMismatchError` on any
+mismatch, rather than silently drifting. A group written before this guard
+existed has no recorded fingerprint yet; its first post-upgrade write adopts
+the caller's config as the new baseline instead of failing.
+
+This is enforced in [`datacube.py`](../../src/atlantis/archive/datacube.py)
+(`_config_fingerprint` / `_verify_config_fingerprint`) — see that module for
+the implementation.
+
 ---
 
 ## 4. Chunking, sharding & access granularity
@@ -185,7 +224,8 @@ graph LR
 
 Config knobs ([`ArchiveConfig`](../../src/atlantis/config.py#L101)):
 `store="datacube.zarr"`, `chunk_size=256`, `shard_size=2048`,
-`scale_factor=0.01`, `time_epoch="2020-01-01"`.
+`scale_factor=0.01`, `time_epoch="2020-01-01"`. These four are the
+config-identity guarantee (§3.5) — fixed per group once it has data.
 
 ---
 
@@ -211,8 +251,8 @@ graph TD
   (time-axis resize, bounded provenance, consolidation). For parallel backfill,
   run the expensive produce step in parallel (e.g. Dask) and funnel results to
   one writer — see `scripts/validate_viirs_zarr.py`.
-- `ensure_masks=True` synthesises `quality_mask` / `permanent_water` when the
-  input lacks them (e.g. a single-band `flood_fraction` tif).
+- `ensure_masks=True` synthesises the legacy `quality_mask` / `permanent_water`
+  pair when the input lacks them (e.g. a single-band `water_fraction` tif).
 - `event=…` (optional) registers a named bookmark; the daily pipeline omits it.
 
 ---
@@ -257,7 +297,7 @@ consolidated for fast remote opens.
 
 1. **Tile size `256²`, dtype `uint8`** — confirm this matches model input
    expectations (patch size, `/32` divisibility for U-Net encoders).
-2. **Normalisation** — `flood_fraction` decodes to float `[0, 1]` via CF
+2. **Normalisation** — `water_fraction` decodes to float `[0, 1]` via CF
    `scale_factor` (the archive applies **no** per-image rescale; values are
    already physical `[0,1]`). Masks decode to **float64 with `NaN`** under default
    CF decoding (they carry `_FillValue=255`); read with `mask_and_scale=False` for
@@ -268,8 +308,10 @@ consolidated for fast remote opens.
 4. **Random access** — `256²` chunks inside `2048²` shards: fine-grained tile
    reads vs. few large S3 objects. Validate against the DataLoader sampling
    pattern (shuffled tiles vs. contiguous windows).
-5. **Channels** — `flood_fraction`, `quality_mask`, `permanent_water`
-   (+ `recurring_flood` for MODIS). Confirm the channel stack and whether masks
-   are model inputs or supervision only.
+5. **Channels** — `water_fraction`, `exclusion_mask`, `reference_water` (core,
+   all sources) + `recurring_flood` (MODIS) / `cloud_mask`, `snow_ice`, `shadow`
+   (VIIRS). `quality_mask`/`permanent_water` are legacy-only (CLI archive-from-tif
+   path). Confirm the channel stack and whether masks are model inputs or
+   supervision only.
 6. **Loader stubs** — `MLLoaderValidator` (`Dataset`/`DataLoader`/GPU transfer)
    is not yet implemented; we can shape it to the team's reference loader.

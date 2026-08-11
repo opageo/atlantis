@@ -75,7 +75,7 @@ def load_dataset(
     *,
     archive_root: str | None = None,
     stac: str | None = None,
-    var: str = "flood_fraction",
+    var: str = "water_fraction",
     bbox: tuple[float, float, float, float] | None = None,
     start: date | str | None = None,
     end: date | str | None = None,
@@ -112,7 +112,7 @@ def build_cube_dashboard(
     ds: "xr.Dataset | None" = None,
     archive_root: str | None = None,
     stac: str | None = None,
-    var: str = "flood_fraction",
+    var: str = "water_fraction",
     bbox: tuple[float, float, float, float] | None = None,
     start: date | str | None = None,
     end: date | str | None = None,
@@ -131,7 +131,7 @@ def build_cube_dashboard(
     :param xr.Dataset | None ds: _description_, defaults to None
     :param str | None archive_root: _description_, defaults to None
     :param str | None stac: _description_, defaults to None
-    :param str var: _description_, defaults to "flood_fraction"
+    :param str var: _description_, defaults to "water_fraction"
     :param tuple[float, float, float, float] | None bbox: _description_, defaults to None
     :param date | str | None start: _description_, defaults to None
     :param date | str | None end: _description_, defaults to None
@@ -182,7 +182,7 @@ def build_cube_dashboard(
 
     if "time" in da.dims:
         opts["groupby"] = "time"
-    if var == "flood_fraction":
+    if var == "water_fraction":
         opts["clim"] = (0.0, 1.0)
     if rasterize:
         if _has("datashader"):
@@ -212,7 +212,7 @@ def serve_dashboard(
     ds: "xr.Dataset | None" = None,
     archive_root: str | None = None,
     stac: str | None = None,
-    var: str = "flood_fraction",
+    var: str = "water_fraction",
     bbox: tuple[float, float, float, float] | None = None,
     start: date | str | None = None,
     end: date | str | None = None,
