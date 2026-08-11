@@ -1,5 +1,6 @@
 """CLI entrypoints for Atlantis."""
 
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -3466,6 +3467,95 @@ viirs_batch_app.add_typer(viirs_cube_app, name="cube")
 _VIIRS_CATALOGUE = "s3://atlantis/assets/viirs/viirs_archive_catalog.parquet"
 
 
+def _detect_prefill_year(archive: str) -> int | None:
+    """Auto-detect the prefill year from a ``zarr/<YYYY>`` archive root.
+
+    Matches ``s3://atlantis/zarr/2025`` and local ``.../zarr/2020`` but not
+    legacy roots like ``viirs_2020_cube`` or non-year names like ``my_cube``.
+    """
+    match = re.search(r"(?:^|/)zarr/(\d{4})$", str(archive).rstrip("/"))
+    return int(match.group(1)) if match else None
+
+
+def _resolve_prefill_year(archive: str, prefill_year: int | None, no_prefill: bool) -> int | None:
+    """Resolve ``--prefill-year`` / auto-detection / ``--no-prefill`` for a cube run.
+
+    ``--prefill-year`` wins over auto-detection; ``--no-prefill`` disables both.
+    Giving both flags is an operator error and fails loudly.
+    """
+    if no_prefill and prefill_year is not None:
+        fail("--prefill-year and --no-prefill are mutually exclusive.")
+        raise typer.Exit(code=1)
+    if no_prefill:
+        return None
+    if prefill_year is not None:
+        return prefill_year
+    return _detect_prefill_year(archive)
+
+
+def _check_task_dates_in_year(tasks: list[dict], year: int) -> None:
+    """Fail loudly when any task date falls outside the prefill year.
+
+    Out-of-year dates would append at the tail of the prefilled axis and break
+    its strictly-ascending invariant — a validation error, never a silent
+    filter.
+    """
+    from atlantis.archive.cube_batch import _to_date
+
+    first, last = date(year, 1, 1), date(year, 12, 31)
+    task_dates = [_to_date(t["date"]) for t in tasks]
+    offending = sorted({d for d in task_dates if not (first <= d <= last)})
+    days = (date(year + 1, 1, 1) - first).days
+    info(f"Pre-filled time axis: {days} day(s) of {year} (all task dates must fall inside the year).")
+    if offending:
+        shown = ", ".join(d.isoformat() for d in offending[:10])
+        fail(f"{len(offending)} task date(s) outside prefill year {year}: {shown}")
+        raise typer.Exit(code=1)
+
+
+def _validate_prefilled_axis(
+    archive: str,
+    source_id: str,
+    tasks: list[dict],
+    year: int,
+    storage_options: dict | None = None,
+) -> None:
+    """Post-run check: the prefilled axis is ascending and holds every task date.
+
+    Reads the time axis back once and mirrors the GFM scripts' ``validate_cube``:
+    strictly ascending order, the full days-in-year length, and presence of
+    every written date. Only runs when the group actually carries this year's
+    prefill marker — a skipped prefill (legacy partially-written group) is
+    reported and left alone, so a run that pre-dates the feature behaves
+    exactly as before.
+    """
+    from atlantis.archive import datacube
+    from atlantis.archive._store import store_for
+    from atlantis.archive.cube_batch import _to_date
+    from atlantis.archive.ordering import unsorted_spans
+
+    store = store_for(archive, "datacube.zarr", storage_options)
+    group = datacube.open_root(store, mode="r")[source_id]
+    if group.attrs.get("atlantis_time_prefill") != str(year):
+        warn(f"prefill skipped for {source_id} (existing or non-prefilled group) — skipping post-run axis validation")
+        return
+    axis = datacube.decode_axis_dates(group)
+    spans = unsorted_spans(axis)
+    if spans:
+        fail(f"{source_id} time axis is not strictly ascending at index range(s) {spans}")
+        raise typer.Exit(code=1)
+    days = (date(year + 1, 1, 1) - date(year, 1, 1)).days
+    if len(axis) != days:
+        fail(f"{source_id} prefilled axis has {len(axis)} slot(s), expected {days} for {year}")
+        raise typer.Exit(code=1)
+    missing = sorted({_to_date(t["date"]) for t in tasks} - set(axis))
+    if missing:
+        shown = ", ".join(d.isoformat() for d in missing[:10])
+        fail(f"{len(missing)} task date(s) missing from the prefilled {source_id} axis: {shown}")
+        raise typer.Exit(code=1)
+    ok(f"prefilled {source_id} time axis validated: {len(axis)} day(s) of {year}, ascending, all dates present")
+
+
 @viirs_cube_app.command("run")
 def batch_viirs_cube(
     inventory: str = typer.Option(
@@ -3491,6 +3581,16 @@ def batch_viirs_cube(
     db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
     retries: int = typer.Option(3, "--retries", help="Dask retry count per granule."),
     log_every: int = typer.Option(100, "--log-every", help="Log a progress line every N completions."),
+    prefill_year: int | None = typer.Option(
+        None,
+        "--prefill-year",
+        help="Pre-fill the time axis with every day of this year (auto-detected from zarr/<YYYY> roots).",
+    ),
+    no_prefill: bool = typer.Option(
+        False,
+        "--no-prefill",
+        help="Disable time-axis prefill (overrides auto-detection and --prefill-year).",
+    ),
 ) -> None:
     """Build the VIIRS datacube from the catalogue — resume-safe and streaming.
 
@@ -3498,6 +3598,11 @@ def batch_viirs_cube(
     result into the consolidated Zarr cube (bounded memory — no giant in-RAM
     accumulation). Every finished granule is recorded in --db-path, so the run
     can be interrupted and resumed (already-DONE tasks are skipped on re-run).
+
+    With a ``zarr/<YYYY>`` archive root the ``time`` axis is pre-filled with
+    every day of the year (365/366 slots) by default, so later backfills land
+    in pre-existing slots; pass ``--no-prefill`` to disable, or
+    ``--prefill-year`` to override the auto-detected year.
 
     Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
 
@@ -3524,6 +3629,9 @@ def batch_viirs_cube(
             raise typer.Exit(code=1)
         storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
 
+    # ── Resolve time-axis prefill (--prefill-year / auto-detect / --no-prefill)
+    prefill_year = _resolve_prefill_year(archive, prefill_year, no_prefill)
+
     # ── Load & slice catalogue ────────────────────────────────────────────
     info(f"Loading catalogue from {inventory} …")
     df = slice_partition(load_inventory(inventory), partition)
@@ -3532,6 +3640,8 @@ def batch_viirs_cube(
         f"  [bold]{len(tasks)}[/bold] granules → {archive}" + (f"  (partition {partition})" if partition else "")
     )
     console.print(f"  [bold]tracker:[/bold] {db_path}")
+    if prefill_year is not None:
+        _check_task_dates_in_year(tasks, prefill_year)
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
 
     cfg = BatchConfig(
@@ -3545,7 +3655,11 @@ def batch_viirs_cube(
     )
 
     # ── Run ───────────────────────────────────────────────────────────────
-    final = run_viirs_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    final = run_viirs_cube_batch(
+        tasks, archive_root=archive, cfg=cfg, storage_options=storage_options, prefill_year=prefill_year
+    )
+    if prefill_year is not None:
+        _validate_prefilled_axis(archive, "viirs", tasks, prefill_year, storage_options)
     ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
 
 
@@ -3698,12 +3812,27 @@ def batch_modis_cube(
     db_path: Path = typer.Option(Path("cube_tracker.db"), "--db-path", help="SQLite resume database path."),
     retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
     log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+    prefill_year: int | None = typer.Option(
+        None,
+        "--prefill-year",
+        help="Pre-fill the time axis with every day of this year (auto-detected from zarr/<YYYY> roots).",
+    ),
+    no_prefill: bool = typer.Option(
+        False,
+        "--no-prefill",
+        help="Disable time-axis prefill (overrides auto-detection and --prefill-year).",
+    ),
 ) -> None:
     """Build the MODIS datacube from the catalog — resume-safe and streaming.
 
     Dask harmonises tiles in parallel while a single coordinator streams each
     result into the consolidated Zarr cube. Every finished tile is recorded in
     --db-path, so the run can be interrupted and resumed.
+
+    With a ``zarr/<YYYY>`` archive root the ``time`` axis is pre-filled with
+    every day of the year (365/366 slots) by default, so later backfills land
+    in pre-existing slots; pass ``--no-prefill`` to disable, or
+    ``--prefill-year`` to override the auto-detected year.
 
     Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
 
@@ -3739,6 +3868,9 @@ def batch_modis_cube(
             raise typer.Exit(code=1)
         storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
 
+    # ── Resolve time-axis prefill (--prefill-year / auto-detect / --no-prefill)
+    prefill_year = _resolve_prefill_year(archive, prefill_year, no_prefill)
+
     info(f"Loading catalog from {inventory} …")
     df = slice_partition(load_inventory(inventory), partition)
     tasks = to_tasks(df)
@@ -3747,6 +3879,8 @@ def batch_modis_cube(
     )
     console.print(f"  [bold]tracker:[/bold] {db_path}")
     console.print(f"  [bold]composite:[/bold] {cfg_obj.modis_composite}  [bold]backend:[/bold] {cfg_obj.modis_backend}")
+    if prefill_year is not None:
+        _check_task_dates_in_year(tasks, prefill_year)
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
 
     cfg = BatchConfig(
@@ -3759,7 +3893,11 @@ def batch_modis_cube(
         log_every=log_every,
     )
 
-    final = run_modis_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    final = run_modis_cube_batch(
+        tasks, archive_root=archive, cfg=cfg, storage_options=storage_options, prefill_year=prefill_year
+    )
+    if prefill_year is not None:
+        _validate_prefilled_axis(archive, "modis", tasks, prefill_year, storage_options)
     ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
 
 
@@ -3933,6 +4071,16 @@ def batch_gfm_cube(
     db_path: Path = typer.Option(Path("gfm_cube_tracker.db"), "--db-path", help="SQLite resume database path."),
     retries: int = typer.Option(3, "--retries", help="Dask retry count per cell."),
     log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+    prefill_year: int | None = typer.Option(
+        None,
+        "--prefill-year",
+        help="Pre-fill the time axis with every day of this year (auto-detected from zarr/<YYYY> roots).",
+    ),
+    no_prefill: bool = typer.Option(
+        False,
+        "--no-prefill",
+        help="Disable time-axis prefill (overrides auto-detection and --prefill-year).",
+    ),
 ) -> None:
     """Build the GFM datacube from the catalog — resume-safe and streaming.
 
@@ -3940,6 +4088,11 @@ def batch_gfm_cube(
     coordinator streams each result into the consolidated Zarr cube. Every
     finished cell is recorded in --db-path, so the run can be interrupted and
     resumed.
+
+    With a ``zarr/<YYYY>`` archive root the ``time`` axis is pre-filled with
+    every day of the year (365/366 slots) by default, so later backfills land
+    in pre-existing slots; pass ``--no-prefill`` to disable, or
+    ``--prefill-year`` to override the auto-detected year.
 
     Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
 
@@ -3977,6 +4130,9 @@ def batch_gfm_cube(
             raise typer.Exit(code=1)
         storage_options = {"endpoint_url": ecmwf_profile.endpoint_url}
 
+    # ── Resolve time-axis prefill (--prefill-year / auto-detect / --no-prefill)
+    prefill_year = _resolve_prefill_year(archive, prefill_year, no_prefill)
+
     info(f"Loading catalog from {inventory} …")
     df = slice_partition(load_inventory(inventory), partition)
     tasks = to_tasks(df)
@@ -3989,6 +4145,8 @@ def batch_gfm_cube(
         f"[bold]resampling:[/bold] {cfg_obj.gfm_resampling}  "
         f"[bold]window size:[/bold] {cfg_obj.gfm_window_size}"
     )
+    if prefill_year is not None:
+        _check_task_dates_in_year(tasks, prefill_year)
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
 
     cfg = BatchConfig(
@@ -4001,7 +4159,11 @@ def batch_gfm_cube(
         log_every=log_every,
     )
 
-    final = run_gfm_cube_batch(tasks, archive_root=archive, cfg=cfg, storage_options=storage_options)
+    final = run_gfm_cube_batch(
+        tasks, archive_root=archive, cfg=cfg, storage_options=storage_options, prefill_year=prefill_year
+    )
+    if prefill_year is not None:
+        _validate_prefilled_axis(archive, "gfm", tasks, prefill_year, storage_options)
     ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
 
 

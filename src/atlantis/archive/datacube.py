@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import zarr
+from loguru import logger
 
 from atlantis.archive import grid
 
@@ -39,6 +40,20 @@ def date_to_int(value: date | datetime | np.datetime64, epoch: str) -> int:
     d = np.datetime64(value, "D")
     base = np.datetime64(epoch, "D")
     return int((d - base) / np.timedelta64(1, "D"))
+
+
+def decode_axis_dates(group: zarr.Group) -> list[date]:
+    """Decode a group's ``time`` axis into :class:`datetime.date` (CF units).
+
+    The single shared int→date decode for the cube's ``time`` axis — used by
+    the update flow and the CLI's post-run validation so the epoch handling
+    cannot drift from :func:`epoch_units` / :func:`date_to_int`. Order is
+    preserved (not sorted); callers that need a sorted axis sort themselves.
+    """
+    times = np.asarray(group["time"][:], dtype="int64")
+    units = group["time"].attrs.get("units", epoch_units("2020-01-01"))
+    epoch = date.fromisoformat(str(units).rsplit("since ", 1)[-1].strip())
+    return [epoch + timedelta(days=int(t)) for t in times]
 
 
 def _crs_grid_mapping_attrs() -> dict[str, Any]:
@@ -83,9 +98,9 @@ def ensure_source_group(
         scale_factor: CF ``scale_factor`` applied to ``water_fraction``.
         time_units: CF time units string for the ``time`` coordinate.
         prefill_year: If set, pre-fill the ``time`` axis with the full
-            calendar year (366 metadata-only slots) right after the data
-            arrays are ensured, so any event date lands in a pre-existing
-            slot and writes never move the axis.
+            calendar year (exactly 365 or 366 metadata-only slots) right after
+            the data arrays are ensured, so any event date lands in a
+            pre-existing slot and writes never move the axis.
 
     Returns:
         The per-source :class:`zarr.Group`.
@@ -159,31 +174,60 @@ def _ensure_data_arrays(
 def prefill_year_axis(group: zarr.Group, year: int, time_units: str) -> bool:
     """Pre-fill the ``time`` axis with every day of *year* (metadata-only).
 
-    Resizes the time axis and every time-major data array to 366 slots and
-    writes the day integers, so any event date lands in a pre-existing slot:
-    writes never move the axis and no reindex is ever needed. Existing chunk
-    data is untouched (a V3 resize is shape/metadata only) — only use it on
-    empty groups (the 2025 scaffold, ``time`` shape 0 → 366) or fresh
-    creations; pre-filling a group with already-written data would leave that
-    data at its old index, misaligned with the new time values. Idempotent —
-    an axis already at 366 (or beyond) is left as-is. Unwritten slots read
-    NODATA.
+    Resizes the time axis and every time-major data array to the exact number
+    of days in *year* (365, or 366 in leap years) and writes the day integers,
+    so any event date lands in a pre-existing slot: writes never move the axis
+    and no reindex is ever needed. Existing chunk data is untouched (a V3
+    resize is shape/metadata only) — only use it on empty groups (the scaffold,
+    ``time`` shape 0) or fresh creations; pre-filling a group with
+    already-written data would leave that data at its old index, misaligned
+    with the new time values. Unwritten slots read NODATA.
+
+    On an actual resize the group marker attribute ``atlantis_time_prefill`` is
+    set to the year — downstream code (the MODIS update flow, CLI validation)
+    keys off it to tell prefilled axes from data-proven ones. The marker is
+    written **before** the resizes so an interrupted prefill leaves a marker
+    without a full axis (which downstream treats as a loud failure) instead of
+    a full axis without a marker (which it would silently treat as
+    data-proven). The marker is only written on a resize, so legacy prefilled
+    groups (no marker) remain detectable as non-prefilled; legacy 366-slot
+    groups for 365-day years are left as-is (idempotent no-op; the stray slot
+    is harmless).
+
+    Idempotent: an axis already at the full day count (or beyond) is left
+    as-is. A group with ``0 < n < days`` slots has partial data and is skipped
+    with a warning — pre-filling it would leave that data at its old index,
+    misaligned with the new time values.
 
     Returns:
         True if the axis was resized (metadata changed); False for a no-op.
     """
-    epoch = str(time_units).rsplit("since ", 1)[-1].strip()
+    days = (date(year + 1, 1, 1) - date(year, 1, 1)).days
     time_arr = group["time"]
     n = int(time_arr.shape[0])
-    if n >= 366:
+    if n >= days:
         return False
-    days = np.asarray([date_to_int(date(year, 1, 1) + timedelta(days=i), epoch) for i in range(366)], dtype="int64")
-    time_arr.resize((366,))
-    time_arr[:] = days
+    if n > 0:
+        logger.warning(
+            "skipping time-axis prefill for year {}: group already has {} of {} slots filled; "
+            "pre-filling a partially-written group would misalign existing data",
+            year,
+            n,
+            days,
+        )
+        return False
+    group.attrs["atlantis_time_prefill"] = str(year)
+    epoch = str(time_units).rsplit("since ", 1)[-1].strip()
+    day_ints = np.asarray(
+        [date_to_int(date(year, 1, 1) + timedelta(days=i), epoch) for i in range(days)],
+        dtype="int64",
+    )
+    time_arr.resize((days,))
+    time_arr[:] = day_ints
     for name in group.array_keys():
         arr = group[name]
         if len(arr.shape) == 3 and arr.shape[0] == n:
-            arr.resize((366, arr.shape[1], arr.shape[2]))
+            arr.resize((days, arr.shape[1], arr.shape[2]))
     return True
 
 

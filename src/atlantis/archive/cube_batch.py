@@ -163,6 +163,7 @@ def run_viirs_cube_batch(
     archive_config: Any = None,
     storage_options: dict[str, Any] | None = None,
     source_id: str = "viirs",
+    prefill_year: int | None = None,
 ) -> dict[str, Any]:
     """Build the VIIRS datacube from a catalogue, resume-safe and streaming.
 
@@ -180,6 +181,9 @@ def run_viirs_cube_batch(
         archive_config: Optional :class:`~atlantis.config.ArchiveConfig`.
         storage_options: fsspec options for a remote ``archive_root``.
         source_id: Cube group name (default ``"viirs"``).
+        prefill_year: Pre-fill the ``time`` axis with the full calendar year
+            (metadata-only) when the group is opened, so every event date
+            lands in a pre-existing slot.
 
     Returns:
         Final tracker stats for the run.
@@ -198,6 +202,7 @@ def run_viirs_cube_batch(
             "snow_ice",
             "shadow",
         ),
+        prefill_year=prefill_year,
     ) as session:
 
         def consume(payload: dict[str, Any]) -> str:
@@ -215,6 +220,7 @@ def run_modis_cube_batch(
     archive_config: Any = None,
     storage_options: dict[str, Any] | None = None,
     source_id: str = "modis",
+    prefill_year: int | None = None,
 ) -> dict[str, Any]:
     """Build the MODIS datacube from a catalog, resume-safe and streaming.
 
@@ -230,6 +236,9 @@ def run_modis_cube_batch(
         archive_config: Optional :class:`~atlantis.config.ArchiveConfig`.
         storage_options: fsspec options for a remote ``archive_root``.
         source_id: Cube group name (default ``"modis"``).
+        prefill_year: Pre-fill the ``time`` axis with the full calendar year
+            (metadata-only) when the group is opened, so every event date
+            lands in a pre-existing slot.
 
     Returns:
         Final tracker stats for the run.
@@ -239,7 +248,7 @@ def run_modis_cube_batch(
 
     writer = ArchiveWriter(archive_root, archive_config, storage_options=storage_options)
     var_names = ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood")
-    with writer.session(source_id, var_names) as session:
+    with writer.session(source_id, var_names, prefill_year=prefill_year) as session:
 
         def consume(payload: dict[str, Any]) -> str:
             session.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
