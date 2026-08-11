@@ -10,6 +10,11 @@ integer :class:`~atlantis.archive.grid.IndexWindow` and a time index, so
 concurrent workers touching disjoint dates/regions never collide. Extending the
 ``time`` axis is a metadata operation and must be performed by a single
 coordinator (the archive CLI runs single-process, satisfying this).
+
+**Config-identity guarantee**: ``chunk``/``shard``/``scale_factor``/``time_epoch``
+are fixed for a group the first time it is written and recorded in its
+``archive_config`` attr; :func:`ensure_source_group` raises
+:class:`ConfigMismatchError` on any later drift (see ``docs/archive/zarr-spec.md``).
 """
 
 from __future__ import annotations
@@ -27,6 +32,45 @@ if TYPE_CHECKING:
 
 #: Nodata sentinel shared with the harmonised GeoTIFF encoding.
 NODATA: int = 255
+
+#: Bounded group attr recording the config values baked into a group at creation.
+_CONFIG_ATTR = "archive_config"
+
+
+class ConfigMismatchError(ValueError):
+    """Raised when a group's recorded archive config differs from the caller's.
+
+    ``chunk``/``shard`` are fixed into each array's storage layout at creation,
+    and ``scale_factor``/``time_units`` are baked into every value already
+    encoded under them — a later write with different values would silently
+    misencode or misalign data rather than fail loudly. See the "config-identity
+    guarantee" in ``docs/archive/zarr-spec.md``.
+    """
+
+
+def _config_fingerprint(chunk: int, shard: int | None, scale_factor: float, time_units: str) -> dict[str, Any]:
+    """Bounded fingerprint of the config values a group's arrays are built from."""
+    return {"chunk_size": chunk, "shard_size": shard, "scale_factor": scale_factor, "time_units": time_units}
+
+
+def _verify_config_fingerprint(group: zarr.Group, source_id: str, fingerprint: dict[str, Any]) -> None:
+    """Enforce the config-identity guarantee against an existing group.
+
+    A group created before this guard shipped has no recorded fingerprint —
+    adopt the caller's config as the established baseline once instead of
+    failing on archives that predate this check.
+    """
+    recorded = group.attrs.get(_CONFIG_ATTR)
+    if recorded is None:
+        group.attrs[_CONFIG_ATTR] = fingerprint
+        return
+    if dict(recorded) != fingerprint:
+        raise ConfigMismatchError(
+            f"ArchiveConfig drift for group {source_id!r}: recorded {recorded} but caller passed "
+            f"{fingerprint}. Changing chunk/shard size, scale_factor, or time_epoch against an "
+            "already-written archive silently misencodes or misaligns data — see the "
+            "'config-identity guarantee' in docs/archive/zarr-spec.md."
+        )
 
 
 def epoch_units(epoch: str) -> str:
@@ -89,9 +133,15 @@ def ensure_source_group(
 
     Returns:
         The per-source :class:`zarr.Group`.
+
+    Raises:
+        ConfigMismatchError: If an existing group's recorded config
+            (chunk/shard/scale/epoch) differs from the values passed here.
     """
+    fingerprint = _config_fingerprint(chunk, shard, scale_factor, time_units)
     if source_id in root:
         group = root[source_id]
+        _verify_config_fingerprint(group, source_id, fingerprint)
         _ensure_data_arrays(group, var_names, chunk=chunk, shard=shard, scale_factor=scale_factor)
         if prefill_year is not None:
             prefill_year_axis(group, prefill_year, time_units)
@@ -119,7 +169,7 @@ def ensure_source_group(
     _ensure_data_arrays(group, var_names, chunk=chunk, shard=shard, scale_factor=scale_factor)
     if prefill_year is not None:
         prefill_year_axis(group, prefill_year, time_units)
-    group.attrs.update({"crs": grid.GLOBAL_CRS, "atlantis_events": {}})
+    group.attrs.update({"crs": grid.GLOBAL_CRS, "atlantis_events": {}, _CONFIG_ATTR: fingerprint})
     return group
 
 

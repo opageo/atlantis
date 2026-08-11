@@ -124,6 +124,43 @@ class TestArchiveWriter:
         assert attrs["atlantis_events"] == {}
 
 
+# ── Config-identity guarantee ──────────────────────────────────────────────────
+
+
+class TestConfigIdentityGuarantee:
+    def test_same_config_repeated_write_ok(self, tmp_path, simple_dataset):
+        writer = ArchiveWriter(tmp_path)
+        writer.write(simple_dataset, "viirs", time=date(2020, 1, 1))
+        writer.write(simple_dataset, "viirs", time=date(2020, 1, 2))  # no raise
+
+    def test_chunk_drift_raises(self, tmp_path, simple_dataset):
+        from atlantis.archive.datacube import ConfigMismatchError
+
+        ArchiveWriter(tmp_path).write(simple_dataset, "viirs", time=date(2020, 1, 1))
+        drifted = ArchiveWriter(tmp_path, ArchiveConfig(chunk_size=128, shard_size=1024))
+        with pytest.raises(ConfigMismatchError, match="ArchiveConfig drift"):
+            drifted.write(simple_dataset, "viirs", time=date(2020, 1, 2))
+
+    def test_scale_factor_drift_raises(self, tmp_path, simple_dataset):
+        from atlantis.archive.datacube import ConfigMismatchError
+
+        ArchiveWriter(tmp_path).write(simple_dataset, "viirs", time=date(2020, 1, 1))
+        drifted = ArchiveWriter(tmp_path, ArchiveConfig(scale_factor=0.1))
+        with pytest.raises(ConfigMismatchError, match="ArchiveConfig drift"):
+            drifted.write(simple_dataset, "viirs", time=date(2020, 1, 2))
+
+    def test_pre_existing_group_without_fingerprint_adopts_baseline(self, tmp_path, simple_dataset):
+        """A group written before this guard shipped has no recorded fingerprint yet."""
+        import zarr
+
+        store = ArchiveWriter(tmp_path).write(simple_dataset, "viirs", time=date(2020, 1, 1))
+        group = zarr.open_group(store, mode="a")["viirs"]
+        del group.attrs["archive_config"]
+
+        ArchiveWriter(tmp_path).write(simple_dataset, "viirs", time=date(2020, 1, 2))  # no raise
+        assert "archive_config" in zarr.open_group(store, mode="r")["viirs"].attrs
+
+
 # ── ArchiveReader (datacube) ──────────────────────────────────────────────────
 
 

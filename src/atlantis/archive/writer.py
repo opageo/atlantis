@@ -143,6 +143,9 @@ class ArchiveWriter:
         Raises:
             ValueError: If the dataset is empty, not grid-aligned, or 2-D without
                 a ``time`` / ``event``.
+            ConfigMismatchError: If ``config`` (chunk/shard/scale/epoch) differs
+                from what this group was created with — see the config-identity
+                guarantee in ``docs/archive/zarr-spec.md``.
         """
         if ensure_masks:
             dataset = self._ensure_masks(dataset)
@@ -189,6 +192,11 @@ class ArchiveWriter:
 
         Returns:
             A :class:`_WriteSession` bound to this writer.
+
+        Raises:
+            ConfigMismatchError: If ``config`` (chunk/shard/scale/epoch) differs
+                from what this group was created with — see the config-identity
+                guarantee in ``docs/archive/zarr-spec.md``.
         """
         return _WriteSession(self, source_id, list(var_names), prefill_year=prefill_year)
 
