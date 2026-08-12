@@ -120,6 +120,20 @@ For each resolved year, in chronological order, under the year lock:
    `end = today - availability lag` (weekly defaults: 14 / 7 days). Windows
    spanning 31 December split across both years; each year runs under its own
    lock, tracker, and manifest.
+
+   **Catch-up guardrail** — an auto-resolved window (no explicit
+   `--start/--end`) with more than 31 days of backlog is capped to the
+   **newest 31 days**, and the run warns loudly: the older backlog is _not_
+   fetched automatically. Backfill it with explicit `--start/--end` windows
+   (which are never capped).
+
+   When the current year has no tracker baseline yet (fresh year), the window
+   also reaches back into the previous year, so a December backlog and the
+   new year's first days are both covered automatically: each year runs under
+   its own lock, tracker, and manifest, and a new year is prepared on the
+   fly — its catalogue built, its `time` axis pre-filled (marker
+   `atlantis_time_prefill`), and its dates ingested.
+
 2. **Catalogue refresh** — build the fresh LAADS range locally, merge with the
    existing yearly catalogue, dedupe on `(date, h, v)` (the freshest row wins),
    drop rows outside the year, validate schema/coverage, write a local
@@ -141,6 +155,13 @@ For each resolved year, in chronological order, under the year lock:
    `OrderedConsume`, which buffers payloads and only writes a date once every
    earlier date in the window is fully resolved. New time slots are therefore
    always appended in ascending order regardless of Dask completion order.
+   On a **new year** (no archive group yet) the writer session pre-fills the
+   `time` axis with the full year (365/366 slots, marker
+   `atlantis_time_prefill`) before the first write, so every date lands in a
+   pre-existing slot — backfills can never disturb the axis, and the
+   append-only hole check (step 4) is inert on prefilled years. Years whose
+   axis already exists are untouched: a full axis is a no-op and a
+   partially-built one is skipped by the prefill data guard.
 7. **Validation** — every expected task `DONE` and none `FAILED`; expected
    dates present on the axis; axis strictly ascending; a sample of DONE tile
    windows checked for all-NODATA (warning only).
@@ -188,8 +209,9 @@ one-off, not part of the weekly path.
   readable in any terminal) and a state-detail section with day
   counts and the full contiguous range list per state, alongside
   expected / incomplete / failed task totals.
-- **Prefilled years** (marker `atlantis_time_prefill`, i.e. built via
-  `batch modis cube run` with a `zarr/<YYYY>` archive root — see
+- **Prefilled years** (marker `atlantis_time_prefill`, written by
+  `batch modis cube run` on a `zarr/<YYYY>` root or — since the update flow
+  pre-fills by default — by the update itself on a new year's first run; see
   [cube-build.md](./cube-build.md) → "Pre-filled time axis for year builds"):
   the report sets `prefilled_year: true` and computes **missing date ranges
   from the tracker** — dates whose expected tasks are not all `DONE`/`FAILED`
@@ -234,11 +256,13 @@ The first scheduled work is deliberately staged:
    nothing, so seeding would mark never-written tasks `DONE` and skip them
    forever. For a prefilled year, re-run the (resume-safe) cube build to
    rebuild a lost tracker, or use the tracker from the original build.
-3. **Phase 2 — initial 2026 catch-up:** builds and publishes
-   `modis_archive_catalog_2026.parquet` for `2026-01-01` through
-   `today - lag`, then ingests in ascending order. Establishes the
-   chronological 2026 time axis, the yearly catalogue, and the tracker
-   baseline.
+3. **Phase 2 — initial 2026 catch-up:** the first run builds and publishes
+   `modis_archive_catalog_2026.parquet` for its window and ingests in
+   ascending order, pre-filling the 2026 time axis (365 slots, marker
+   `atlantis_time_prefill`) and establishing the tracker baseline. If the
+   backlog exceeds a month, the catch-up guardrail (§4.1) caps the first run
+   to the newest 31 days and warns — backfill the rest with explicit
+   `--start/--end` windows (e.g. `--start 2026-01-01 --end 2026-06-30`).
 4. **Phase 3 — weekly runs:** start the VM and invoke
    `atlantis archive modis update`. The effective window is
    `max(2026-01-01, last_complete + 1 - lookback)` → `today - lag`; the

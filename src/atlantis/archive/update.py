@@ -54,6 +54,11 @@ MODIS_VAR_NAMES = ("water_fraction", "exclusion_mask", "reference_water", "recur
 #: Lock is stale when its owning PID is gone or it is older than this.
 LOCK_MAX_AGE = timedelta(hours=24)
 
+#: Catch-up guardrail: an auto-resolved window processes at most this many
+#: calendar days, anchored at the newest end. Larger backlogs warn and need
+#: explicit ``--start/--end`` backfill windows.
+MAX_CATCHUP_DAYS = 31
+
 _REQUIRED_CATALOGUE_COLUMNS = ("date", "h", "v", "task_id", "source_uri")
 
 
@@ -276,7 +281,16 @@ def contiguous_complete_end(df: pd.DataFrame, done_ids: set[str], from_date: dat
 
 
 def resolve_windows(opts: UpdateOptions) -> list[YearWindow]:
-    """Resolve the requested year/window into per-year windows, chronological."""
+    """Resolve the requested year/window into per-year windows, chronological.
+
+    Auto-resolved windows (no explicit ``--start/--end``) are capped by the
+    catch-up guardrail: a backlog longer than :data:`MAX_CATCHUP_DAYS` runs
+    only the newest days and warns the operator. Explicit windows are
+    deliberate backfills and are never capped. A fresh current year reaches
+    back into the previous year, so a December backlog and the new year's
+    first days are both covered automatically (the new year is prepared —
+    catalogue + prefill — by :func:`_run_year`).
+    """
     today = opts.today or date.today()
     lag_end = today - timedelta(days=opts.availability_lag_days)
 
@@ -294,6 +308,10 @@ def resolve_windows(opts: UpdateOptions) -> list[YearWindow]:
         start = _window_start(opts, opts.year, last)
         end = min(lag_end, date(opts.year, 12, 31))
         kind = "catch-up" if last is None else "weekly"
+        raw = start
+        start, capped = _cap_window(start, end)
+        if capped:
+            _warn_catchup(raw, start, end)
         if start > end:
             return []
         return [YearWindow(opts.year, start, end, kind)]
@@ -301,7 +319,14 @@ def resolve_windows(opts: UpdateOptions) -> list[YearWindow]:
     current = lag_end.year
     last = last_complete_for_year(opts, current)
     start = _window_start(opts, current, last)
+    if last is None:
+        prev = _window_start(opts, current - 1, last_complete_for_year(opts, current - 1))
+        start = min(start, prev)
     end = lag_end
+    raw = start
+    start, capped = _cap_window(start, end)
+    if capped:
+        _warn_catchup(raw, start, end)
     if start > end:
         return []
     return _clip_years(start, end, "weekly")
@@ -311,6 +336,21 @@ def _window_start(opts: UpdateOptions, year: int, last: date | None) -> date:
     if last is None:
         return date(year, 1, 1)
     return max(date(year, 1, 1), last + timedelta(days=1 - opts.lookback_days))
+
+
+def _cap_window(start: date, end: date) -> tuple[date, bool]:
+    """Cap *start* so the window spans at most MAX_CATCHUP_DAYS, anchored at *end*."""
+    capped = max(start, end - timedelta(days=MAX_CATCHUP_DAYS - 1))
+    return capped, capped > start
+
+
+def _warn_catchup(raw_start: date, start: date, end: date) -> None:
+    """Operator-visible warning when the guardrail caps an auto-resolved window."""
+    print(
+        f"⚠  {(end - raw_start).days + 1} day(s) of backlog exceed the {MAX_CATCHUP_DAYS}-day "
+        f"guardrail — processing only the newest {MAX_CATCHUP_DAYS} day(s) ({start} → {end}); "
+        "backfill older dates with explicit --start/--end windows"
+    )
 
 
 def _clip_years(start: date, end: date, kind: str) -> list[YearWindow]:
@@ -587,7 +627,7 @@ def run_window_batch(opts: UpdateOptions, year: int, tasks: list[dict[str, Any]]
         retries=opts.retries,
         log_every=opts.log_every,
     )
-    with writer.session("modis", list(MODIS_VAR_NAMES)) as session:
+    with writer.session("modis", list(MODIS_VAR_NAMES), prefill_year=year) as session:
         ordered = OrderedConsume(session, db_path, tasks)
 
         def consume(payload: dict[str, Any]) -> str:
