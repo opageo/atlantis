@@ -13,7 +13,7 @@ GFM encoding (verified against EODC STAC COGs):
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, TypeVar
@@ -431,11 +431,14 @@ class GfmProcessedTile:
     crs: str
     shape: tuple[int, int]
     cloud_fraction: float = 0.0
+    usable_sar: bool = True
     # Classified fields
     water_fraction: np.ndarray | None = None
     flood_fraction: np.ndarray | None = None
     reference_water: np.ndarray | None = None
     extra_layers: dict[str, np.ndarray] = field(default_factory=dict)
+    diagnostics: dict[str, np.ndarray] = field(default_factory=dict)
+    coverage: GfmCoverageDiagnostics | None = None
     # Native / raw fields
     ensemble_flood_extent: np.ndarray | None = None
     reference_water_mask: np.ndarray | None = None
@@ -458,6 +461,30 @@ class GfmOutputPaths:
     ensemble_flood_extent: Path | None = None
     reference_water_mask: Path | None = None
     extra: dict[str, Path] = field(default_factory=dict)
+    diagnostics: dict[str, Path] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class GfmCoverageDiagnostics:
+    """Coverage facts for one processed GFM date group."""
+
+    date_token: str
+    item_count: int
+    item_ids: tuple[str, ...]
+    usable_item_count: int
+    flood_valid_pixels: int
+    water_valid_pixels: int
+    likelihood_valid_pixels: int
+    exclusion_valid_pixels: int
+    advisory_valid_pixels: int
+    skipped_windows: int = 0
+    aoi_native_bounds: tuple[float, float, float, float] | None = None
+    item_bboxes: dict[str, tuple[float, float, float, float]] = field(default_factory=dict)
+
+    @property
+    def has_usable_sar(self) -> bool:
+        """Whether at least one current flood/water source pixel was loaded."""
+        return self.flood_valid_pixels > 0 or self.water_valid_pixels > 0
 
 
 @dataclass(frozen=True)
@@ -467,6 +494,7 @@ class GfmProcessResult:
     processed: GfmProcessedTile
     paths: GfmOutputPaths | None
     metadata: TileMetadata
+    coverage: GfmCoverageDiagnostics | None = None
 
 
 class GfmRasterProcessor:
@@ -496,6 +524,7 @@ class GfmRasterProcessor:
         classify: bool = True,
         max_retries: int = 3,
         window_size: int | None = None,
+        persist_diagnostics: bool = False,
     ) -> None:
         """Initialize the GFM raster processor.
 
@@ -527,17 +556,21 @@ class GfmRasterProcessor:
                 ``scripts/verify_gfm_windowed_correctness.py`` for the
                 correctness gate (flood_fraction byte-exact; water_fraction
                 has a tiny gated residual).
+            persist_diagnostics: Retain classified count rasters on the
+                processed tile and write them as validation artifacts.
         """
         self.bbox = bbox
         self.coarsen_factor = coarsen_factor
         self.resampling = resampling
         self.classify = classify
         self.max_retries = max_retries
+        self.persist_diagnostics = persist_diagnostics
         if window_size is not None and (window_size <= 0 or window_size % coarsen_factor != 0):
             raise ValueError(
                 f"window_size ({window_size}) must be a positive exact multiple of coarsen_factor ({coarsen_factor})"
             )
         self.window_size = window_size
+        self.last_coverage: GfmCoverageDiagnostics | None = None
         # GFM processed/ is written at the coarsen-applied native resolution
         # (~80 m for coarsen_factor=4), expressed in degrees. The downstream
         # --harmonise step resamples this to the canonical 1-arcmin grid, so GFM
@@ -661,7 +694,12 @@ class GfmRasterProcessor:
             # to the outer LocalCluster while it is already running GFM cells.
             # That nested scheduling multiplies native GDAL buffers across
             # workers and defeats the one-cell-per-worker memory bound.
-            return xx.load(scheduler="synchronous")
+            xx = xx.load(scheduler="synchronous")
+            for band in load_bands:
+                if band in xx:
+                    xx[band].attrs["nodata"] = GFM_NODATA
+                    xx[band].attrs["_FillValue"] = GFM_NODATA
+            return xx
 
         return self._retry_read(
             _do_load,
@@ -800,6 +838,22 @@ class GfmRasterProcessor:
         ensemble_likelihood: np.ndarray | None = None
         ref_coords = None
         ref_dims = None
+        skipped_window_count = 0
+        usable_item_count = 0
+        flood_valid_pixels = 0
+        water_valid_pixels = 0
+        likelihood_valid_pixels = 0
+        exclusion_valid_pixels = 0
+        advisory_valid_pixels = 0
+        item_bboxes = {
+            item.id: tuple(float(v) for v in item.bbox) for item in items if getattr(item, "bbox", None) is not None
+        }
+        try:
+            from rasterio.warp import transform_bounds
+
+            aoi_native_bounds = tuple(transform_bounds("EPSG:4326", crs_src, *self.bbox))
+        except Exception:
+            aoi_native_bounds = None
 
         if self.window_size is not None:
             logger.debug(
@@ -819,6 +873,12 @@ class GfmRasterProcessor:
         )
 
         for idx, item in enumerate(items):
+            logger.info(
+                "GFM item {}/{} starting: {}",
+                idx + 1,
+                len(items),
+                item.id,
+            )
             # Windowed processing: tile this item's full native grid into
             # pixel-aligned windows and run the load -> mask -> coarsen ->
             # reproject body once per window instead of once for the whole
@@ -870,6 +930,7 @@ class GfmRasterProcessor:
                 any_window_contributed = False
 
             skipped_windows = 0
+            item_has_sar = False
             for window in windows:
                 if window is None:
                     window_aoi = aoi
@@ -897,6 +958,12 @@ class GfmRasterProcessor:
                     continue
                 if crop_bounds is not None:
                     xx_masks = _crop_to_native_bounds(xx_masks, crop_bounds, resolution)
+
+                flood_values = np.asarray(_squeeze_time(xx_masks["ensemble_flood_extent"]).values)
+                water_values = np.asarray(_squeeze_time(xx_masks["ensemble_water_extent"]).values)
+                flood_valid_pixels += int(np.count_nonzero(flood_values != GFM_NODATA))
+                water_valid_pixels += int(np.count_nonzero(water_values != GFM_NODATA))
+                item_has_sar |= bool(np.any(flood_values != GFM_NODATA) or np.any(water_values != GFM_NODATA))
 
                 # Build per-class 0/1 masks at native resolution, then mean-pool to
                 # the coarsened grid. Mean-pooling a binary mask yields the fraction
@@ -961,6 +1028,13 @@ class GfmRasterProcessor:
                     continue
                 if crop_bounds is not None:
                     xx_codes = _crop_to_native_bounds(xx_codes, crop_bounds, resolution)
+
+                likelihood_values = np.asarray(_squeeze_time(xx_codes["ensemble_likelihood"]).values)
+                exclusion_values = np.asarray(_squeeze_time(xx_codes["exclusion_mask"]).values)
+                advisory_values = np.asarray(_squeeze_time(xx_codes["advisory_flags"]).values)
+                likelihood_valid_pixels += int(np.count_nonzero(likelihood_values != GFM_NODATA))
+                exclusion_valid_pixels += int(np.count_nonzero(exclusion_values != GFM_NODATA))
+                advisory_valid_pixels += int(np.count_nonzero(advisory_values != GFM_NODATA))
 
                 code_bands = xr.Dataset(
                     {
@@ -1027,6 +1101,10 @@ class GfmRasterProcessor:
                     likelihood,
                 )
 
+            skipped_window_count += skipped_windows
+            if item_has_sar:
+                usable_item_count += 1
+
             if windowed and any_window_contributed:
                 # One reprojection for the item's fully assembled native-CRS
                 # masks — see the "assemble, don't buffer" note above.
@@ -1062,11 +1140,61 @@ class GfmRasterProcessor:
                     skipped_windows,
                     len(windows),
                 )
-            logger.debug("Item {}/{} processed ({} window(s))", idx + 1, len(items), len(windows))
+            logger.info(
+                "GFM item {}/{} processed: {} window(s), {} skipped",
+                idx + 1,
+                len(items),
+                len(windows),
+                skipped_windows,
+            )
 
         if flood_count is None or valid_count is None:
-            logger.warning("No valid data found in {} items", len(items))
-            return None
+            logger.warning("No usable SAR data found in {} items", len(items))
+            shape = (self._dst_height, self._dst_width)
+            processed = GfmProcessedTile(
+                water_fraction=np.full(shape, np.nan, dtype=np.float32),
+                flood_fraction=np.full(shape, np.nan, dtype=np.float32),
+                reference_water=np.full(shape, GFM_NODATA, dtype=np.uint8),
+                extra_layers={
+                    "exclusion_mask": np.full(shape, GFM_NODATA, dtype=np.uint8),
+                    "advisory_flags": np.full(shape, GFM_NODATA, dtype=np.uint8),
+                    "ensemble_likelihood": np.full(shape, GFM_NODATA, dtype=np.uint8),
+                },
+                transform=self._dst_transform,
+                crs="EPSG:4326",
+                shape=shape,
+                cloud_fraction=1.0,
+                usable_sar=False,
+            )
+            self.last_coverage = GfmCoverageDiagnostics(
+                date_token=date_token,
+                item_count=len(items),
+                item_ids=tuple(str(item.id) for item in items),
+                usable_item_count=usable_item_count,
+                flood_valid_pixels=flood_valid_pixels,
+                water_valid_pixels=water_valid_pixels,
+                likelihood_valid_pixels=likelihood_valid_pixels,
+                exclusion_valid_pixels=exclusion_valid_pixels,
+                advisory_valid_pixels=advisory_valid_pixels,
+                skipped_windows=skipped_window_count,
+                aoi_native_bounds=aoi_native_bounds,
+                item_bboxes=item_bboxes,
+            )
+            return GfmProcessResult(
+                processed=processed,
+                paths=None,
+                metadata=TileMetadata(
+                    event_id=event_id,
+                    source_id="gfm",
+                    fetch_timestamp=datetime.now(timezone.utc),
+                    crs="EPSG:4326",
+                    resolution=self.reprojector.target_resolution,
+                    bbox=self._snapped_bounds,
+                    cloud_fraction=1.0,
+                    permanent_water_mask_available=True,
+                ),
+                coverage=self.last_coverage,
+            )
 
         # Compute derived products
         extra_layers: dict[str, np.ndarray] = {
@@ -1089,6 +1217,34 @@ class GfmRasterProcessor:
             reference_water_codes=reference_water_codes,
             extra_layers=extra_layers,
         )
+        self.last_coverage = GfmCoverageDiagnostics(
+            date_token=date_token,
+            item_count=len(items),
+            item_ids=tuple(str(item.id) for item in items),
+            usable_item_count=usable_item_count,
+            flood_valid_pixels=flood_valid_pixels,
+            water_valid_pixels=water_valid_pixels,
+            likelihood_valid_pixels=likelihood_valid_pixels,
+            exclusion_valid_pixels=exclusion_valid_pixels,
+            advisory_valid_pixels=advisory_valid_pixels,
+            skipped_windows=skipped_window_count,
+            aoi_native_bounds=aoi_native_bounds,
+            item_bboxes=item_bboxes,
+        )
+        processed = replace(
+            processed,
+            usable_sar=self.last_coverage.has_usable_sar,
+            coverage=self.last_coverage,
+            diagnostics=(
+                {
+                    ENSEMBLE_FLOOD_EXTENT_COUNT: flood_count.astype(np.float32, copy=True),
+                    ENSEMBLE_WATER_EXTENT_COUNT: water_count.astype(np.float32, copy=True),
+                    VALID_COUNT: valid_count.astype(np.float32, copy=True),
+                }
+                if self.persist_diagnostics
+                else {}
+            ),
+        )
 
         # Build metadata
         metadata = TileMetadata(
@@ -1107,7 +1263,7 @@ class GfmRasterProcessor:
         if write_outputs and output_dir is not None:
             paths = self._write_outputs(processed, event_id, date_token, output_dir)
 
-        return GfmProcessResult(processed=processed, paths=paths, metadata=metadata)
+        return GfmProcessResult(processed=processed, paths=paths, metadata=metadata, coverage=self.last_coverage)
 
     def _process_items_native(
         self,
@@ -1329,6 +1485,8 @@ class GfmRasterProcessor:
     def _reproject_likelihood_to_canonical_grid(self, likelihood: "xr.Dataset") -> "xr.Dataset":
         """Reproject native likelihood values to the canonical grid with averaging."""
         likelihood = _squeeze_time(likelihood)
+        likelihood["ensemble_likelihood"].attrs["nodata"] = np.nan
+        likelihood["ensemble_likelihood"].attrs["_FillValue"] = np.nan
         likelihood = likelihood.where(likelihood != GFM_NODATA, np.nan)
         return likelihood.rio.reproject(
             "EPSG:4326",
@@ -1486,10 +1644,14 @@ class GfmRasterProcessor:
             for name, array in processed.extra_layers.items():
                 spec = registry.get_native(name)
                 extra_paths[name] = _write_tif(array, name, spec.dtype, spec.nodata)
+            diagnostic_paths = {
+                name: _write_tif(array, name, "float32", -9999.0) for name, array in processed.diagnostics.items()
+            }
             return GfmOutputPaths(
                 ensemble_flood_extent=efe_path,
                 reference_water_mask=rwm_path,
                 extra=extra_paths,
+                diagnostics=diagnostic_paths,
             )
 
         # Classified mode — fractions as uint8 percent (0–100) nodata 255,
@@ -1511,12 +1673,16 @@ class GfmRasterProcessor:
         for name, array in processed.extra_layers.items():
             spec = registry.get_native(name)
             extra_paths[name] = _write_tif(array, name, spec.dtype, spec.nodata)
+        diagnostic_paths = {
+            name: _write_tif(array, name, "float32", -9999.0) for name, array in processed.diagnostics.items()
+        }
 
         return GfmOutputPaths(
             water_fraction=wf_path,
             flood_fraction=ff_path,
             reference_water=rw_path,
             extra=extra_paths,
+            diagnostics=diagnostic_paths,
         )
 
     @staticmethod

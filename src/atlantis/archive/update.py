@@ -410,6 +410,8 @@ def reconcile_window(
     year_dates: set[date],
     db_path: Path,
     warn: Callable[[str], None] = logger.warning,
+    *,
+    prefilled: bool = False,
 ) -> ReconcileReport:
     """Classify expected tasks vs tracker + archive; requeue DONE-but-missing.
 
@@ -418,6 +420,12 @@ def reconcile_window(
     after an operator-visible warning, and the watermark must not advance past
     it. Archive dates with no coverage in the *full-year* catalogue (not just
     the window) are reported as orphans (never deleted).
+
+    On a *prefilled* year (``atlantis_time_prefill`` marker) the axis holds
+    every day of the year by construction, so "on the axis but not in the
+    catalogue" is not evidence of stray data — pass ``prefilled=True`` to
+    skip the orphan computation (it would report the whole unwritten tail of
+    the year every run).
     """
     expected_ids = {t["task_id"] for t in tasks}
     done = {tid for tid, status in tracker_rows.items() if status == "DONE"}
@@ -441,7 +449,10 @@ def reconcile_window(
                 requeue(db_path, tid)
             report.requeued += len(ids)
 
-    report.orphan_dates = sorted(day for day in archive_dates if day not in year_dates)
+    if prefilled:
+        report.orphan_dates = []
+    else:
+        report.orphan_dates = sorted(day for day in archive_dates if day not in year_dates)
     report.pending = len(expected_ids - done - failed) - report.requeued
     return report
 
@@ -449,24 +460,45 @@ def reconcile_window(
 # ── Archive reads and validation ─────────────────────────────────────────────
 
 
-def read_archive_dates(opts: UpdateOptions, year: int) -> tuple[set[date], list[date]]:
+def read_archive_dates(
+    opts: UpdateOptions,
+    year: int,
+    group: Any | None = None,
+) -> tuple[set[date], list[date]]:
     """Return ``(dates on the year's modis time axis, sorted axis list)``.
 
     A year whose archive store does not exist yet (or has no ``modis`` group)
-    yields an empty axis.
+    yields an empty axis. Pass an already-opened *group* (e.g. from
+    :func:`_modis_group`, to also read the prefill marker) to avoid a second
+    store open.
     """
+    if group is None:
+        group = _modis_group(opts, year)
+    if group is None:
+        return set(), []
+    axis = sorted(datacube.decode_axis_dates(group))
+    return set(axis), axis
+
+
+def _modis_group(opts: UpdateOptions, year: int) -> Any | None:
+    """Open the year's ``modis`` group read-only, or None when absent."""
     import zarr
 
     store = store_for(archive_root(opts, year), "datacube.zarr", opts.storage_options)
     try:
-        group = datacube.open_root(store, mode="r")["modis"]
+        return datacube.open_root(store, mode="r")["modis"]
     except (KeyError, FileNotFoundError, zarr.errors.GroupNotFoundError):
-        return set(), []
-    times = np.asarray(group["time"][:], dtype="int64")
-    units = group["time"].attrs.get("units", "days since 2020-01-01")
-    epoch = date.fromisoformat(str(units).rsplit("since ", 1)[-1].strip())
-    axis = sorted(epoch + timedelta(days=int(t)) for t in times)
-    return set(axis), axis
+        return None
+
+
+def group_is_prefilled(group: Any) -> bool:
+    """True when *group* carries the full-year prefill marker.
+
+    The marker (``atlantis_time_prefill``) is written only by
+    :func:`~atlantis.archive.datacube.prefill_year_axis` on an actual resize,
+    so legacy prefilled groups without it count as non-prefilled.
+    """
+    return "atlantis_time_prefill" in group.attrs
 
 
 def check_holes(opts: UpdateOptions, window: YearWindow, expected_dates: set[date], archive_dates: set[date]) -> None:
@@ -688,11 +720,19 @@ def _run_year(opts: UpdateOptions, window: YearWindow, run_id: str) -> dict[str,
     backed_up = False
     try:
         with YearLock(opts, year):
-            archive_dates, axis = read_archive_dates(opts, year)
+            modis_group = _modis_group(opts, year)
+            prefilled = modis_group is not None and group_is_prefilled(modis_group)
+            archive_dates, axis = read_archive_dates(opts, year, modis_group)
             print(
                 f"[modis {year} {window.kind}] window {window.start} → {window.end} "
                 f"· archive {archive_root(opts, year)} · tracker {db} · axis {len(axis)} date(s)"
             )
+            if prefilled:
+                logger.info(
+                    "[modis {}] prefilled year: the time axis contains every day by construction, "
+                    "so the DONE-but-missing requeue heuristic is inert",
+                    year,
+                )
             if opts.dry_run:
                 return {**summary, "dry_run": True}
 
@@ -712,7 +752,7 @@ def _run_year(opts: UpdateOptions, window: YearWindow, run_id: str) -> dict[str,
             check_holes(opts, window, expected_dates, archive_dates)
 
             year_dates = {_to_date(d) for d in pd.to_datetime(df["date"]).dt.date}
-            report = reconcile_window(tasks, tracker_rows, archive_dates, year_dates, db)
+            report = reconcile_window(tasks, tracker_rows, archive_dates, year_dates, db, prefilled=prefilled)
             print(
                 f"[modis {year}] expected {report.expected} · DONE {report.done} · FAILED "
                 f"{report.failed} · missing {report.pending} · requeued {report.requeued} "
@@ -807,17 +847,31 @@ def seed_tracker(opts: UpdateOptions, year: int, *, dry_run: bool = False) -> di
     run processes only genuinely missing work. Idempotent: existing task rows
     are never overwritten.
 
+    On a prefilled year (``atlantis_time_prefill`` marker) axis dates are **not**
+    evidence of data — the axis holds every day by construction — so seeding is
+    refused: re-run the (resume-safe) cube build to rebuild the tracker, or use
+    the tracker from the original build.
+
     Raises:
-        UpdateError: When the year has no catalogue or no archive ``modis`` group.
+        UpdateError: When the year has no catalogue, no archive ``modis`` group,
+            or the group is prefilled.
     """
     db = tracker_path(opts, year)
     init_db(db)
     df = _load_year_catalogue(opts, year)
     if df is None:
         raise UpdateError(f"no catalogue found for {year}")
-    archive_dates, axis = read_archive_dates(opts, year)
+    group = _modis_group(opts, year)
+    archive_dates, axis = read_archive_dates(opts, year, group)
     if not axis:
         raise UpdateError(f"archive has no modis group for {year}")
+    if group is not None and group_is_prefilled(group):
+        raise UpdateError(
+            f"cannot seed tracker for {year}: the modis time axis is prefilled "
+            "(atlantis_time_prefill) — axis dates are not evidence of data; "
+            "re-run the (resume-safe) cube build to rebuild the tracker, or use "
+            "the tracker from the original build"
+        )
 
     dates = pd.to_datetime(df["date"]).dt.date
     seed_rows = df[dates.isin(set(axis))]
@@ -862,7 +916,10 @@ def status_report(opts: UpdateOptions, year: int) -> dict[str, Any]:
     report["catalogue_rows"] = None if df is None else int(len(df))
     report["watermark"] = last_complete_for_year(opts, year)
 
-    archive_dates, axis = read_archive_dates(opts, year)
+    group = _modis_group(opts, year)
+    archive_dates, axis = read_archive_dates(opts, year, group)
+    prefilled = group is not None and group_is_prefilled(group)
+    report["prefilled_year"] = prefilled
     if df is not None:
         tracker_rows = read_tracker(db) if db.exists() else {}
         report["date_states"] = date_states(df, tracker_rows)
@@ -871,7 +928,14 @@ def status_report(opts: UpdateOptions, year: int) -> dict[str, Any]:
         done_ids = {tid for tid, status in tracker_rows.items() if status == "DONE"}
         report["pending_tasks"] = int(len(set(df["task_id"]) - done_ids))
         expected_dates = set(pd.to_datetime(df["date"]).dt.date)
-        report["missing_ranges"] = date_ranges(sorted(expected_dates - archive_dates))
+        if prefilled:
+            # On a prefilled year the axis always contains every date, so
+            # missing work must come from the tracker: dates whose expected
+            # tasks are not all DONE/FAILED.
+            missing_dates = [d for d, state in report["date_states"].items() if state == "pending"]
+            report["missing_ranges"] = date_ranges(sorted(missing_dates))
+        else:
+            report["missing_ranges"] = date_ranges(sorted(expected_dates - archive_dates))
     else:
         report["date_states"] = {}
         report["state_counts"] = {}

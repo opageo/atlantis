@@ -24,6 +24,7 @@ def georeference_array(
     *,
     name: str,
     dtype: np.dtype,
+    nodata: int | float | None = None,
 ) -> "xr.DataArray":
     """Wrap a raw 2D array in a georeferenced :class:`xarray.DataArray`.
 
@@ -36,6 +37,8 @@ def georeference_array(
         crs: Coordinate reference system string (e.g. ``"EPSG:4326"``).
         name: DataArray name.
         dtype: Target dtype for the array.
+        nodata: Declared source nodata value. ``None`` means that the array
+            uses NaN (or has no declared sentinel).
 
     Returns:
         Georeferenced DataArray with ``(y, x)`` dims.
@@ -57,11 +60,15 @@ def georeference_array(
     )
     da.rio.write_crs(crs, inplace=True)
     da.rio.write_transform(transform, inplace=True)
+    if nodata is not None:
+        da.attrs["nodata"] = nodata
+        da.attrs["_FillValue"] = nodata
+        da.rio.write_nodata(nodata, inplace=True)
     return da
 
 
 def build_dataset(
-    variables: list[tuple[str, np.ndarray, np.dtype]],
+    variables: list[tuple[str, np.ndarray, np.dtype, int | float | None]],
     transform: "Affine",
     crs: str,
     *,
@@ -71,7 +78,7 @@ def build_dataset(
     """Assemble a georeferenced :class:`xarray.Dataset` from named arrays.
 
     Args:
-        variables: Ordered ``(name, array, dtype)`` triples to include.
+        variables: Ordered ``(name, array, dtype, nodata)`` tuples to include.
         transform: Affine transform for the output grid.
         crs: Coordinate reference system string.
         event_id: Flood event identifier (stored as attr).
@@ -83,7 +90,8 @@ def build_dataset(
     import xarray as xr
 
     data_vars = {
-        name: georeference_array(array, transform, crs, name=name, dtype=dtype) for name, array, dtype in variables
+        name: georeference_array(array, transform, crs, name=name, dtype=dtype, nodata=nodata)
+        for name, array, dtype, nodata in variables
     }
     dataset = xr.Dataset(data_vars)
     dataset.attrs["source_id"] = source_id
@@ -130,20 +138,37 @@ def dataset_from_processed(
         Georeferenced dataset with one variable per populated layer.
     """
     specs = registry.list_derived() if processed.is_classified else registry.list_native()
-    variables: list[tuple[str, np.ndarray, np.dtype]] = []
+    variables: list[tuple[str, np.ndarray, np.dtype, int | float | None]] = []
     seen: set[str] = set()
     for spec in specs:
         array = _layer_array(processed, spec.name)
         if array is None:
             continue
-        variables.append((spec.name, array, np.dtype(spec.dtype)))
+        variables.append((spec.name, array, np.dtype(spec.dtype), spec.nodata))
         seen.add(spec.name)
 
     # Carry any extra layers not described by a spec (defensive).
     extra = getattr(processed, "extra_layers", None) or {}
     for name, array in extra.items():
         if array is not None and name not in seen:
-            variables.append((name, array, np.asarray(array).dtype))
+            # Extras are normally native GFM code bands.  Their registry
+            # specification is authoritative when available; unknown extras
+            # retain NaN semantics for floats and use the conventional byte
+            # sentinel for integer code arrays.
+            extra_spec = registry.get(name) if name in registry else None
+            extra_nodata = (
+                extra_spec.nodata
+                if extra_spec is not None
+                else (255 if np.issubdtype(np.asarray(array).dtype, np.integer) else None)
+            )
+            variables.append((name, array, np.asarray(array).dtype, extra_nodata))
+
+    # Validation/debug diagnostics are deliberately kept separate from the
+    # production layer registry.  They are count rasters, not product bands.
+    diagnostics = getattr(processed, "diagnostics", None) or {}
+    for name, array in diagnostics.items():
+        if array is not None and name not in seen:
+            variables.append((name, array, np.asarray(array).dtype, -9999.0))
 
     return build_dataset(
         variables,

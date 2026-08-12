@@ -188,6 +188,13 @@ one-off, not part of the weekly path.
   readable in any terminal) and a state-detail section with day
   counts and the full contiguous range list per state, alongside
   expected / incomplete / failed task totals.
+- **Prefilled years** (marker `atlantis_time_prefill`, i.e. built via
+  `batch modis cube run` with a `zarr/<YYYY>` archive root — see
+  [cube-build.md](./cube-build.md) → "Pre-filled time axis for year builds"):
+  the report sets `prefilled_year: true` and computes **missing date ranges
+  from the tracker** — dates whose expected tasks are not all `DONE`/`FAILED`
+  — instead of `expected − axis` (the axis always contains every date, so the
+  axis-based computation would be empty by construction).
 - `atlantis archive modis status` (no `--year`) summarises **all** years with
   local state at once: one row per year (counts, watermark, axis sortedness,
   last run status) plus a one-line monthly overview strip (one block per
@@ -222,6 +229,11 @@ The first scheduled work is deliberately staged:
    the axis proves it was written; the mosaic cannot be decomposed per tile),
    and catalogue dates missing from the axis stay pending and are reported.
    The next `update` run then only processes genuinely missing work.
+   **`seed-tracker` refuses a prefilled year** (marker
+   `atlantis_time_prefill`): on a full-year axis, "date on axis" proves
+   nothing, so seeding would mark never-written tasks `DONE` and skip them
+   forever. For a prefilled year, re-run the (resume-safe) cube build to
+   rebuild a lost tracker, or use the tracker from the original build.
 3. **Phase 2 — initial 2026 catch-up:** builds and publishes
    `modis_archive_catalog_2026.parquet` for `2026-01-01` through
    `today - lag`, then ingests in ascending order. Establishes the

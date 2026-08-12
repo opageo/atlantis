@@ -126,6 +126,63 @@ def bounds_to_window(west: float, south: float, east: float, north: float) -> In
     return IndexWindow(row_start, row_stop, col_start, col_stop)
 
 
+def aoi_blocks(
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+    block_size: int = 512,
+) -> list[IndexWindow]:
+    """Return the origin-anchored ``block_size``-arcmin blocks covering a bbox.
+
+    The globe is tiled into fixed ``block_size × block_size``-pixel (arcmin)
+    blocks anchored at the grid origin (``-180``, ``90``) — the building
+    blocks for event-centric archives. Blocks are grid-aligned by
+    construction (both edges fall on arcmin boundaries), so each returned
+    window can be region-written into the global cube and read back as an
+    exact ``block_size × block_size`` (or trimmed, at the globe's edge) array.
+
+    Note: the GFM event archives do NOT use this — tasks are one per EQUI7
+    tile (GFM's native storage unit) with the tile's own bbox. These helpers
+    are retained as generic grid utilities (tested; usable for any future
+    arcmin-tiled output).
+
+    Args:
+        west: Western edge of the bbox (degrees).
+        south: Southern edge of the bbox (degrees).
+        east: Eastern edge of the bbox (degrees).
+        north: Northern edge of the bbox (degrees).
+        block_size: Block edge length in arcmin pixels (default 512).
+
+    Returns:
+        The blocks whose extent intersects the bbox, row-major
+        (north → south, west → east). A small event typically lands in a
+        single block; one straddling a block boundary spans up to 2×2.
+    """
+    if block_size <= 0:
+        raise ValueError(f"block_size must be positive, got {block_size}")
+    window = bounds_to_window(west, south, east, north)
+    row_blocks = range(window.row_start // block_size, (window.row_stop - 1) // block_size + 1)
+    col_blocks = range(window.col_start // block_size, (window.col_stop - 1) // block_size + 1)
+    blocks: list[IndexWindow] = []
+    for rb in row_blocks:
+        for cb in col_blocks:
+            blocks.append(
+                IndexWindow(
+                    rb * block_size,
+                    min((rb + 1) * block_size, GLOBAL_HEIGHT),
+                    cb * block_size,
+                    min((cb + 1) * block_size, GLOBAL_WIDTH),
+                )
+            )
+    return blocks
+
+
+def aoi_block_id(window: IndexWindow, block_size: int = 512) -> str:
+    """Return a stable id for an origin-anchored block, e.g. ``"a512_r07c042"``."""
+    return f"a512_r{window.row_start // block_size:02d}c{window.col_start // block_size:03d}"
+
+
 def coords_to_window(y: np.ndarray, x: np.ndarray) -> IndexWindow:
     """Map a harmonised raster's pixel-centre coordinates to an :class:`IndexWindow`.
 

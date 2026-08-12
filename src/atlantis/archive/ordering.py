@@ -62,6 +62,7 @@ class OrderedConsume:
         self._db_path = Path(db_path)
         self._dates = sorted({_to_date(t["date"]) for t in tasks})
         self._expected = Counter(_to_date(t["date"]).strftime("%Y%m%d") for t in tasks)
+        self._by_id = {t["task_id"]: _to_date(t["date"]).strftime("%Y%m%d") for t in tasks}
         self._buffer: dict[date, list[tuple[Any, date]]] = {}
 
     def write(self, dataset: Any, time: date) -> None:
@@ -86,13 +87,22 @@ class OrderedConsume:
                 self._session.write(dataset, time=t)
 
     def _earlier_resolved(self, day: date) -> bool:
-        """True when every earlier run date has all its expected tasks resolved."""
+        """True when every earlier run date has all its expected tasks resolved.
+
+        Resolved dates are derived from the task map (``self._by_id``) instead
+        of parsed out of task ids, so any task-id scheme works — MODIS
+        (``modis-20260101-...``) and GFM (``gfm-EMSR712-10-...-20241029``)
+        alike. Task ids in the tracker that are not part of this run are
+        ignored.
+        """
         with sqlite3.connect(self._db_path) as conn:
-            rows = conn.execute(
-                "SELECT substr(task_id, 7, 8), COUNT(*) FROM tasks "
-                "WHERE status IN ('DONE', 'FAILED') GROUP BY substr(task_id, 7, 8)"
-            ).fetchall()
-        resolved = {key for key, count in rows if count >= self._expected.get(key, 0)}
+            rows = conn.execute("SELECT task_id FROM tasks WHERE status IN ('DONE', 'FAILED')").fetchall()
+        resolved = Counter()
+        for (task_id,) in rows:
+            key = self._by_id.get(task_id)
+            if key is not None:
+                resolved[key] += 1
+        resolved = {key for key, count in resolved.items() if count >= self._expected.get(key, 0)}
         target = day.strftime("%Y%m%d")
         for earlier in self._dates:
             key = earlier.strftime("%Y%m%d")

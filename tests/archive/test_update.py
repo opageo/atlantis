@@ -240,6 +240,21 @@ class TestReconcile:
         )
         assert rep.orphan_dates == [date(2026, 5, 5)]
 
+    def test_prefilled_year_reports_no_phantom_orphans(self, tmp_path):
+        """A prefilled axis holds every day by construction — no orphan spam."""
+        tasks = self._tasks([1], [(10, 3)])
+        full_year = {date(2026, 1, 1) + timedelta(days=i) for i in range(365)}
+        rep = reconcile_window(
+            tasks,
+            {},
+            full_year,
+            {date(2026, 1, 1)},
+            tmp_path / "db",
+            warn=lambda _m: None,
+            prefilled=True,
+        )
+        assert rep.orphan_dates == []
+
 
 class TestWatermark:
     def test_contiguous_only(self):
@@ -518,6 +533,45 @@ class TestOrderedConsume:
         consumer = OrderedConsume(session, db, tasks)
         consumer.write(object(), date(2026, 1, 2))
         assert session.writes == [date(2026, 1, 2)]  # date 1 resolved (FAILED) → not a blocker
+
+    @staticmethod
+    def _gfm_tasks(days):
+        return [
+            {
+                "task_id": f"gfm-EMSR712-10-EU020M_E036N009T3-202410{d:02d}",
+                "date": f"2024-10-{d:02d}",
+                "equi7_tile": "EU020M_E036N009T3",
+            }
+            for d in days
+        ]
+
+    def test_gfm_style_task_ids(self, tmp_path):
+        """Dates are resolved via the task map, not parsed out of the id."""
+        db = tmp_path / "tracker.db"
+        init_db(db)
+        tasks = self._gfm_tasks([29, 30, 31])
+        session = self._FakeSession(db, tasks)
+        consumer = OrderedConsume(session, db, tasks)
+        consumer.write(object(), date(2024, 10, 31))  # completions arrive in reverse order
+        consumer.write(object(), date(2024, 10, 30))
+        assert session.writes == []  # buffered: earlier dates unresolved
+        mark_done(db, tasks[0]["task_id"], "x")
+        consumer.write(object(), date(2024, 10, 29))  # resolves date 29 → flush ascending
+        assert session.writes == [date(2024, 10, 29), date(2024, 10, 30), date(2024, 10, 31)]
+
+    def test_foreign_tracker_rows_do_not_resolve_run_dates(self, tmp_path):
+        """Tracker rows for tasks outside the run never count towards resolution."""
+        db = tmp_path / "tracker.db"
+        init_db(db)
+        tasks = self._tasks([1, 2])
+        mark_done(db, "modis-20260101-h10v04", "x")  # date-1 row for a different tile, not in this run
+        session = self._FakeSession(db, tasks)
+        consumer = OrderedConsume(session, db, tasks)
+        consumer.write(object(), date(2026, 1, 2))
+        assert session.writes == []  # date 1 of this run still unresolved
+        mark_done(db, tasks[0]["task_id"], "x")
+        consumer.write(object(), date(2026, 1, 1))
+        assert session.writes == [date(2026, 1, 1), date(2026, 1, 2)]
 
 
 class TestSpansAndHoles:
@@ -1044,6 +1098,21 @@ class TestSeedTracker:
         with pytest.raises(UpdateError, match="no modis group"):
             seed_tracker(opts, 2025)  # …but the archive has no modis group
 
+    def test_refuses_prefilled_year(self, tmp_path):
+        """Axis dates are not evidence of data on a prefilled year — refuse."""
+        from atlantis.archive.update import UpdateError, refresh_catalogue, seed_tracker
+        from atlantis.archive.writer import ArchiveWriter
+
+        opts = _opts(tmp_path)
+        opts.catalogue_builder = FakeCatalogueBuilder(2025, self.TILES, dates=[date(2025, 1, 1)])
+        refresh_catalogue(opts, 2025, date(2025, 1, 1), date(2025, 1, 1), "r1")
+        # build a prefilled year archive (as the cube-build CLI would)
+        writer = ArchiveWriter(archive_root(opts, 2025))
+        with writer.session("modis", list(MODIS_VAR_NAMES), prefill_year=2025):
+            pass
+        with pytest.raises(UpdateError, match="prefilled"):
+            seed_tracker(opts, 2025)
+
     def test_cli_seed_tracker(self, tmp_path, monkeypatch):
         from typer.testing import CliRunner
 
@@ -1185,6 +1254,43 @@ class TestIntegration:
         assert report["expected_tasks"] == 2 and report["pending_tasks"] == 0
         assert report["state_counts"] == {"done": 1, "failed": 0, "pending": 0, "empty": 364}
         assert report["state_ranges"]["done"] == [(date(2026, 1, 1), date(2026, 1, 1))]
+
+    def test_status_report_prefilled_missing_ranges_from_tracker(self, tmp_path, monkeypatch):
+        """On a prefilled year, missing ranges come from the tracker, not the axis."""
+        from atlantis.archive.writer import ArchiveWriter
+
+        year = 2026
+        dates = [date(2026, 1, 1), date(2026, 1, 2)]
+        opts = self._setup(tmp_path, monkeypatch, year, dates=dates)
+        refresh_catalogue(opts, year, dates[0], dates[-1], "r1")
+        writer = ArchiveWriter(archive_root(opts, year))
+        with writer.session("modis", list(MODIS_VAR_NAMES), prefill_year=year):
+            pass
+
+        db = tracker_path(opts, year)
+        init_db(db)
+        df = pd.read_parquet(catalogue_uri(opts, year))
+        for tid in df[df["date"] == "2026-01-01"]["task_id"]:
+            mark_done(db, tid, "x")
+
+        report = status_report(opts, year)
+        assert report["prefilled_year"] is True
+        assert report["archive_dates"] == 365  # axis covers the whole year by construction
+        # the axis cannot show the missing date 1/2 — only the tracker can
+        assert report["missing_ranges"] == [(date(2026, 1, 2), date(2026, 1, 2))]
+        assert report["date_states"] == {date(2026, 1, 1): "done", date(2026, 1, 2): "pending"}
+
+    def test_status_report_non_prefilled_missing_from_axis(self, tmp_path, monkeypatch):
+        """Non-prefilled years keep the axis-based missing-range semantics."""
+        year = 2026
+        opts = self._setup(tmp_path, monkeypatch, year, dates=[date(2026, 1, 1)])
+        self._run_window(opts, monkeypatch, date(2026, 1, 1), date(2026, 1, 1))
+        # catalogue lists date 2 (never written); axis still only holds date 1
+        opts.catalogue_builder.dates = [date(2026, 1, 1), date(2026, 1, 2)]
+        refresh_catalogue(opts, year, date(2026, 1, 2), date(2026, 1, 2), "extra")
+        report = status_report(opts, year)
+        assert report["prefilled_year"] is False
+        assert report["missing_ranges"] == [(date(2026, 1, 2), date(2026, 1, 2))]
 
     def test_dry_run_makes_no_writes(self, tmp_path, monkeypatch):
         opts = self._setup(tmp_path, monkeypatch, 2026, dates=[date(2026, 1, 1)])

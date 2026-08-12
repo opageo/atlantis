@@ -70,29 +70,57 @@ def _integer_nodata(data_array: "xr.DataArray") -> int:
 def write_harmonised_raster(data_array: "xr.DataArray", output_path: Path | str) -> None:
     """Write a harmonised DataArray to a uint8 GeoTIFF.
 
-    Flood fraction values in [0, 1] are scaled to [0, 100] (percent).
-    NaN pixels are written as nodata=255. Integer code rasters preserve their
-    existing nodata sentinel when one is present; otherwise they default to 255.
+    ``flood_fraction`` and ``water_fraction`` values in [0, 1] are scaled to
+    [0, 100] (percent). Native/code layers, including floating-point
+    ``ensemble_likelihood`` after average resampling, are *not* scaled.
+    NaN pixels are written as the layer's declared nodata (normally 255).
 
     Args:
         data_array: The xarray DataArray to write (float32 in [0,1] or uint8 binary).
         output_path: Destination file path.
     """
-    arr = data_array.values
-    nodata = HARMONISED_NODATA
+    arr = np.asarray(data_array.values)
+    layer_name = data_array.name or ""
+    is_diagnostic = layer_name.endswith("_count")
+    nodata_value = discover_nodata(data_array)
+    nodata = (
+        float(nodata_value)
+        if is_diagnostic and nodata_value is not None and not np.isnan(nodata_value)
+        else _integer_nodata(data_array)
+    )
+    is_fraction = layer_name in {"flood_fraction", "water_fraction"}
+
     if np.issubdtype(arr.dtype, np.floating):
-        # Scale [0, 1] → [0, 100], NaN → 255
-        scaled = np.where(np.isnan(arr), HARMONISED_NODATA, np.round(arr * 100)).astype(np.uint8)
+        finite = np.isfinite(arr)
+        if is_fraction:
+            # Scale [0, 1] → [0, 100]. Do not let NaN or an input sentinel
+            # reach the uint8 cast.
+            encoded = np.round(np.clip(arr, 0.0, 1.0) * 100.0)
+        else:
+            # Native layers may be float after average resampling. In
+            # particular, ensemble_likelihood is still a 0–100 code layer;
+            # it must never follow the fraction scaling path.
+            encoded = np.round(arr)
+        valid = finite & (arr != nodata)
+        if layer_name == "ensemble_likelihood":
+            invalid_domain = valid & ((arr < 0.0) | (arr > 100.0))
+            if np.any(invalid_domain):
+                raise ValueError("ensemble_likelihood contains values outside the valid 0-100 domain")
+        scaled = np.where(valid, encoded, nodata).astype(np.float32 if is_diagnostic else np.uint8)
     else:
         # Integer masks / code rasters stay byte-for-byte unchanged.
-        scaled = arr.astype(np.uint8)
-        nodata = _integer_nodata(data_array)
+        if is_diagnostic:
+            scaled = arr.astype(np.float32)
+            scaled[arr == nodata] = np.float32(nodata)
+        else:
+            scaled = arr.astype(np.uint8)
+            scaled[arr == nodata] = np.uint8(nodata)
 
     out_da = data_array.copy(data=scaled)
     out_da.rio.write_nodata(nodata, inplace=True)
     out_da.rio.to_raster(
         str(output_path),
-        dtype="uint8",
+        dtype="float32" if is_diagnostic else "uint8",
         compress="LZW",
     )
 
