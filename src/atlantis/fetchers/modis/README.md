@@ -50,7 +50,14 @@ modis/
 ## Auth
 
 Both backends require an Earthdata bearer token. Set
-`EARTHDATA_TOKEN` in the environment before running. The streaming
-path injects the token into GDAL via `rasterio.Env(GDAL_HTTP_HEADERS=...)`
+`EARTHDATA_TOKEN` in the environment before running. **LAADS file downloads
+additionally require a LAADS application token** (created at
+https://ladsweb.modaps.eosdis.nasa.gov/profiles/#app-tokens) and a one-time
+acceptance of the LAADS DAAC data archive license (visit a file URL in a
+browser logged into Earthdata). An Earthdata Login access token authenticates
+directory listings but is rejected for file downloads, so a missing/wrong
+token or unaccepted license surfaces only when tiles are downloaded (the
+update flow preflights one tile to fail fast). The streaming path injects the
+token into GDAL via `rasterio.Env(GDAL_HTTP_HEADERS=...)`
 inside `MODISFetcher.fetch()`; the download path forwards it to
 `requests` via `download_file(headers=...)`.

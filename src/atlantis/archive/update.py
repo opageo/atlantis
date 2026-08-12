@@ -27,6 +27,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -34,6 +35,7 @@ from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
+import requests
 from loguru import logger
 
 from atlantis.archive import datacube, grid
@@ -44,10 +46,12 @@ from atlantis.archive.writer import ArchiveWriter
 from atlantis.batch import BatchConfig
 from atlantis.batch.catalog import DEFAULT_S3_ENDPOINT, load_catalogue, write_catalogue
 from atlantis.batch.tracker import init_db, requeue, stats
-from atlantis.fetchers.modis.batch_processor import harmonise_modis_granule_payload
+from atlantis.fetchers.modis.backend import MissingEarthdataTokenError
+from atlantis.fetchers.modis.batch_processor import harmonise_modis_granule_payload, probe_download
 from atlantis.fetchers.modis.catalog import build_catalog
 from atlantis.fetchers.modis.inventory import to_tasks
 from atlantis.fetchers.modis.processor import tile_bounds_from_hv
+from atlantis.utils.io import DownloadContentError
 
 MODIS_VAR_NAMES = ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood")
 
@@ -614,6 +618,68 @@ def validate_year(
 # ── Batch ────────────────────────────────────────────────────────────────────
 
 
+def _probe_pending_download(
+    tasks: list[dict[str, Any]],
+    db_path: Path,
+    attempts: int = 3,
+) -> None:
+    """Preflight one real tile download before the batch launches.
+
+    LAADS rejects a misconfigured token / unaccepted archive license only at
+    download time, not at listing time, so the failure would otherwise surface
+    as every tile FAILING inside Dask. Stream just the first chunk of the
+    first non-DONE tile and fail fast with an actionable message instead.
+
+    Transient failures (connection/timeout, 404/5xx, a flaky HTML/empty first
+    chunk) are retried with short backoff; only a persistent auth/EULA signal
+    (HTML/empty body, HTTP 401/403, missing token) aborts the run.
+
+    Raises:
+        UpdateError: When the probe persistently returns an auth/EULA signal.
+    """
+    tracker = read_tracker(db_path)
+    todo = [t for t in tasks if tracker.get(t["task_id"]) != "DONE"]
+    if not todo:
+        return
+    uri = todo[0]["source_uri"]
+    last_issue: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            probe_download(uri)
+            return
+        except MissingEarthdataTokenError as exc:
+            raise UpdateError(str(exc)) from exc
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status in (401, 403):
+                raise UpdateError(
+                    f"LAADS rejected the download token (HTTP {status}) for {uri} — "
+                    "check that EARTHDATA_TOKEN is a valid LAADS application token "
+                    "and the archive license is accepted"
+                ) from exc
+            last_issue = exc  # 404 / 5xx: per-granule or server-side; tiles retry individually
+        except (DownloadContentError, requests.ConnectionError, requests.Timeout) as exc:
+            last_issue = exc
+        if attempt < attempts:
+            time.sleep(attempt)
+            logger.warning(
+                "download preflight for {} failed on attempt {}/{} ({}) — retrying",
+                uri,
+                attempt,
+                attempts,
+                last_issue,
+            )
+    if isinstance(last_issue, DownloadContentError):
+        raise UpdateError(str(last_issue)) from last_issue
+    logger.warning(
+        "download preflight for {} failed after {}/{} attempt(s) ({}) — continuing",
+        uri,
+        attempts,
+        attempts,
+        last_issue,
+    )
+
+
 def run_window_batch(opts: UpdateOptions, year: int, tasks: list[dict[str, Any]], db_path: Path) -> dict[str, int]:
     """Run the cube batch for *tasks* with an ascending-order writer session."""
     archive = archive_root(opts, year)
@@ -801,6 +867,7 @@ def _run_year(opts: UpdateOptions, window: YearWindow, run_id: str) -> dict[str,
 
             final: dict[str, int] = {"total": 0, "DONE": 0, "FAILED": 0}
             if tasks and not opts.dry_run:
+                _probe_pending_download(tasks, db)
                 final = run_window_batch(opts, year, tasks, db)
 
             validate_year(opts, window, tasks, db)

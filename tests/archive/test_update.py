@@ -316,6 +316,118 @@ class TestReconcile:
         assert rep.orphan_dates == []
 
 
+class TestPreflightProbe:
+    """Preflight tile-download probe: fail fast before the batch launches."""
+
+    @staticmethod
+    def _tasks():
+        return [
+            {"task_id": "t1", "date": "2026-08-05", "h": 0, "v": 0, "source_uri": "https://example/one.hdf"},
+            {"task_id": "t2", "date": "2026-08-05", "h": 0, "v": 1, "source_uri": "https://example/two.hdf"},
+        ]
+
+    def test_skipped_when_all_done(self, tmp_path, monkeypatch):
+        from atlantis.archive import update as upd
+        from atlantis.batch.tracker import init_db, mark_done
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        mark_done(db, "t1", "archive#t1")
+        mark_done(db, "t2", "archive#t2")
+        called: list[str] = []
+        monkeypatch.setattr(upd, "probe_download", lambda url: called.append(url))
+        upd._probe_pending_download(self._tasks(), db)
+        assert called == []
+
+    def test_probes_first_pending_and_failed_tile(self, tmp_path, monkeypatch):
+        from atlantis.archive import update as upd
+        from atlantis.batch.tracker import init_db, mark_done
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        mark_done(db, "t1", "archive#t1")
+        called: list[str] = []
+        monkeypatch.setattr(upd, "probe_download", lambda url: called.append(url))
+        upd._probe_pending_download(self._tasks(), db)
+        assert called == ["https://example/two.hdf"]
+
+    def test_probe_failure_becomes_update_error(self, tmp_path, monkeypatch):
+        from atlantis.archive.update import UpdateError, _probe_pending_download
+        from atlantis.batch.tracker import init_db, mark_failed
+        from atlantis.utils.io import DownloadContentError
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        mark_failed(db, "t1", "stale failure", 3)
+        monkeypatch.setattr("atlantis.archive.update.time.sleep", lambda _s: None)
+
+        def _boom(url):
+            raise DownloadContentError("LAADS rejected the token")
+
+        monkeypatch.setattr("atlantis.archive.update.probe_download", _boom)
+        with pytest.raises(UpdateError, match="LAADS rejected the token"):
+            _probe_pending_download(self._tasks(), db)
+
+    def test_probe_http_401_becomes_update_error(self, tmp_path, monkeypatch):
+        from requests import HTTPError
+
+        from atlantis.archive.update import UpdateError, _probe_pending_download
+        from atlantis.batch.tracker import init_db
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+
+        class _Resp:
+            status_code = 401
+
+        def _unauthorized(url):
+            raise HTTPError("401 error", response=_Resp())
+
+        monkeypatch.setattr("atlantis.archive.update.probe_download", _unauthorized)
+        with pytest.raises(UpdateError, match="rejected the download token"):
+            _probe_pending_download(self._tasks(), db)
+
+    def test_probe_retries_then_succeeds(self, tmp_path, monkeypatch):
+        from requests import ConnectionError
+
+        from atlantis.archive.update import _probe_pending_download
+        from atlantis.batch.tracker import init_db
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        monkeypatch.setattr("atlantis.archive.update.time.sleep", lambda _s: None)
+        calls: list[str] = []
+
+        def _flaky(url):
+            calls.append(url)
+            if len(calls) == 1:
+                raise ConnectionError("first attempt dropped")
+            return None
+
+        monkeypatch.setattr("atlantis.archive.update.probe_download", _flaky)
+        _probe_pending_download(self._tasks(), db)
+        assert calls == ["https://example/one.hdf", "https://example/one.hdf"]
+
+    def test_persistent_transient_failure_warns_and_continues(self, tmp_path, monkeypatch):
+        from requests import ConnectionError
+
+        from atlantis.archive.update import _probe_pending_download
+        from atlantis.batch.tracker import init_db
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        monkeypatch.setattr("atlantis.archive.update.time.sleep", lambda _s: None)
+        calls: list[str] = []
+
+        def _down(url):
+            calls.append(url)
+            raise ConnectionError("network down")
+
+        monkeypatch.setattr("atlantis.archive.update.probe_download", _down)
+        _probe_pending_download(self._tasks(), db)
+        assert len(calls) == 3  # retried, then warned and continued
+
+
 class TestWatermark:
     def test_contiguous_only(self):
         df = _catalogue_df(_tile_rows([1, 2, 3, 4], [(10, 3)]))
@@ -1100,6 +1212,7 @@ class TestSeedTracker:
         opts = _opts(tmp_path)
         opts.catalogue_builder = FakeCatalogueBuilder(2025, self.TILES, dates=dates)
         monkeypatch.setattr("atlantis.archive.update.harmonise_modis_granule_payload", _payload_for)
+        monkeypatch.setattr("atlantis.archive.update.probe_download", lambda url: None)
         fake_run = _fake_run_cube_batch(_payload_for)
         monkeypatch.setattr("atlantis.archive.update.run_cube_batch", fake_run)
         opts.start, opts.end = dates[0], dates[-1]
@@ -1213,6 +1326,7 @@ class TestIntegration:
         opts = _opts(tmp_path)
         opts.catalogue_builder = FakeCatalogueBuilder(year, tiles or self.TILES, dates=dates)
         monkeypatch.setattr("atlantis.archive.update.harmonise_modis_granule_payload", _payload_for)
+        monkeypatch.setattr("atlantis.archive.update.probe_download", lambda url: None)
         return opts
 
     def _run_window(self, opts, monkeypatch, start, end, fail_task_ids=()):
