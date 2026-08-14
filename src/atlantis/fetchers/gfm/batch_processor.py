@@ -29,9 +29,7 @@ Pipeline per ``(date, equi7_tile)`` task:
 
 from __future__ import annotations
 
-import gc
 import os
-import sys
 
 import numpy as np
 from loguru import logger
@@ -40,51 +38,24 @@ from rasterio.enums import Resampling
 from atlantis.archive.writer import _encode_uint8
 from atlantis.config import HarmoniseConfig, get_config
 from atlantis.fetchers.gfm.dataset import processed_tile_to_dataset
-from atlantis.fetchers.gfm.processor import GfmRasterProcessor
+from atlantis.fetchers.gfm.processor import GfmRasterProcessor, release_gdal_memory
 from atlantis.harmoniser import Harmoniser
 
 #: Bound GDAL's per-process raster block cache (MB). Unlike MODIS/VIIRS, GFM
 #: streams pixel data live from many distinct COGs per worker lifetime (no
-#: discrete "download" step), so an unbounded cache grows without limit and
-#: triggers distributed.worker.memory "Unmanaged memory... high" / "Pausing
-#: worker" warnings. Mirrors the ``GDAL_NUM_THREADS`` module-level pattern in
-#: atlantis.fetchers.modis.batch_processor / atlantis.fetchers.viirs.batch_processor.
+#: discrete "download" step), so the cache needs an explicit cap. The block
+#: cache itself is LRU-bounded at this value; the multi-GB worker RSS growth
+#: that motivated the cap comes from the glibc heap and retained dataset
+#: handles, released per item by :func:`release_gdal_memory` (see
+#: docs/gfm/memory-root-cause.md). Mirrors the ``GDAL_NUM_THREADS`` module-level
+#: pattern in atlantis.fetchers.modis.batch_processor /
+#: atlantis.fetchers.viirs.batch_processor.
 os.environ.setdefault("GDAL_CACHEMAX", "256")
 
 #: Cube-persisted GFM layers — matches the shared ArchiveWriter schema.
 #: ``ensemble_likelihood`` / ``advisory_flags`` are native-only companions and
 #: are not stored in the cube (see docs/layers.md).
 _CUBE_LAYERS = ("water_fraction", "exclusion_mask", "reference_water")
-
-
-def _trim_malloc() -> None:
-    """Release freed native heap memory back to the OS on glibc Linux.
-
-    ``gc.collect()`` only reclaims Python-tracked objects; native allocations
-    made by GDAL/numpy (malloc'd C buffers) are freed by libc but often kept
-    in the process heap rather than returned to the OS, which is what the
-    distributed.worker.memory "memory not released back to the OS" guidance
-    (see distributed.dask.org .../worker-memory.html) recommends working
-    around with ``malloc_trim``. Best-effort only: silently a no-op on
-    non-Linux platforms or if libc doesn't expose ``malloc_trim``.
-
-    Note: in an isolated synthetic benchmark (large numpy buffers, no GDAL/
-    network I/O) this showed no measurable effect beyond ``gc.collect()``
-    alone — glibc routes large allocations through ``mmap``, which is already
-    released on ``free()``. Kept as cheap, harmless defense-in-depth for the
-    smaller ``brk``-heap allocations it *does* help with; the real fix for
-    GFM's inter-cell RSS growth is ``gdal.VSICurlClearCache()`` in the caller
-    (confirmed via a real multi-cell A/B — see
-    :func:`harmonise_gfm_payload`'s cleanup block).
-    """
-    if not sys.platform.startswith("linux"):
-        return
-    try:
-        import ctypes
-
-        ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except OSError:
-        pass
 
 
 def harmonise_gfm_payload(task: dict) -> dict:
@@ -161,47 +132,27 @@ def harmonise_gfm_payload(task: dict) -> dict:
     y = np.asarray(ds_harm["y"].values, dtype="float64")
     x = np.asarray(ds_harm["x"].values, dtype="float64")
     del ds_harm
-    gc.collect()
-    _trim_malloc()
-    # Force GDAL to release accumulated raster block caches and COG file
-    # handles between cells — without this, the per-worker RSS climbs across
-    # successive cells even though each individual cell's processing delta is
-    # only ~2 GiB. Cumulative GDAL cache accumulation across ~20+ COG reads
-    # per cell × N cells can push the absolute worker RSS from ~2.5 GiB to
-    # ~6 GiB, triggering Dask's 80% pause/resume threshold.
+    # Task-end release valve — belt-and-braces. The per-item cadence runs
+    # inside GfmRasterProcessor._process_items_* via release_gdal_memory();
+    # this final flush makes sure the worker hands a clean heap back to Dask
+    # before the payload is serialised to the coordinator.
     #
-    # gdal.dump_open_datasets() does NOT exist in GDAL >= 3.10 (it's a GDAL 2.x
-    # API removed from the Python bindings) — the old call here was a silent
-    # no-op (its AttributeError was swallowed). Replaced with the real GDAL 3.x
-    # equivalent:
-    #   SetCacheMax(0)  — flush + zero the raster block cache
-    #   SetCacheMax(N)  — restore the module-level cap (GDAL_CACHEMAX MB → bytes)
-    #   VSICurlClearCache() — clear HTTP range-request / COG header caches for
-    #                         the many distinct remote COG URLs GFM streams per
-    #                         cell (unlike VIIRS/MODIS, which download once)
+    # Root cause summary (see docs/gfm/memory-root-cause.md): GDAL's raster
+    # block cache (GDAL_CACHEMAX) and the /vsicurl/ HTTP range-request region
+    # cache (CPL_VSIL_CURL_CACHE_SIZE, default 16 MB) are both LRU-BOUNDED —
+    # they cannot grow into the multi-GB "unmanaged" RSS that killed 4 GB
+    # workers. The real accumulator is glibc heap fragmentation plus
+    # per-dataset native state retained while dataset handles stay open,
+    # combined with a cleanup cadence that ran only once per task (fine for
+    # 1-3-item cells, not for 23-item tasks). VSICurlClearCache() still helps:
+    # a 6-cell real-item A/B (scripts/profile_gfm_batch_rss.py) bounded VmRSS
+    # at ~330-380 MiB with the block vs ~1.5 GiB climbing without it — but the
+    # durable fix is the per-item release + heap trimming now in the processor.
     #
-    # This block's own effect is CONFIRMED real at single-process scale against
-    # real EODC data, not just plausible: a 6-cell real-item A/B
-    # (scripts/profile_gfm_batch_rss.py, cleanup on vs. monkeypatched no-op,
-    # isolated subprocesses) showed live VmRSS bounded at ~330-380 MiB across
-    # all 6 EU cells with this block, vs. climbing to ~1.5 GiB (~4x higher)
-    # without it. VSICurlClearCache() is the component doing the real work — a
-    # synthetic local-GeoTIFF test (no HTTP layer) showed SetCacheMax/
-    # malloc_trim alone have no measurable effect once a dataset is closed.
-    #
-    # This cleanup complements, but does not replace, the nesting fix in
+    # Complements, but does not replace, the nesting fix in
     # GfmRasterProcessor._load_item: odc.stac's inner Dask graph must execute
-    # synchronously in the owning outer worker. With both protections in place,
-    # the real default three-worker/8GB batch completed all 48 cells in the
-    # Africa-heavy 2025 catalogue validation (DONE=48, FAILED=0; issue #96).
-    try:
-        from osgeo import gdal
-
-        gdal.SetCacheMax(0)
-        gdal.SetCacheMax(256 * 1024 * 1024)
-        gdal.VSICurlClearCache()
-    except Exception:
-        pass
+    # synchronously in the owning outer worker.
+    release_gdal_memory()
 
     logger.debug("gfm cell {} {} → shape {}", task_id, equi7_tile, water_u8.shape)
     return {
