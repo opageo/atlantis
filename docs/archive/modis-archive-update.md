@@ -221,6 +221,16 @@ one-off, not part of the weekly path.
   local state at once: one row per year (counts, watermark, axis sortedness,
   last run status) plus a one-line monthly overview strip (one block per
   month, dominant state). `pixi run modis-archive-status` is the shortcut.
+- **LAADS download auth:** `EARTHDATA_TOKEN` must be a **LAADS application
+  token** (create at
+  `https://ladsweb.modaps.eosdis.nasa.gov/profiles/#app-tokens`), not an
+  Earthdata Login access token — directory listings authenticate either way,
+  but file downloads reject the latter; the one-time LAADS DAAC data-archive
+  license must also be accepted in a browser (visit any file URL logged in).
+  A wrong token or unaccepted license fails every tile download — the update
+  preflights one tile and aborts fast with an actionable message. A lone
+  tile `401` on the license-page URL is usually a transient LAADS glitch the
+  per-tile retries absorb.
 - Read the tracker directly on the mounted volume:
 
   ```sql
@@ -263,6 +273,11 @@ The first scheduled work is deliberately staged:
    backlog exceeds a month, the catch-up guardrail (§4.1) caps the first run
    to the newest 31 days and warns — backfill the rest with explicit
    `--start/--end` windows (e.g. `--start 2026-01-01 --end 2026-06-30`).
+   The flow was validated end-to-end by the smoke test
+   (`.kilo/plans/1786458113122-modis-update-smoketest.md`): dry-run guardrail
+   resolution, a one-day real-data run against local roots, and axis-probe
+   verification, before the production kickoff archived the 31-day catch-up
+   window with zero failures.
 4. **Phase 3 — weekly runs:** start the VM and invoke
    `atlantis archive modis update`. The effective window is
    `max(2026-01-01, last_complete + 1 - lookback)` → `today - lag`; the
