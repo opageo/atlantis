@@ -96,6 +96,52 @@ pixi run -e batch modis-archive-update-dry-run           # resolve + report only
 pixi run -e batch modis-archive-seed-tracker -- --year YYYY
 ```
 
+## Quick start — run it right now
+
+Prerequisites: `EARTHDATA_TOKEN` (a LAADS application token, not an Earthdata
+Login token — see §6), AWS credentials for `s3://atlantis`, pixi, and tmux
+(detached mode only). The token is loaded from the repo `.env` by the CLI.
+
+1. Dry run — resolve and print the plan without launching the worker:
+   `PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --foreground --dry-run`
+2. Foreground run (production defaults, current terminal):
+   `pixi run -e batch modis-archive-update`
+3. Detached tmux (the CLI default; returns immediately):
+   `PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --year 2026`
+   `tmux attach -t atlantis-modis-update-2026-<runid>`
+4. Inspect progress / results:
+   `pixi run -e batch modis-archive-status -- --year 2026`
+
+What a default run does with the current archive (as of 2026-08-14):
+
+1. Resolves year 2026 (no `--year` defaults to the current year). The window
+   is anchored at the archive's **last processed date**, not at today: with
+   no local 2026 tracker the run is a catch-up from `2026-01-01` toward
+   `today - 7 d lag`, and the 31-day guardrail chunks it forward — the first
+   run processes the **next** 31 days (`2026-01-01 → 2026-01-31`, with a
+   printed notice). Re-running the same command continues automatically with
+   the next 31 days (`2026-02-01 → …`) until the year is caught up; no
+   explicit dates needed. Near real time (caught up), the window instead
+   re-scans the trailing lookback days up to the latest available data.
+2. Creates the year state under the state root (e.g.
+   `/mnt/atlantis-state/modis/2026/`) and an **empty** `cube_tracker.db` —
+   the tracker from an earlier run exists only in the S3 backup and is never
+   restored automatically, so every task in the window is treated as pending
+   and re-ingested (idempotent overwrites, ~8,800 tiles per 31-day chunk,
+   ~6–7 h at the default 2–6 Dask workers).
+3. Refreshes `modis_archive_catalog_2026.parquet` from LAADS for the window
+   (candidate-then-promote) and selects the window's tasks.
+4. Preflights one real tile download — a missing/invalid `EARTHDATA_TOKEN`
+   aborts the run fast (never reaches Dask).
+5. Runs the ordered batch; on the year's first build the 2026 axis is
+   pre-filled (365 slots), so every date lands in a pre-existing slot and the
+   axis stays ascending by construction.
+6. Validates (all `DONE`, axis ascending), advances the watermark to the
+   chunk's end (`2026-01-31`), writes the immutable manifest, and backs up
+   tracker/manifest/catalogue to `s3://atlantis/archive-state/modis/2026/`.
+
+See §4 for the full per-year pipeline and §7 for the deployment phases.
+
 ## 3. Persistent state (per year)
 
 ```text
@@ -120,16 +166,22 @@ S3.
 For each resolved year, in chronological order, under the year lock:
 
 1. **Window resolution** — explicit `--start/--end` for repair/backfill;
-   otherwise `start = max(year start, last_complete + 1 - lookback)` and
-   `end = today - availability lag` (weekly defaults: 14 / 7 days). Windows
+   otherwise the window is anchored at the archive's **last processed date**,
+   not at today: the cursor is the day after the year's contiguous watermark
+   (January 1 on a wiped/fresh year) and the end is the latest available
+   data (`today - availability lag`, clamped to the year end). Windows
    spanning 31 December split across both years; each year runs under its own
    lock, tracker, and manifest.
 
-   **Catch-up guardrail** — an auto-resolved window (no explicit
-   `--start/--end`) with more than 31 days of backlog is capped to the
-   **newest 31 days**, and the run warns loudly: the older backlog is _not_
-   fetched automatically. Backfill it with explicit `--start/--end` windows
-   (which are never capped).
+   **Catch-up guardrail** — when the year is more than 31 days behind the
+   latest available data, an auto-resolved window processes the **next 31
+   days from the cursor** and prints a notice: re-running the same command
+   continues automatically with the next 31 days, so a long backlog is
+   ingested in order across successive resume-safe runs — no explicit dates
+   needed. Near real time (caught up, less than a chunk behind), the window
+   instead covers `cursor - lookback → today - lag` (weekly defaults: 14 /
+   7 days) so late LAADS publications are re-scanned and a complete year is
+   still validated and re-recorded.
 
    When the current year has no tracker baseline yet (fresh year), the window
    also reaches back into the previous year, so a December backlog and the
@@ -282,20 +334,25 @@ The first scheduled work is deliberately staged:
    `modis_archive_catalog_2026.parquet` for its window and ingests in
    ascending order, pre-filling the 2026 time axis (365 slots, marker
    `atlantis_time_prefill`) and establishing the tracker baseline. If the
-   backlog exceeds a month, the catch-up guardrail (§4.1) caps the first run
-   to the newest 31 days and warns — backfill the rest with explicit
-   `--start/--end` windows (e.g. `--start 2026-01-01 --end 2026-06-30`).
+   backlog exceeds a month, the catch-up guardrail (§4.1) chunks the run to
+   the **next** 31 days from the watermark — re-running the same command
+   continues automatically until the year is caught up, no explicit dates
+   needed.
    The flow was validated end-to-end by the smoke test
-   (`.kilo/plans/1786458113122-modis-update-smoketest.md`): dry-run guardrail
+   (`.kilo/plans/1786458113122-modis-update-smoketest.md`): dry-run window
    resolution, a one-day real-data run against local roots, and axis-probe
    verification, before the production kickoff archived the 31-day catch-up
-   window with zero failures.
+   window with zero failures. In 2026-08 the initial 2026 data (Jul 6 – Aug 5)
+   was deliberately wiped and rebuilt automatically: the first post-wipe run
+   chunked forward from 2026-01-01 (`2026-01-01 → 2026-01-31`), re-prefilling
+   the 365-slot axis on the fresh group, and subsequent runs continue chunk
+   by chunk.
 4. **Phase 3 — weekly runs:** start the VM and invoke
-   `atlantis archive modis update`. The effective window is
-   `max(2026-01-01, last_complete + 1 - lookback)` → `today - lag`; the
-   lookback covers late LAADS publications and failed prior runs. At year
-   rollover the job finishes outstanding December tasks in the old year before
-   starting January tasks in the new one.
+   `atlantis archive modis update`. Near real time the effective window is
+   `last_complete + 1 - lookback` → `today - lag`; the lookback covers late
+   LAADS publications and failed prior runs. At year rollover the job
+   finishes outstanding December tasks in the old year before starting
+   January tasks in the new one.
 
 ## 8. Archive invariants
 

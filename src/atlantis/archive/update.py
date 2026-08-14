@@ -58,9 +58,10 @@ MODIS_VAR_NAMES = ("water_fraction", "exclusion_mask", "reference_water", "recur
 #: Lock is stale when its owning PID is gone or it is older than this.
 LOCK_MAX_AGE = timedelta(hours=24)
 
-#: Catch-up guardrail: an auto-resolved window processes at most this many
-#: calendar days, anchored at the newest end. Larger backlogs warn and need
-#: explicit ``--start/--end`` backfill windows.
+#: Auto-resolved windows process at most this many calendar days per run,
+#: anchored at the *start* of the backlog (the year's first missing date).
+#: A longer backlog is chunked automatically: each run ingests the next
+#: MAX_CATCHUP_DAYS days, and re-running continues where the watermark stopped.
 MAX_CATCHUP_DAYS = 31
 
 _REQUIRED_CATALOGUE_COLUMNS = ("date", "h", "v", "task_id", "source_uri")
@@ -287,13 +288,18 @@ def contiguous_complete_end(df: pd.DataFrame, done_ids: set[str], from_date: dat
 def resolve_windows(opts: UpdateOptions) -> list[YearWindow]:
     """Resolve the requested year/window into per-year windows, chronological.
 
-    Auto-resolved windows (no explicit ``--start/--end``) are capped by the
-    catch-up guardrail: a backlog longer than :data:`MAX_CATCHUP_DAYS` runs
-    only the newest days and warns the operator. Explicit windows are
-    deliberate backfills and are never capped. A fresh current year reaches
-    back into the previous year, so a December backlog and the new year's
-    first days are both covered automatically (the new year is prepared —
-    catalogue + prefill — by :func:`_run_year`).
+    Auto-resolved windows (no explicit ``--start/--end``) are anchored at the
+    year's last processed date, not at today: a year more than
+    :data:`MAX_CATCHUP_DAYS` days behind plays catch-up in forward chunks
+    (each run ingests the next :data:`MAX_CATCHUP_DAYS` days from the
+    watermark and re-running continues where it stopped — a wiped or fresh
+    year starts at January 1). Near real time, the window re-scans the
+    lookback span up to the latest available data (today minus the
+    availability lag). Explicit windows are deliberate and are resolved
+    verbatim. A fresh current year reaches back into the previous year, so a
+    December backlog and the new year's first days are both covered
+    automatically (the new year is prepared — catalogue + prefill — by
+    :func:`_run_year`).
     """
     today = opts.today or date.today()
     lag_end = today - timedelta(days=opts.availability_lag_days)
@@ -308,32 +314,53 @@ def resolve_windows(opts: UpdateOptions) -> list[YearWindow]:
         return [w for w in windows if opts.year is None or w.year == opts.year]
 
     if opts.year is not None:
-        last = last_complete_for_year(opts, opts.year)
-        start = _window_start(opts, opts.year, last)
-        end = min(lag_end, date(opts.year, 12, 31))
-        kind = "catch-up" if last is None else "weekly"
-        raw = start
-        start, capped = _cap_window(start, end)
-        if capped:
-            _warn_catchup(raw, start, end)
-        if start > end:
-            return []
-        return [YearWindow(opts.year, start, end, kind)]
+        win = _auto_window_for_year(opts, opts.year, last_complete_for_year(opts, opts.year), lag_end)
+        return [win] if win is not None else []
 
     current = lag_end.year
-    last = last_complete_for_year(opts, current)
-    start = _window_start(opts, current, last)
-    if last is None:
-        prev = _window_start(opts, current - 1, last_complete_for_year(opts, current - 1))
-        start = min(start, prev)
-    end = lag_end
-    raw = start
-    start, capped = _cap_window(start, end)
-    if capped:
-        _warn_catchup(raw, start, end)
+    windows = []
+    last_current = last_complete_for_year(opts, current)
+    if last_current is None:
+        last_prev = last_complete_for_year(opts, current - 1)
+        if last_prev != date(current - 1, 12, 31):  # a complete year has no December backlog
+            prev = _auto_window_for_year(opts, current - 1, last_prev, lag_end)
+            if prev is not None:
+                windows.append(prev)
+    cur = _auto_window_for_year(opts, current, last_current, lag_end)
+    if cur is not None:
+        windows.append(cur)
+    return windows
+
+
+def _auto_window_for_year(
+    opts: UpdateOptions,
+    year: int,
+    last: date | None,
+    lag_end: date,
+) -> YearWindow | None:
+    """Catch-up window for one year, anchored at the last processed date.
+
+    The window starts the day after the year's contiguous watermark (January 1
+    on a wiped/fresh year). When the year is more than a chunk behind the
+    latest available data, the window covers the next
+    :data:`MAX_CATCHUP_DAYS` days from that cursor — re-running continues
+    where the watermark stopped. Near real time (the chunk would run past the
+    latest available data), the window instead re-scans the lookback span up
+    to the availability-lagged present, so late LAADS publications are picked
+    up and a complete year is still validated and re-recorded.
+    """
+    kind = "catch-up" if last is None else "weekly"
+    cursor = date(year, 1, 1) if last is None else last + timedelta(days=1)
+    available_end = min(lag_end, date(year, 12, 31))
+    if cursor + timedelta(days=MAX_CATCHUP_DAYS - 1) <= available_end:
+        start, end = cursor, cursor + timedelta(days=MAX_CATCHUP_DAYS - 1)
+        _warn_catchup(start, end)
+    else:
+        start = _window_start(opts, year, last)
+        end = available_end
     if start > end:
-        return []
-    return _clip_years(start, end, "weekly")
+        return None
+    return YearWindow(year, start, end, kind)
 
 
 def _window_start(opts: UpdateOptions, year: int, last: date | None) -> date:
@@ -342,18 +369,11 @@ def _window_start(opts: UpdateOptions, year: int, last: date | None) -> date:
     return max(date(year, 1, 1), last + timedelta(days=1 - opts.lookback_days))
 
 
-def _cap_window(start: date, end: date) -> tuple[date, bool]:
-    """Cap *start* so the window spans at most MAX_CATCHUP_DAYS, anchored at *end*."""
-    capped = max(start, end - timedelta(days=MAX_CATCHUP_DAYS - 1))
-    return capped, capped > start
-
-
-def _warn_catchup(raw_start: date, start: date, end: date) -> None:
-    """Operator-visible warning when the guardrail caps an auto-resolved window."""
+def _warn_catchup(start: date, end: date) -> None:
+    """Operator-visible notice when a long backlog is chunked into 31-day windows."""
     print(
-        f"⚠  {(end - raw_start).days + 1} day(s) of backlog exceed the {MAX_CATCHUP_DAYS}-day "
-        f"guardrail — processing only the newest {MAX_CATCHUP_DAYS} day(s) ({start} → {end}); "
-        "backfill older dates with explicit --start/--end windows"
+        f"⚠  backlog exceeds the {MAX_CATCHUP_DAYS}-day guardrail — processing the next "
+        f"{MAX_CATCHUP_DAYS} day(s) ({start} → {end}); re-run `update` to continue automatically"
     )
 
 

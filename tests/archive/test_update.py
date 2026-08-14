@@ -206,34 +206,90 @@ class TestRoutingAndWindows:
         windows = resolve_windows(opts)
         assert len(windows) == 1
         w = windows[0]
-        assert w.start == date(2026, 6, 26)  # stale year: capped to the newest 31 days
-        assert w.end == date(2026, 7, 26)  # today - lag
+        assert w.start == date(2026, 1, 3)  # stale year: next 31 days from the watermark
+        assert w.end == date(2026, 2, 2)
         assert w.kind == "weekly"
         assert "guardrail" in capsys.readouterr().out
 
-    def test_catchup_capped_to_newest_month(self, tmp_path, capsys):
-        """A >1-month backlog on an auto window processes only the newest 31 days."""
+    def test_catchup_chunks_forward_from_year_start(self, tmp_path, capsys):
+        """A wiped/fresh year catches up in 31-day chunks anchored at Jan 1."""
         opts = _opts(tmp_path, year=2026, today=date(2026, 8, 12))  # no tracker, no catalogue
         (windows,) = resolve_windows(opts)
-        assert (windows.start, windows.end) == (date(2026, 7, 6), date(2026, 8, 5))
+        assert (windows.start, windows.end, windows.kind) == (
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            "catch-up",
+        )
+        assert "guardrail" in capsys.readouterr().out
+
+    def test_catchup_chunk_resumes_from_watermark(self, tmp_path, capsys):
+        """A mid-catch-up year continues with the next 31 days, not the newest."""
+        opts = _opts(tmp_path, year=2026, today=date(2026, 8, 12))
+        db = tracker_path(opts, 2026)
+        init_db(db)
+        df = _catalogue_df(_tile_rows(list(range(1, 32)), [(10, 3)]))
+        local = local_catalogue_path(opts, 2026)
+        local.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(local, index=False)
+        for tid in df["task_id"]:
+            mark_done(db, tid, "x")
+        (windows,) = resolve_windows(opts)
+        assert (windows.start, windows.end) == (date(2026, 2, 1), date(2026, 3, 3))
+        assert "guardrail" in capsys.readouterr().out
+
+    def test_catchup_exactly_one_chunk_chunks_with_notice(self, tmp_path, capsys):
+        """A backlog of exactly 31 days chunks (never a lookback-stretched window)."""
+        opts = _opts(tmp_path, year=2026, today=date(2026, 2, 8))  # no tracker; lag_end = 2026-02-01
+        (windows,) = resolve_windows(opts)
+        assert (windows.start, windows.end, windows.kind) == (
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            "catch-up",
+        )
         assert "guardrail" in capsys.readouterr().out
 
     def test_explicit_windows_never_capped(self, tmp_path, capsys):
-        """--start/--end backfill windows are deliberate: no guardrail."""
+        """--start/--end backfill windows are deliberate: resolved verbatim."""
         opts = _opts(tmp_path, start=date(2026, 1, 1), end=date(2026, 8, 5))
         (windows,) = resolve_windows(opts)
         assert (windows.start, windows.end) == (date(2026, 1, 1), date(2026, 8, 5))
-        assert "guardrail" not in capsys.readouterr().out
 
     def test_rollover_reaches_previous_year(self, tmp_path, capsys):
-        """A fresh year reaches back: the December backlog and January both run."""
+        """A fresh year reaches back: the previous year's backlog chunks first."""
         opts = _opts(tmp_path, today=date(2027, 1, 12))  # no trackers anywhere
         windows = resolve_windows(opts)
         assert [(w.year, w.start, w.end) for w in windows] == [
-            (2026, date(2026, 12, 6), date(2026, 12, 31)),
+            (2026, date(2026, 1, 1), date(2026, 1, 31)),
             (2027, date(2027, 1, 1), date(2027, 1, 5)),
         ]
         assert "guardrail" in capsys.readouterr().out
+
+    def test_rollover_skips_complete_previous_year(self, tmp_path, capsys):
+        """A complete previous year has no December backlog: only the new year runs."""
+        opts = _opts(tmp_path, today=date(2027, 1, 12))
+        db = tracker_path(opts, 2026)
+        init_db(db)
+        rows = [
+            {
+                "date": f"2026-12-{d:02d}",
+                "h": 10,
+                "v": 3,
+                "task_id": f"modis-202612{d:02d}-h10v03",
+                "source_uri": "https://laads/x.hdf",
+            }
+            for d in range(18, 32)
+        ]
+        df = _catalogue_df(rows)
+        local = local_catalogue_path(opts, 2026)
+        local.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(local, index=False)
+        for tid in df["task_id"]:
+            mark_done(db, tid, "x")
+        windows = resolve_windows(opts)
+        assert [(w.year, w.start, w.end) for w in windows] == [
+            (2027, date(2027, 1, 1), date(2027, 1, 5)),
+        ]
+        assert "guardrail" not in capsys.readouterr().out
 
 
 class TestReconcile:
@@ -1472,18 +1528,19 @@ class TestIntegration:
         assert report["missing_ranges"] == [(date(2026, 1, 2), date(2026, 1, 2))]
 
     def test_rollover_auto_prepares_next_year(self, tmp_path, monkeypatch):
-        """A backlog spanning the year boundary builds, prefills, and fills the new year."""
+        """A fresh year chunks the previous year's backlog and prepares the new year."""
         opts = _opts(tmp_path)
         opts.today = date(2027, 1, 12)
         opts.catalogue_builder = _any_year_builder
         monkeypatch.setattr("atlantis.archive.update.harmonise_modis_granule_payload", _payload_for)
+        monkeypatch.setattr("atlantis.archive.update.probe_download", lambda url: None)
         fake_run = _fake_run_cube_batch(_payload_for)
         monkeypatch.setattr("atlantis.archive.update.run_cube_batch", fake_run)
 
         summary = run_update(opts)
         assert summary["status"] == "ok"
         assert [y["year"] for y in summary["years"]] == [2026, 2027]
-        assert summary["years"][0]["watermark"] == "2026-12-31"
+        assert summary["years"][0]["watermark"] == "2026-01-31"
         assert summary["years"][1]["watermark"] == "2027-01-05"
 
         _, axis = read_archive_dates(opts, 2027)
