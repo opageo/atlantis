@@ -78,9 +78,12 @@ atlantis archive modis status --year 2026             # inspect progress
 ```
 
 The worker runs from the repository root through the Pixi batch environment and
-writes its log to `<state-root>/<year>/logs/<runid>.log`. It never launches
-`update` recursively; `--foreground` runs the same worker path in the current
-terminal (for schedulers/CI/tests). The launcher fails clearly when tmux is
+writes its log to `<state-root>/<year>/logs/<runid>.log` — under the **first
+resolved year**, so a December/January rollover run logs under the earlier
+year. It never launches `update` recursively; `--foreground` runs the same
+worker path in the current terminal (for schedulers/CI/tests). `--attach`
+attaches to the new tmux session right after launch and `--session-name`
+overrides the generated session name. The launcher fails clearly when tmux is
 missing or the session already exists — it never falls back to a background
 shell process.
 
@@ -88,8 +91,9 @@ All execution is Pixi-only:
 
 ```text
 PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis _run-update ...
-pixi run -e batch modis-archive-update           # foreground, production defaults
-pixi run -e batch modis-archive-update-dry-run   # resolve + report only
+pixi run -e batch modis-archive-update                   # foreground, production defaults
+pixi run -e batch modis-archive-update-dry-run           # resolve + report only
+pixi run -e batch modis-archive-seed-tracker -- --year YYYY
 ```
 
 ## 3. Persistent state (per year)
@@ -176,6 +180,13 @@ For each resolved year, in chronological order, under the year lock:
 A failed run (validation, stale-lock conflict, catalogue inconsistency, backup
 failure) exits non-zero and writes a `status: "failed"` manifest.
 
+**Expected outcomes** — a successful run exits 0 with `Update ok for year(s)
+[...]`, every expected task `DONE`, the watermark advanced to the highest
+contiguous complete date, a `status: "ok"` manifest under `manifests/`, and
+the tracker/manifest/catalogue mirrored to the backup root. A run that
+resolves an empty window is a no-op: exit 0, `Resolved window is empty —
+nothing to do.`, no manifest. Anything else is a failed run.
+
 ## 5. Time-axis ordering policy
 
 The cube engine consumes `as_completed`, so a naive writer would append unseen
@@ -207,8 +218,8 @@ one-off, not part of the weekly path.
   plus a per-date completion heatmap (one row per month, one cell per day:
   `#` complete / `x` failed / `o` pending / `.` no data; ASCII glyphs keep it
   readable in any terminal) and a state-detail section with day
-  counts and the full contiguous range list per state, alongside
-  expected / incomplete / failed task totals.
+  counts and up to eight contiguous ranges per state (`… (+N more)` beyond
+  that), alongside expected / incomplete / failed task totals.
 - **Prefilled years** (marker `atlantis_time_prefill`, written by
   `batch modis cube run` on a `zarr/<YYYY>` root or — since the update flow
   pre-fills by default — by the update itself on a new year's first run; see
@@ -228,9 +239,10 @@ one-off, not part of the weekly path.
   but file downloads reject the latter; the one-time LAADS DAAC data-archive
   license must also be accepted in a browser (visit any file URL logged in).
   A wrong token or unaccepted license fails every tile download — the update
-  preflights one tile and aborts fast with an actionable message. A lone
-  tile `401` on the license-page URL is usually a transient LAADS glitch the
-  per-tile retries absorb.
+  preflights one tile and aborts fast with an actionable message. Transient
+  preflight failures (connection/timeout, 404/5xx) are retried and then
+  warn-and-continue; a persistent `401`/`403` (or an HTML/empty-body auth
+  signal) aborts the run — it is not absorbed by per-tile retries.
 - Read the tracker directly on the mounted volume:
 
   ```sql
