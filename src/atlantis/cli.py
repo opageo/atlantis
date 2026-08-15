@@ -4007,6 +4007,34 @@ gfm_batch_app.add_typer(gfm_cube_app, name="cube")
 _GFM_CATALOGUE = "s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet"
 
 
+def _parse_memory_str(value: str) -> int:
+    """Parse a memory string like ``'12GB'`` / ``'2500MB'`` into bytes."""
+    import re
+
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)?", value.strip(), re.IGNORECASE)
+    if not m:
+        raise typer.BadParameter(f"invalid memory value: {value!r}")
+    number = float(m.group(1))
+    unit = (m.group(2) or "B").upper()
+    multiplier = {"B": 1, "KB": 10**3, "MB": 10**6, "GB": 10**9, "TB": 10**12}[unit]
+    return int(number * multiplier)
+
+
+def _host_ram_bytes() -> int:
+    """Physical RAM in bytes, or 0 if undeterminable (guard degrades to no-op)."""
+    try:
+        import os as _os
+
+        return _os.sysconf("SC_PHYS_PAGES") * _os.sysconf("SC_PAGE_SIZE")
+    except (ValueError, OSError, AttributeError):
+        try:
+            import psutil
+
+            return int(psutil.virtual_memory().total)
+        except Exception:
+            return 0
+
+
 @gfm_cube_app.command("run")
 def batch_gfm_cube(
     inventory: str = typer.Option(
@@ -4048,24 +4076,28 @@ def batch_gfm_cube(
     ),
     workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
     workers_max: int = typer.Option(
-        3,
+        5,
         "--workers-max",
         help=(
-            "Maximum Dask worker processes (adaptive). With windowed processing "
-            "(--gfm-window-size 5000, default), this is validated for the 48-cell "
-            "Africa-heavy 2025 catalogue partition at --memory-limit 8GB. Inner odc.stac "
-            "loads run synchronously within their owning worker to avoid nested Dask work "
-            "multiplying GDAL buffers. See GitHub issue #96."
+            "Maximum Dask worker processes (adaptive). Defaults to 5: GFM's per-worker "
+            "RSS is dominated by native GDAL/heap memory that Dask cannot spill, so the "
+            "budget is capped at 5 workers x 5 GB = 25 GB — it fits inside a 32 GB host "
+            "together with the coordinator and OS while covering the measured per-item "
+            "working-set spikes (the per-item GDAL release fix keeps peaks well under "
+            "5 GB). Raise only on hosts with more RAM; see "
+            "docs/gfm/memory-root-cause.md."
         ),
     ),
     memory_limit: str = typer.Option(
-        "8GB",
+        "5GB",
         "--memory-limit",
         help=(
-            "Memory cap per worker. With windowed processing (--gfm-window-size 5000, "
-            "default), --workers-max 3 / 8GB completed the 48-cell Africa-heavy 2025 "
-            "catalogue partition with DONE=48 and FAILED=0. Do not lower this without "
-            "re-measuring representative production tiles. See GitHub issue #96."
+            "Memory cap per worker (Dask nanny kills the worker at 95% of this; "
+            "pause/resume engage at 80%). GFM's multi-GB native baseline is excluded "
+            "from Dask's spill machinery, so this must cover measured peak native + "
+            "working set, not just Python-held data — with the per-item "
+            "release_gdal_memory() fix the per-worker peak measures ~2.4 GB, so 5 GB "
+            "leaves headroom over terminate (4.75 GB). See docs/gfm/memory-root-cause.md."
         ),
     ),
     dashboard_port: int = typer.Option(8789, "--dashboard-port", help="Dask dashboard port."),
@@ -4149,6 +4181,21 @@ def batch_gfm_cube(
     if prefill_year is not None:
         _check_task_dates_in_year(tasks, prefill_year)
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
+
+    # Fail fast if the worker budget cannot fit on this host: GFM's native
+    # GDAL/heap memory is outside Dask's spill machinery, so an
+    # over-committed cluster is kernel-OOM'd (silently, when detached) rather
+    # than gracefully degraded. Budget rule mirrors the docs:
+    # workers × memory_limit must stay under ~80 % of physical RAM.
+    worker_budget = workers_max * _parse_memory_str(memory_limit)
+    host_ram = _host_ram_bytes()
+    if host_ram > 0 and worker_budget > 0.8 * host_ram:
+        fail(
+            f"Worker budget {workers_max} x {memory_limit} = {worker_budget / 1e9:.1f} GB "
+            f"exceeds 80% of this host's {host_ram / 1e9:.1f} GB RAM — lower "
+            f"--workers-max / --memory-limit or run on a larger host."
+        )
+        raise typer.Exit(code=1)
 
     cfg = BatchConfig(
         db_path=db_path,

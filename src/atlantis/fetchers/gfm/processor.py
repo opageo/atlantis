@@ -12,6 +12,7 @@ GFM encoding (verified against EODC STAC COGs):
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -495,6 +496,67 @@ class GfmProcessResult:
     paths: GfmOutputPaths | None
     metadata: TileMetadata
     coverage: GfmCoverageDiagnostics | None = None
+
+
+def _trim_malloc() -> None:
+    """Release freed native heap memory back to the OS on glibc Linux.
+
+    ``gc.collect()`` only reclaims Python-tracked objects; native allocations
+    made by GDAL/numpy (malloc'd C buffers) are freed by libc but often kept
+    in the process heap rather than returned to the OS (glibc per-thread
+    arenas plus a ``brk`` high-water mark). Best-effort only: a silent no-op
+    on non-Linux platforms or if libc doesn't expose ``malloc_trim``. Large
+    allocations go through ``mmap`` and are already released on ``free()``,
+    so this mainly helps the small-chunk ``brk`` heap (e.g. the 16 KB
+    ``/vsicurl/`` region-cache chunks) that the RSS floor is built from.
+    """
+    if not sys.platform.startswith("linux"):
+        logger.warning(f"_trim_malloc() is a no-op on non-Linux platforms (platform={sys.platform})")
+        return
+    import ctypes
+
+    ctypes.CDLL("libc.so.6").malloc_trim(0)
+
+
+def release_gdal_memory() -> None:
+    """Flush GDAL's process-global caches and glibc heap between processing units.
+
+    GDAL keeps state outside Python's control that survives between window /
+    item loads: the raster block cache (``GDAL_CACHEMAX``, LRU-bounded) and
+    the ``/vsicurl/`` HTTP range-request region cache
+    (``CPL_VSIL_CURL_CACHE_SIZE``, default 16 MB, LRU-bounded). Both are
+    *bounded* caches, so neither is the primary driver of the inter-item RSS
+    climb measured in production — the multi-GB "unmanaged" baseline is glibc
+    heap fragmentation compounded by per-dataset native state that stays
+    resident while dataset handles remain open (reproduced in
+    ``docs/gfm/memory-root-cause.md``: closed handles keep RSS flat; retained
+    handles pin the block cache at its cap and balloon the heap). This helper
+    is the release valve: collect Python objects (dropping any lingering
+    xarray/rasterio dataset references), flush both GDAL caches, then ask
+    glibc to return the freed heap to the OS.
+
+    Best-effort and side-effect free for the outputs: the block cache and the
+    ``/vsicurl/`` region cache are read caches, so flushing them can only cost
+    re-fetched HTTP ranges, never change pixel values. Safe to call from the
+    worker's single compute thread between items; the calls are process-global,
+    which is fine because Dask GFM workers run one task at a time
+    (``threads_per_worker=1``).
+    """
+    import gc
+
+    gc.collect()
+    try:
+        from osgeo import gdal
+
+        cache_max = gdal.GetCacheMax()
+        gdal.SetCacheMax(0)
+        if cache_max > 0:
+            gdal.SetCacheMax(cache_max)
+        gdal.VSICurlClearCache()
+    except Exception:  # noqa: BLE001 - best-effort release, never break the task
+        logger.warning("Failed to flush GDAL caches, continuing anyway", exc_info=True)
+        pass
+    _trim_malloc()
 
 
 class GfmRasterProcessor:
@@ -1147,6 +1209,16 @@ class GfmRasterProcessor:
                 len(windows),
                 skipped_windows,
             )
+            # Between items: release this item's Python-tracked objects, GDAL
+            # block / /vsicurl/ caches and glibc heap. The cleanup used to run
+            # only once per task; with many items per task (up to ~23) the
+            # worker's unmanaged RSS floor then ratcheted across the whole
+            # task and pushed the worker past Dask's pause/terminate thresholds
+            # (see docs/gfm/memory-root-cause.md). Per-item cadence keeps the
+            # floor to ~one item's worth while still letting the /vsicurl/
+            # region cache absorb the shared boundary blocks between the
+            # windows of the *current* item.
+            release_gdal_memory()
 
         if flood_count is None or valid_count is None:
             logger.warning("No usable SAR data found in {} items", len(items))
@@ -1355,6 +1427,7 @@ class GfmRasterProcessor:
                 )
 
             logger.debug("Item {}/{} processed (native)", idx + 1, len(items))
+            release_gdal_memory()
 
         if efe_accum is None or rwm_accum is None:
             logger.warning("No valid data found in {} items", len(items))
