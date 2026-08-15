@@ -27,6 +27,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -34,6 +35,7 @@ from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
+import requests
 from loguru import logger
 
 from atlantis.archive import datacube, grid
@@ -44,15 +46,23 @@ from atlantis.archive.writer import ArchiveWriter
 from atlantis.batch import BatchConfig
 from atlantis.batch.catalog import DEFAULT_S3_ENDPOINT, load_catalogue, write_catalogue
 from atlantis.batch.tracker import init_db, requeue, stats
-from atlantis.fetchers.modis.batch_processor import harmonise_modis_granule_payload
+from atlantis.fetchers.modis.backend import MissingEarthdataTokenError
+from atlantis.fetchers.modis.batch_processor import harmonise_modis_granule_payload, probe_download
 from atlantis.fetchers.modis.catalog import build_catalog
 from atlantis.fetchers.modis.inventory import to_tasks
 from atlantis.fetchers.modis.processor import tile_bounds_from_hv
+from atlantis.utils.io import DownloadContentError
 
 MODIS_VAR_NAMES = ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood")
 
 #: Lock is stale when its owning PID is gone or it is older than this.
 LOCK_MAX_AGE = timedelta(hours=24)
+
+#: Auto-resolved windows process at most this many calendar days per run,
+#: anchored at the *start* of the backlog (the year's first missing date).
+#: A longer backlog is chunked automatically: each run ingests the next
+#: MAX_CATCHUP_DAYS days, and re-running continues where the watermark stopped.
+MAX_CATCHUP_DAYS = 31
 
 _REQUIRED_CATALOGUE_COLUMNS = ("date", "h", "v", "task_id", "source_uri")
 
@@ -276,7 +286,21 @@ def contiguous_complete_end(df: pd.DataFrame, done_ids: set[str], from_date: dat
 
 
 def resolve_windows(opts: UpdateOptions) -> list[YearWindow]:
-    """Resolve the requested year/window into per-year windows, chronological."""
+    """Resolve the requested year/window into per-year windows, chronological.
+
+    Auto-resolved windows (no explicit ``--start/--end``) are anchored at the
+    year's last processed date, not at today: a year more than
+    :data:`MAX_CATCHUP_DAYS` days behind plays catch-up in forward chunks
+    (each run ingests the next :data:`MAX_CATCHUP_DAYS` days from the
+    watermark and re-running continues where it stopped — a wiped or fresh
+    year starts at January 1). Near real time, the window re-scans the
+    lookback span up to the latest available data (today minus the
+    availability lag). Explicit windows are deliberate and are resolved
+    verbatim. A fresh current year reaches back into the previous year, so a
+    December backlog and the new year's first days are both covered
+    automatically (the new year is prepared — catalogue + prefill — by
+    :func:`_run_year`).
+    """
     today = opts.today or date.today()
     lag_end = today - timedelta(days=opts.availability_lag_days)
 
@@ -290,27 +314,67 @@ def resolve_windows(opts: UpdateOptions) -> list[YearWindow]:
         return [w for w in windows if opts.year is None or w.year == opts.year]
 
     if opts.year is not None:
-        last = last_complete_for_year(opts, opts.year)
-        start = _window_start(opts, opts.year, last)
-        end = min(lag_end, date(opts.year, 12, 31))
-        kind = "catch-up" if last is None else "weekly"
-        if start > end:
-            return []
-        return [YearWindow(opts.year, start, end, kind)]
+        win = _auto_window_for_year(opts, opts.year, last_complete_for_year(opts, opts.year), lag_end)
+        return [win] if win is not None else []
 
     current = lag_end.year
-    last = last_complete_for_year(opts, current)
-    start = _window_start(opts, current, last)
-    end = lag_end
+    windows = []
+    last_current = last_complete_for_year(opts, current)
+    if last_current is None:
+        last_prev = last_complete_for_year(opts, current - 1)
+        if last_prev != date(current - 1, 12, 31):  # a complete year has no December backlog
+            prev = _auto_window_for_year(opts, current - 1, last_prev, lag_end)
+            if prev is not None:
+                windows.append(prev)
+    cur = _auto_window_for_year(opts, current, last_current, lag_end)
+    if cur is not None:
+        windows.append(cur)
+    return windows
+
+
+def _auto_window_for_year(
+    opts: UpdateOptions,
+    year: int,
+    last: date | None,
+    lag_end: date,
+) -> YearWindow | None:
+    """Catch-up window for one year, anchored at the last processed date.
+
+    The window starts the day after the year's contiguous watermark (January 1
+    on a wiped/fresh year). When the year is more than a chunk behind the
+    latest available data, the window covers the next
+    :data:`MAX_CATCHUP_DAYS` days from that cursor — re-running continues
+    where the watermark stopped. Near real time (the chunk would run past the
+    latest available data), the window instead re-scans the lookback span up
+    to the availability-lagged present, so late LAADS publications are picked
+    up and a complete year is still validated and re-recorded.
+    """
+    kind = "catch-up" if last is None else "weekly"
+    cursor = date(year, 1, 1) if last is None else last + timedelta(days=1)
+    available_end = min(lag_end, date(year, 12, 31))
+    if cursor + timedelta(days=MAX_CATCHUP_DAYS - 1) <= available_end:
+        start, end = cursor, cursor + timedelta(days=MAX_CATCHUP_DAYS - 1)
+        _warn_catchup(start, end)
+    else:
+        start = _window_start(opts, year, last)
+        end = available_end
     if start > end:
-        return []
-    return _clip_years(start, end, "weekly")
+        return None
+    return YearWindow(year, start, end, kind)
 
 
 def _window_start(opts: UpdateOptions, year: int, last: date | None) -> date:
     if last is None:
         return date(year, 1, 1)
     return max(date(year, 1, 1), last + timedelta(days=1 - opts.lookback_days))
+
+
+def _warn_catchup(start: date, end: date) -> None:
+    """Operator-visible notice when a long backlog is chunked into 31-day windows."""
+    print(
+        f"⚠  backlog exceeds the {MAX_CATCHUP_DAYS}-day guardrail — processing the next "
+        f"{MAX_CATCHUP_DAYS} day(s) ({start} → {end}); re-run `update` to continue automatically"
+    )
 
 
 def _clip_years(start: date, end: date, kind: str) -> list[YearWindow]:
@@ -574,6 +638,68 @@ def validate_year(
 # ── Batch ────────────────────────────────────────────────────────────────────
 
 
+def _probe_pending_download(
+    tasks: list[dict[str, Any]],
+    db_path: Path,
+    attempts: int = 3,
+) -> None:
+    """Preflight one real tile download before the batch launches.
+
+    LAADS rejects a misconfigured token / unaccepted archive license only at
+    download time, not at listing time, so the failure would otherwise surface
+    as every tile FAILING inside Dask. Stream just the first chunk of the
+    first non-DONE tile and fail fast with an actionable message instead.
+
+    Transient failures (connection/timeout, 404/5xx, a flaky HTML/empty first
+    chunk) are retried with short backoff; only a persistent auth/EULA signal
+    (HTML/empty body, HTTP 401/403, missing token) aborts the run.
+
+    Raises:
+        UpdateError: When the probe persistently returns an auth/EULA signal.
+    """
+    tracker = read_tracker(db_path)
+    todo = [t for t in tasks if tracker.get(t["task_id"]) != "DONE"]
+    if not todo:
+        return
+    uri = todo[0]["source_uri"]
+    last_issue: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            probe_download(uri)
+            return
+        except MissingEarthdataTokenError as exc:
+            raise UpdateError(str(exc)) from exc
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status in (401, 403):
+                raise UpdateError(
+                    f"LAADS rejected the download token (HTTP {status}) for {uri} — "
+                    "check that EARTHDATA_TOKEN is a valid LAADS application token "
+                    "and the archive license is accepted"
+                ) from exc
+            last_issue = exc  # 404 / 5xx: per-granule or server-side; tiles retry individually
+        except (DownloadContentError, requests.ConnectionError, requests.Timeout) as exc:
+            last_issue = exc
+        if attempt < attempts:
+            time.sleep(attempt)
+            logger.warning(
+                "download preflight for {} failed on attempt {}/{} ({}) — retrying",
+                uri,
+                attempt,
+                attempts,
+                last_issue,
+            )
+    if isinstance(last_issue, DownloadContentError):
+        raise UpdateError(str(last_issue)) from last_issue
+    logger.warning(
+        "download preflight for {} failed after {}/{} attempt(s) ({}) — continuing",
+        uri,
+        attempts,
+        attempts,
+        last_issue,
+    )
+
+
 def run_window_batch(opts: UpdateOptions, year: int, tasks: list[dict[str, Any]], db_path: Path) -> dict[str, int]:
     """Run the cube batch for *tasks* with an ascending-order writer session."""
     archive = archive_root(opts, year)
@@ -587,7 +713,7 @@ def run_window_batch(opts: UpdateOptions, year: int, tasks: list[dict[str, Any]]
         retries=opts.retries,
         log_every=opts.log_every,
     )
-    with writer.session("modis", list(MODIS_VAR_NAMES)) as session:
+    with writer.session("modis", list(MODIS_VAR_NAMES), prefill_year=year) as session:
         ordered = OrderedConsume(session, db_path, tasks)
 
         def consume(payload: dict[str, Any]) -> str:
@@ -761,6 +887,7 @@ def _run_year(opts: UpdateOptions, window: YearWindow, run_id: str) -> dict[str,
 
             final: dict[str, int] = {"total": 0, "DONE": 0, "FAILED": 0}
             if tasks and not opts.dry_run:
+                _probe_pending_download(tasks, db)
                 final = run_window_batch(opts, year, tasks, db)
 
             validate_year(opts, window, tasks, db)

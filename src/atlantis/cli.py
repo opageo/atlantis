@@ -2524,6 +2524,7 @@ def _print_year_status(opts, year: int) -> None:
             "Archive span",
             "—" if not report.get("archive_first") else f"{report['archive_first']} … {report['archive_last']}",
         ],
+        ["Prefilled year", str(report.get("prefilled_year", False))],
         ["Time axis ascending", str(report["time_axis_sorted"])],
         ["Missing ranges", _format_missing_ranges(report.get("missing_ranges"))],
     ]

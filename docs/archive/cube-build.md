@@ -283,6 +283,72 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
   --log-every 50
 ```
 
+#### MODIS: fresh-year build vs incremental update — use the right command
+
+> **These are two different jobs. Do not mix them up.**
+>
+> - `batch modis cube run` is the **full cube build**: pre-fills the year's
+>   time axis (on a `zarr/<YYYY>` root) and ingests every catalogue tile into
+>   a new `modis` group. Use it for a **fresh year that has no `modis` group
+>   in the archive yet** (first build, or a rebuilt year).
+> - `archive modis update` is the **incremental update** job
+>   ([`modis-archive-update.md`](./modis-archive-update.md)): reconciles an
+>   **already-built** year's tracker/catalogue/archive and processes only
+>   missing/failed tiles — the weekly "latest data" flow, not a build.
+>   Running it for a fresh year is the wrong tool: stop it (`tmux
+kill-session`, see its guide) and use the build command below instead.
+
+Fresh full-year build (2021 as the concrete example — substitute the year):
+
+```bash
+tmux new -s modis_cube_2021
+PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis cube run \
+  --inventory modis_archive_catalog_2021.parquet \
+  --archive s3://atlantis/zarr/2021 \
+  --db-path /mnt/atlantis-state/modis/2021/cube_tracker.db \
+  --log-every 50
+```
+
+- `--archive s3://atlantis/zarr/<YYYY>` — the `zarr/<YYYY>` root triggers the
+  default **time-axis prefill** (365/366 slots, marker
+  `atlantis_time_prefill`) before the first write; the ingest then fills the
+  pre-existing slots. This is the "prefill, then write the data" sequence.
+- `--inventory` — the per-year catalogue (**required**; local path or `s3://`
+  URI, e.g. `s3://atlantis/assets/modis/modis_archive_catalog_2021.parquet`;
+  the default canonical catalogue streams every year's dates into the cube —
+  see §4.1's table). If the yearly file doesn't exist yet, slice it from the
+  canonical full-history catalogue (§3.1) or build it with
+  `batch modis catalog --start <Y>-01-01 --end <Y>-12-31`.
+- `--db-path` — point it at the **state-root tracker**
+  (`/mnt/atlantis-state/modis/<YYYY>/cube_tracker.db`, deleting any stale
+  file first) so `archive modis status` and future `archive modis update`
+  runs see the year (§4.4). Do not reuse a tracker from another source or
+  catalogue revision.
+
+**Check progress** (any time, even after disconnect — the run is resume-safe
+and skips `DONE` tasks on re-run):
+
+```bash
+# Tracker-based completion report (works offline)
+PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis cube status \
+  --db-path /mnt/atlantis-state/modis/2021/cube_tracker.db \
+  --inventory modis_archive_catalog_2021.parquet
+
+# Watch the live run
+tmux attach -t modis_cube_2021
+
+# Confirm it's alive (progress lines can look frozen: output is block-buffered)
+pgrep -af "batch modis cube run"
+
+# Raw tracker counts
+sqlite3 /mnt/atlantis-state/modis/2021/cube_tracker.db \
+  "SELECT status, COUNT(*) FROM tasks GROUP BY status;"
+```
+
+Verify the prefill landed by reading the group attributes: the `modis` group
+in the archive must carry `atlantis_time_prefill: "<YYYY>"` next to
+`archive_config`.
+
 #### Run the full GFM catalogue
 
 Omit `--partition` to process every row in the catalogue. Run this in `tmux`
@@ -297,6 +363,12 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
   --db-path gfm_cube_tracker_2025.db \
   --log-every 50
 ```
+
+> **Per-year cubes must pick their catalogue.** `--inventory` defaults to the
+> canonical catalogue — full history for VIIRS and MODIS — so building a
+> per-year store (e.g. `s3://atlantis/zarr/2025`) without it streams every
+> catalogue year's dates into the cube. For a single-year cube, pass the yearly
+> catalogue (`…_archive_catalog_<year>.parquet`, §3.2) and a fresh `--db-path`.
 
 Use an archive and tracker path appropriate to the catalogue being ingested.
 Do not reuse a tracker for a different source or catalogue revision: `DONE`
@@ -580,6 +652,20 @@ PYTHONPATH=src pixi run python -m atlantis.cli archive modis status --year 2025
   year, and its completion-order writer can leave the time axis unsorted. The
   update path (§4.1's engine wrapped in an ascending-order writer) is the
   supported way to complete an existing year.
+- Conversely, do **not** start a fresh year with `archive modis update` — a
+  first full-year build is `batch modis cube run`'s job (see "MODIS:
+  fresh-year build vs incremental update" in §4.1 for the exact command and
+  progress checks).
+- After a full rebuild (or a fresh build of a new year) with `batch modis cube
+run` (§4.1), the year's **state-root tracker** must be the build's tracker or
+  `archive modis status` / `update` will not see the year: either point
+  `--db-path` at the state-root file
+  (`/mnt/atlantis-state/modis/<year>/cube_tracker.db`, after deleting any
+  stale file), or afterwards move the build's tracker into place
+  (`mv rebuild_tracker.db …/cube_tracker.db`). Do not use `seed-tracker` as a
+  substitute for a fresh build's tracker — it manufactures rows from the Zarr
+  time axis, not per-`(date, h, v)` task truth (see
+  `.github/prompts/plan-modis-incremental-archive-update.md`).
 - Every command must see the same state root (`--state-root`, or the default
   `/mnt/atlantis-state/modis` once created and seeded — `seed-tracker` is
   idempotent).

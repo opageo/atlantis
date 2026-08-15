@@ -23,6 +23,9 @@ layers Atlantis computes from them.
   schema and data-flow diagrams (review brief for the ML team).
 - [Cube build guide](./archive/cube-build.md) - Building the Zarr datacube from
   VIIRS granules (batch pipeline, resume-safe, streaming).
+- [Event GFM archives](./archive/events-gfm.md) - Processing GEOID-Flood and
+  KuroSiwo events into the GFM Zarr archives (dedicated event cubes and
+  per-year backfills, with the exact commands).
 - [Incremental MODIS archive updates](./archive/modis-archive-update.md) -
   Weekly, resume-safe ingestion of newly published MODIS tiles into the yearly
   archive (reconciliation, ordered time axis, manifests, state backups).

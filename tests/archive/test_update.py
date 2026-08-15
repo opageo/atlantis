@@ -19,11 +19,13 @@ from atlantis.archive.update import (
     UpdateError,
     UpdateOptions,
     YearLock,
+    _modis_group,
     archive_root,
     build_worker_command,
     catalogue_uri,
     check_holes,
     contiguous_complete_end,
+    group_is_prefilled,
     launch_tmux_update,
     local_catalogue_path,
     read_archive_dates,
@@ -135,6 +137,39 @@ def _fake_run_cube_batch(produce_fn, fail_task_ids=()):
     return run
 
 
+def _build_legacy_axis(opts, year, dates, tiles=None):
+    """Write *dates* through a non-prefilled writer session (legacy-style archive)."""
+    from atlantis.archive.writer import ArchiveWriter
+
+    tiles = tiles or [(10, 3)]
+    writer = ArchiveWriter(archive_root(opts, year))
+    with writer.session("modis", list(MODIS_VAR_NAMES)) as session:
+        for d in dates:
+            for h, v in tiles:
+                task = {"task_id": f"modis-{d:%Y%m%d}-h{h:02d}v{v:02d}", "date": d.isoformat(), "h": h, "v": v}
+                session.write(_payload_to_dataset(_payload_for(task)), time=d)
+
+
+def _any_year_builder(start, end, output, on_progress=None):
+    """Catalogue builder covering every date in the window, any year."""
+    s, e = date.fromisoformat(start), date.fromisoformat(end)
+    rows = []
+    for i in range((e - s).days + 1):
+        d = s + timedelta(days=i)
+        for h, v in ((10, 3), (11, 3)):
+            ds = d.isoformat()
+            rows.append(
+                {
+                    "date": ds,
+                    "h": h,
+                    "v": v,
+                    "task_id": f"modis-{ds.replace('-', '')}-h{h:02d}v{v:02d}",
+                    "source_uri": f"https://laads/{ds}/x.hdf",
+                }
+            )
+    _catalogue_df(rows).to_parquet(output, index=False)
+
+
 # ── Small units ──────────────────────────────────────────────────────────────
 
 
@@ -158,7 +193,7 @@ class TestRoutingAndWindows:
         windows = resolve_windows(opts)
         assert [(w.year, w.start, w.end) for w in windows] == [(2025, date(2025, 12, 30), date(2025, 12, 31))]
 
-    def test_weekly_window_from_watermark(self, tmp_path):
+    def test_weekly_window_from_watermark(self, tmp_path, capsys):
         opts = _opts(tmp_path, year=2026, lookback_days=14, today=date(2026, 8, 2))
         db = tracker_path(opts, 2026)
         init_db(db)
@@ -171,9 +206,90 @@ class TestRoutingAndWindows:
         windows = resolve_windows(opts)
         assert len(windows) == 1
         w = windows[0]
-        assert w.start == date(2026, 1, 1)  # clamped: watermark + 1 - lookback < year start
-        assert w.end == date(2026, 7, 26)  # today - lag
+        assert w.start == date(2026, 1, 3)  # stale year: next 31 days from the watermark
+        assert w.end == date(2026, 2, 2)
         assert w.kind == "weekly"
+        assert "guardrail" in capsys.readouterr().out
+
+    def test_catchup_chunks_forward_from_year_start(self, tmp_path, capsys):
+        """A wiped/fresh year catches up in 31-day chunks anchored at Jan 1."""
+        opts = _opts(tmp_path, year=2026, today=date(2026, 8, 12))  # no tracker, no catalogue
+        (windows,) = resolve_windows(opts)
+        assert (windows.start, windows.end, windows.kind) == (
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            "catch-up",
+        )
+        assert "guardrail" in capsys.readouterr().out
+
+    def test_catchup_chunk_resumes_from_watermark(self, tmp_path, capsys):
+        """A mid-catch-up year continues with the next 31 days, not the newest."""
+        opts = _opts(tmp_path, year=2026, today=date(2026, 8, 12))
+        db = tracker_path(opts, 2026)
+        init_db(db)
+        df = _catalogue_df(_tile_rows(list(range(1, 32)), [(10, 3)]))
+        local = local_catalogue_path(opts, 2026)
+        local.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(local, index=False)
+        for tid in df["task_id"]:
+            mark_done(db, tid, "x")
+        (windows,) = resolve_windows(opts)
+        assert (windows.start, windows.end) == (date(2026, 2, 1), date(2026, 3, 3))
+        assert "guardrail" in capsys.readouterr().out
+
+    def test_catchup_exactly_one_chunk_chunks_with_notice(self, tmp_path, capsys):
+        """A backlog of exactly 31 days chunks (never a lookback-stretched window)."""
+        opts = _opts(tmp_path, year=2026, today=date(2026, 2, 8))  # no tracker; lag_end = 2026-02-01
+        (windows,) = resolve_windows(opts)
+        assert (windows.start, windows.end, windows.kind) == (
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            "catch-up",
+        )
+        assert "guardrail" in capsys.readouterr().out
+
+    def test_explicit_windows_never_capped(self, tmp_path, capsys):
+        """--start/--end backfill windows are deliberate: resolved verbatim."""
+        opts = _opts(tmp_path, start=date(2026, 1, 1), end=date(2026, 8, 5))
+        (windows,) = resolve_windows(opts)
+        assert (windows.start, windows.end) == (date(2026, 1, 1), date(2026, 8, 5))
+
+    def test_rollover_reaches_previous_year(self, tmp_path, capsys):
+        """A fresh year reaches back: the previous year's backlog chunks first."""
+        opts = _opts(tmp_path, today=date(2027, 1, 12))  # no trackers anywhere
+        windows = resolve_windows(opts)
+        assert [(w.year, w.start, w.end) for w in windows] == [
+            (2026, date(2026, 1, 1), date(2026, 1, 31)),
+            (2027, date(2027, 1, 1), date(2027, 1, 5)),
+        ]
+        assert "guardrail" in capsys.readouterr().out
+
+    def test_rollover_skips_complete_previous_year(self, tmp_path, capsys):
+        """A complete previous year has no December backlog: only the new year runs."""
+        opts = _opts(tmp_path, today=date(2027, 1, 12))
+        db = tracker_path(opts, 2026)
+        init_db(db)
+        rows = [
+            {
+                "date": f"2026-12-{d:02d}",
+                "h": 10,
+                "v": 3,
+                "task_id": f"modis-202612{d:02d}-h10v03",
+                "source_uri": "https://laads/x.hdf",
+            }
+            for d in range(18, 32)
+        ]
+        df = _catalogue_df(rows)
+        local = local_catalogue_path(opts, 2026)
+        local.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(local, index=False)
+        for tid in df["task_id"]:
+            mark_done(db, tid, "x")
+        windows = resolve_windows(opts)
+        assert [(w.year, w.start, w.end) for w in windows] == [
+            (2027, date(2027, 1, 1), date(2027, 1, 5)),
+        ]
+        assert "guardrail" not in capsys.readouterr().out
 
 
 class TestReconcile:
@@ -254,6 +370,118 @@ class TestReconcile:
             prefilled=True,
         )
         assert rep.orphan_dates == []
+
+
+class TestPreflightProbe:
+    """Preflight tile-download probe: fail fast before the batch launches."""
+
+    @staticmethod
+    def _tasks():
+        return [
+            {"task_id": "t1", "date": "2026-08-05", "h": 0, "v": 0, "source_uri": "https://example/one.hdf"},
+            {"task_id": "t2", "date": "2026-08-05", "h": 0, "v": 1, "source_uri": "https://example/two.hdf"},
+        ]
+
+    def test_skipped_when_all_done(self, tmp_path, monkeypatch):
+        from atlantis.archive import update as upd
+        from atlantis.batch.tracker import init_db, mark_done
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        mark_done(db, "t1", "archive#t1")
+        mark_done(db, "t2", "archive#t2")
+        called: list[str] = []
+        monkeypatch.setattr(upd, "probe_download", lambda url: called.append(url))
+        upd._probe_pending_download(self._tasks(), db)
+        assert called == []
+
+    def test_probes_first_pending_and_failed_tile(self, tmp_path, monkeypatch):
+        from atlantis.archive import update as upd
+        from atlantis.batch.tracker import init_db, mark_done
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        mark_done(db, "t1", "archive#t1")
+        called: list[str] = []
+        monkeypatch.setattr(upd, "probe_download", lambda url: called.append(url))
+        upd._probe_pending_download(self._tasks(), db)
+        assert called == ["https://example/two.hdf"]
+
+    def test_probe_failure_becomes_update_error(self, tmp_path, monkeypatch):
+        from atlantis.archive.update import UpdateError, _probe_pending_download
+        from atlantis.batch.tracker import init_db, mark_failed
+        from atlantis.utils.io import DownloadContentError
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        mark_failed(db, "t1", "stale failure", 3)
+        monkeypatch.setattr("atlantis.archive.update.time.sleep", lambda _s: None)
+
+        def _boom(url):
+            raise DownloadContentError("LAADS rejected the token")
+
+        monkeypatch.setattr("atlantis.archive.update.probe_download", _boom)
+        with pytest.raises(UpdateError, match="LAADS rejected the token"):
+            _probe_pending_download(self._tasks(), db)
+
+    def test_probe_http_401_becomes_update_error(self, tmp_path, monkeypatch):
+        from requests import HTTPError
+
+        from atlantis.archive.update import UpdateError, _probe_pending_download
+        from atlantis.batch.tracker import init_db
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+
+        class _Resp:
+            status_code = 401
+
+        def _unauthorized(url):
+            raise HTTPError("401 error", response=_Resp())
+
+        monkeypatch.setattr("atlantis.archive.update.probe_download", _unauthorized)
+        with pytest.raises(UpdateError, match="rejected the download token"):
+            _probe_pending_download(self._tasks(), db)
+
+    def test_probe_retries_then_succeeds(self, tmp_path, monkeypatch):
+        from requests import ConnectionError
+
+        from atlantis.archive.update import _probe_pending_download
+        from atlantis.batch.tracker import init_db
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        monkeypatch.setattr("atlantis.archive.update.time.sleep", lambda _s: None)
+        calls: list[str] = []
+
+        def _flaky(url):
+            calls.append(url)
+            if len(calls) == 1:
+                raise ConnectionError("first attempt dropped")
+            return None
+
+        monkeypatch.setattr("atlantis.archive.update.probe_download", _flaky)
+        _probe_pending_download(self._tasks(), db)
+        assert calls == ["https://example/one.hdf", "https://example/one.hdf"]
+
+    def test_persistent_transient_failure_warns_and_continues(self, tmp_path, monkeypatch):
+        from requests import ConnectionError
+
+        from atlantis.archive.update import _probe_pending_download
+        from atlantis.batch.tracker import init_db
+
+        db = tmp_path / "cube_tracker.db"
+        init_db(db)
+        monkeypatch.setattr("atlantis.archive.update.time.sleep", lambda _s: None)
+        calls: list[str] = []
+
+        def _down(url):
+            calls.append(url)
+            raise ConnectionError("network down")
+
+        monkeypatch.setattr("atlantis.archive.update.probe_download", _down)
+        _probe_pending_download(self._tasks(), db)
+        assert len(calls) == 3  # retried, then warned and continued
 
 
 class TestWatermark:
@@ -1040,9 +1268,11 @@ class TestSeedTracker:
         opts = _opts(tmp_path)
         opts.catalogue_builder = FakeCatalogueBuilder(2025, self.TILES, dates=dates)
         monkeypatch.setattr("atlantis.archive.update.harmonise_modis_granule_payload", _payload_for)
+        monkeypatch.setattr("atlantis.archive.update.probe_download", lambda url: None)
         fake_run = _fake_run_cube_batch(_payload_for)
         monkeypatch.setattr("atlantis.archive.update.run_cube_batch", fake_run)
         opts.start, opts.end = dates[0], dates[-1]
+        _build_legacy_axis(opts, 2025, dates, self.TILES)  # partial axis: prefill is skipped (data guard)
         run_update(opts)
         return opts, seed_tracker
 
@@ -1152,6 +1382,7 @@ class TestIntegration:
         opts = _opts(tmp_path)
         opts.catalogue_builder = FakeCatalogueBuilder(year, tiles or self.TILES, dates=dates)
         monkeypatch.setattr("atlantis.archive.update.harmonise_modis_granule_payload", _payload_for)
+        monkeypatch.setattr("atlantis.archive.update.probe_download", lambda url: None)
         return opts
 
     def _run_window(self, opts, monkeypatch, start, end, fail_task_ids=()):
@@ -1160,13 +1391,15 @@ class TestIntegration:
         opts.start, opts.end = start, end
         return run_update(opts)
 
-    def test_partial_year_to_weekly_append(self, tmp_path, monkeypatch):
+    def test_new_year_updates_land_in_prefilled_slots(self, tmp_path, monkeypatch):
+        """A new year's first update pre-fills the full axis; weekly runs land in slots."""
         year = 2026
         opts = self._setup(tmp_path, monkeypatch, year, dates=[date(2026, 1, 1), date(2026, 1, 2)])
         summary = self._run_window(opts, monkeypatch, date(2026, 1, 1), date(2026, 1, 2))
         assert summary["status"] == "ok"
         _, axis = read_archive_dates(opts, year)
-        assert axis == [date(2026, 1, 1), date(2026, 1, 2)]
+        assert len(axis) == 365 and axis[0] == date(2026, 1, 1) and axis[-1] == date(2026, 12, 31)
+        assert group_is_prefilled(_modis_group(opts, year))  # marker written on prefill
         assert summary["years"][0]["watermark"] == "2026-01-02"
 
         # new publication arrives; the weekly append keeps the axis ascending
@@ -1175,7 +1408,7 @@ class TestIntegration:
         )
         summary = self._run_window(opts, monkeypatch, date(2026, 1, 2), date(2026, 1, 3))
         _, axis = read_archive_dates(opts, year)
-        assert axis == [date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3)]
+        assert len(axis) == 365  # prefill is a no-op once the axis is full
         assert summary["years"][0]["watermark"] == "2026-01-03"
 
         manifests = sorted((tmp_path / "state" / str(year) / "manifests").glob("*.json"))
@@ -1195,6 +1428,7 @@ class TestIntegration:
         year = 2026
         dates = [date(2026, 1, d) for d in (1, 2, 3)]
         opts = self._setup(tmp_path, monkeypatch, year, dates=dates)
+        _build_legacy_axis(opts, year, [date(2026, 1, 1)], self.TILES)  # legacy partial axis: prefill skipped
         fail_ids = [f"modis-20260102-h{h:02d}v{v:02d}" for h, v in self.TILES]
 
         # run 1: date 2's tiles fail → FAILED run leaves axis [1, 3]
@@ -1281,9 +1515,10 @@ class TestIntegration:
         assert report["date_states"] == {date(2026, 1, 1): "done", date(2026, 1, 2): "pending"}
 
     def test_status_report_non_prefilled_missing_from_axis(self, tmp_path, monkeypatch):
-        """Non-prefilled years keep the axis-based missing-range semantics."""
+        """Legacy non-prefilled years keep the axis-based missing-range semantics."""
         year = 2026
         opts = self._setup(tmp_path, monkeypatch, year, dates=[date(2026, 1, 1)])
+        _build_legacy_axis(opts, year, [date(2026, 1, 1)])  # legacy partial axis: prefill skipped
         self._run_window(opts, monkeypatch, date(2026, 1, 1), date(2026, 1, 1))
         # catalogue lists date 2 (never written); axis still only holds date 1
         opts.catalogue_builder.dates = [date(2026, 1, 1), date(2026, 1, 2)]
@@ -1291,6 +1526,28 @@ class TestIntegration:
         report = status_report(opts, year)
         assert report["prefilled_year"] is False
         assert report["missing_ranges"] == [(date(2026, 1, 2), date(2026, 1, 2))]
+
+    def test_rollover_auto_prepares_next_year(self, tmp_path, monkeypatch):
+        """A fresh year chunks the previous year's backlog and prepares the new year."""
+        opts = _opts(tmp_path)
+        opts.today = date(2027, 1, 12)
+        opts.catalogue_builder = _any_year_builder
+        monkeypatch.setattr("atlantis.archive.update.harmonise_modis_granule_payload", _payload_for)
+        monkeypatch.setattr("atlantis.archive.update.probe_download", lambda url: None)
+        fake_run = _fake_run_cube_batch(_payload_for)
+        monkeypatch.setattr("atlantis.archive.update.run_cube_batch", fake_run)
+
+        summary = run_update(opts)
+        assert summary["status"] == "ok"
+        assert [y["year"] for y in summary["years"]] == [2026, 2027]
+        assert summary["years"][0]["watermark"] == "2026-01-31"
+        assert summary["years"][1]["watermark"] == "2027-01-05"
+
+        _, axis = read_archive_dates(opts, 2027)
+        assert len(axis) == 365 and axis[-1] == date(2027, 12, 31)
+        assert group_is_prefilled(_modis_group(opts, 2027))  # prepared: catalogue + prefill + fill
+        report = status_report(opts, 2027)
+        assert report["prefilled_year"] is True
 
     def test_dry_run_makes_no_writes(self, tmp_path, monkeypatch):
         opts = self._setup(tmp_path, monkeypatch, 2026, dates=[date(2026, 1, 1)])

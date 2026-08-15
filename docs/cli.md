@@ -379,8 +379,9 @@ plus:
 - a per-date completion heatmap (one row per month, one cell per day:
   `#` complete / `x` failed / `o` pending / `.` no data; ASCII glyphs keep it
   readable in any terminal),
-- a state detail section with day counts and the full contiguous range list
-  per state, plus expected / incomplete / failed task totals.
+- a state detail section with day counts and up to eight contiguous ranges
+  per state (`… (+N more)` beyond that), plus expected / incomplete / failed
+  task totals.
 
 Without `--year`, every year with local state under `--state-root` is shown at
 once: one summary row per year plus a one-line monthly overview strip (one
