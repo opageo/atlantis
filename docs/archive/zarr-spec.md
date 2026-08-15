@@ -31,6 +31,24 @@ Each `(source, date)` AOI is placed into the global grid by an **integer-index
 region write**, so the grid stays **sparse** — only inner chunks overlapping an
 event ever materialise on disk/S3.
 
+**The operational archive is one cube per calendar year.** Instead of a single
+all-history store, the production archive is sharded by year on S3:
+
+```text
+s3://atlantis/zarr/
+├── 2024/datacube.zarr/     # one cube per year
+├── 2025/datacube.zarr/     #   gfm/ modis/ viirs/ groups,
+└── ...                     #   each with its own time axis
+```
+
+Every yearly cube has the identical schema and grid described in this
+document; only the `time` axis range differs (one prefilled calendar year per
+cube — see §3.1). Event-driven builds (GFM events for GEOID-Flood / KuroSiwo)
+region-write into these per-year cubes via `s3://atlantis/zarr/{YYYY}` roots,
+and per-event runs may additionally target a dedicated event cube such as
+`s3://atlantis/zarr/geoidflood_events` or `s3://atlantis/zarr/kurosiwo_events`
+— see [events-gfm.md](./events-gfm.md).
+
 ```mermaid
 graph TD
     ROOT["🗂 Archive root<br/>(local dir or s3://bucket/prefix)"]
