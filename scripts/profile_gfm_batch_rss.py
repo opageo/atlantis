@@ -27,11 +27,20 @@ Usage (real EODC STAC network access required, no auth):
         --bbox -1.5 38.8 2.5 42.0 --start 2024-10-20 --end 2024-11-10 \
         --max-cells 6
 
-**Result (2026-07-28, 6 real EU cells, isolated ``--pass`` A/B): the cleanup
-block's own effect is confirmed real at single-process scale, not just
-plausible.** With it enabled, live VmRSS stayed bounded (~330-380 MiB) across
-all 6 cells; with it monkeypatched to a no-op, VmRSS climbed to ~1.5 GiB (~4x
-higher, still rising).
+**Result (2026-07-28, 6 real EU cells, isolated ``--pass`` A/B): the cleanup's
+own effect is confirmed real at single-process scale, not just plausible.**
+With it enabled, live VmRSS stayed bounded (~330-380 MiB) across all 6 cells;
+with it monkeypatched to a no-op, VmRSS climbed to ~1.5 GiB (~4x higher,
+still rising).
+
+Note (2026-08): this harness measures the *aggregate* cleanup effect. It does
+not by itself isolate which component does the work — and a controlled
+local-COG reproduction (see docs/gfm/memory-root-cause.md) shows the GDAL
+caches themselves (block cache + 16 MB ``/vsicurl/`` region cache) stay flat
+once dataset handles are closed, so the residual climb comes from glibc heap
+fragmentation plus retained dataset handles, which is why the durable fix is
+the per-item release cadence (``release_gdal_memory``) added to
+:mod:`atlantis.fetchers.gfm.processor`.
 
 **This does NOT mean the real batch command is production-ready** — a real
 multi-worker ``atlantis batch gfm cube run`` (default ``--workers-max 3
@@ -125,20 +134,27 @@ def _find_real_tasks(bbox: tuple[float, float, float, float], start: str, end: s
 
 
 def _patch_cleanup_noop(monkeypatch_module) -> None:
-    """Neutralise the GDAL/malloc cleanup block in ``batch_processor`` in place."""
-    import atlantis.fetchers.gfm.batch_processor as bp
+    """Neutralise the GDAL/malloc cleanup (per-item + task-end) in place."""
+    import atlantis.fetchers.gfm.processor as proc
 
-    monkeypatch_module.setattr(bp, "_trim_malloc", lambda: None)
+    # Both the per-item cadence and batch_processor's task-end call run
+    # through release_gdal_memory() in processor's module globals, so
+    # patching proc._trim_malloc is what sticks.
+    monkeypatch_module.setattr(proc, "_trim_malloc", lambda: None)
 
     class _NoopGdal:
+        def GetCacheMax(self, *_a, **_kw):
+            return 0
+
         def SetCacheMax(self, *_a, **_kw):
             pass
 
         def VSICurlClearCache(self):
             pass
 
-    # batch_processor imports `from osgeo import gdal` *inside* the function body,
-    # so patching sys.modules["osgeo.gdal"] is what's needed, not an attribute on bp.
+    # release_gdal_memory() imports `from osgeo import gdal` *inside* the
+    # function body, so patching sys.modules["osgeo.gdal"] is what's needed,
+    # not an attribute on either module.
     import sys as _sys
 
     monkeypatch_module.setitem(_sys.modules, "osgeo.gdal", _NoopGdal())

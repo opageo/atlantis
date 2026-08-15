@@ -730,8 +730,8 @@ pixi run atlantis batch gfm cube run [OPTIONS]
 | `--gfm-resampling`     | `None` (→ `ATLANTIS_GFM_RESAMPLING` / `average`)            | Resampling method for reprojection.                                                                                  |
 | `--gfm-window-size`    | `None` (→ `ATLANTIS_GFM_WINDOW_SIZE` / `5000`)              | Native pixels per window; `0` disables windowing.                                                                    |
 | `--workers-min`        | `2`                                                         | Minimum Dask worker processes.                                                                                       |
-| `--workers-max`        | `3`                                                         | Maximum Dask worker processes (adaptive).                                                                            |
-| `--memory-limit`       | `8GB`                                                       | Memory cap per worker.                                                                                               |
+| `--workers-max`        | `5`                                                         | Maximum Dask worker processes (adaptive).                                                                            |
+| `--memory-limit`       | `5GB`                                                       | Memory cap per worker.                                                                                               |
 | `--dashboard-port`     | `8789`                                                      | Dask dashboard port (distinct from VIIRS's `8787` / MODIS's `8788`).                                                 |
 | `--db-path`            | `gfm_cube_tracker.db`                                       | SQLite resume database path.                                                                                         |
 | `--retries`            | `3`                                                         | Dask retry count per cell.                                                                                           |
