@@ -303,21 +303,21 @@ Do not reuse a tracker for a different source or catalogue revision: `DONE`
 means only that its recorded task id completed, not that the task came from the
 same inventory file.
 
-| Flag                                        | VIIRS default                        | MODIS default                       | GFM default                         | Purpose                                                                                                                                                                                          |
-| ------------------------------------------- | ------------------------------------ | ----------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--partition`                               | full catalogue                       | full catalogue                      | full catalogue                      | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows _before_ the `(date, equi7_tile)` grouping (see §5)                                                                  |
-| `--archive` / `-a`                          | `s3://atlantis/zarr/viirs_2020_cube` | `s3://atlantis/zarr/modis_cube`     | `s3://atlantis/zarr/gfm_cube`       | Cube root — a local dir or `s3://` URI                                                                                                                                                           |
-| `--log-every`                               | `100`                                | `50`                                | `50`                                | Progress line every N completions                                                                                                                                                                |
-| `--workers-min/max`                         | `2` / `6`                            | `2` / `6`                           | `2` / `2`                           | Dask worker count (adaptive). GFM's defaults reserve two 12GB workers — a deliberate safety-over-throughput choice on a 32 GB host; increase only after measuring the target host and catalogue. |
-| `--memory-limit`                            | `4GB`                                | `2.5GB`                             | `12GB`                              | Memory cap per GFM worker. Keep this paired with the GFM worker count: the default two-worker configuration needs roughly 24GB for workers before coordinator and OS overhead.                   |
-| `--dashboard-port`                          | `8787`                               | `8788`                              | `8789`                              | Distinct ports so all three dashboards can run at once                                                                                                                                           |
-| `--db-path`                                 | `cube_tracker.db`                    | `cube_tracker.db`                   | `gfm_cube_tracker.db`               | SQLite resume database — **use a different path per source** when writing into the same archive concurrently                                                                                     |
-| `--retries`                                 | `3`                                  | `3`                                 | `3`                                 | Retries per granule/tile/cell                                                                                                                                                                    |
-| `--composite`                               | n/a                                  | `None` (→ `F2`)                     | n/a                                 | MODIS-only: MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`)                                                                                                                                    |
-| `--gfm-coarsen-factor` / `--gfm-resampling` | n/a                                  | n/a                                 | `4` / `average`                     | GFM-only: spatial coarsening factor and resampling method before reprojection (overrides `ATLANTIS_GFM_COARSEN_FACTOR` / `ATLANTIS_GFM_RESAMPLING`)                                              |
-| `--gfm-window-size`                         | n/a                                  | n/a                                 | `5000`                              | GFM-only: native pixels per window. It must be a positive exact multiple of `--gfm-coarsen-factor`; `0` disables windowing and is not suitable for production-sized cells.                       |
-| `--prefill-year`                            | auto-detect from `zarr/<YYYY>` root  | auto-detect from `zarr/<YYYY>` root | auto-detect from `zarr/<YYYY>` root | Pre-fill the source group's `time` axis with every day of this year (365/366 slots) so any event date lands in a pre-existing slot — see "Pre-filled time axis for year builds" below            |
-| `--no-prefill`                              | `False`                              | `False`                             | `False`                             | Disable time-axis prefill (overrides auto-detection and `--prefill-year`)                                                                                                                        |
+| Flag                                        | VIIRS default                        | MODIS default                       | GFM default                         | Purpose                                                                                                                                                                                              |
+| ------------------------------------------- | ------------------------------------ | ----------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--partition`                               | full catalogue                       | full catalogue                      | full catalogue                      | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows _before_ the `(date, equi7_tile)` grouping (see §5)                                                                      |
+| `--archive` / `-a`                          | `s3://atlantis/zarr/viirs_2020_cube` | `s3://atlantis/zarr/modis_cube`     | `s3://atlantis/zarr/gfm_cube`       | Cube root — a local dir or `s3://` URI                                                                                                                                                               |
+| `--log-every`                               | `100`                                | `50`                                | `50`                                | Progress line every N completions                                                                                                                                                                    |
+| `--workers-min/max`                         | `2` / `6`                            | `2` / `6`                           | `2` / `5`                           | Dask worker count (adaptive). GFM's defaults reserve up to five 5GB workers — 25 GB total, a throughput/stability balance on a 32 GB host; raise only after measuring the target host and catalogue. |
+| `--memory-limit`                            | `4GB`                                | `2.5GB`                             | `5GB`                               | Memory cap per GFM worker. Keep this paired with the GFM worker count: the default configuration budgets 5 × 5 GB = 25 GB for workers before coordinator and OS overhead (~80 % of a 32 GB host).    |
+| `--dashboard-port`                          | `8787`                               | `8788`                              | `8789`                              | Distinct ports so all three dashboards can run at once                                                                                                                                               |
+| `--db-path`                                 | `cube_tracker.db`                    | `cube_tracker.db`                   | `gfm_cube_tracker.db`               | SQLite resume database — **use a different path per source** when writing into the same archive concurrently                                                                                         |
+| `--retries`                                 | `3`                                  | `3`                                 | `3`                                 | Retries per granule/tile/cell                                                                                                                                                                        |
+| `--composite`                               | n/a                                  | `None` (→ `F2`)                     | n/a                                 | MODIS-only: MCDWD composite to extract (`F1`/`F1C`/`F2`/`F3`)                                                                                                                                        |
+| `--gfm-coarsen-factor` / `--gfm-resampling` | n/a                                  | n/a                                 | `4` / `average`                     | GFM-only: spatial coarsening factor and resampling method before reprojection (overrides `ATLANTIS_GFM_COARSEN_FACTOR` / `ATLANTIS_GFM_RESAMPLING`)                                                  |
+| `--gfm-window-size`                         | n/a                                  | n/a                                 | `5000`                              | GFM-only: native pixels per window. It must be a positive exact multiple of `--gfm-coarsen-factor`; `0` disables windowing and is not suitable for production-sized cells.                           |
+| `--prefill-year`                            | auto-detect from `zarr/<YYYY>` root  | auto-detect from `zarr/<YYYY>` root | auto-detect from `zarr/<YYYY>` root | Pre-fill the source group's `time` axis with every day of this year (365/366 slots) so any event date lands in a pre-existing slot — see "Pre-filled time axis for year builds" below                |
+| `--no-prefill`                              | `False`                              | `False`                             | `False`                             | Disable time-axis prefill (overrides auto-detection and `--prefill-year`)                                                                                                                            |
 
 #### Pre-filled time axis for year builds
 
@@ -380,7 +380,7 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
 Use the defaults together for a typical 32 GB host:
 
 ```text
---workers-min 2 --workers-max 2 --memory-limit 12GB --gfm-window-size 5000
+--workers-min 2 --workers-max 5 --memory-limit 5GB --gfm-window-size 5000
 ```
 
 - **Workers and memory limit are one capacity decision.** Each worker streams
@@ -389,9 +389,11 @@ Use the defaults together for a typical 32 GB host:
   baseline (glibc heap + retained GDAL dataset state) is **excluded from
   Dask's spill-to-disk machinery**, so Dask can only pause the worker (80% of
   `--memory-limit`) or nanny-restart it (95%) on native memory. The default
-  budget is therefore 2 workers × 12 GB: it fits inside a 32 GB host
-  (`workers × limit + coordinator + OS`) while covering the measured ~5.3 GB
-  unmanaged floor plus the ~3 GB per-item working-set spikes. Do not raise
+  budget is therefore 5 workers × 5 GB = 25 GB: it fits inside a 32 GB host
+  (`workers × limit + coordinator + OS`, ~80 % of RAM) while leaving ~2×
+  headroom over the measured ~2.4 GB per-worker peaks now that the per-item
+  GDAL release cadence bounds the unmanaged floor (see
+  docs/gfm/memory-root-cause.md for the measurement basis). Do not raise
   `--workers-max` without enough physical RAM for every worker plus the
   coordinator and OS; do not lower `--memory-limit` just to suppress host
   contention — see docs/gfm/memory-root-cause.md for the measurement basis.
@@ -415,11 +417,11 @@ Use the defaults together for a typical 32 GB host:
   increase available memory before continuing.
 
 The 48-cell Africa-heavy 2025 validation partition (`DONE=48`, `FAILED=0`)
-was completed under the earlier default configuration (**3 workers × 8GB**).
-The current **2 × 12GB** defaults trade roughly a third of the throughput for
-nanny-restart-free stability on the per-item memory behaviour described in
-`docs/gfm/memory-root-cause.md` — re-run the full partition to re-validate the
-new defaults before relying on that gate.
+was completed under the earlier default configuration (**3 workers × 8GB**),
+and the subsequent **2 × 12GB** defaults traded roughly a third of the
+throughput for nanny-restart-free stability. The current **5 × 5GB** defaults
+restore throughput while staying within the 32 GB host budget — re-run the
+full partition to re-validate the new defaults before relying on that gate.
 
 The `--archive` value is the **parent** of the Zarr store — the engine creates
 `datacube.zarr` underneath it.

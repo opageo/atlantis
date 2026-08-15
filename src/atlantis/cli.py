@@ -4075,27 +4075,28 @@ def batch_gfm_cube(
     ),
     workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
     workers_max: int = typer.Option(
-        2,
+        5,
         "--workers-max",
         help=(
-            "Maximum Dask worker processes (adaptive). Defaults to 2: GFM's per-worker "
+            "Maximum Dask worker processes (adaptive). Defaults to 5: GFM's per-worker "
             "RSS is dominated by native GDAL/heap memory that Dask cannot spill, so the "
-            "default budget trades throughput for stability — 2 workers x 12 GB keeps "
-            "workers + coordinator + OS inside a 32 GB host while covering the measured "
-            "per-item working-set spikes. Raise only on hosts with more RAM; see "
+            "budget is capped at 5 workers x 5 GB = 25 GB — it fits inside a 32 GB host "
+            "together with the coordinator and OS while covering the measured per-item "
+            "working-set spikes (the per-item GDAL release fix keeps peaks well under "
+            "5 GB). Raise only on hosts with more RAM; see "
             "docs/gfm/memory-root-cause.md."
         ),
     ),
     memory_limit: str = typer.Option(
-        "12GB",
+        "5GB",
         "--memory-limit",
         help=(
             "Memory cap per worker (Dask nanny kills the worker at 95% of this; "
             "pause/resume engage at 80%). GFM's multi-GB native baseline is excluded "
             "from Dask's spill machinery, so this must cover measured peak native + "
-            "working set, not just Python-held data — 12 GB is sized for the measured "
-            "~5.3 GB unmanaged floor plus ~3 GB per-item working set. Do not lower it "
-            "without re-measuring; see docs/gfm/memory-root-cause.md."
+            "working set, not just Python-held data — with the per-item "
+            "release_gdal_memory() fix the per-worker peak measures ~2.4 GB, so 5 GB "
+            "leaves headroom over terminate (4.75 GB). See docs/gfm/memory-root-cause.md."
         ),
     ),
     dashboard_port: int = typer.Option(8789, "--dashboard-port", help="Dask dashboard port."),
