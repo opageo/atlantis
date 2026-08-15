@@ -181,7 +181,9 @@ For each resolved year, in chronological order, under the year lock:
    needed. Near real time (caught up, less than a chunk behind), the window
    instead covers `cursor - lookback → today - lag` (weekly defaults: 14 /
    7 days) so late LAADS publications are re-scanned and a complete year is
-   still validated and re-recorded.
+   still validated and re-recorded. Explicit windows are resolved verbatim
+   and never chunked — repair example:
+   `… archive modis update --year 2026 --start 2026-06-17 --end 2026-07-22 --foreground`.
 
    When the current year has no tracker baseline yet (fresh year), the window
    also reaches back into the previous year, so a December backlog and the
