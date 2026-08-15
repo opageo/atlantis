@@ -313,10 +313,11 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis cube run \
   default **time-axis prefill** (365/366 slots, marker
   `atlantis_time_prefill`) before the first write; the ingest then fills the
   pre-existing slots. This is the "prefill, then write the data" sequence.
-- `--inventory` — the per-year catalogue (**required**; the default canonical
-  catalogue streams every year's dates into the cube — see §4.1's table). If
-  the yearly file doesn't exist yet, slice it from the canonical full-history
-  catalogue (§3.1) or build it with
+- `--inventory` — the per-year catalogue (**required**; local path or `s3://`
+  URI, e.g. `s3://atlantis/assets/modis/modis_archive_catalog_2021.parquet`;
+  the default canonical catalogue streams every year's dates into the cube —
+  see §4.1's table). If the yearly file doesn't exist yet, slice it from the
+  canonical full-history catalogue (§3.1) or build it with
   `batch modis catalog --start <Y>-01-01 --end <Y>-12-31`.
 - `--db-path` — point it at the **state-root tracker**
   (`/mnt/atlantis-state/modis/<YYYY>/cube_tracker.db`, deleting any stale
@@ -335,6 +336,9 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis cube status 
 
 # Watch the live run
 tmux attach -t modis_cube_2021
+
+# Confirm it's alive (progress lines can look frozen: output is block-buffered)
+pgrep -af "batch modis cube run"
 
 # Raw tracker counts
 sqlite3 /mnt/atlantis-state/modis/2021/cube_tracker.db \
