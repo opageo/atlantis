@@ -379,3 +379,42 @@ The first scheduled work is deliberately staged:
 - Maintaining the full-history `modis_archive_catalog.parquet` (a future
   end-of-year process may derive it from the frozen yearly catalogues).
 - ETag/fingerprint-based reprocessing of sources already marked `DONE`.
+
+## 10. Next continuation run — worked example
+
+The 2026 catch-up is resumable by design: each run ingests the next 31 days
+from the watermark and stops. After the January run (watermark
+`2026-01-31`), continuing costs exactly one command:
+
+```text
+PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --year 2026
+```
+
+What it does:
+
+1. Resolves the window from the tracker watermark: cursor `2026-02-01` →
+   chunk `2026-02-01 → 2026-03-03`, with the printed guardrail notice
+   ("re-run `update` to continue automatically"). No dates are ever passed.
+2. Launches the worker in a detached tmux session
+   (`atlantis-modis-update-2026-<runid>`); the log lands under
+   `<state-root>/2026/logs/<runid>.log`.
+3. Refreshes the catalogue for the chunk, reconciles (~7,900 pending tiles),
+   preflights one download, then ingests through the ordered Dask batch
+   (~5–7 h), reusing the existing tracker and prefilled 365-slot axis.
+4. Validates, advances the watermark to the chunk's end, writes the `ok`
+   manifest, and refreshes the S3 backup.
+
+What to expect while it runs:
+
+- `pixi run -e batch modis-archive-status -- --year 2026` shows the per-date
+  heatmap and watermark live; February fills `#` day by day.
+- A crash mid-run is safe: re-run the same command — `DONE` tiles are
+  skipped and the window re-resolves from the watermark.
+- Repeat the same command for each next chunk (March, April, …) until the
+  watermark is within a chunk of `today - lag`, at which point the window
+  automatically switches to the weekly lookback re-scan and the year runs
+  near real time.
+
+Rules that stay true on every continuation: never `seed-tracker` or delete
+the tracker to "fix" a run, and never launch two writers for the same year
+(the per-year lock would reject the second one).
