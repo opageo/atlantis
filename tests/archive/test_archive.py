@@ -355,6 +355,78 @@ class TestPrefillYear:
         self._assert_date_value(tmp_path, date(2024, 3, 1), 0.5)
 
 
+# ── Masked region writes (GFM rotated-tile mosaic) ─────────────────────────────
+
+
+class TestMaskedRegionWrite:
+    """NODATA in an incoming write must never erase already-valid cube data.
+
+    GFM EQUI7 native tiles are rotated squares in EPSG:4326, so the axis-aligned
+    envelopes of adjacent tiles overlap. Each task region-writes its full
+    envelope rectangle — valid data only inside the rotated footprint, NODATA
+    (255) in the corners. Without masking, the last-written tile's corner
+    wedges clobber the earlier tile's data (the "GFM wedge" bug, docs/gfm/
+    memory-root-cause.md). Valid data must win over NODATA regardless of write
+    order.
+    """
+
+    def _read(self, tmp_path, row0=_ROW0, col0=_COL0, h=_H, w=_W, day=date(2020, 1, 1)):
+        import zarr
+
+        root = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        from atlantis.archive import datacube
+
+        epoch = ArchiveConfig().time_epoch
+        t = int(np.where(root["time"][:] == datacube.date_to_int(day, epoch))[0][0])
+        return np.asarray(root["water_fraction"][t, row0 : row0 + h, col0 : col0 + w])
+
+    def test_nodata_does_not_clobber_valid_data(self, tmp_path):
+        """A later write's NODATA corner wedge keeps an earlier tile's valid pixels."""
+        import xarray as xr
+
+        writer = ArchiveWriter(tmp_path)
+        with writer.session("gfm", ["water_fraction"]) as session:
+            # Tile A: valid 0.20 over the whole window.
+            session.write(aligned_dataset(0.20), time=date(2020, 1, 1))
+            # Tile B: same grid window, valid 0.70 except a top-left NODATA wedge.
+            y = grid.global_y_coords()[_ROW0 : _ROW0 + _H]
+            x = grid.global_x_coords()[_COL0 : _COL0 + _W]
+            data = np.full((_H, _W), 0.70, dtype="float32")
+            rr, cc = np.mgrid[0:_H, 0:_W]
+            data[rr + cc < _H // 2] = np.nan  # top-left triangle -> NODATA
+            ds_b = xr.Dataset({"water_fraction": xr.DataArray(data, dims=["y", "x"], coords={"y": y, "x": x})})
+            session.write(ds_b, time=date(2020, 1, 1))
+
+        sub = self._read(tmp_path)
+        # NW corner: B's wedge is NODATA, A's 20 must survive.
+        assert sub[0, 0] == 20, "later NODATA clobbered earlier valid data"
+        # SE corner: B's valid 70 must have overwritten A's 20.
+        assert sub[-1, -1] == 70, "later valid data did not win"
+        # On-diagonal transition pixel: still B's valid value.
+        assert 20 <= sub[_H // 2, _W // 2] <= 70
+
+    def test_valid_overwrites_valid_in_overlap(self, tmp_path):
+        """Two valid writes to the same pixel: last writer wins (unchanged)."""
+
+        writer = ArchiveWriter(tmp_path)
+        with writer.session("gfm", ["water_fraction"]) as session:
+            session.write(aligned_dataset(0.30), time=date(2020, 1, 1))
+            session.write(aligned_dataset(0.80), time=date(2020, 1, 1))
+        sub = self._read(tmp_path)
+        assert (sub == 80).all(), "last valid write should win everywhere"
+
+    def test_no_nodata_write_is_still_plain_overwrite(self, tmp_path):
+        """A fully-valid later write still replaces an earlier one in place."""
+        import zarr
+
+        writer = ArchiveWriter(tmp_path)
+        with writer.session("gfm", ["water_fraction"]) as session:
+            session.write(aligned_dataset(0.30), time=date(2020, 1, 1))
+            session.write(aligned_dataset(0.80), time=date(2020, 1, 1))
+        group = zarr.open_group(tmp_path / "datacube.zarr", mode="r")["gfm"]
+        assert group["water_fraction"].shape[0] == 1  # no spurious time slots
+
+
 # ── Optional event bookmarks ──────────────────────────────────────────────────
 
 
