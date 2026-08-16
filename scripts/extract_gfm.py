@@ -125,7 +125,6 @@ def extract_subdomain_odc_resampling(aa, items, obs, msk, resolution_deg=1 / 60)
             bands=["ensemble_flood_extent", "reference_water_mask"],
             resampling=resampling_method,
             stac_cfg=gfm_stac_cfg,
-            use_overviews=False,  # 🔴 IMPORTANT: disable overviews to ensure nodata handling works correctly
             chunks={},
             fail_on_error=True,
         )
