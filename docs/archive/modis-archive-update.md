@@ -96,6 +96,11 @@ pixi run -e batch modis-archive-update-dry-run           # resolve + report only
 pixi run -e batch modis-archive-seed-tracker -- --year YYYY
 ```
 
+Any run that launches the batch engine (`update`, `_run-update`, or a cube
+build) **must** use the `batch` environment — the default environment lacks
+`distributed`, so `pixi run modis-archive-update` without `-e batch` fails at
+the Dask import.
+
 ## Quick start — run it right now
 
 Prerequisites: `EARTHDATA_TOKEN` (a LAADS application token, not an Earthdata
