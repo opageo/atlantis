@@ -487,6 +487,15 @@ Use the defaults together for a typical 32 GB host:
   GFM's dashboard is `http://localhost:8789` by default. Repeated pause/resume
   messages or Nanny restarts mean capacity is too tight; reduce concurrency or
   increase available memory before continuing.
+- **Rotated tiles mosaic correctly: NODATA never erases valid data.** GFM's
+  native EQUI7 tiles are rotated squares in EPSG:4326, so the axis-aligned
+  envelopes of adjacent tiles overlap in lat/lon even though the rotated
+  footprints tile the plane seamlessly. Each task region-writes its full
+  envelope rectangle — valid data only inside the rotated footprint, NODATA
+  (255) in the corner wedges. The cube writer masks these writes
+  (`datacube.write_region`): incoming NODATA pixels never overwrite an
+  already-valid value, so the last-written tile's corner wedges cannot clobber
+  a neighbour's data regardless of Dask completion order.
 
 The 48-cell Africa-heavy 2025 validation partition (`DONE=48`, `FAILED=0`)
 was completed under the earlier default configuration (**3 workers × 8GB**),

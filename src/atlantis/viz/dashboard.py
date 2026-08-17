@@ -203,7 +203,19 @@ def build_cube_dashboard(
         else:
             logger.warning("geoviews/cartopy not installed — skipping map overlay.")
 
-    return da.hvplot.image(**opts)
+    plot = da.hvplot.image(**opts)
+
+    # hvplot leaves the groupby dimension unbounded when its coordinate has
+    # no decodable values (e.g. an empty ``time`` axis after --start/--end
+    # selection). Re-bound any such dimension from the data's own coordinates
+    # so panel can still build the widget whenever values exist; a genuinely
+    # empty axis stays unbounded and is reported by serve_dashboard.
+    if getattr(plot, "unbounded", None):
+        bounds = {name: da[name].values for name in plot.unbounded if name in da.coords}
+        if bounds:
+            plot = plot.redim.values(**bounds)
+
+    return plot
 
 
 def serve_dashboard(
@@ -251,6 +263,23 @@ def serve_dashboard(
         )
 
     plot = build_cube_dashboard(source, ds=ds, var=var, **dashboard_kwargs)
+
+    # A DynamicMap with an unbounded groupby dimension cannot be rendered by
+    # panel (holoviews SkipRendering). This happens when the ``time`` axis is
+    # empty after the --start/--end / bbox / event selection — report it
+    # clearly (including the cube's actual date span) instead of surfacing
+    # the cryptic holoviews error.
+    if getattr(plot, "unbounded", None):
+        n_time = ds.sizes.get("time", 0)
+        span = ""
+        if "time" in ds.coords and n_time > 0:
+            span = f" (cube time axis spans {str(ds['time'].values[0])[:10]} → {str(ds['time'].values[-1])[:10]})"
+        raise ValueError(
+            f"Cannot render '{var}' for source '{source}': the time axis has {n_time} step(s) "
+            f"after selection, so the slider dimension is empty{span}. The requested date range "
+            "(--start/--end) or bbox/event matches no dates in the cube — check the year/range, "
+            "or drop the date filters to serve the full time axis."
+        )
 
     # ── Page header: logo + title, unstretched, sized to the logo ──────────
     header_items: list[Any] = []

@@ -46,6 +46,45 @@ def test_build_dashboard_single_time_returns_element():
     assert type(obj).__name__ in {"Image", "QuadMesh", "DynamicMap"}
 
 
+def _empty_time_ds():
+    """In-memory datacube-style dataset whose ``time`` axis is empty (size 0)."""
+    import xarray as xr
+
+    y = grid.global_y_coords()[4000:4050]
+    x = grid.global_x_coords()[10000:10060]
+    return xr.Dataset(
+        {"water_fraction": (["time", "y", "x"], np.empty((0, y.size, x.size)))},
+        coords={"time": np.array([], dtype="datetime64[ns]"), "y": y, "x": x},
+    )
+
+
+def test_build_dashboard_empty_time_is_unbounded_but_constructible():
+    from atlantis.viz import build_cube_dashboard
+
+    # An empty time axis (e.g. --start/--end matching no dates) must not
+    # crash at build time; the dim stays unbounded and is reported by serve.
+    obj = build_cube_dashboard(
+        ds=_empty_time_ds(), source="viirs", var="water_fraction", rasterize=False, basemap=False
+    )
+    assert getattr(obj, "unbounded", [])  # ['time'] — empty axis cannot be bounded
+
+
+def test_serve_dashboard_empty_time_raises_actionable_error():
+    from atlantis.viz import serve_dashboard
+
+    with pytest.raises(ValueError, match="time axis has 0 step"):
+        serve_dashboard(
+            "viirs",
+            ds=_empty_time_ds(),
+            var="water_fraction",
+            rasterize=False,
+            basemap=False,
+            host="localhost",
+            port=5007,
+            show=False,
+        )
+
+
 def test_missing_variable_raises():
     from atlantis.viz import build_cube_dashboard
 

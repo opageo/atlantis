@@ -314,12 +314,31 @@ def ensure_time_index(time_arr: Any, data_arrs: dict[str, Any], t_int: int) -> i
 
 
 def write_region(arr: Any, time_idx: int, window: "IndexWindow", data: np.ndarray) -> None:
-    """Write a uint8 AOI block into *arr* at *time_idx* / *window*."""
-    arr[
+    """Write a uint8 AOI block into *arr* at *time_idx* / *window*.
+
+    ``NODATA`` (255) pixels in *data* act as a **mask**: they never overwrite
+    an already-valid value in the store. A later write therefore cannot erase
+    an earlier tile's data with its own nodata corners — this is what lets
+    adjacent source tiles whose axis-aligned envelopes overlap be mosaicked
+    correctly (GFM EQUI7 tiles are rotated squares, so their envelopes overlap
+    and one tile's corner wedges would otherwise clobber a neighbour's data).
+    When *data* contains no NODATA the write stays a plain assignment (no
+    extra read of the destination).
+    """
+    sl = (
         time_idx,
-        window.row_start : window.row_stop,
-        window.col_start : window.col_stop,
-    ] = data
+        slice(window.row_start, window.row_stop),
+        slice(window.col_start, window.col_stop),
+    )
+    if np.any(data == NODATA):
+        # Read-modify-write: keep existing values where the incoming block is
+        # NODATA, so valid data already in the cube is never erased by a later
+        # tile's nodata corners. Unwritten regions read back as the array's
+        # fill value (NODATA), so a fresh cell is unaffected.
+        existing = np.asarray(arr[sl])
+        arr[sl] = np.where(data == NODATA, existing, data)
+    else:
+        arr[sl] = data
 
 
 def consolidate(store: Any) -> None:

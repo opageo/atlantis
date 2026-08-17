@@ -4539,24 +4539,30 @@ def viz_serve(
 
     command_header("viz serve", subtitle=f"{source} @ {stac or archive}")
     info(f"Serving dashboard on http://{host}:{port}  (Ctrl-C to stop) …")
-    serve_dashboard(
-        source,
-        archive_root=archive,
-        stac=stac,
-        var=var,
-        bbox=bbox_t,
-        start=start,
-        end=end,
-        basemap=basemap or config.viz.basemap,
-        tiles=tiles or config.viz.tiles,
-        cmap=config.viz.cmap,
-        rasterize=config.viz.rasterize,
-        # frame_width=config.viz.frame_width,
-        storage_options=config.archive.storage_options or None,
-        host=host,
-        port=port,
-        show=not no_show,
-    )
+    try:
+        serve_dashboard(
+            source,
+            archive_root=archive,
+            stac=stac,
+            var=var,
+            bbox=bbox_t,
+            start=start,
+            end=end,
+            basemap=basemap or config.viz.basemap,
+            tiles=tiles or config.viz.tiles,
+            cmap=config.viz.cmap,
+            rasterize=config.viz.rasterize,
+            # frame_width=config.viz.frame_width,
+            storage_options=config.archive.storage_options or None,
+            host=host,
+            port=port,
+            show=not no_show,
+        )
+    except ValueError as exc:
+        # e.g. an empty time axis after --start/--end (unbounded slider
+        # dimension): report the actionable message, not a raw traceback.
+        fail(str(exc))
+        raise typer.Exit(code=1) from exc
 
 
 from atlantis.ui.cli import web_app  # noqa: E402
