@@ -148,7 +148,7 @@ def load_bookmarks(
     if not _exists(path, storage_options):
         logger.warning("Bookmarks file not found at {path}; returning empty registry.", path=path)
         return _empty_frame()
-    return gpd.read_parquet(path)
+    return gpd.read_parquet(path, storage_options=storage_options)
 
 
 def save_bookmarks(
@@ -171,9 +171,16 @@ def save_bookmarks(
     storage_options = _resolved_storage_options(path, storage_options)
 
     _write_path, filesystem = pyarrow_filesystem_for(path, storage_options)
-    write_path = Path(_write_path)
     if filesystem is None:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        # Local filesystem: pyarrow accepts path-like objects, so keep a Path
+        # (and create parent dirs).
+        write_path = Path(_write_path)
+        write_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        # Remote filesystem: pyarrow requires a plain str path — a path-like
+        # object raises "Expected string path; path-like objects are only
+        # allowed with a local filesystem".
+        write_path = _write_path
     gdf.to_parquet(
         write_path,
         filesystem=filesystem,
