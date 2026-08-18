@@ -214,8 +214,8 @@ def main() -> None:
     parser.add_argument(
         "--db-path", type=Path, default=Path("geoidflood_gfm_cube_tracker.db"), help="SQLite resume tracker"
     )
-    parser.add_argument("--workers", type=int, nargs=2, default=[2, 6], help="Dask workers min max")
-    parser.add_argument("--memory-limit", default="4GB", help="memory cap per worker")
+    parser.add_argument("--workers", type=int, nargs=2, default=[2, 5], help="Dask workers min max")
+    parser.add_argument("--memory-limit", default="5GB", help="memory cap per worker")
     parser.add_argument("--tasks-only", action="store_true", help="only generate the task list, do not run the batch")
     parser.add_argument("--tasks", type=Path, default=TASKS_ALL_PATH, help="task list (built if missing)")
     args = parser.parse_args()
