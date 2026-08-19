@@ -90,9 +90,15 @@ def generate_tasks(aoi_table: pd.DataFrame) -> tuple[list[dict], list[dict]]:
 
 
 def filter_aoi_rows(table: pd.DataFrame, events: set[str]) -> pd.DataFrame:
-    """Keep AOI rows matching *events* (event ids or ``event_id-aoi_id`` combos)."""
+    """Keep AOI rows matching *events* (event ids or ``event_id-aoi_id`` combos).
+
+    Whole-event envelope rows (``aoi_id="0"``) are opt-in: unfiltered builds
+    (no ``--events``) use the per-AOI rows only, so an event's work is never
+    duplicated by its envelope; passing ``--events EMSRxxx-0`` selects the
+    envelope row explicitly.
+    """
     if not events:
-        return table
+        return table[table["aoi_id"].astype(str) != "0"]
     ids = table["event_id"].astype(str)
     combos = ids + "-" + table["aoi_id"].astype(str)
     matching = table[ids.isin(events) | combos.isin(events)]
@@ -104,11 +110,17 @@ def filter_aoi_rows(table: pd.DataFrame, events: set[str]) -> pd.DataFrame:
 
 
 def filter_tasks(tasks: list[dict], events: set[str], year: int | None) -> list[dict]:
-    """Filter tasks by event (id or ``event_id-aoi_id``) and calendar year."""
+    """Filter tasks by event (id or ``event_id-aoi_id``) and calendar year.
+
+    Envelope tasks (``aoi_id="0"``) run only when requested explicitly via
+    ``--events``, mirroring :func:`filter_aoi_rows`.
+    """
     if events:
         tasks = [
             t for t in tasks if str(t.get("event_id")) in events or f"{t.get('event_id')}-{t.get('aoi_id')}" in events
         ]
+    else:
+        tasks = [t for t in tasks if str(t.get("aoi_id")) != "0"]
     if year:
         tasks = [t for t in tasks if str(t["date"])[:4] == str(year)]
     return tasks
@@ -137,34 +149,59 @@ def write_tasks(path: Path, tasks: list[dict], dropped: list[dict]) -> None:
         print(f"  {len(dropped)} item(s) dropped for missing/invalid metadata → {drop_path}")
 
 
+def _aoi_table_fingerprint(aoi_table: pd.DataFrame) -> str:
+    """Deterministic fingerprint of the AOI table's scope columns."""
+    import hashlib
+
+    cols = ["event_id", "aoi_id", "aoi_west", "aoi_south", "aoi_east", "aoi_north", "date_start", "date_end"]
+    return hashlib.sha1(aoi_table[cols].to_csv(index=False).encode()).hexdigest()
+
+
+def _aoi_fingerprint_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}.aoi.sha1")
+
+
 def load_or_build_tasks(path: Path, aoi_table: pd.DataFrame) -> tuple[list[dict], list[dict]]:
     """Load the cached task list, regenerating it if it is stale or invalid.
+
+    The cache is keyed on the AOI table that generated it (fingerprint
+    sidecar): regenerating ``geoidflood_aois.csv`` — e.g. after the flood
+    anchor or pre-event-window changes — automatically invalidates the cache
+    instead of silently reusing out-of-window tasks.
 
     Cached task lists from before the per-tile task scheme (512-arcmin block
     tasks, ``equi7_tile`` = block id) are silently accepted by the batch
     engine, so they are detected here — via the EQUI7 tile-id format check —
     and rebuilt rather than run as-is.
     """
-    if not path.exists():
-        print("Building task list (catalogues + live search)…")
-        tasks, dropped = generate_tasks(aoi_table)
-        write_tasks(path, tasks, dropped)
-        return tasks, dropped
-
-    tasks = json.loads(path.read_text())
-    stale = not isinstance(tasks, list) or any(
-        not isinstance(t, dict) or not is_valid_tile(t.get("equi7_tile")) for t in tasks
-    )
-    if stale:
-        print(
-            f"WARNING: {path} contains tasks in the old 512-arcmin-block format; "
-            "regenerating per-tile tasks. If the tracker DB was created by a previous "
-            "block-based run, delete it so the new task ids are not skipped as DONE."
+    fingerprint = _aoi_table_fingerprint(aoi_table)
+    sidecar = _aoi_fingerprint_path(path)
+    if path.exists():
+        tasks = json.loads(path.read_text())
+        legacy_format = not isinstance(tasks, list) or any(
+            not isinstance(t, dict) or not is_valid_tile(t.get("equi7_tile")) for t in tasks
         )
-        tasks, dropped = generate_tasks(aoi_table)
-        write_tasks(path, tasks, dropped)
-        return tasks, dropped
-    return tasks, []
+        aoi_stale = not sidecar.exists() or sidecar.read_text().strip() != fingerprint
+        stale = legacy_format or aoi_stale
+    else:
+        tasks, legacy_format, aoi_stale, stale = None, False, False, True
+    if not stale:
+        return tasks, []
+
+    if legacy_format:
+        print(
+            "WARNING: cached tasks use the old 512-arcmin-block format. "
+            "If the tracker DB was created by a previous block-based run, delete it "
+            "so the new task ids are not skipped as DONE."
+        )
+    elif aoi_stale:
+        print("WARNING: cached task list is stale (AOI table changed); regenerating…")
+    else:
+        print("Building task list (catalogues + live search)…")
+    tasks, dropped = generate_tasks(aoi_table)
+    write_tasks(path, tasks, dropped)
+    sidecar.write_text(fingerprint)
+    return tasks, dropped
 
 
 def gfm_axis_length(archive: str, storage_options: dict | None) -> int:
