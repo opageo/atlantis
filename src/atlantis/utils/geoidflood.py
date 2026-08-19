@@ -43,6 +43,7 @@ GEOIDFLOOD_REQUIRED_COLUMNS = {
     "aoi_id",
     "date_start",
     "date_end",
+    "date_of_event",
     "lat_min",
     "lat_max",
     "lon_min",
@@ -150,14 +151,16 @@ def derive_geoidflood_metadata(catalog_path: Path) -> pd.DataFrame:
 
     Returns:
         DataFrame with columns ``event_id``, ``aoi_id``, ``date_start``,
-        ``date_end``, ``date_of_max_flood_extent``, ``lat_min``, ``lat_max``,
-        ``lon_min``, ``lon_max``, ``n_tiles``, ``split``, ``countries``,
-        ``macro_areas_set``, ``is_valid``, ``invalid_pixel_frac_mean``.
+        ``date_end``, ``date_of_event``, ``date_of_max_flood_extent``,
+        ``lat_min``, ``lat_max``, ``lon_min``, ``lon_max``, ``n_tiles``,
+        ``split``, ``countries``, ``macro_areas_set``, ``is_valid``,
+        ``invalid_pixel_frac_mean``.
     """
     catalog = load_geoidflood_catalog(catalog_path)
 
     pre = pd.to_datetime(catalog["delineation_time_pre"], errors="coerce")
     post = pd.to_datetime(catalog["delineation_time_post"], errors="coerce")
+    event_time = pd.to_datetime(catalog["event_time"], errors="coerce")
     valid = pre.notna() & post.notna() & (post >= pre) & (post.dt.year <= MAX_DELINEATION_YEAR)
     dropped = int((~valid).sum())
     if dropped:
@@ -177,12 +180,15 @@ def derive_geoidflood_metadata(catalog_path: Path) -> pd.DataFrame:
         west, south, east, north = union.bounds
         start = pre.loc[rows.index].min().date()
         end = post.loc[rows.index].max().date()
+        evt = event_time.loc[rows.index]
+        evt_start = evt.min().date() if evt.notna().any() else start
         records.append(
             {
                 "event_id": str(event_id),
                 "aoi_id": str(aoi),
                 "date_start": start.isoformat(),
                 "date_end": end.isoformat(),
+                "date_of_event": evt_start.isoformat(),
                 "date_of_max_flood_extent": end.isoformat(),
                 "lat_min": round(float(south), 4),
                 "lat_max": round(float(north), 4),

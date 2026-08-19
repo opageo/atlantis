@@ -30,6 +30,12 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from loguru import logger
+
+from atlantis.utils.geoidflood import (
+    GEOIDFLOOD_DEFAULT_CATALOGUE,
+    write_geoidflood_metadata_csv,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
@@ -38,19 +44,31 @@ from atlantis.fetchers.gfm.event_tasks import count_items_per_aoi_date, event_da
 
 METADATA_PATH = _REPO_ROOT / "data" / "metadata" / "geoidflood_metadata_v1.csv"
 OUTPUT_PATH = _REPO_ROOT / "data" / "metadata" / "geoidflood_aois.csv"
-POST_FLOOD_PAD_DAYS = 14
+POST_FLOOD_PAD_DAYS = 0
 
 
 def build_aoi_table(metadata: pd.DataFrame, pad_days: int = POST_FLOOD_PAD_DAYS) -> pd.DataFrame:
-    """Map every GEOID-Flood event-AoI to its bbox and date window.
+    """Map every GEOID-Flood event-AoI to its bbox and event time window.
 
     Returns one row per (event, native AoI) with the event-AoI bbox (used to
-    select which GFM tiles/dates are in scope) and the event's date window.
+    select which GFM tiles/dates are in scope) and the **event-uniform** date
+    window ``[event_time, max(delineation_time_post)]`` — the flooding window
+    proper, taken from the earliest ``event_time`` and the latest post-event
+    acquisition across all of the event's tiles (no post-flood pad by default;
+    ``--pad-days`` adds days to the end if requested). AoIs without a
+    ``date_of_event`` fall back to ``date_start``.
     """
+    if "date_of_event" not in metadata.columns:
+        metadata = metadata.copy()
+        metadata["date_of_event"] = metadata["date_start"]
+
+    evt_start = metadata.groupby("event_id")["date_of_event"].min().to_dict()
+    evt_end = metadata.groupby("event_id")["date_end"].max().to_dict()
+
     rows: list[dict] = []
     for row in metadata.itertuples(index=False):
         west, south, east, north = float(row.lon_min), float(row.lat_min), float(row.lon_max), float(row.lat_max)
-        start, end = event_date_windows(row.date_start, row.date_end, pad_days)
+        start, end = event_date_windows(evt_start[row.event_id], evt_end[row.event_id], pad_days)
         rows.append(
             {
                 "event_id": row.event_id,
@@ -76,13 +94,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if not METADATA_PATH.exists():
-        from atlantis.utils.geoidflood import (
-            GEOIDFLOOD_DEFAULT_CATALOGUE,
-            write_geoidflood_metadata_csv,
-        )
-
-        print(f"Metadata CSV missing — deriving from {GEOIDFLOOD_DEFAULT_CATALOGUE}…")
+        logger.info(f"Metadata CSV missing — deriving from {GEOIDFLOOD_DEFAULT_CATALOGUE}…")
         write_geoidflood_metadata_csv(_REPO_ROOT / GEOIDFLOOD_DEFAULT_CATALOGUE, METADATA_PATH)
+    else:
+        logger.warning(f"Using existing metadata CSV: {METADATA_PATH}")
 
     metadata = pd.read_csv(METADATA_PATH, parse_dates=["date_start", "date_end"])
     table = build_aoi_table(metadata, pad_days=args.pad_days)

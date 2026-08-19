@@ -30,9 +30,10 @@
 
 Both event programs — **GEOID-Flood** (EMSR activations and related events)
 and **KuroSiwo** (SAR flood catalogue cases) — are processed the same way: an
-AOI metadata table defines each (event, AoI) with a date window (metadata
-range + 14-day post-flood pad), and one **GFM batch task** is generated per
-**(event-AoI, date, EQUI7 tile)** inside that window. Tasks are streamed
+AOI metadata table defines each (event, AoI) with a date window (GEOID-Flood:
+the flooding window `[event_time, max(delineation_time_post)]`, no pad;
+KuroSiwo: metadata range + 14-day post-flood pad), and one **GFM batch task**
+is generated per **(event-AoI, date, EQUI7 tile)** inside that window. Tasks are streamed
 through the production GFM cube batch engine into a Zarr cube with the
 standard archive schema, so the existing reader, STAC and viz tooling work
 unchanged.
@@ -78,16 +79,22 @@ metadata CSV is missing):
 - **AOI unit** — the benchmark's native AoI: `tile_id`, the `N` in
   `EMSR712-N`. An activation (event) has multiple AOIs.
 - **bbox** — union of the AoI's tile geometries (EPSG:4326).
-- **date window** — span of the AoI's Sentinel-1 delineation acquisitions:
-  `date_start = min(delineation_time_pre)`,
-  `date_end = max(delineation_time_post)`.
+- **date window** — the **flooding event window**, not the SAR baseline span:
+  `date_start = min(event_time)` (the flood event timestamp carried by the
+  catalogue), `date_end = max(delineation_time_post)`.
 - Corrupt tile rows are dropped when deriving (missing delineation times,
   `post < pre`, post year > 2027).
+- The derived metadata also keeps `date_start`/`date_end` as the pre/post
+  delineation span for reference; `date_of_event` holds the flood date.
 
 [`scripts/estimate_geoidflood_aois.py`](../../scripts/estimate_geoidflood_aois.py)
-then adds the 14-day post-flood pad and writes `data/metadata/geoidflood_aois.csv`
-(one row per event-AoI: `event_id`, `aoi_id`, bbox, `date_start`, `date_end`,
-`n_dates`). Windows span 2016–2026, so most of the set falls outside the
+then writes `data/metadata/geoidflood_aois.csv` (one row per event-AoI:
+`event_id`, `aoi_id`, bbox, `date_start`, `date_end`, `n_dates`) with an
+**event-uniform** window — every AoI of an activation shares
+`[min(event_time), max(delineation_time_post)]`, **no post-flood pad**
+(`POST_FLOOD_PAD_DAYS = 0`; pass `--pad-days N` to extend the end). This keeps
+the GFM task list on the flood window instead of the multi-month pre-flood
+baseline span. Windows span 2016–2026, so most of the set falls outside the
 catalogue years and must be searched live (§2.4).
 
 ### 2.2 KuroSiwo: one AOI per flood case
@@ -121,17 +128,18 @@ used by the archive build; only bbox and dates matter.
 
 ### 2.3 Differences at a glance
 
-| Aspect                | GEOID-Flood                                    | KuroSiwo                                                        |
-| --------------------- | ---------------------------------------------- | --------------------------------------------------------------- |
-| AOI unit              | one per (activation, tile-group): `EMSR712-10` | one per event: `KuroSiwo_{actid:03d}` (`aoi_id` = `flood_case`) |
-| Source catalogue      | HF `tile_catalog.parquet` (1024×1024 tiles)    | KuroSiwo `catalogue.gpkg` (224×224 tiles / patches)             |
-| bbox                  | union of the AoI's tile geometries             | `total_bounds` of all SAR patch footprints                      |
-| date window (pre-pad) | min pre → max post delineation acquisitions    | oldest pre-flood → earliest flood-time acquisition              |
-| Window years          | 2016–2026                                      | 2014–2022                                                       |
-| Task id               | embeds event **and** AoI (`gfm-EMSR712-10-…`)  | embeds AoI = event (`gfm-KuroSiwo_118-…`)                       |
+| Aspect                | GEOID-Flood                                           | KuroSiwo                                                        |
+| --------------------- | ----------------------------------------------------- | --------------------------------------------------------------- |
+| AOI unit              | one per (activation, tile-group): `EMSR712-10`        | one per event: `KuroSiwo_{actid:03d}` (`aoi_id` = `flood_case`) |
+| Source catalogue      | HF `tile_catalog.parquet` (1024×1024 tiles)           | KuroSiwo `catalogue.gpkg` (224×224 tiles / patches)             |
+| bbox                  | union of the AoI's tile geometries                    | `total_bounds` of all SAR patch footprints                      |
+| date window (pre-pad) | flood window: min `event_time` → max post delineation | oldest pre-flood → earliest flood-time acquisition              |
+| Window years          | 2016–2026                                             | 2014–2022                                                       |
+| Task id               | embeds event **and** AoI (`gfm-EMSR712-10-…`)         | embeds AoI = event (`gfm-KuroSiwo_118-…`)                       |
 
-Both get the +14-day post-flood pad, and in both the bbox only selects which
-EQUI7 tiles/dates are in scope.
+Both use the bbox only to select which EQUI7 tiles/dates are in scope.
+GEOID-Flood windows are the flood window itself (no pad); KuroSiwo keeps the
++14-day post-flood pad.
 
 ### 2.4 Whole AOI, GFM-dependent coverage
 
@@ -299,8 +307,9 @@ with distinct `--db-path` values.
 ### 5.5 Examples — the smallest events from each collection
 
 The three smallest GEOID-Flood and three smallest KuroSiwo
-events by AOI/date-range (window = metadata range; pad end = window + 14-day
-post-flood pad). All are single-year, so each is one backfill command into
+events by AOI/date-range (GEOID-Flood windows are the flood window with no
+pad; KuroSiwo windows are the metadata range plus the 14-day post-flood pad).
+All are single-year, so each is one backfill command into
 `s3://atlantis/zarr/{YYYY}/datacube.zarr`:
 
 | Program     | Event-AoI          | Window                    | Pad end    | Year | Task source    |
@@ -440,9 +449,10 @@ Notes:
 
 ## 6. Mechanics worth knowing
 
-- **Windows.** Each (event, AoI) is processed over its metadata date range
-  plus a 14-day post-flood pad (`DEFAULT_POST_FLOOD_PAD_DAYS` in
-  `event_tasks.py`).
+- **Windows.** GEOID-Flood processes each event over its **flood window**
+  `[min(event_time), max(delineation_time_post)]` (no pad); KuroSiwo
+  processes over its metadata range plus the 14-day post-flood pad
+  (`DEFAULT_POST_FLOOD_PAD_DAYS` in `event_tasks.py`).
 - **Catalogue years are built offline**, from
   `s3://atlantis/assets/gfm/gfm_archive_catalog_{year}.parquet` (2021–2025).
   Days outside those years are searched live on the EODC STAC API day by day;

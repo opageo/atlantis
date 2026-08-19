@@ -36,6 +36,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2020-01-10T06:00:00",
                 "delineation_time_post": "2020-03-15T18:00:00",
+                "event_time": "2020-02-01T12:00:00",
                 "is_valid": True,
                 "invalid_pixel_frac": 0.1,
                 "split": "train",
@@ -50,6 +51,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2020-01-10T06:00:00",
                 "delineation_time_post": "2020-03-15T18:00:00",
+                "event_time": "2020-02-01T12:00:00",
                 "is_valid": True,
                 "invalid_pixel_frac": 0.2,
                 "split": "train",
@@ -64,6 +66,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2021-06-01T06:00:00",
                 "delineation_time_post": "2021-06-20T18:00:00",
+                "event_time": "2021-06-10T12:00:00",
                 "is_valid": False,
                 "invalid_pixel_frac": 0.9,
                 "split": "test",
@@ -78,6 +81,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2021-06-01T06:00:00",
                 "delineation_time_post": "2041-06-20T18:00:00",  # corrupt → dropped
+                "event_time": "2021-06-10T12:00:00",
                 "is_valid": True,
                 "invalid_pixel_frac": 0.0,
                 "split": "test",
@@ -92,6 +96,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2021-06-30T06:00:00",  # post < pre → dropped
                 "delineation_time_post": "2021-06-20T18:00:00",
+                "event_time": "2021-06-10T12:00:00",
                 "is_valid": True,
                 "invalid_pixel_frac": 0.0,
                 "split": "test",
@@ -137,6 +142,7 @@ def test_derive_geoidflood_metadata(tmp_path):
     row = metadata.loc[0]
     assert row["date_start"] == "2020-01-10"
     assert row["date_end"] == "2020-03-15"
+    assert row["date_of_event"] == "2020-02-01"
     assert row["date_of_max_flood_extent"] == "2020-03-15"
     assert row["lon_min"] == -5.0
     assert row["lon_max"] == 5.0
@@ -182,4 +188,4 @@ def test_load_geoidflood_metadata_missing_columns(tmp_path):
 
 
 def test_required_columns_cover_aoi_table_columns():
-    assert {"event_id", "aoi_id", "date_start", "date_end"} <= GEOIDFLOOD_REQUIRED_COLUMNS
+    assert {"event_id", "aoi_id", "date_start", "date_end", "date_of_event"} <= GEOIDFLOOD_REQUIRED_COLUMNS
