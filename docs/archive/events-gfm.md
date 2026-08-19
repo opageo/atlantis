@@ -138,7 +138,10 @@ EQUI7 tiles/dates are in scope.
 - **The full AOI bbox × full window is processed** — nothing is clipped to
   the flood mask or the inundated footprint. The AOI bbox feeds a
   bbox-intersects query per day (live search) or a catalogue bbox filter,
-  and every intersecting EQUI7 tile/date becomes a task.
+  and every intersecting EQUI7 tile/date becomes a task. The AOI is a
+  **tile-selection filter, not a pixel-level clip**: intersecting tiles are
+  archived whole, and tiles that don't intersect the AOI are simply never
+  fetched — reading the cube with a wider bbox shows nothing there.
 - **The archive content is whatever GFM exists.** GFM's storage unit is one
   STAC item per (EQUI7 tile, date) — a daily, Sentinel-1-derived product —
   so coverage is driven entirely by GFM availability, **not** by the source
