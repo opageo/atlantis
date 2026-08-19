@@ -6,16 +6,19 @@
 
 **Source of truth**
 
-| Concern                             | Module                                                                                                  |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| GEOID-Flood archive build script    | [`scripts/build_geoidflood_gfm_archive.py`](../../scripts/build_geoidflood_gfm_archive.py)              |
-| KuroSiwo archive build script       | [`scripts/build_kurosiwo_gfm_archive.py`](../../scripts/build_kurosiwo_gfm_archive.py)                  |
-| Shared task building                | [`src/atlantis/fetchers/gfm/event_tasks.py`](../../src/atlantis/fetchers/gfm/event_tasks.py)            |
-| Batch engine (`run_gfm_cube_batch`) | [`src/atlantis/archive/cube_batch.py`](../../src/atlantis/archive/cube_batch.py)                        |
-| AOI metadata tables                 | `data/metadata/geoidflood_aois.csv` · `data/metadata/kurosiwo_aois.csv`                                 |
-| Cached task lists                   | `data/benchmark/gfm_aoi_tasks_geoidflood_all.json` · `data/benchmark/gfm_aoi_tasks_all.json` (KuroSiwo) |
-| pixi tasks                          | [`pixi.toml`](../../pixi.toml) (`build-*-gfm-archive`, `backfill-*-gfm`)                                |
-| Underlying store layout             | [`zarr-spec.md`](./zarr-spec.md)                                                                        |
+| Concern                             | Module                                                                                                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GEOID-Flood archive build script    | [`scripts/build_geoidflood_gfm_archive.py`](../../scripts/build_geoidflood_gfm_archive.py)                                                                          |
+| KuroSiwo archive build script       | [`scripts/build_kurosiwo_gfm_archive.py`](../../scripts/build_kurosiwo_gfm_archive.py)                                                                              |
+| Shared task building                | [`src/atlantis/fetchers/gfm/event_tasks.py`](../../src/atlantis/fetchers/gfm/event_tasks.py)                                                                        |
+| Batch engine (`run_gfm_cube_batch`) | [`src/atlantis/archive/cube_batch.py`](../../src/atlantis/archive/cube_batch.py)                                                                                    |
+| AOI metadata tables (generated)     | `data/metadata/geoidflood_aois.csv` · `data/metadata/kurosiwo_aois.csv`                                                                                             |
+| AOI estimation scripts              | [`scripts/estimate_geoidflood_aois.py`](../../scripts/estimate_geoidflood_aois.py) · [`scripts/estimate_kurosiwo_aois.py`](../../scripts/estimate_kurosiwo_aois.py) |
+| AOI derivation                      | [`src/atlantis/utils/geoidflood.py`](../../src/atlantis/utils/geoidflood.py) · [`src/atlantis/utils/kurosiwo.py`](../../src/atlantis/utils/kurosiwo.py)             |
+| Event metadata (AOI table inputs)   | `data/metadata/geoidflood_metadata_v1.csv` · `data/metadata/kurosiwo_metadata_v1.csv`                                                                               |
+| Cached task lists                   | `data/benchmark/gfm_aoi_tasks_geoidflood_all.json` · `data/benchmark/gfm_aoi_tasks_all.json` (KuroSiwo)                                                             |
+| pixi tasks                          | [`pixi.toml`](../../pixi.toml) (`build-*-gfm-archive`, `backfill-*-gfm`)                                                                                            |
+| Underlying store layout             | [`zarr-spec.md`](./zarr-spec.md)                                                                                                                                    |
 
 > Only the **GFM** source is processed for these event sets. VIIRS/MODIS groups
 > in the yearly cubes are produced by the regular cube build
@@ -49,7 +52,112 @@ never collide in the tracker.
 
 ---
 
-## 2. Prerequisites
+## 2. Event model & AOI definitions
+
+Neither program archives the source datasets' own imagery. The source
+catalogue is used only to derive a **bbox + date window** per AOI; the
+imagery it describes (KuroSiwo's exported SAR patches, GEOID-Flood's
+benchmark tiles) is never downloaded or stored. What lands in the cube is
+the **Copernicus GFM product** — the daily Sentinel-1-derived flood layers —
+wherever and whenever it exists inside that window. The two programs differ
+in what an AOI is, and therefore in how those bboxes and windows are
+derived.
+
+### 2.1 GEOID-Flood: one AOI per (activation, tile-group)
+
+GEOID-Flood is a multi-modal benchmark built from Copernicus EMS Rapid
+Mapping activations (`EMSR151`–`EMSR871`). Its only spatial metadata is the
+Hugging Face `tile_catalog.parquet` (main + held-out trees merged): one row
+per 1024×1024 tile, with per-tile WKB geometry (EPSG:4326) and Sentinel-1
+`delineation_time_pre` / `delineation_time_post` acquisition times. There is
+no per-event AOI geometry file, so the AOIs are derived by grouping tiles
+([`src/atlantis/utils/geoidflood.py`](../../src/atlantis/utils/geoidflood.py),
+`derive_geoidflood_metadata`, run on the fly by the estimate script if the
+metadata CSV is missing):
+
+- **AOI unit** — the benchmark's native AoI: `tile_id`, the `N` in
+  `EMSR712-N`. An activation (event) has multiple AOIs.
+- **bbox** — union of the AoI's tile geometries (EPSG:4326).
+- **date window** — span of the AoI's Sentinel-1 delineation acquisitions:
+  `date_start = min(delineation_time_pre)`,
+  `date_end = max(delineation_time_post)`.
+- Corrupt tile rows are dropped when deriving (missing delineation times,
+  `post < pre`, post year > 2027).
+
+[`scripts/estimate_geoidflood_aois.py`](../../scripts/estimate_geoidflood_aois.py)
+then adds the 14-day post-flood pad and writes `data/metadata/geoidflood_aois.csv`
+(one row per event-AoI: `event_id`, `aoi_id`, bbox, `date_start`, `date_end`,
+`n_dates`). Windows span 2016–2026, so most of the set falls outside the
+catalogue years and must be searched live (§2.4).
+
+### 2.2 KuroSiwo: one AOI per flood case
+
+KuroSiwo is a SAR flood catalogue (`assets/ks_catalogue.gpkg`): one row per
+exported SAR patch, organised as Event (`actid`) → 224×224 tiles → patches.
+[`src/atlantis/utils/kurosiwo.py`](../../src/atlantis/utils/kurosiwo.py)
+(`derive_kurosiwo_metadata`, exposed as `atlantis.cli build-kurosiwo-metadata`)
+reduces it to one row per flood case (43 in the v1 catalogue):
+
+- **AOI unit** — the whole event: `flood_case = KuroSiwo_{actid:03d}`, and
+  the AOI table sets `aoi_id = flood_case` (exactly one AOI per event).
+- **bbox** — `total_bounds` of **all** catalogued patch geometries
+  (pre-flood and flood-time) reprojected to WGS84: the SAR tile footprint,
+  **not** the inundated extent.
+- **date window** — SAR acquisition dates, not hydrological event bounds:
+  `date_start` = earliest `source_date` of the pre-flood (`master=False`)
+  acquisitions (the oldest baseline image), `date_end` = earliest
+  flood-time (`master=True`) `source_date` (the flood image date). Most
+  events have exactly one flood-time acquisition, so there is no
+  multi-temporal flood timeline.
+
+[`scripts/estimate_kurosiwo_aois.py`](../../scripts/estimate_kurosiwo_aois.py)
+adds the same 14-day pad and writes `data/metadata/kurosiwo_aois.csv`.
+Windows span 2014–2022, so only 2021–2022 overlap the catalogue years.
+
+The metadata also carries extent fields (`max_flood_extent_km2`, static
+`pflood` labels) — `pflood` is a per-tile training label identical across
+pre- and flood-time acquisitions, not a per-date signal. None of these are
+used by the archive build; only bbox and dates matter.
+
+### 2.3 Differences at a glance
+
+| Aspect                | GEOID-Flood                                    | KuroSiwo                                                        |
+| --------------------- | ---------------------------------------------- | --------------------------------------------------------------- |
+| AOI unit              | one per (activation, tile-group): `EMSR712-10` | one per event: `KuroSiwo_{actid:03d}` (`aoi_id` = `flood_case`) |
+| Source catalogue      | HF `tile_catalog.parquet` (1024×1024 tiles)    | KuroSiwo `catalogue.gpkg` (224×224 tiles / patches)             |
+| bbox                  | union of the AoI's tile geometries             | `total_bounds` of all SAR patch footprints                      |
+| date window (pre-pad) | min pre → max post delineation acquisitions    | oldest pre-flood → earliest flood-time acquisition              |
+| Window years          | 2016–2026                                      | 2014–2022                                                       |
+| Task id               | embeds event **and** AoI (`gfm-EMSR712-10-…`)  | embeds AoI = event (`gfm-KuroSiwo_118-…`)                       |
+
+Both get the +14-day post-flood pad, and in both the bbox only selects which
+EQUI7 tiles/dates are in scope.
+
+### 2.4 Whole AOI, GFM-dependent coverage
+
+- **The full AOI bbox × full window is processed** — nothing is clipped to
+  the flood mask or the inundated footprint. The AOI bbox feeds a
+  bbox-intersects query per day (live search) or a catalogue bbox filter,
+  and every intersecting EQUI7 tile/date becomes a task.
+- **The archive content is whatever GFM exists.** GFM's storage unit is one
+  STAC item per (EQUI7 tile, date) — a daily, Sentinel-1-derived product —
+  so coverage is driven entirely by GFM availability, **not** by the source
+  event's own imagery (which only defines bboxes/windows and is never
+  archived). Days without GFM items produce no tasks and leave empty time
+  slots.
+- **Default destination is the yearly cube.** These per-event archives
+  region-write the gfm group of `s3://atlantis/zarr/{YYYY}/datacube.zarr`
+  (§4, §5.3); the dedicated `geoidflood_events` / `kurosiwo_events` cubes
+  are the alternative single-store layout.
+- Catalogue years (2021–2025) are built offline; every other window day is a
+  live EODC STAC search day-by-day. GEOID-Flood's pre-2021 windows are
+  searched live and expected empty, so those events archive little or
+  nothing; KuroSiwo's 2014–2020 windows likewise, with only the 2021–2022
+  portion hitting catalogues.
+
+---
+
+## 3. Prerequisites
 
 - **ECMWF object-store credentials** — the `default` AWS profile with the EODC
   endpoint, configured once via `pixi run setup` (see
@@ -66,7 +174,7 @@ never collide in the tracker.
 
 ---
 
-## 3. Archive targets
+## 4. Archive targets
 
 Two layouts are supported, both producing the standard
 [`datacube.zarr` schema](./zarr-spec.md):
@@ -87,7 +195,7 @@ Only GFM data is written; other groups in the yearly cubes are left alone.
 
 ---
 
-## 4. Commands
+## 5. Commands
 
 The scripts are exposed as `pixi run -e events` tasks:
 
@@ -102,7 +210,7 @@ Every task accepts the underlying script's flags (`--archive`, `--year`,
 `--events`, `--db-path`, `--workers`, `--memory-limit`, `--tasks-only`,
 `--tasks`).
 
-### 4.1 Process **all** events (GEOID-Flood)
+### 5.1 Process **all** events (GEOID-Flood)
 
 One command builds the complete task list (catalogues + live search), caches
 it, and streams every task into the dedicated event cube:
@@ -114,7 +222,7 @@ PYTHONPATH=src pixi run -e events build-geoidflood-gfm-archive \
     --db-path geoidflood_gfm_cube_tracker.db
 ```
 
-### 4.2 Process **all** events (KuroSiwo)
+### 5.2 Process **all** events (KuroSiwo)
 
 ```bash
 tmux new -s kurosiwo
@@ -133,7 +241,7 @@ already-`DONE` tasks are skipped.
 > run — add `--tasks-only`; with `--events`/`--year` it also writes the
 > filtered sidecar list.
 
-### 4.3 Per-event backfill into the yearly cubes
+### 5.3 Per-event backfill into the yearly cubes
 
 The **default workflow** is backfilling individual events into the per-year
 cubes (`s3://atlantis/zarr/{YYYY}`), typically as new events arrive:
@@ -167,25 +275,25 @@ PYTHONPATH=src pixi run -e events backfill-kurosiwo-gfm \
   does not exist yet, a filtered run generates only the requested subset and
   writes it to the shared path; the next filtered run then loads that subset
   and silently finds "No tasks match" — nothing is processed. Populate the
-  cache first with an unfiltered `--tasks-only` run (or the §4.1/§4.2
+  cache first with an unfiltered `--tasks-only` run (or the §5.1/§5.2
   all-events build), or give each backfill its own `--tasks` path.
 - `--year` sets the archive to `s3://atlantis/zarr/{YYYY}` (overriding
   `--archive`), filters tasks to that calendar year, and triggers the
-  **time-axis prefill** described in §3.
+  **time-axis prefill** described in §4.
 - A run that straddles a year boundary must be split into one invocation per
   year (the `--year` filter does the splitting; run each separately with its
   own tracker, or the full-event command without `--year`).
 - **Corrections / re-runs are safe**: `DONE` tasks are skipped and re-running
   an event overwrites its cells in place.
 
-### 4.4 Running both programs
+### 5.4 Running both programs
 
 The two programs are independent — separate scripts, task lists, trackers,
 and archive targets. Run them in separate `tmux` sessions (their Dask
 dashboard ports differ: `8796` GEOID-Flood, `8795` KuroSiwo) or sequentially
 with distinct `--db-path` values.
 
-### 4.5 Examples — the smallest events from each collection
+### 5.5 Examples — the smallest events from each collection
 
 The three smallest GEOID-Flood and three smallest KuroSiwo
 events by AOI/date-range (window = metadata range; pad end = window + 14-day
@@ -224,11 +332,11 @@ pixi run -e events backfill-kurosiwo-gfm --year 2020 --events KuroSiwo_1111011 -
 ```
 
 These runs are small (15–39 days each) and are a good way to validate the
-workflow end to end. The §4.3 caveats apply: each run uses its own
+workflow end to end. The §5.3 caveats apply: each run uses its own
 `--db-path` tracker, and the shared task cache must exist before the first
 filtered run (or pass a distinct `--tasks` path per event).
 
-### 4.6 Bookmarking the example events
+### 5.6 Bookmarking the example events
 
 The static bookmark registry ([`src/atlantis/bookmarks.py`](../../src/atlantis/bookmarks.py),
 `python -m atlantis.cli bookmarks add/list/show/remove`) stores named
@@ -288,13 +396,13 @@ yearly cubes.
 > `read(..., event=…)` resolves a _different_, data-driven registry
 > (`atlantis_events`, written inside the cube by
 > `ArchiveWriter.write(..., event=…)`), and the backfill scripts never write
-> it. Read a backfilled event back by bbox + dates instead — see §4.7.
+> it. Read a backfilled event back by bbox + dates instead — see §5.7.
 
-### 4.7 Loading back a backfilled event
+### 5.7 Loading back a backfilled event
 
-After a §4.5 backfill, load the archived GFM data with the archive reader,
-using the event's AOI bbox (same values as the bookmarks in §4.6) and the
-window including the 14-day pad (use the "Pad end" from §4.5):
+After a §5.5 backfill, load the archived GFM data with the archive reader,
+using the event's AOI bbox (same values as the bookmarks in §5.6) and the
+window including the 14-day pad (use the "Pad end" from §5.5):
 
 ```python
 from atlantis.archive.reader import ArchiveReader
@@ -323,11 +431,11 @@ Notes:
 --bbox "…" --start … --end …` after building a STAC catalog (see
   [stac-and-viz.md](./stac-and-viz.md)).
 - For a multi-year event, read each year's cube separately and concatenate,
-  mirroring the split backfill runs (§4.3).
+  mirroring the split backfill runs (§5.3).
 
 ---
 
-## 5. Mechanics worth knowing
+## 6. Mechanics worth knowing
 
 - **Windows.** Each (event, AoI) is processed over its metadata date range
   plus a 14-day post-flood pad (`DEFAULT_POST_FLOOD_PAD_DAYS` in

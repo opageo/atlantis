@@ -14,7 +14,8 @@ exactly the COGs it needs and writes one per-tile cell into the cube, exactly
 like the year cubes. Events only select which tiles/dates are in scope.
 
 Task items come from the per-year S3 catalogues where one exists
-(2021–2022 for KuroSiwo), and from live EODC STAC searches otherwise. Items
+(2021–2025; only 2021–2022 overlap KuroSiwo's windows), and from live EODC
+STAC searches otherwise. Items
 whose STAC metadata lacks a valid ``Equi7Tile``/bbox are recorded to
 ``<tasks>.dropped.json`` for post-run coverage reconciliation.
 
