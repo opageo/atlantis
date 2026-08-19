@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from atlantis.fetchers.gfm.event_tasks import (
+    buffer_bbox,
     build_tasks_from_catalogues,
     build_tasks_live,
     is_valid_bbox,
@@ -15,6 +16,31 @@ from atlantis.fetchers.gfm.event_tasks import (
     kurosiwo_task_id,
     task_id,
 )
+
+
+def test_buffer_bbox_equator_and_mid_latitude():
+    import math
+
+    # 25 km ≈ 0.225 deg; at the equator lon == lat
+    assert buffer_bbox(0.0, 0.0, 0.0, 0.0, 25.0) == [-0.225225, -0.225225, 0.225225, 0.225225]
+    # at 60.5N (bbox mid-latitude), lon degrees shrink by cos(60.5) → lon expands more than lat
+    dlat = 25.0 / 111.0
+    dlon = 25.0 / (111.0 * math.cos(math.radians((60.0 + 61.0) / 2)))
+    west, south, east, north = buffer_bbox(10.0, 60.0, 11.0, 61.0, 25.0)
+    assert math.isclose(west, 10.0 - dlon, rel_tol=1e-6)
+    assert math.isclose(east, 11.0 + dlon, rel_tol=1e-6)
+    assert math.isclose(south, 60.0 - dlat, rel_tol=1e-6)
+    assert math.isclose(north, 61.0 + dlat, rel_tol=1e-6)
+
+
+def test_buffer_bbox_clamps_to_valid_range():
+    # near the pole the cos floor (0.1) keeps the lon buffer finite
+    west, south, east, north = buffer_bbox(0.0, 89.9, 0.0, 89.9, 25.0)
+    assert west < 0.0 and east > 0.0 and north == 90.0
+    # dateline + poles clamp instead of overflowing
+    west, south, east, north = buffer_bbox(179.9, -89.5, 180.0, 89.5, 100.0)
+    assert west > -180.0 and south == -90.0 and east == 180.0 and north == 90.0
+
 
 CATALOGUE = pd.DataFrame(
     [

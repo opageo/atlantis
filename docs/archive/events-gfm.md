@@ -87,11 +87,12 @@ metadata CSV is missing):
   `post < pre`, post year > 2027).
 
 [`scripts/estimate_geoidflood_aois.py`](../../scripts/estimate_geoidflood_aois.py)
-then adds the ±14-day pre/post-flood pads and writes `data/metadata/geoidflood_aois.csv`
-(one row per event-AoI: `event_id`, `aoi_id`, bbox, `date_start`, `date_end`,
-`n_dates`), plus one whole-event envelope row per event (`aoi_id = "0"`,
-bbox = envelope of all its AOI bboxes) so `--events EMSR184-0` backfills the
-whole activation. Windows span 2016–2026, so most of the set falls outside the
+then adds the ±14-day pre/post-flood pads, widens every bbox by 25 km on
+all sides (`--buffer-km`; the mapped footprint is not the flood extent) and
+writes `data/metadata/geoidflood_aois.csv` (one row per event-AoI:
+`event_id`, `aoi_id`, bbox, `date_start`, `date_end`, `n_dates`), plus one
+whole-event envelope row per event (`aoi_id = "0"`, bbox = envelope of all
+its AOI bboxes) so `--events EMSR184-0` backfills the whole activation. Windows span 2016–2026, so most of the set falls outside the
 catalogue years and must be searched live (§2.4).
 
 ### 2.2 KuroSiwo: one AOI per flood case
@@ -116,8 +117,8 @@ reduces it to one row per flood case (43 in the v1 catalogue):
   flood timeline.
 
 [`scripts/estimate_kurosiwo_aois.py`](../../scripts/estimate_kurosiwo_aois.py)
-adds the same ±14-day pads around the flood anchor and writes
-`data/metadata/kurosiwo_aois.csv`. Windows span 2014–2022, so only 2021–2022
+adds the same ±14-day pads around the flood anchor, widens every bbox by
+25 km on all sides (`--buffer-km`) and writes `data/metadata/kurosiwo_aois.csv`. Windows span 2014–2022, so only 2021–2022
 overlap the catalogue years.
 
 The metadata also carries extent fields (`max_flood_extent_km2`, static

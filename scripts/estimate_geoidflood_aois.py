@@ -36,7 +36,9 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from atlantis.fetchers.gfm.event_tasks import (  # noqa: E402
+    DEFAULT_AOI_BUFFER_KM,
     DEFAULT_PRE_FLOOD_PAD_DAYS,
+    buffer_bbox,
     count_items_per_aoi_date,
     event_date_windows,
 )
@@ -50,6 +52,7 @@ def build_aoi_table(
     metadata: pd.DataFrame,
     pad_days: int = POST_FLOOD_PAD_DAYS,
     pre_pad_days: int = DEFAULT_PRE_FLOOD_PAD_DAYS,
+    buffer_km: float = DEFAULT_AOI_BUFFER_KM,
 ) -> pd.DataFrame:
     """Map every GEOID-Flood event-AoI to its bbox and date window.
 
@@ -60,6 +63,9 @@ def build_aoi_table(
     is never included. Followed by one whole-event envelope row per event
     (``aoi_id="0"``): the bbox is the envelope of all the event's AoI bboxes
     and the date window is ``min(date_start) .. max(date_end)``.
+
+    Every bbox (per-AOI and envelope rows alike) is widened by *buffer_km* on
+    all sides: the mapped footprint is not the flood extent.
     """
     rows: list[dict] = []
     for row in metadata.itertuples(index=False):
@@ -96,12 +102,25 @@ def build_aoi_table(
                 "n_dates": (end - start).days + 1,
             }
         )
-    return pd.concat([table, pd.DataFrame(event_rows)], ignore_index=True)
+    table = pd.concat([table, pd.DataFrame(event_rows)], ignore_index=True)
+    if buffer_km > 0:
+        buffered = [
+            buffer_bbox(r.aoi_west, r.aoi_south, r.aoi_east, r.aoi_north, buffer_km)
+            for r in table.itertuples(index=False)
+        ]
+        table[["aoi_west", "aoi_south", "aoi_east", "aoi_north"]] = buffered
+    return table
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--pad-days", type=int, default=POST_FLOOD_PAD_DAYS, help="days after date_end to include")
+    parser.add_argument(
+        "--buffer-km",
+        type=float,
+        default=DEFAULT_AOI_BUFFER_KM,
+        help="km to widen every AOI bbox on all sides (0 disables)",
+    )
     parser.add_argument(
         "--with-items", action="store_true", help="estimate GFM items per (AoI, date) from S3 catalogues"
     )
@@ -117,7 +136,7 @@ def main() -> None:
         write_geoidflood_metadata_csv(_REPO_ROOT / GEOIDFLOOD_DEFAULT_CATALOGUE, METADATA_PATH)
 
     metadata = pd.read_csv(METADATA_PATH, parse_dates=["date_start", "date_end"])
-    table = build_aoi_table(metadata, pad_days=args.pad_days)
+    table = build_aoi_table(metadata, pad_days=args.pad_days, buffer_km=args.buffer_km)
     if args.with_items:
         items = count_items_per_aoi_date(table)
         table = table.merge(items, on=["event_id", "aoi_id"], how="left")
