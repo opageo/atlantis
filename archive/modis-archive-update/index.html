@@ -1,0 +1,2779 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="ML-ready archive of satellite-derived flood inundation observations">
+      
+      
+      
+        <link rel="canonical" href="https://opageo.github.io/atlantis/archive/modis-archive-update/">
+      
+      
+        <link rel="prev" href="../../cli-examples/">
+      
+      
+        <link rel="next" href="../../development/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Incremental MODIS Archive Updates - Atlantis</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#incremental-modis-archive-updates-operational-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Atlantis" class="md-header__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Atlantis
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Incremental MODIS Archive Updates
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../pixi-setup/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../sources/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Data Sources
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  CLI
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../batch/viirs/jpss.md" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Batch Processing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../development/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Development
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/config/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Atlantis" class="md-nav__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Atlantis
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pixi-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pixi Setup (Newcomers)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials & Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gdal-install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual GDAL Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Sources
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Sources
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layer Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    VIIRS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../viirs/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MODIS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MODIS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modis/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GFM
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    GFM
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gfm/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KuroSiwo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KuroSiwo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kurosiwo/stac-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    STAC Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    End-to-End Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Batch Processing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../batch/viirs/jpss.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS JPSS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incremental MODIS Archive Updates
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incremental MODIS Archive Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-this-feature-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What this feature does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-cli-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. CLI surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. CLI surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#detached-execution-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detached execution by default
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start-run-it-right-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start — run it right now
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-persistent-state-per-year" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Persistent state (per year)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-how-a-run-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. How a run works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-time-axis-ordering-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Time-axis ordering policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-failure-handling-and-inspection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Failure handling and inspection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-deployment-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Deployment phases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-archive-invariants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Archive invariants
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Out of scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-next-continuation-run-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Next continuation run — worked example
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fetchers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fetchers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/harmoniser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harmoniser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-this-feature-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What this feature does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-cli-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. CLI surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. CLI surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#detached-execution-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detached execution by default
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start-run-it-right-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start — run it right now
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-persistent-state-per-year" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Persistent state (per year)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-how-a-run-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. How a run works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-time-axis-ordering-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Time-axis ordering policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-failure-handling-and-inspection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Failure handling and inspection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-deployment-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Deployment phases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-archive-invariants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Archive invariants
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Out of scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-next-continuation-run-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Next continuation run — worked example
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="incremental-modis-archive-updates-operational-guide">Incremental MODIS Archive Updates — Operational Guide</h1>
+<blockquote>
+<p>Weekly, resume-safe ingestion of newly published MODIS MCDWD tiles into the
+yearly Atlantis Zarr archive. Reconciles the expected task inventory against
+the SQLite tracker and the archive, processes only the missing/failed work,
+keeps the time axis strictly ascending, and records every run in an
+immutable manifest with an S3-backed copy of the state.</p>
+</blockquote>
+<p><strong>Source of truth</strong></p>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Module</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Orchestration (worker, reconcile, …)</td>
+<td><a href="../../src/atlantis/archive/update.py"><code>src/atlantis/archive/update.py</code></a></td>
+</tr>
+<tr>
+<td>Ascending-order writer wrapper</td>
+<td><a href="../../src/atlantis/archive/ordering.py"><code>src/atlantis/archive/ordering.py</code></a></td>
+</tr>
+<tr>
+<td>Offline time-axis reindex migration</td>
+<td><a href="../../src/atlantis/archive/reindex_time.py"><code>src/atlantis/archive/reindex_time.py</code></a></td>
+</tr>
+<tr>
+<td>Task requeue helper</td>
+<td><a href="../../src/atlantis/batch/tracker.py"><code>src/atlantis/batch/tracker.py</code></a></td>
+</tr>
+<tr>
+<td>Underlying cube engine</td>
+<td><a href="../../src/atlantis/archive/cube_batch.py"><code>src/atlantis/archive/cube_batch.py</code></a></td>
+</tr>
+<tr>
+<td>Tests</td>
+<td><a href="../../tests/archive/test_update.py"><code>tests/archive/test_update.py</code></a></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-what-this-feature-does">1. What this feature does</h2>
+<p>The yearly archive is one cube per calendar year:</p>
+<div class="highlight"><pre><span></span><code>s3://atlantis/zarr/
+├── 2025/datacube.zarr/{gfm,modis,viirs,zarr.json}
+├── 2026/datacube.zarr/{gfm,modis,viirs,zarr.json}
+└── ...
+</code></pre></div>
+<p><code>atlantis archive modis update</code> keeps a year's <code>modis</code> group complete and
+current:</p>
+<ol>
+<li><strong>Refreshes the year's catalogue</strong> — lists LAADS for the update window,
+   merges the result into <code>modis_archive_catalog_&lt;year&gt;.parquet</code>
+   (candidate-then-promote), so newly published tiles are always discovered —
+   even when the tracker shows nothing pending.</li>
+<li><strong>Reconciles</strong> every expected task ID (<code>modis-YYYYMMDD-hHHvVV</code>) against the
+   tracker and the archive: <code>DONE</code> tasks that are missing from the archive are
+   requeued after a warning; archive dates with no catalogue coverage are
+   reported as orphans (never deleted).</li>
+<li><strong>Processes only unresolved work</strong> through the existing resume-safe cube
+   batch engine, wrapped in an ascending-order writer so the time axis never
+   grows out of chronological order.</li>
+<li><strong>Validates</strong> (all expected tasks <code>DONE</code>, dates present on the axis, axis
+   strictly ascending), advances a <strong>contiguous watermark</strong>, and writes an
+   <strong>immutable run manifest</strong>.</li>
+<li><strong>Backs up</strong> tracker, manifest, and catalogue to <code>s3://atlantis/archive-state/</code>
+   in a <code>finally</code> path — also on failure.</li>
+</ol>
+<p>VIIRS and GFM are untouched: only the <code>modis</code> group and its metadata change.</p>
+<h2 id="2-cli-surface">2. CLI surface</h2>
+<p><code>archive</code> is a Typer sub-application:</p>
+<div class="highlight"><pre><span></span><code>atlantis archive event ...            # write harmonised event GeoTIFFs into the cube
+atlantis archive modis update ...     # launch the incremental update (detached tmux by default)
+atlantis archive modis status ...     # inspect yearly tracker / catalogue / archive state
+atlantis archive modis _run-update    # internal foreground worker (spawned by `update`)
+atlantis archive modis seed-tracker   # build a tracker from the archive (onboarding pre-update years)
+atlantis archive modis _reindex-time  # one-off time-axis migration (earlier-hole repair)
+</code></pre></div>
+<p>See <a href="../../cli/">the CLI reference</a> for the full option tables.</p>
+<h3 id="detached-execution-by-default">Detached execution by default</h3>
+<p><code>atlantis archive modis update</code> resolves the window, then starts a new detached
+tmux session and returns immediately:</p>
+<div class="highlight"><pre><span></span><code>tmux attach -t atlantis-modis-update-2026-&lt;runid&gt;     # watch the worker
+atlantis archive modis status --year 2026             # inspect progress
+</code></pre></div>
+<p>The worker runs from the repository root through the Pixi batch environment and
+writes its log to <code>&lt;state-root&gt;/&lt;year&gt;/logs/&lt;runid&gt;.log</code> — under the <strong>first
+resolved year</strong>, so a December/January rollover run logs under the earlier
+year. It never launches <code>update</code> recursively; <code>--foreground</code> runs the same
+worker path in the current terminal (for schedulers/CI/tests). <code>--attach</code>
+attaches to the new tmux session right after launch and <code>--session-name</code>
+overrides the generated session name. The launcher fails clearly when tmux is
+missing or the session already exists — it never falls back to a background
+shell process.</p>
+<p>All execution is Pixi-only:</p>
+<div class="highlight"><pre><span></span><code>PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis _run-update ...
+pixi run -e batch modis-archive-update                   # foreground, production defaults
+pixi run -e batch modis-archive-update-dry-run           # resolve + report only
+pixi run -e batch modis-archive-seed-tracker -- --year YYYY
+</code></pre></div>
+<p>Any run that launches the batch engine (<code>update</code>, <code>_run-update</code>, or a cube
+build) <strong>must</strong> use the <code>batch</code> environment — the default environment lacks
+<code>distributed</code>, so <code>pixi run modis-archive-update</code> without <code>-e batch</code> fails at
+the Dask import.</p>
+<h2 id="quick-start-run-it-right-now">Quick start — run it right now</h2>
+<p>Prerequisites: <code>EARTHDATA_TOKEN</code> (a LAADS application token, not an Earthdata
+Login token — see §6), AWS credentials for <code>s3://atlantis</code>, pixi, and tmux
+(detached mode only). The token is loaded from the repo <code>.env</code> by the CLI.</p>
+<ol>
+<li>Dry run — resolve and print the plan without launching the worker:
+   <code>PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --foreground --dry-run</code></li>
+<li>Foreground run (production defaults, current terminal):
+   <code>pixi run -e batch modis-archive-update</code></li>
+<li>Detached tmux (the CLI default; returns immediately):
+   <code>PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --year 2026</code>
+   <code>tmux attach -t atlantis-modis-update-2026-&lt;runid&gt;</code></li>
+<li>Inspect progress / results:
+   <code>pixi run -e batch modis-archive-status -- --year 2026</code></li>
+</ol>
+<p>What a default run does with the current archive (as of 2026-08-14):</p>
+<ol>
+<li>Resolves year 2026 (no <code>--year</code> defaults to the current year). The window
+   is anchored at the archive's <strong>last processed date</strong>, not at today: with
+   no local 2026 tracker the run is a catch-up from <code>2026-01-01</code> toward
+   <code>today - 7 d lag</code>, and the 31-day guardrail chunks it forward — the first
+   run processes the <strong>next</strong> 31 days (<code>2026-01-01 → 2026-01-31</code>, with a
+   printed notice). Re-running the same command continues automatically with
+   the next 31 days (<code>2026-02-01 → …</code>) until the year is caught up; no
+   explicit dates needed. Near real time (caught up), the window instead
+   re-scans the trailing lookback days up to the latest available data.</li>
+<li>Creates the year state under the state root (e.g.
+   <code>/mnt/atlantis-state/modis/2026/</code>) and an <strong>empty</strong> <code>cube_tracker.db</code> —
+   the tracker from an earlier run exists only in the S3 backup and is never
+   restored automatically, so every task in the window is treated as pending
+   and re-ingested (idempotent overwrites, ~8,800 tiles per 31-day chunk,
+   ~6–7 h at the default 2–6 Dask workers).</li>
+<li>Refreshes <code>modis_archive_catalog_2026.parquet</code> from LAADS for the window
+   (candidate-then-promote) and selects the window's tasks.</li>
+<li>Preflights one real tile download — a missing/invalid <code>EARTHDATA_TOKEN</code>
+   aborts the run fast (never reaches Dask).</li>
+<li>Runs the ordered batch; on the year's first build the 2026 axis is
+   pre-filled (365 slots), so every date lands in a pre-existing slot and the
+   axis stays ascending by construction.</li>
+<li>Validates (all <code>DONE</code>, axis ascending), advances the watermark to the
+   chunk's end (<code>2026-01-31</code>), writes the immutable manifest, and backs up
+   tracker/manifest/catalogue to <code>s3://atlantis/archive-state/modis/2026/</code>.</li>
+</ol>
+<p>See §4 for the full per-year pipeline and §7 for the deployment phases.</p>
+<h2 id="3-persistent-state-per-year">3. Persistent state (per year)</h2>
+<div class="highlight"><pre><span></span><code>/mnt/atlantis-state/modis/
+├── 2025/
+│   ├── cube_tracker.db        # live SQLite task tracker (the task-level source of truth)
+│   ├── update.lock            # pid + timestamp; one writer per year
+│   ├── catalogues/modis-2025.parquet
+│   ├── manifests/&lt;runid&gt;.json # immutable per-run manifest
+│   └── logs/&lt;runid&gt;.log
+└── 2026/ ...
+</code></pre></div>
+<p>After every run (success <strong>or</strong> failure) the tracker, manifest, and catalogue
+are mirrored to <code>&lt;backup-base&gt;/&lt;year&gt;/</code>
+(<code>s3://atlantis/archive-state/modis/&lt;year&gt;/</code> by default). The mounted local
+tracker is the live database during a run — SQLite is never used directly on
+S3.</p>
+<h2 id="4-how-a-run-works">4. How a run works</h2>
+<p>For each resolved year, in chronological order, under the year lock:</p>
+<ol>
+<li><strong>Window resolution</strong> — explicit <code>--start/--end</code> for repair/backfill;
+   otherwise the window is anchored at the archive's <strong>last processed date</strong>,
+   not at today: the cursor is the day after the year's contiguous watermark
+   (January 1 on a wiped/fresh year) and the end is the latest available
+   data (<code>today - availability lag</code>, clamped to the year end). Windows
+   spanning 31 December split across both years; each year runs under its own
+   lock, tracker, and manifest.</li>
+</ol>
+<p><strong>Catch-up guardrail</strong> — when the year is more than 31 days behind the
+   latest available data, an auto-resolved window processes the <strong>next 31
+   days from the cursor</strong> and prints a notice: re-running the same command
+   continues automatically with the next 31 days, so a long backlog is
+   ingested in order across successive resume-safe runs — no explicit dates
+   needed. Near real time (caught up, less than a chunk behind), the window
+   instead covers <code>cursor - lookback → today - lag</code> (weekly defaults: 14 /
+   7 days) so late LAADS publications are re-scanned and a complete year is
+   still validated and re-recorded. Explicit windows are resolved verbatim
+   and never chunked — repair example:
+   <code>… archive modis update --year 2026 --start 2026-06-17 --end 2026-07-22 --foreground</code>.</p>
+<p>When the current year has no tracker baseline yet (fresh year), the window
+   also reaches back into the previous year, so a December backlog and the
+   new year's first days are both covered automatically: each year runs under
+   its own lock, tracker, and manifest, and a new year is prepared on the
+   fly — its catalogue built, its <code>time</code> axis pre-filled (marker
+   <code>atlantis_time_prefill</code>), and its dates ingested.</p>
+<ol>
+<li><strong>Catalogue refresh</strong> — build the fresh LAADS range locally, merge with the
+   existing yearly catalogue, dedupe on <code>(date, h, v)</code> (the freshest row wins),
+   drop rows outside the year, validate schema/coverage, write a local
+   candidate, then promote it to the canonical per-year object in a single
+   replacement. A failed build leaves the previous catalogue intact and stops
+   the run before any cube work.</li>
+<li><strong>Task selection</strong> — convert the window's catalogue rows with
+   <code>to_tasks()</code>. With <code>--no-retry-failed</code>, previously <code>FAILED</code> tasks are left
+   unretried (they still block the watermark).</li>
+<li><strong>Append-only hole check</strong> — a date with expected tasks that is missing
+   from the archive axis <em>below</em> the axis tail is a repair condition: the run
+   refuses to append it out of order and points to <code>_reindex-time</code>.</li>
+<li><strong>Reconciliation</strong> — classify every expected task as <code>DONE</code> / <code>FAILED</code> /
+   absent; requeue (delete the row of) tasks whose date is <code>DONE</code> in the
+   tracker but missing from the archive; report orphans. The engine itself
+   skips <code>DONE</code> and retries <code>FAILED</code>, so only genuinely unresolved tiles are
+   submitted.</li>
+<li><strong>Ordered batch</strong> — the cube engine streams completed tiles through
+   <code>OrderedConsume</code>, which buffers payloads and only writes a date once every
+   earlier date in the window is fully resolved. New time slots are therefore
+   always appended in ascending order regardless of Dask completion order.
+   On a <strong>new year</strong> (no archive group yet) the writer session pre-fills the
+   <code>time</code> axis with the full year (365/366 slots, marker
+   <code>atlantis_time_prefill</code>) before the first write, so every date lands in a
+   pre-existing slot — backfills can never disturb the axis, and the
+   append-only hole check (step 4) is inert on prefilled years. Years whose
+   axis already exists are untouched: a full axis is a no-op and a
+   partially-built one is skipped by the prefill data guard.</li>
+<li><strong>Validation</strong> — every expected task <code>DONE</code> and none <code>FAILED</code>; expected
+   dates present on the axis; axis strictly ascending; a sample of DONE tile
+   windows checked for all-NODATA (warning only).</li>
+<li><strong>Watermark + manifest</strong> — <code>last_complete</code> advances only through the
+   highest contiguous fully-<code>DONE</code> date range from the window start; a later
+   completed date never skips an earlier gap. The manifest records the window,
+   catalogue checksum, tracker path, Dask settings, task totals, watermark,
+   and pipeline revision.</li>
+<li><strong>Backup</strong> — tracker, manifest, and catalogue copied to the backup root in
+   a <code>finally</code> block; a failed backup fails a successful run.</li>
+</ol>
+<p>A failed run (validation, stale-lock conflict, catalogue inconsistency, backup
+failure) exits non-zero and writes a <code>status: "failed"</code> manifest.</p>
+<p><strong>Expected outcomes</strong> — a successful run exits 0 with <code>Update ok for year(s)
+[...]</code>, every expected task <code>DONE</code>, the watermark advanced to the highest
+contiguous complete date, a <code>status: "ok"</code> manifest under <code>manifests/</code>, and
+the tracker/manifest/catalogue mirrored to the backup root. A run that
+resolves an empty window is a no-op: exit 0, <code>Resolved window is empty —
+nothing to do.</code>, no manifest. Anything else is a failed run.</p>
+<h2 id="5-time-axis-ordering-policy">5. Time-axis ordering policy</h2>
+<p>The cube engine consumes <code>as_completed</code>, so a naive writer would append unseen
+dates in completion order — not chronological order. The update worker enforces
+<strong>append-only ascending</strong>: new dates are always written after every earlier
+date in the window, and an older missing date is never appended at the physical
+end of the axis.</p>
+<p>When an earlier hole must be filled (for example a date whose tiles all failed
+in a previous run, or disorder inherited from an older build), run the one-off
+migration first:</p>
+<div class="highlight"><pre><span></span><code>atlantis archive modis _reindex-time --year 2026
+</code></pre></div>
+<p>It rewrites the year's <code>modis</code> group into strictly ascending order, inserting
+empty NODATA slots for catalogue dates missing from the axis, then swaps the
+group into place. The next <code>update</code> run fills those slots in order. On a remote
+store this copies the group's materialised data once — it is a deliberate
+one-off, not part of the weekly path.</p>
+<h2 id="6-failure-handling-and-inspection">6. Failure handling and inspection</h2>
+<ul>
+<li><code>atlantis archive modis status --year YYYY</code> reports: expected / <code>DONE</code> /
+  <code>FAILED</code> counts, watermark (highest contiguous complete date), first/last
+  archive date, missing date ranges, time-axis sortedness, the most recent
+  failed task IDs with error messages, the last manifest, and lock state —
+  plus a per-date completion heatmap (one row per month, one cell per day:
+  <code>#</code> complete / <code>x</code> failed / <code>o</code> pending / <code>.</code> no data; ASCII glyphs keep it
+  readable in any terminal) and a state-detail section with day
+  counts and up to eight contiguous ranges per state (<code>… (+N more)</code> beyond
+  that), alongside expected / incomplete / failed task totals.</li>
+<li><strong>Prefilled years</strong> (marker <code>atlantis_time_prefill</code>, written by
+  <code>batch modis cube run</code> on a <code>zarr/&lt;YYYY&gt;</code> root or — since the update flow
+  pre-fills by default — by the update itself on a new year's first run; see
+  <a href="../cube-build/">cube-build.md</a> → "Pre-filled time axis for year builds"):
+  the report sets <code>prefilled_year: true</code> and computes <strong>missing date ranges
+  from the tracker</strong> — dates whose expected tasks are not all <code>DONE</code>/<code>FAILED</code>
+  — instead of <code>expected − axis</code> (the axis always contains every date, so the
+  axis-based computation would be empty by construction).</li>
+<li><code>atlantis archive modis status</code> (no <code>--year</code>) summarises <strong>all</strong> years with
+  local state at once: one row per year (counts, watermark, axis sortedness,
+  last run status) plus a one-line monthly overview strip (one block per
+  month, dominant state). <code>pixi run modis-archive-status</code> is the shortcut.</li>
+<li><strong>LAADS download auth:</strong> <code>EARTHDATA_TOKEN</code> must be a <strong>LAADS application
+  token</strong> (create at
+  <code>https://ladsweb.modaps.eosdis.nasa.gov/profiles/#app-tokens</code>), not an
+  Earthdata Login access token — directory listings authenticate either way,
+  but file downloads reject the latter; the one-time LAADS DAAC data-archive
+  license must also be accepted in a browser (visit any file URL logged in).
+  A wrong token or unaccepted license fails every tile download — the update
+  preflights one tile and aborts fast with an actionable message. Transient
+  preflight failures (connection/timeout, 404/5xx) are retried and then
+  warn-and-continue; a persistent <code>401</code>/<code>403</code> (or an HTML/empty-body auth
+  signal) aborts the run — it is not absorbed by per-tile retries.</li>
+<li>Read the tracker directly on the mounted volume:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="n">status</span><span class="p">,</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">tasks</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">status</span><span class="p">;</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="n">task_id</span><span class="p">,</span><span class="w"> </span><span class="n">error</span><span class="p">,</span><span class="w"> </span><span class="n">attempts</span><span class="p">,</span><span class="w"> </span><span class="n">finished_at</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">tasks</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;FAILED&#39;</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">finished_at</span><span class="w"> </span><span class="k">DESC</span><span class="p">;</span>
+</code></pre></div>
+<ul>
+<li>Never delete or recreate a tracker to "fix" a failed run: re-run the same
+  year/window under its lock — <code>DONE</code> tasks are skipped, <code>FAILED</code> tasks are
+  retried.</li>
+<li>A lock left by a dead PID (or older than 24 h) is stale and is reclaimed
+  automatically; a live lock fails the run.</li>
+</ul>
+<h2 id="7-deployment-phases">7. Deployment phases</h2>
+<p>The first scheduled work is deliberately staged:</p>
+<ol>
+<li><strong>Phase 1 — reconcile 2025:</strong> <code>atlantis archive modis update --year 2025</code>.
+   Validates the existing 2025 yearly catalogue, locates the durable 2025
+   tracker, and fills every missing/failed task. If the original 2025 tracker
+   cannot be recovered, build one from the archive with <code>seed-tracker</code> first
+   (see below).</li>
+<li><strong>Phase 1b — onboard pre-update years without a tracker:</strong> years archived
+   before the update flow existed (2024, 2025, …) get their tracker built from
+   the archive with <code>atlantis archive modis seed-tracker --year YYYY</code>: every
+   catalogue task whose date is on the time axis is marked <code>DONE</code> (a date on
+   the axis proves it was written; the mosaic cannot be decomposed per tile),
+   and catalogue dates missing from the axis stay pending and are reported.
+   The next <code>update</code> run then only processes genuinely missing work.
+   <strong><code>seed-tracker</code> refuses a prefilled year</strong> (marker
+   <code>atlantis_time_prefill</code>): on a full-year axis, "date on axis" proves
+   nothing, so seeding would mark never-written tasks <code>DONE</code> and skip them
+   forever. For a prefilled year, re-run the (resume-safe) cube build to
+   rebuild a lost tracker, or use the tracker from the original build.</li>
+<li><strong>Phase 2 — initial 2026 catch-up:</strong> the first run builds and publishes
+   <code>modis_archive_catalog_2026.parquet</code> for its window and ingests in
+   ascending order, pre-filling the 2026 time axis (365 slots, marker
+   <code>atlantis_time_prefill</code>) and establishing the tracker baseline. If the
+   backlog exceeds a month, the catch-up guardrail (§4.1) chunks the run to
+   the <strong>next</strong> 31 days from the watermark — re-running the same command
+   continues automatically until the year is caught up, no explicit dates
+   needed.
+   The flow was validated end-to-end by the smoke test
+   (<code>.kilo/plans/1786458113122-modis-update-smoketest.md</code>): dry-run window
+   resolution, a one-day real-data run against local roots, and axis-probe
+   verification, before the production kickoff archived the 31-day catch-up
+   window with zero failures. In 2026-08 the initial 2026 data (Jul 6 – Aug 5)
+   was deliberately wiped and rebuilt automatically: the first post-wipe run
+   chunked forward from 2026-01-01 (<code>2026-01-01 → 2026-01-31</code>), re-prefilling
+   the 365-slot axis on the fresh group, and subsequent runs continue chunk
+   by chunk.</li>
+<li><strong>Phase 3 — weekly runs:</strong> start the VM and invoke
+   <code>atlantis archive modis update</code>. Near real time the effective window is
+   <code>last_complete + 1 - lookback</code> → <code>today - lag</code>; the lookback covers late
+   LAADS publications and failed prior runs. At year rollover the job
+   finishes outstanding December tasks in the old year before starting
+   January tasks in the new one.</li>
+</ol>
+<h2 id="8-archive-invariants">8. Archive invariants</h2>
+<ol>
+<li><strong>One writer per MODIS year</strong> — the per-year lock serialises all updates.</li>
+<li><strong>The tracker is the task-level source of truth</strong>, not the latest Zarr time
+   coordinate.</li>
+<li><strong>The archive and tracker must agree</strong> — a <code>DONE</code> task is trusted only when
+   its date is present on the archive axis; a mismatch is a repair condition,
+   never a reason to advance the watermark.</li>
+<li><strong>SQLite stays on a local POSIX filesystem</strong> — the tracker lives on the
+   mounted state volume and is backed up to S3 after each run.</li>
+<li><strong>Tracker lineage is stable</strong> — a year's tracker is reused only with its
+   canonical yearly catalogue; the manifest records the catalogue checksum. A
+   changed source interpretation or replacement catalogue requires an explicit
+   migration or a new tracker.</li>
+<li><strong>A year is complete only when every expected task is <code>DONE</code></strong> with no
+   unresolved <code>FAILED</code> tasks.</li>
+</ol>
+<h2 id="9-out-of-scope">9. Out of scope</h2>
+<ul>
+<li>VIIRS/GFM updates and a generic multi-source scheduler.</li>
+<li>Concurrent MODIS writers for the same archive year.</li>
+<li>Automatic deletion of archive dates, tracker rows, or orphaned data.</li>
+<li>Maintaining the full-history <code>modis_archive_catalog.parquet</code> (a future
+  end-of-year process may derive it from the frozen yearly catalogues).</li>
+<li>ETag/fingerprint-based reprocessing of sources already marked <code>DONE</code>.</li>
+</ul>
+<h2 id="10-next-continuation-run-worked-example">10. Next continuation run — worked example</h2>
+<p>The 2026 catch-up is resumable by design: each run ingests the next 31 days
+from the watermark and stops. After the January run (watermark
+<code>2026-01-31</code>), continuing costs exactly one command:</p>
+<div class="highlight"><pre><span></span><code>PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --year 2026
+</code></pre></div>
+<p>What it does:</p>
+<ol>
+<li>Resolves the window from the tracker watermark: cursor <code>2026-02-01</code> →
+   chunk <code>2026-02-01 → 2026-03-03</code>, with the printed guardrail notice
+   ("re-run <code>update</code> to continue automatically"). No dates are ever passed.</li>
+<li>Launches the worker in a detached tmux session
+   (<code>atlantis-modis-update-2026-&lt;runid&gt;</code>); the log lands under
+   <code>&lt;state-root&gt;/2026/logs/&lt;runid&gt;.log</code>.</li>
+<li>Refreshes the catalogue for the chunk, reconciles (~7,900 pending tiles),
+   preflights one download, then ingests through the ordered Dask batch
+   (~5–7 h), reusing the existing tracker and prefilled 365-slot axis.</li>
+<li>Validates, advances the watermark to the chunk's end, writes the <code>ok</code>
+   manifest, and refreshes the S3 backup.</li>
+</ol>
+<p>What to expect while it runs:</p>
+<ul>
+<li><code>pixi run -e batch modis-archive-status -- --year 2026</code> shows the per-date
+  heatmap and watermark live; February fills <code>#</code> day by day.</li>
+<li>A crash mid-run is safe: re-run the same command — <code>DONE</code> tiles are
+  skipped and the window re-resolves from the watermark.</li>
+<li>Repeat the same command for each next chunk (March, April, …) until the
+  watermark is within a chunk of <code>today - lag</code>, at which point the window
+  automatically switches to the weekly lookback re-scan and the year runs
+  near real time.</li>
+</ul>
+<p>Rules that stay true on every continuation: never <code>seed-tracker</code> or delete
+the tracker to "fix" a run, and never launch two writers for the same year
+(the per-year lock would reject the second one).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.indexes", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
