@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -34,23 +35,36 @@ import pandas as pd
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from atlantis.fetchers.gfm.event_tasks import count_items_per_aoi_date, event_date_windows  # noqa: E402
+from atlantis.fetchers.gfm.event_tasks import (  # noqa: E402
+    DEFAULT_PRE_FLOOD_PAD_DAYS,
+    count_items_per_aoi_date,
+    event_date_windows,
+)
 
 METADATA_PATH = _REPO_ROOT / "data" / "metadata" / "geoidflood_metadata_v1.csv"
 OUTPUT_PATH = _REPO_ROOT / "data" / "metadata" / "geoidflood_aois.csv"
 POST_FLOOD_PAD_DAYS = 14
 
 
-def build_aoi_table(metadata: pd.DataFrame, pad_days: int = POST_FLOOD_PAD_DAYS) -> pd.DataFrame:
+def build_aoi_table(
+    metadata: pd.DataFrame,
+    pad_days: int = POST_FLOOD_PAD_DAYS,
+    pre_pad_days: int = DEFAULT_PRE_FLOOD_PAD_DAYS,
+) -> pd.DataFrame:
     """Map every GEOID-Flood event-AoI to its bbox and date window.
 
     Returns one row per (event, native AoI) with the event-AoI bbox (used to
-    select which GFM tiles/dates are in scope) and the event's date window.
+    select which GFM tiles/dates are in scope) and the event's date window —
+    the flood-time anchor (``date_start``) plus a pre-flood pad, to the last
+    post-event delineation plus a post-flood pad. Pre-event baseline imagery
+    is never included. Followed by one whole-event envelope row per event
+    (``aoi_id="0"``): the bbox is the envelope of all the event's AoI bboxes
+    and the date window is ``min(date_start) .. max(date_end)``.
     """
     rows: list[dict] = []
     for row in metadata.itertuples(index=False):
         west, south, east, north = float(row.lon_min), float(row.lat_min), float(row.lon_max), float(row.lat_max)
-        start, end = event_date_windows(row.date_start, row.date_end, pad_days)
+        start, end = event_date_windows(row.date_start, row.date_end, pad_days, pre_pad_days)
         rows.append(
             {
                 "event_id": row.event_id,
@@ -64,7 +78,25 @@ def build_aoi_table(metadata: pd.DataFrame, pad_days: int = POST_FLOOD_PAD_DAYS)
                 "n_dates": (end - start).days + 1,
             }
         )
-    return pd.DataFrame(rows)
+    table = pd.DataFrame(rows)
+    event_rows: list[dict] = []
+    for event_id, group in table.groupby("event_id"):
+        start = date.fromisoformat(group["date_start"].min())
+        end = date.fromisoformat(group["date_end"].max())
+        event_rows.append(
+            {
+                "event_id": event_id,
+                "aoi_id": "0",
+                "aoi_west": round(float(group["aoi_west"].min()), 6),
+                "aoi_south": round(float(group["aoi_south"].min()), 6),
+                "aoi_east": round(float(group["aoi_east"].max()), 6),
+                "aoi_north": round(float(group["aoi_north"].max()), 6),
+                "date_start": start.isoformat(),
+                "date_end": end.isoformat(),
+                "n_dates": (end - start).days + 1,
+            }
+        )
+    return pd.concat([table, pd.DataFrame(event_rows)], ignore_index=True)
 
 
 def main() -> None:

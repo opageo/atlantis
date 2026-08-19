@@ -31,23 +31,34 @@ import pandas as pd
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from atlantis.fetchers.gfm.event_tasks import count_items_per_aoi_date, event_date_windows  # noqa: E402
+from atlantis.fetchers.gfm.event_tasks import (  # noqa: E402
+    DEFAULT_PRE_FLOOD_PAD_DAYS,
+    count_items_per_aoi_date,
+    event_date_windows,
+)
 
 METADATA_PATH = _REPO_ROOT / "data" / "metadata" / "kurosiwo_metadata_v1.csv"
 OUTPUT_PATH = _REPO_ROOT / "data" / "metadata" / "kurosiwo_aois.csv"
 POST_FLOOD_PAD_DAYS = 14
 
 
-def build_aoi_table(metadata: pd.DataFrame, pad_days: int = POST_FLOOD_PAD_DAYS) -> pd.DataFrame:
+def build_aoi_table(
+    metadata: pd.DataFrame,
+    pad_days: int = POST_FLOOD_PAD_DAYS,
+    pre_pad_days: int = DEFAULT_PRE_FLOOD_PAD_DAYS,
+) -> pd.DataFrame:
     """Map every KuroSiwo event to its bbox and date window.
 
     Returns one row per event with the event bbox (used to select which GFM
-    tiles/dates are in scope) and the event's date window.
+    tiles/dates are in scope) and the event's date window, anchored on the
+    flood-time acquisition (``date_end``) padded on both sides: the
+    pre-flood baseline span of ``date_start`` is reference imagery, not
+    floods, so it is never included.
     """
     rows: list[dict] = []
     for row in metadata.itertuples(index=False):
         west, south, east, north = float(row.lon_min), float(row.lat_min), float(row.lon_max), float(row.lat_max)
-        start, end = event_date_windows(row.date_start, row.date_end, pad_days)
+        start, end = event_date_windows(row.date_end, row.date_end, pad_days, pre_pad_days)
         rows.append(
             {
                 "event_id": row.flood_case,

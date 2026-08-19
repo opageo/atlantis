@@ -62,6 +62,10 @@ def load_kurosiwo_catalogue(catalogue_path: Path) -> gpd.GeoDataFrame:
 def derive_kurosiwo_metadata(catalogue_path: Path, extent_crank: int = EXTENT_CRANK) -> pd.DataFrame:
     """Derive per-event KuroSiwo metadata directly from the catalogue.
 
+    The date window is anchored on the flood-time acquisitions (``master``
+    rows); pre-flood baseline rows (``master`` is False) are reference
+    imagery, not floods, and do not open the window.
+
     Args:
         catalogue_path: Path to the KuroSiwo GeoPackage catalogue.
         extent_crank: Product type to use for flood extent computation.
@@ -82,7 +86,6 @@ def derive_kurosiwo_metadata(catalogue_path: Path, extent_crank: int = EXTENT_CR
 
         flood_mask = event_rows["master"].fillna(False).astype(bool)
         flood_rows = event_rows[flood_mask]
-        preflood_rows = event_rows[~flood_mask]
         lon_min, lat_min, lon_max, lat_max = event_geo.total_bounds
 
         area_flood_mask = event_area["master"].fillna(False).astype(bool)
@@ -94,7 +97,7 @@ def derive_kurosiwo_metadata(catalogue_path: Path, extent_crank: int = EXTENT_CR
         ]
         extent_km2 = (flooded_rows["patch_area_km2"] * flooded_rows["pflood"] / 100).sum()
 
-        date_start = pd.to_datetime(preflood_rows["source_date"]).min()
+        date_start = pd.to_datetime(flood_rows["source_date"]).min()
         date_end = pd.to_datetime(flood_rows["source_date"]).min()
 
         records.append(
@@ -200,7 +203,9 @@ def build_kurosiwo_flood_events(
 
     By default the event window is centered on the KuroSiwo flood-time acquisition
     (`date_end`) because the metadata `date_start -> date_end` span can cover many
-    months of SAR baselines and is too broad for practical VIIRS extraction.
+    months of SAR baselines and is too broad for practical VIIRS extraction. With
+    flood-anchored metadata (see :func:`derive_kurosiwo_metadata`), `date_start`
+    equals `date_end`, so `use_metadata_range` degenerates to the flood date.
     """
     dataframe = load_kurosiwo_metadata(metadata_path)
     return build_kurosiwo_flood_events_from_dataframe(

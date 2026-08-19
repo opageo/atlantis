@@ -78,16 +78,20 @@ metadata CSV is missing):
 - **AOI unit** — the benchmark's native AoI: `tile_id`, the `N` in
   `EMSR712-N`. An activation (event) has multiple AOIs.
 - **bbox** — union of the AoI's tile geometries (EPSG:4326).
-- **date window** — span of the AoI's Sentinel-1 delineation acquisitions:
-  `date_start = min(delineation_time_pre)`,
-  `date_end = max(delineation_time_post)`.
+- **date window** — flood-anchored: `date_start = event_time` (the
+  activation's flood time, stored per tile in the catalogue) and
+  `date_end = max(delineation_time_post)`. Pre-event baseline acquisitions
+  (`delineation_time_pre`) are reference imagery, not floods, so they never
+  open the window.
 - Corrupt tile rows are dropped when deriving (missing delineation times,
   `post < pre`, post year > 2027).
 
 [`scripts/estimate_geoidflood_aois.py`](../../scripts/estimate_geoidflood_aois.py)
-then adds the 14-day post-flood pad and writes `data/metadata/geoidflood_aois.csv`
+then adds the ±14-day pre/post-flood pads and writes `data/metadata/geoidflood_aois.csv`
 (one row per event-AoI: `event_id`, `aoi_id`, bbox, `date_start`, `date_end`,
-`n_dates`). Windows span 2016–2026, so most of the set falls outside the
+`n_dates`), plus one whole-event envelope row per event (`aoi_id = "0"`,
+bbox = envelope of all its AOI bboxes) so `--events EMSR184-0` backfills the
+whole activation. Windows span 2016–2026, so most of the set falls outside the
 catalogue years and must be searched live (§2.4).
 
 ### 2.2 KuroSiwo: one AOI per flood case
@@ -104,15 +108,17 @@ reduces it to one row per flood case (43 in the v1 catalogue):
   (pre-flood and flood-time) reprojected to WGS84: the SAR tile footprint,
   **not** the inundated extent.
 - **date window** — SAR acquisition dates, not hydrological event bounds:
-  `date_start` = earliest `source_date` of the pre-flood (`master=False`)
-  acquisitions (the oldest baseline image), `date_end` = earliest
-  flood-time (`master=True`) `source_date` (the flood image date). Most
-  events have exactly one flood-time acquisition, so there is no
-  multi-temporal flood timeline.
+  anchored on the flood-time (`master=True`) acquisition:
+  `date_start` = `date_end` = earliest flood-time `source_date` (the flood
+  image date). Pre-flood baseline acquisitions (`master=False`) are
+  reference imagery, not floods, and never open the window. Most events
+  have exactly one flood-time acquisition, so there is no multi-temporal
+  flood timeline.
 
 [`scripts/estimate_kurosiwo_aois.py`](../../scripts/estimate_kurosiwo_aois.py)
-adds the same 14-day pad and writes `data/metadata/kurosiwo_aois.csv`.
-Windows span 2014–2022, so only 2021–2022 overlap the catalogue years.
+adds the same ±14-day pads around the flood anchor and writes
+`data/metadata/kurosiwo_aois.csv`. Windows span 2014–2022, so only 2021–2022
+overlap the catalogue years.
 
 The metadata also carries extent fields (`max_flood_extent_km2`, static
 `pflood` labels) — `pflood` is a per-tile training label identical across
@@ -126,12 +132,12 @@ used by the archive build; only bbox and dates matter.
 | AOI unit              | one per (activation, tile-group): `EMSR712-10` | one per event: `KuroSiwo_{actid:03d}` (`aoi_id` = `flood_case`) |
 | Source catalogue      | HF `tile_catalog.parquet` (1024×1024 tiles)    | KuroSiwo `catalogue.gpkg` (224×224 tiles / patches)             |
 | bbox                  | union of the AoI's tile geometries             | `total_bounds` of all SAR patch footprints                      |
-| date window (pre-pad) | min pre → max post delineation acquisitions    | oldest pre-flood → earliest flood-time acquisition              |
+| date window (pre-pad) | `event_time` → max post delineation            | flood-time acquisition (`master=True`)                          |
 | Window years          | 2016–2026                                      | 2014–2022                                                       |
 | Task id               | embeds event **and** AoI (`gfm-EMSR712-10-…`)  | embeds AoI = event (`gfm-KuroSiwo_118-…`)                       |
 
-Both get the +14-day post-flood pad, and in both the bbox only selects which
-EQUI7 tiles/dates are in scope.
+Both get ±14-day pre/post-flood pads around the flood anchor, and in both the
+bbox only selects which EQUI7 tiles/dates are in scope.
 
 ### 2.4 Whole AOI, GFM-dependent coverage
 

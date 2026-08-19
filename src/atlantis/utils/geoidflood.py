@@ -137,9 +137,11 @@ def derive_geoidflood_metadata(catalog_path: Path) -> pd.DataFrame:
 
     One row per ``(event_id, tile_id)`` — the benchmark's native AoI unit
     (``tile_id`` is the ``N`` in ``EMSR712-N``). The AoI bounding box is the
-    union of its tiles' geometries (stored in EPSG:4326 in the catalogue); the
-    date window is the span of the pre/post Sentinel-1 delineation
-    acquisitions.
+    union of its tiles' geometries (stored in EPSG:4326 in the catalogue);
+    the date window runs from the activation's flood time (``event_time``) to
+    the last post-event delineation acquisition — pre-event baseline
+    acquisitions (``delineation_time_pre``) are reference imagery, not
+    floods, and are excluded from the window.
 
     Corrupt rows are dropped: missing delineation times, ``post < pre``, or a
     post-event year beyond :data:`MAX_DELINEATION_YEAR` (the release contains
@@ -165,6 +167,11 @@ def derive_geoidflood_metadata(catalog_path: Path) -> pd.DataFrame:
 
     catalog = catalog[valid].copy()
 
+    # The activation's flood time (per event; stored per tile, may differ by
+    # hours) is the flood anchor for the date window. Pre-event baselines are
+    # reference imagery — not floods — so they never open the window.
+    event_time = pd.to_datetime(catalog["event_time"], errors="coerce") if "event_time" in catalog.columns else None
+
     # Tile geometries are stored in EPSG:4326 degrees already — the per-tile
     # ``utm_crs`` column describes the raster grid, not the geometry column
     # (verified against the release: all coordinates fall in [-180, 180] ×
@@ -175,7 +182,8 @@ def derive_geoidflood_metadata(catalog_path: Path) -> pd.DataFrame:
     for (event_id, aoi), rows in catalog.groupby(["event_id", "tile_id"], sort=False):
         union = gpd.GeoSeries(rows["geometry"]).union_all()
         west, south, east, north = union.bounds
-        start = pre.loc[rows.index].min().date()
+        anchor = event_time.loc[rows.index].min() if event_time is not None else None
+        start = (pre.loc[rows.index].min() if anchor is None or pd.isna(anchor) else anchor).date()
         end = post.loc[rows.index].max().date()
         records.append(
             {
