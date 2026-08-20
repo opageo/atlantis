@@ -37,7 +37,6 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from atlantis.fetchers.gfm.event_tasks import (  # noqa: E402
     DEFAULT_AOI_BUFFER_KM,
-    DEFAULT_PRE_FLOOD_PAD_DAYS,
     buffer_bbox,
     count_items_per_aoi_date,
     event_date_windows,
@@ -45,22 +44,28 @@ from atlantis.fetchers.gfm.event_tasks import (  # noqa: E402
 
 METADATA_PATH = _REPO_ROOT / "data" / "metadata" / "geoidflood_metadata_v1.csv"
 OUTPUT_PATH = _REPO_ROOT / "data" / "metadata" / "geoidflood_aois.csv"
-POST_FLOOD_PAD_DAYS = 14
+#: No post-flood pad by default: max(delineation_time_post) is the benchmark's
+#: own end of the flood (lagamura: Valencia max(post) = 2024-11-18). Pass
+#: --pad-days N to restore a post margin.
+POST_FLOOD_PAD_DAYS = 0
+#: Small pre-flood pad before event_time: activations can lag flood onset.
+PRE_FLOOD_PAD_DAYS = 7
 
 
 def build_aoi_table(
     metadata: pd.DataFrame,
     pad_days: int = POST_FLOOD_PAD_DAYS,
-    pre_pad_days: int = DEFAULT_PRE_FLOOD_PAD_DAYS,
+    pre_pad_days: int = PRE_FLOOD_PAD_DAYS,
     buffer_km: float = DEFAULT_AOI_BUFFER_KM,
 ) -> pd.DataFrame:
     """Map every GEOID-Flood event-AoI to its bbox and date window.
 
     Returns one row per (event, native AoI) with the event-AoI bbox (used to
     select which GFM tiles/dates are in scope) and the event's date window —
-    the flood-time anchor (``date_start``) plus a pre-flood pad, to the last
-    post-event delineation plus a post-flood pad. Pre-event baseline imagery
-    is never included. Followed by one whole-event envelope row per event
+    the flood period proper: ``[event_time - pre_pad, max(delineation_time_post)]``
+    with no post-flood pad by default (the last post-event delineation is the
+    benchmark's end of the flood). Pre-event baseline imagery is never
+    included. Followed by one whole-event envelope row per event
     (``aoi_id="0"``): the bbox is the envelope of all the event's AoI bboxes
     and the date window is ``min(date_start) .. max(date_end)``.
 
@@ -114,7 +119,15 @@ def build_aoi_table(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--pad-days", type=int, default=POST_FLOOD_PAD_DAYS, help="days after date_end to include")
+    parser.add_argument(
+        "--pad-days",
+        type=int,
+        default=POST_FLOOD_PAD_DAYS,
+        help="days after date_end to include (0 = flood window only)",
+    )
+    parser.add_argument(
+        "--pre-pad-days", type=int, default=PRE_FLOOD_PAD_DAYS, help="days before date_start (event_time) to include"
+    )
     parser.add_argument(
         "--buffer-km",
         type=float,
@@ -136,7 +149,7 @@ def main() -> None:
         write_geoidflood_metadata_csv(_REPO_ROOT / GEOIDFLOOD_DEFAULT_CATALOGUE, METADATA_PATH)
 
     metadata = pd.read_csv(METADATA_PATH, parse_dates=["date_start", "date_end"])
-    table = build_aoi_table(metadata, pad_days=args.pad_days, buffer_km=args.buffer_km)
+    table = build_aoi_table(metadata, pad_days=args.pad_days, pre_pad_days=args.pre_pad_days, buffer_km=args.buffer_km)
     if args.with_items:
         items = count_items_per_aoi_date(table)
         table = table.merge(items, on=["event_id", "aoi_id"], how="left")

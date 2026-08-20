@@ -30,8 +30,10 @@
 
 Both event programs — **GEOID-Flood** (EMSR activations and related events)
 and **KuroSiwo** (SAR flood catalogue cases) — are processed the same way: an
-AOI metadata table defines each (event, AoI) with a date window (metadata
-range + 14-day post-flood pad), and one **GFM batch task** is generated per
+AOI metadata table defines each (event, AoI) with a flood-anchored date
+window (GEOID-Flood: `[event_time − 7d, max(delineation_time_post)]`, no post
+pad; KuroSiwo: flood-time acquisition ±14 days), and one **GFM batch task**
+is generated per
 **(event-AoI, date, EQUI7 tile)** inside that window. Tasks are streamed
 through the production GFM cube batch engine into a Zarr cube with the
 standard archive schema, so the existing reader, STAC and viz tooling work
@@ -87,12 +89,15 @@ metadata CSV is missing):
   `post < pre`, post year > 2027).
 
 [`scripts/estimate_geoidflood_aois.py`](../../scripts/estimate_geoidflood_aois.py)
-then adds the ±14-day pre/post-flood pads, widens every bbox by 25 km on
-all sides (`--buffer-km`; the mapped footprint is not the flood extent) and
-writes `data/metadata/geoidflood_aois.csv` (one row per event-AoI:
-`event_id`, `aoi_id`, bbox, `date_start`, `date_end`, `n_dates`), plus one
-whole-event envelope row per event (`aoi_id = "0"`, bbox = envelope of all
-its AOI bboxes) so `--events EMSR184-0` backfills the whole activation. Windows span 2016–2026, so most of the set falls outside the
+then keeps the flood window proper — `[event_time − pre_pad, max(delineation_time_post)]`
+with a 7-day pre-pad (`--pre-pad-days`) and **no post-flood pad** (the last
+post-event delineation is the benchmark's end of the flood; `--pad-days N`
+restores a post margin) — widens every bbox by 25 km on all sides
+(`--buffer-km`; the mapped footprint is not the flood extent) and writes
+`data/metadata/geoidflood_aois.csv` (one row per event-AoI: `event_id`,
+`aoi_id`, bbox, `date_start`, `date_end`, `n_dates`), plus one whole-event
+envelope row per event (`aoi_id = "0"`, bbox = envelope of all its AOI
+bboxes) so `--events EMSR184-0` backfills the whole activation. Windows span 2016–2026, so most of the set falls outside the
 catalogue years and must be searched live (§2.4).
 
 ### 2.2 KuroSiwo: one AOI per flood case
@@ -133,12 +138,13 @@ used by the archive build; only bbox and dates matter.
 | AOI unit              | one per (activation, tile-group): `EMSR712-10` | one per event: `KuroSiwo_{actid:03d}` (`aoi_id` = `flood_case`) |
 | Source catalogue      | HF `tile_catalog.parquet` (1024×1024 tiles)    | KuroSiwo `catalogue.gpkg` (224×224 tiles / patches)             |
 | bbox                  | union of the AoI's tile geometries             | `total_bounds` of all SAR patch footprints                      |
-| date window (pre-pad) | `event_time` → max post delineation            | flood-time acquisition (`master=True`)                          |
+| date window (pre-pad) | `event_time − 7d` → max post delineation       | flood-time acquisition (`master=True`)                          |
 | Window years          | 2016–2026                                      | 2014–2022                                                       |
 | Task id               | embeds event **and** AoI (`gfm-EMSR712-10-…`)  | embeds AoI = event (`gfm-KuroSiwo_118-…`)                       |
 
-Both get ±14-day pre/post-flood pads around the flood anchor, and in both the
-bbox only selects which EQUI7 tiles/dates are in scope.
+GEOID-Flood windows are the flood period itself (7-day pre-pad, no post
+pad); KuroSiwo keeps the ±14-day pads around its flood-time acquisition. In
+both, the bbox only selects which EQUI7 tiles/dates are in scope.
 
 ### 2.4 Whole AOI, GFM-dependent coverage
 
@@ -305,19 +311,20 @@ with distinct `--db-path` values.
 
 ### 5.5 Examples — the smallest events from each collection
 
-The three smallest GEOID-Flood and three smallest KuroSiwo
-events by AOI/date-range (window = metadata range; pad end = window + 14-day
-post-flood pad). All are single-year, so each is one backfill command into
-`s3://atlantis/zarr/{YYYY}/datacube.zarr`:
+The three smallest GEOID-Flood and three smallest KuroSiwo events by
+AOI/date-range. Windows are the full backfill windows from the AOI tables
+(GEOID-Flood: the flood window `[event_time − 7d, max(post)]`; KuroSiwo: the
+flood acquisition ±14 days). All are single-year, so each is one backfill
+command into `s3://atlantis/zarr/{YYYY}/datacube.zarr`:
 
-| Program     | Event-AoI          | Window                    | Pad end    | Year | Task source    |
-| ----------- | ------------------ | ------------------------- | ---------- | ---- | -------------- |
-| GEOID-Flood | `EMSR864-21`       | 2026-03-01 → 03-15 (15 d) | 2026-03-29 | 2026 | live search    |
-| GEOID-Flood | `EMSR184-4`        | 2016-09-23 → 10-09 (17 d) | 2016-10-23 | 2016 | live search    |
-| GEOID-Flood | `EMSR292-1`        | 2018-06-25 → 07-13 (19 d) | 2018-07-27 | 2018 | live search    |
-| KuroSiwo    | `KuroSiwo_1111003` | 2019-11-09 → 12-11 (33 d) | 2019-12-25 | 2019 | live search    |
-| KuroSiwo    | `KuroSiwo_498`     | 2021-01-15 → 02-16 (33 d) | 2021-03-02 | 2021 | 2021 catalogue |
-| KuroSiwo    | `KuroSiwo_1111011` | 2020-10-20 → 11-27 (39 d) | 2020-12-11 | 2020 | live search    |
+| Program     | Event-AoI          | Window                    | Year | Task source    |
+| ----------- | ------------------ | ------------------------- | ---- | -------------- |
+| GEOID-Flood | `EMSR864-21`       | 2026-01-27 → 03-01 (34 d) | 2026 | live search    |
+| GEOID-Flood | `EMSR184-4`        | 2016-09-17 → 09-25 (9 d)  | 2016 | live search    |
+| GEOID-Flood | `EMSR292-1`        | 2018-06-21 → 06-29 (9 d)  | 2018 | live search    |
+| KuroSiwo    | `KuroSiwo_1111003` | 2019-11-13 → 12-11 (29 d) | 2019 | live search    |
+| KuroSiwo    | `KuroSiwo_498`     | 2021-01-19 → 02-16 (29 d) | 2021 | 2021 catalogue |
+| KuroSiwo    | `KuroSiwo_1111011` | 2020-10-30 → 11-27 (29 d) | 2020 | live search    |
 
 ```bash
 # GEOID-Flood
@@ -341,7 +348,7 @@ tmux new -s ks_1111011_2020
 pixi run -e events backfill-kurosiwo-gfm --year 2020 --events KuroSiwo_1111011 --db-path backfill_KS1111011_2020.db
 ```
 
-These runs are small (15–39 days each) and are a good way to validate the
+These runs are small (9–34 days each) and are a good way to validate the
 workflow end to end. The §5.3 caveats apply: each run uses its own
 `--db-path` tracker, and the shared task cache must exist before the first
 filtered run (or pass a distinct `--tasks` path per event).
@@ -357,40 +364,40 @@ without retyping them. It is independent of the backfill scripts — the
 backfills always read the AOI CSVs — and distinct from the data-driven
 `atlantis_events` bookmarks written inside the Zarr archive.
 
-Register the six example events with their AOI bboxes and metadata windows
-(the build scripts add the 14-day pad themselves):
+Register the six example events with their AOI bboxes and the flood windows
+from §5.5 (pads already included):
 
 ```bash
 # GEOID-Flood
 PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add EMSR864-21 \
     --bbox "-8.9795 39.6862 -8.7403 39.7787" \
-    --start-date 2026-03-01 --end-date 2026-03-15 --source gfm \
+    --start-date 2026-01-27 --end-date 2026-03-01 --source gfm \
     --label "GEOID-Flood smallest-event example"
 
 PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add EMSR184-4 \
     --bbox "144.804 -33.9205 146.2484 -32.9803" \
-    --start-date 2016-09-23 --end-date 2016-10-09 --source gfm \
+    --start-date 2016-09-17 --end-date 2016-09-25 --source gfm \
     --label "GEOID-Flood smallest-event example"
 
 PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add EMSR292-1 \
     --bbox "24.459 40.7659 25.0766 41.1463" \
-    --start-date 2018-06-25 --end-date 2018-07-13 --source gfm \
+    --start-date 2018-06-21 --end-date 2018-06-29 --source gfm \
     --label "GEOID-Flood smallest-event example"
 
 # KuroSiwo
 PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add KuroSiwo_1111003 \
     --bbox "43.0908 11.4904 43.2115 11.6087" \
-    --start-date 2019-11-09 --end-date 2019-12-11 --source gfm \
+    --start-date 2019-11-13 --end-date 2019-12-11 --source gfm \
     --label "KuroSiwo smallest-event example"
 
 PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add KuroSiwo_498 \
     --bbox "0.1483 43.5262 3.6294 45.4354" \
-    --start-date 2021-01-15 --end-date 2021-02-16 --source gfm \
+    --start-date 2021-01-19 --end-date 2021-02-16 --source gfm \
     --label "KuroSiwo smallest-event example"
 
 PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add KuroSiwo_1111011 \
     --bbox "121.1434 16.7234 122.2502 18.4498" \
-    --start-date 2020-10-20 --end-date 2020-11-27 --source gfm \
+    --start-date 2020-10-30 --end-date 2020-11-27 --source gfm \
     --label "KuroSiwo smallest-event example"
 ```
 
@@ -412,7 +419,7 @@ yearly cubes.
 
 After a §5.5 backfill, load the archived GFM data with the archive reader,
 using the event's AOI bbox (same values as the bookmarks in §5.6) and the
-window including the 14-day pad (use the "Pad end" from §5.5):
+full backfill window from §5.5:
 
 ```python
 from atlantis.archive.reader import ArchiveReader
@@ -422,8 +429,8 @@ reader = ArchiveReader("s3://atlantis/zarr/2016")
 ds = reader.read(
     "gfm",
     bbox=(144.804, -33.9205, 146.2484, -32.9803),
-    start="2016-09-23",
-    end="2016-10-23",  # pad end — the backfill's full window
+    start="2016-09-17",
+    end="2016-09-25",  # the backfill's full flood window
 )
 
 # gfm group channels: water_fraction, exclusion_mask, reference_water
@@ -447,9 +454,10 @@ Notes:
 
 ## 6. Mechanics worth knowing
 
-- **Windows.** Each (event, AoI) is processed over its metadata date range
-  plus a 14-day post-flood pad (`DEFAULT_POST_FLOOD_PAD_DAYS` in
-  `event_tasks.py`).
+- **Windows.** Each (event, AoI) is processed over its flood window:
+  GEOID-Flood `[event_time − 7d, max(delineation_time_post)]` (no post pad by
+  default, `--pad-days N` restores one), KuroSiwo its flood-time acquisition
+  ±14 days.
 - **Catalogue years are built offline**, from
   `s3://atlantis/assets/gfm/gfm_archive_catalog_{year}.parquet` (2021–2025).
   Days outside those years are searched live on the EODC STAC API day by day;
