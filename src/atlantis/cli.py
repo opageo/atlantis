@@ -4184,7 +4184,8 @@ def batch_gfm_cube(
     Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
 
         tmux new -s cube
-        atlantis batch gfm cube run --inventory s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet --partition 0:10000
+        atlantis batch gfm cube run --inventory s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet \
+            --partition 0:10000
         atlantis batch gfm cube run \
             --bbox "-1.5 38.8 0.5 40.0" \
             --start-date 2024-10-29 --end-date 2024-11-10
