@@ -450,6 +450,35 @@ Notes:
 - For a multi-year event, read each year's cube separately and concatenate,
   mirroring the split backfill runs (§5.3).
 
+### 5.8 Custom bbox × date-window builds
+
+The event backfills above are scoped to catalogued event-AoIs. For a
+**user-supplied bbox and date range** — no AOI table involved — the GFM cube
+can be built with the bbox mode of `atlantis batch gfm cube run` (same task
+unit and batch engine, catalogue years offline + live STAC search otherwise;
+the `--inventory` catalog mode stays available alongside it):
+
+```bash
+tmux new -s bbox
+PYTHONPATH=src pixi run -e events backfill-gfm-bbox \
+    --event Valencia_2024 \
+    --bbox "-1.5 38.8 0.5 40.0" \
+    --start 2024-10-29 --end 2024-11-10
+
+# or the raw command; --tasks-only writes the task list without running
+PYTHONPATH=src python -m atlantis.cli batch gfm cube run \
+    --event Valencia_2024 --bbox "-1.5 38.8 0.5 40.0" \
+    --start-date 2024-10-29 --end-date 2024-11-10 --tasks-only
+```
+
+The window's catalogue-covered days (2021–2025) are built offline from the S3
+catalogues; every other day is searched live on the EODC STAC API day by day,
+and days without GFM items produce no tasks. The bbox is widened by 25 km on
+all sides before tile selection (`--buffer-km`, `0` disables). With a
+`zarr/<YYYY>` archive root the `time` axis is pre-filled for the year, exactly
+as in §5.3. See [`docs/cli.md`](../cli.md#batch-gfm-cube-run) for the full
+flag reference.
+
 ---
 
 ## 6. Mechanics worth knowing

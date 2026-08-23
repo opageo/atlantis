@@ -278,6 +278,67 @@ def build_tasks_live(
     return tasks, dropped
 
 
+def build_tasks_for_window(
+    event_id: str,
+    bbox: tuple[float, float, float, float],
+    start: date,
+    end: date,
+    make_task_id=task_id,
+    buffer_km: float = DEFAULT_AOI_BUFFER_KM,
+) -> tuple[list[dict], list[dict]]:
+    """Build GFM ``(date, EQUI7-tile)`` tasks for an arbitrary bbox × date window.
+
+    A one-row AOI table is synthesised from *bbox* and *start*..*end*, then
+    run through the same catalogue-then-live pipeline as the event archive
+    builders (:func:`build_tasks_from_catalogues` + :func:`build_tasks_live`):
+    catalogue-covered days (2021–2025) come offline from the S3 catalogues,
+    every other day is searched live on the EODC STAC API day by day. Days
+    without GFM items produce no tasks, mirroring the event backfills.
+
+    Args:
+        event_id: Event id embedded in task ids and tracker keys.
+        bbox: ``(west, south, east, north)`` in EPSG:4326 degrees.
+        start: First day of the window (inclusive).
+        end: Last day of the window (inclusive).
+        make_task_id: Callable ``(event_id, aoi_id, day, tile) -> task_id``.
+        buffer_km: Km to widen the bbox on all sides before tile selection
+            (0 disables; default :data:`DEFAULT_AOI_BUFFER_KM`).
+
+    Returns:
+        ``(tasks, dropped)`` — the per-tile tasks and the dropped-item
+        summaries from the live searches (see :func:`build_tasks_live`).
+
+    Raises:
+        ValueError: If *bbox* is not a valid lon/lat bbox or *start* > *end*.
+    """
+    if not is_valid_bbox(bbox):
+        raise ValueError(f"invalid bbox: {bbox!r}")
+    if start > end:
+        raise ValueError(f"start date {start} is after end date {end}")
+    west, south, east, north = buffer_bbox(*bbox, buffer_km) if buffer_km > 0 else bbox
+    aoi_table = pd.DataFrame(
+        [
+            {
+                "event_id": event_id,
+                "aoi_id": "1",
+                "aoi_west": west,
+                "aoi_south": south,
+                "aoi_east": east,
+                "aoi_north": north,
+                "date_start": start.isoformat(),
+                "date_end": end.isoformat(),
+            }
+        ]
+    )
+    tasks, _ = build_tasks_from_catalogues(aoi_table, make_task_id)
+    dropped: list[dict] = []
+    if {str(year) for year in range(start.year, end.year + 1)} - CATALOGUE_YEARS:
+        live_tasks, dropped = build_tasks_live(aoi_table, {event_id}, make_task_id)
+        tasks += live_tasks
+    tasks.sort(key=lambda t: (t["event_id"], t["aoi_id"], t["date"], t["equi7_tile"]))
+    return tasks, dropped
+
+
 def count_items_per_aoi_date(table: pd.DataFrame) -> pd.DataFrame:
     """Count GFM STAC items per (event-AoI, date) from the per-year S3 catalogues.
 
