@@ -25,7 +25,7 @@ platforms = ["linux-64", "osx-arm64", "osx-64"]
 # ============================================================================
 
 [dependencies]
-python = ">=3.11,<3.15"
+python = ">=3.12,<3.15"
 
 # --- Core runtime (mirrors pyproject.toml [project].dependencies) ---
 typer = ">=0.26.7"
@@ -43,9 +43,9 @@ pyarrow = "*"
 matplotlib = ">=3.11.0"
 ipympl = ">=0.10.0"
 plotly = ">=6.7.0"
-rasterstats = ">=0.21.0"
 odc-stac = ">=0.4"
 cartopy = ">0.22"
+
 
 # --- Geo extras (mirrors pyproject.toml [project.optional-dependencies].geo) ---
 xarray = ">=2024.1"
@@ -60,7 +60,7 @@ beautifulsoup4 = ">=4.12"
 requests = ">=2.34.2"
 
 # --- GDAL + HDF4 binary stack (replaces manual build in docs/gdal-install.md) ---
-gdal = "*"
+gdal = ">=3.13"
 libgdal-hdf4 = "*"
 hdf4 = "*"
 proj = "*"
@@ -71,16 +71,7 @@ geos = "*"
 # ============================================================================
 
 [pypi-dependencies]
-# atlantis = { path = ".", editable = true }
-
-# ----------------------------------------------------------------------------
-# GDAL is provided by the conda stack above (gdal/libgdal-hdf4). pyproject.toml
-# pins gdal==3.13.0 for pure-uv users, but conda-forge may pin a different
-# build per platform (e.g. 3.12.3 on osx-arm64). This override lets pixi's PyPI
-# solve accept whatever GDAL conda installs instead of failing on the pin.
-# ----------------------------------------------------------------------------
-[pypi-options.dependency-overrides]
-gdal = ">=3.11"
+atlantis = { path = ".", editable = true }
 
 # ============================================================================
 # Feature: dev (development tools)
