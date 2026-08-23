@@ -247,6 +247,8 @@ docs/viirs_atbd.md
 assets/kurosiwo/**
 assets/ks_catalogue.gpkg
 assets/geoidflood_tile_catalog.parquet
+# Generated catalogue artifacts dropped at the repo root by fetch scripts
+/*.parquet
 *.debug/**
 docs/mcdwd_laads_desc.md
 docs/mcdwd_vcdwd_userguide_revF.md

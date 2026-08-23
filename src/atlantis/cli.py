@@ -1404,7 +1404,8 @@ def fetch_kurosiwo_viirs(
     use_metadata_range: bool = typer.Option(
         False,
         "--use-metadata-range",
-        help="Use date_start..date_end from the metadata CSV instead of a narrow window around date_end",
+        help="Use date_start..date_end from the metadata CSV instead of a narrow window around date_end "
+        "(with flood-anchored metadata date_start equals date_end, so this collapses to the flood date)",
     ),
     viirs_backend: str = typer.Option(
         "noaa_s3",
@@ -1642,7 +1643,8 @@ def fetch_kurosiwo_modis(
     use_metadata_range: bool = typer.Option(
         False,
         "--use-metadata-range",
-        help="Use date_start..date_end from the metadata CSV instead of a narrow window around date_end",
+        help="Use date_start..date_end from the metadata CSV instead of a narrow window around date_end "
+        "(with flood-anchored metadata date_start equals date_end, so this collapses to the flood date)",
     ),
     modis_backend: str = typer.Option(
         "lance_geotiff",

@@ -33,6 +33,13 @@ CATALOGUE_YEARS = {"2021", "2022", "2023", "2024", "2025"}
 #: Default post-flood pad for event date windows.
 DEFAULT_POST_FLOOD_PAD_DAYS = 14
 
+#: Default pre-flood pad for event date windows.
+DEFAULT_PRE_FLOOD_PAD_DAYS = 14
+
+#: Default AOI bbox buffer (km) — flood extents spill past the mapped AOI
+#: footprint, so bboxes are widened before tile selection. ~11 arcmin ≈ 20 km.
+DEFAULT_AOI_BUFFER_KM = 25.0
+
 #: Charset whitelist for EQUI7 tile ids (e.g. ``AF020M_E030N066T3``) —
 #: remote STAC ``Equi7Tile`` values are validated against this before they
 #: enter task ids / tracker keys.
@@ -74,9 +81,35 @@ def kurosiwo_task_id(event_id: str, aoi_id: str, day: str, tile: str) -> str:
     return f"gfm-{aoi_id}-{tile}-{day.replace('-', '')}"
 
 
-def event_date_windows(start, end, pad_days: int = DEFAULT_POST_FLOOD_PAD_DAYS) -> tuple[date, date]:
-    """Return the event date window (metadata range + pad)."""
-    return pd.Timestamp(start).date(), pd.Timestamp(end).date() + timedelta(days=pad_days)
+def event_date_windows(
+    start,
+    end,
+    pad_days: int = DEFAULT_POST_FLOOD_PAD_DAYS,
+    pre_pad_days: int = DEFAULT_PRE_FLOOD_PAD_DAYS,
+) -> tuple[date, date]:
+    """Return the event date window (metadata range + pre/post pads)."""
+    return (
+        pd.Timestamp(start).date() - timedelta(days=pre_pad_days),
+        pd.Timestamp(end).date() + timedelta(days=pad_days),
+    )
+
+
+def buffer_bbox(west: float, south: float, east: float, north: float, km: float) -> list[float]:
+    """Widen a bbox by *km* on all sides, returned as ``[west, south, east, north]``.
+
+    One degree of latitude ≈ 111 km; longitude degrees are scaled by
+    ``cos(mid latitude)``. Results are clamped to the valid lon/lat range.
+    """
+    dlat = km / 111.0
+    # ponytail: cos floor 0.1 keeps the lon buffer sane near the poles
+    cos_lat = max(abs(math.cos(math.radians((south + north) / 2))), 0.1)
+    dlon = km / (111.0 * cos_lat)
+    return [
+        round(max(west - dlon, -180.0), 6),
+        round(max(south - dlat, -90.0), 6),
+        round(min(east + dlon, 180.0), 6),
+        round(min(north + dlat, 90.0), 6),
+    ]
 
 
 def tile_bbox(group: pd.DataFrame) -> list[float]:

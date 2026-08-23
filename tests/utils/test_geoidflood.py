@@ -22,7 +22,8 @@ def _sample_catalog() -> pd.DataFrame:
     """Synthetic tile catalogue in EPSG:4326 for exact bbox assertions.
 
     Rows:
-    * EMSR900 AoI 1: two valid tiles, window 2020-01-10 → 2020-03-15.
+    * EMSR900 AoI 1: two valid tiles, pre baseline 2020-01-10, flood time
+      (event_time) 2020-03-10, post 2020-03-15.
     * EMSR901 AoI 2: one valid tile; one corrupt row (post 2041) and one with
       post < pre that must both be dropped by derive.
     """
@@ -36,6 +37,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2020-01-10T06:00:00",
                 "delineation_time_post": "2020-03-15T18:00:00",
+                "event_time": "2020-03-10T00:00:00",
                 "is_valid": True,
                 "invalid_pixel_frac": 0.1,
                 "split": "train",
@@ -50,6 +52,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2020-01-10T06:00:00",
                 "delineation_time_post": "2020-03-15T18:00:00",
+                "event_time": "2020-03-10T00:00:00",
                 "is_valid": True,
                 "invalid_pixel_frac": 0.2,
                 "split": "train",
@@ -64,6 +67,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2021-06-01T06:00:00",
                 "delineation_time_post": "2021-06-20T18:00:00",
+                "event_time": "2021-06-10T00:00:00",
                 "is_valid": False,
                 "invalid_pixel_frac": 0.9,
                 "split": "test",
@@ -78,6 +82,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2021-06-01T06:00:00",
                 "delineation_time_post": "2041-06-20T18:00:00",  # corrupt → dropped
+                "event_time": "2021-06-10T00:00:00",
                 "is_valid": True,
                 "invalid_pixel_frac": 0.0,
                 "split": "test",
@@ -92,6 +97,7 @@ def _sample_catalog() -> pd.DataFrame:
                 "utm_crs": "EPSG:4326",
                 "delineation_time_pre": "2021-06-30T06:00:00",  # post < pre → dropped
                 "delineation_time_post": "2021-06-20T18:00:00",
+                "event_time": "2021-06-10T00:00:00",
                 "is_valid": True,
                 "invalid_pixel_frac": 0.0,
                 "split": "test",
@@ -135,13 +141,34 @@ def test_derive_geoidflood_metadata(tmp_path):
     assert bool(metadata.loc[1, "is_valid"]) is False
 
     row = metadata.loc[0]
-    assert row["date_start"] == "2020-01-10"
+    assert row["date_start"] == "2020-03-10"  # flood anchor (event_time), not the pre baseline
     assert row["date_end"] == "2020-03-15"
     assert row["date_of_max_flood_extent"] == "2020-03-15"
     assert row["lon_min"] == -5.0
     assert row["lon_max"] == 5.0
     assert row["lat_min"] == -2.0
     assert row["lat_max"] == 2.0
+
+
+def test_derive_geoidflood_metadata_falls_back_to_pre_without_event_time(tmp_path):
+    """Catalogues without an ``event_time`` column keep the pre-delineation start."""
+    catalog = _sample_catalog().drop(columns="event_time")
+    path = tmp_path / "tile_catalog.parquet"
+    catalog.to_parquet(path, index=False)
+
+    metadata = derive_geoidflood_metadata(path)
+    assert metadata.loc[0, "date_start"] == "2020-01-10"
+
+
+def test_derive_geoidflood_metadata_falls_back_to_pre_with_nat_event_time(tmp_path):
+    """All-NaT ``event_time`` values fall back to the pre delineation instead of NaN."""
+    catalog = _sample_catalog()
+    catalog["event_time"] = None
+    path = tmp_path / "tile_catalog.parquet"
+    catalog.to_parquet(path, index=False)
+
+    metadata = derive_geoidflood_metadata(path)
+    assert metadata.loc[0, "date_start"] == "2020-01-10"
 
 
 def test_derive_geoidflood_metadata_geometry_is_4326_regardless_of_utm_crs(tmp_path):

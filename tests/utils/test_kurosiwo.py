@@ -93,7 +93,8 @@ def test_derive_kurosiwo_metadata(monkeypatch, tmp_path):
     metadata = derive_kurosiwo_metadata(catalogue_path)
 
     assert list(metadata["flood_case"]) == ["KuroSiwo_470"]
-    assert metadata.loc[0, "date_start"].isoformat() == "2020-04-29"
+    # anchored on the flood-time acquisition; the pre-flood baseline (2020-04-29) is excluded
+    assert metadata.loc[0, "date_start"].isoformat() == "2020-10-14"
     assert metadata.loc[0, "date_end"].isoformat() == "2020-10-14"
     assert metadata.loc[0, "lon_min"] == -0.8627
     assert metadata.loc[0, "lat_max"] == 11.7312
