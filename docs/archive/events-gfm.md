@@ -217,8 +217,8 @@ The scripts are exposed as `pixi run -e events` tasks:
 
 | Task                           | Wraps                                                               |
 | ------------------------------ | ------------------------------------------------------------------- |
-| `build-geoidflood-gfm-archive` | `PYTHONPATH=src python scripts/build_geoidflood_gfm_archive.py`     |
-| `build-kurosiwo-gfm-archive`   | `PYTHONPATH=src python scripts/build_kurosiwo_gfm_archive.py`       |
+| `build-geoidflood-gfm-archive` | `python scripts/build_geoidflood_gfm_archive.py`                    |
+| `build-kurosiwo-gfm-archive`   | `python scripts/build_kurosiwo_gfm_archive.py`                      |
 | `backfill-geoidflood-gfm`      | `…/build_geoidflood_gfm_archive.py --year {year} --events {events}` |
 | `backfill-kurosiwo-gfm`        | `…/build_kurosiwo_gfm_archive.py --year {year} --events {events}`   |
 
@@ -233,7 +233,7 @@ it, and streams every task into the dedicated event cube:
 
 ```bash
 tmux new -s geoidflood
-PYTHONPATH=src pixi run -e events build-geoidflood-gfm-archive \
+pixi run -e events build-geoidflood-gfm-archive \
     --archive s3://atlantis/zarr/geoidflood_events \
     --db-path geoidflood_gfm_cube_tracker.db
 ```
@@ -242,7 +242,7 @@ PYTHONPATH=src pixi run -e events build-geoidflood-gfm-archive \
 
 ```bash
 tmux new -s kurosiwo
-PYTHONPATH=src pixi run -e events build-kurosiwo-gfm-archive \
+pixi run -e events build-kurosiwo-gfm-archive \
     --archive s3://atlantis/zarr/kurosiwo_events \
     --db-path kurosiwo_gfm_cube_tracker.db
 ```
@@ -265,21 +265,21 @@ cubes (`s3://atlantis/zarr/{YYYY}`), typically as new events arrive:
 ```bash
 # GEOID-Flood: activation EMSR712, AoI 10, 2025
 tmux new -s backfill_EMSR712
-PYTHONPATH=src pixi run -e events backfill-geoidflood-gfm \
+pixi run -e events backfill-geoidflood-gfm \
     --year 2025 --events EMSR712-10 --db-path backfill_EMSR712_2025.db
 ```
 
 or with the raw task:
 
 ```bash
-PYTHONPATH=src pixi run -e events build-geoidflood-gfm-archive \
+pixi run -e events build-geoidflood-gfm-archive \
     --year 2025 --events EMSR712-10 --db-path backfill_EMSR712_2025.db
 ```
 
 KuroSiwo works identically:
 
 ```bash
-PYTHONPATH=src pixi run -e events backfill-kurosiwo-gfm \
+pixi run -e events backfill-kurosiwo-gfm \
     --year 2025 --events BGD-2024-000223-FIN --db-path backfill_BGD_2025.db
 ```
 
@@ -369,33 +369,33 @@ from §5.5 (pads already included):
 
 ```bash
 # GEOID-Flood
-PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add EMSR864-21 \
+pixi run python -m atlantis.cli bookmarks add EMSR864-21 \
     --bbox "-8.9795 39.6862 -8.7403 39.7787" \
     --start-date 2026-01-27 --end-date 2026-03-01 --source gfm \
     --label "GEOID-Flood smallest-event example"
 
-PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add EMSR184-4 \
+pixi run python -m atlantis.cli bookmarks add EMSR184-4 \
     --bbox "144.804 -33.9205 146.2484 -32.9803" \
     --start-date 2016-09-17 --end-date 2016-09-25 --source gfm \
     --label "GEOID-Flood smallest-event example"
 
-PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add EMSR292-1 \
+pixi run python -m atlantis.cli bookmarks add EMSR292-1 \
     --bbox "24.459 40.7659 25.0766 41.1463" \
     --start-date 2018-06-21 --end-date 2018-06-29 --source gfm \
     --label "GEOID-Flood smallest-event example"
 
 # KuroSiwo
-PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add KuroSiwo_1111003 \
+pixi run python -m atlantis.cli bookmarks add KuroSiwo_1111003 \
     --bbox "43.0908 11.4904 43.2115 11.6087" \
     --start-date 2019-11-13 --end-date 2019-12-11 --source gfm \
     --label "KuroSiwo smallest-event example"
 
-PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add KuroSiwo_498 \
+pixi run python -m atlantis.cli bookmarks add KuroSiwo_498 \
     --bbox "0.1483 43.5262 3.6294 45.4354" \
     --start-date 2021-01-19 --end-date 2021-02-16 --source gfm \
     --label "KuroSiwo smallest-event example"
 
-PYTHONPATH=src pixi run python -m atlantis.cli bookmarks add KuroSiwo_1111011 \
+pixi run python -m atlantis.cli bookmarks add KuroSiwo_1111011 \
     --bbox "121.1434 16.7234 122.2502 18.4498" \
     --start-date 2020-10-30 --end-date 2020-11-27 --source gfm \
     --label "KuroSiwo smallest-event example"
@@ -434,7 +434,7 @@ ds = reader.read(
 )
 
 # gfm group channels: water_fraction, exclusion_mask, reference_water
-print(ds.water_fraction)   # lazy, CF-decoded (float [0,1], NaN = NODATA)
+print(ds.water_fraction)  # lazy, CF-decoded (float [0,1], NaN = NODATA)
 ```
 
 Notes:
@@ -444,7 +444,7 @@ Notes:
   `list_events()` stays empty for these runs. Always select by
   bbox/`start`/`end` (or a full-year read).
 - The same selection is available interactively without code:
-  `PYTHONPATH=src pixi run python -m atlantis.cli viz serve gfm --stac <catalog>
+  `pixi run python -m atlantis.cli viz serve gfm --stac <catalog>
 --bbox "…" --start … --end …` after building a STAC catalog (see
   [stac-and-viz.md](./stac-and-viz.md)).
 - For a multi-year event, read each year's cube separately and concatenate,

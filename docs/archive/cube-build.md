@@ -101,17 +101,17 @@ call. They differ only in schema and remote source:
 
 ```bash
 # VIIRS — no credentials needed
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs catalog \
+pixi run -e batch python -m atlantis.cli batch viirs catalog \
   --start 2025-01-01 --end 2025-12-31 \
   --output s3://atlantis/assets/viirs/viirs_archive_catalog.parquet
 
 # MODIS — requires EARTHDATA_TOKEN
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis catalog \
+pixi run -e batch python -m atlantis.cli batch modis catalog \
   --start 2025-01-01 --end 2025-12-31 \
   --output s3://atlantis/assets/modis/modis_archive_catalog.parquet
 
 # GFM — no credentials needed, always global (no --bbox option)
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm catalog \
+pixi run -e batch python -m atlantis.cli batch gfm catalog \
   --start 2025-01-01 --end 2025-12-31 \
   --output s3://atlantis/assets/gfm/gfm_archive_catalog.parquet
 ```
@@ -137,7 +137,7 @@ PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm catalog \
 >
 > ```bash
 > tmux new -s modis_catalog
-> PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis catalog \
+> pixi run -e batch python -m atlantis.cli batch modis catalog \
 >   --start 2003-01-01 --end 2026-07-15 \
 >   --output s3://atlantis/assets/modis/modis_archive_catalog.parquet
 > ```
@@ -173,7 +173,7 @@ import pandas as pd
 from atlantis.fetchers.viirs.inventory import load_inventory  # or fetchers.modis.inventory
 
 old = load_inventory("s3://atlantis/assets/viirs/viirs_archive_catalog.parquet")
-new = pd.read_parquet("viirs_archive_catalog.parquet")   # just-built range
+new = pd.read_parquet("viirs_archive_catalog.parquet")  # just-built range
 combined = pd.concat([old, new], ignore_index=True).drop_duplicates(subset=["date", "aoi_id"])
 combined.to_parquet("viirs_archive_catalog.parquet", index=False)
 # then upload the merged file to s3://atlantis/assets/viirs/viirs_archive_catalog.parquet
@@ -199,7 +199,7 @@ single year is still too slow) into separate local files, then merge:
 ```bash
 # One tmux window per year, or a simple sequential loop — either works.
 for year in 2015 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025; do
-  PYTHONPATH=src pixi run -e batch python -m atlantis.cli --verbose batch gfm catalog \
+  pixi run -e batch python -m atlantis.cli --verbose batch gfm catalog \
     --start "${year}-01-01" --end "${year}-12-31" \
     --output "gfm_archive_catalog_${year}.parquet" \
     2>&1 | tee "gfm_catalog_${year}.log"
@@ -263,20 +263,20 @@ The three-step end-to-end pipeline, per source:
 
 ```bash
 # VIIRS
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
+pixi run -e batch python -m atlantis.cli batch viirs cube run \
   --partition 0:1000 \
   --archive s3://atlantis/zarr/my_cube \
   --log-every 50
 
 # MODIS — same --archive, its own tracker, its own row partition
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis cube run \
+pixi run -e batch python -m atlantis.cli batch modis cube run \
   --partition 0:1000 \
   --archive s3://atlantis/zarr/my_cube \
   --db-path modis_cube_tracker.db \
   --log-every 50
 
 # GFM — same --archive, its own tracker, its own row partition
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
+pixi run -e batch python -m atlantis.cli batch gfm cube run \
   --partition 0:1000 \
   --archive s3://atlantis/zarr/my_cube \
   --db-path gfm_cube_tracker.db \
@@ -302,7 +302,7 @@ Fresh full-year build (2021 as the concrete example — substitute the year):
 
 ```bash
 tmux new -s modis_cube_2021
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis cube run \
+pixi run -e batch python -m atlantis.cli batch modis cube run \
   --inventory modis_archive_catalog_2021.parquet \
   --archive s3://atlantis/zarr/2021 \
   --db-path /mnt/atlantis-state/modis/2021/cube_tracker.db \
@@ -330,7 +330,7 @@ and skips `DONE` tasks on re-run):
 
 ```bash
 # Tracker-based completion report (works offline)
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis cube status \
+pixi run -e batch python -m atlantis.cli batch modis cube status \
   --db-path /mnt/atlantis-state/modis/2021/cube_tracker.db \
   --inventory modis_archive_catalog_2021.parquet
 
@@ -357,7 +357,7 @@ restart, and a restart skips cells already marked `DONE`.
 
 ```bash
 tmux new -s gfm_cube_2025
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
+pixi run -e batch python -m atlantis.cli batch gfm cube run \
   --inventory s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet \
   --archive s3://atlantis/zarr/2025 \
   --db-path gfm_cube_tracker_2025.db \
@@ -435,13 +435,13 @@ Example:
 
 ```bash
 # 2020 (leap year): axis gets 366 slots, marker atlantis_time_prefill="2020"
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
+pixi run -e batch python -m atlantis.cli batch viirs cube run \
   --partition 0:1000 \
   --archive s3://atlantis/zarr/2020 \
   --log-every 50
 
 # same archive, no prefill (axis grows sparse, as before)
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
+pixi run -e batch python -m atlantis.cli batch viirs cube run \
   --partition 0:1000 --no-prefill \
   --archive s3://atlantis/zarr/2020 \
   --log-every 50
@@ -511,18 +511,18 @@ The `--archive` value is the **parent** of the Zarr store — the engine creates
 >
 > ```bash
 > tmux new -s cube
-> PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube run \
+> pixi run -e batch python -m atlantis.cli batch viirs cube run \
 >   --partition 0:1000 --archive s3://atlantis/zarr/my_cube --log-every 50
 > ```
 
 Check progress at any time (even after disconnect), from another terminal:
 
 ```bash
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch viirs cube status \
+pixi run -e batch python -m atlantis.cli batch viirs cube status \
   --partition 0:1000 --db-path cube_tracker.db
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch modis cube status \
+pixi run -e batch python -m atlantis.cli batch modis cube status \
   --partition 0:1000 --db-path modis_cube_tracker.db
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube status \
+pixi run -e batch python -m atlantis.cli batch gfm cube status \
   --partition 0:1000 --db-path gfm_cube_tracker.db
 ```
 
@@ -559,7 +559,7 @@ special handling — it follows exactly the same rule as above, since the
 archive root you already built is _not_ a brand-new/empty one:
 
 ```bash
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli batch gfm cube run \
+pixi run -e batch python -m atlantis.cli batch gfm cube run \
   --partition 0:1000 \
   --archive s3://atlantis/zarr/my_cube \
   --db-path gfm_cube_tracker.db \
@@ -584,13 +584,13 @@ picked up automatically the next time you (re)build the catalog:
 
 ```bash
 # Catalogue every source in the archive (viirs + modis + gfm)
-PYTHONPATH=src pixi run -e stac python -m atlantis.cli stac build \
+pixi run -e stac python -m atlantis.cli stac build \
   --archive s3://atlantis/zarr/my_cube \
   --output ./data/stac_my_cube \
   --no-compute-bbox
 
 # Or just one source
-PYTHONPATH=src pixi run -e stac python -m atlantis.cli stac build \
+pixi run -e stac python -m atlantis.cli stac build \
   --archive s3://atlantis/zarr/my_cube \
   --source gfm \
   --output ./data/stac_my_cube_gfm \
@@ -606,16 +606,16 @@ for large cubes. Without it, the builder scans every date for non-fill pixels.
 identically for any source, including GFM:
 
 ```bash
-PYTHONPATH=src pixi run -e viz python -m atlantis.cli viz serve viirs \
+pixi run -e viz python -m atlantis.cli viz serve viirs \
   --stac ./data/stac_my_cube \
   --port 5006
 
-PYTHONPATH=src pixi run -e viz python -m atlantis.cli viz serve modis \
+pixi run -e viz python -m atlantis.cli viz serve modis \
   --stac ./data/stac_my_cube \
   --var recurring_flood \
   --port 5007
 
-PYTHONPATH=src pixi run -e viz python -m atlantis.cli viz serve gfm \
+pixi run -e viz python -m atlantis.cli viz serve gfm \
   --stac ./data/stac_my_cube \
   --port 5008
 ```
@@ -628,7 +628,7 @@ Open `http://localhost:5006` in a browser (SSH-tunnel if remote: `ssh -L 5006:lo
 For tighter AOI and date range:
 
 ```bash
-PYTHONPATH=src pixi run -e viz python -m atlantis.cli viz serve viirs \
+pixi run -e viz python -m atlantis.cli viz serve viirs \
   --stac ./data/stac_my_cube \
   --bbox "-1.5 38.8 0.5 40.0" --start 2024-10-29 --end 2024-11-04 \
   --port 5006
@@ -644,17 +644,17 @@ it resolves the window from the watermark and processes only pending dates
 
 ```bash
 # 0. One-time onboarding for years built before the update flow (2023/2024/2025):
-PYTHONPATH=src pixi run python -m atlantis.cli archive modis seed-tracker --year 2025
+pixi run python -m atlantis.cli archive modis seed-tracker --year 2025
 
 # 1. Insert the missing date slots into the year's time axis (one-off; copies
 #    the shifted planes on the object store — run detached)
-PYTHONPATH=src pixi run python -m atlantis.cli archive modis _reindex-time --year 2025
+pixi run python -m atlantis.cli archive modis _reindex-time --year 2025
 
 # 2. Process the pending work (LAADS download, Dask batch — run detached)
-PYTHONPATH=src pixi run python -m atlantis.cli archive modis update --year 2025 --foreground
+pixi run python -m atlantis.cli archive modis update --year 2025 --foreground
 
 # 3. Track completion
-PYTHONPATH=src pixi run python -m atlantis.cli archive modis status --year 2025
+pixi run python -m atlantis.cli archive modis status --year 2025
 ```
 
 - Do **not** rebuild with `batch modis cube run`: it re-downloads the whole
@@ -718,8 +718,9 @@ refresh.
 ```python
 # VIIRS
 from atlantis.fetchers.viirs.inventory import load_inventory
-df = load_inventory('s3://atlantis/assets/viirs/viirs_archive_catalog.parquet')
-df = df.sort_values(['date', 'aoi_id']).reset_index(drop=True)
+
+df = load_inventory("s3://atlantis/assets/viirs/viirs_archive_catalog.parquet")
+df = df.sort_values(["date", "aoi_id"]).reset_index(drop=True)
 
 # MODIS — same recipe, different sort key
 # from atlantis.fetchers.modis.inventory import load_inventory
@@ -732,12 +733,12 @@ df = df.sort_values(['date', 'aoi_id']).reset_index(drop=True)
 # df = load_inventory('s3://atlantis/assets/gfm/gfm_archive_catalog.parquet')
 # df = df.sort_values(['date', 'equi7_tile']).reset_index(drop=True)
 
-d = df['date'].astype(str)
-mask = d.str.startswith('2024-10') | d.str.startswith('2024-11')
+d = df["date"].astype(str)
+mask = d.str.startswith("2024-10") | d.str.startswith("2024-11")
 subset = df[mask]
 start = subset.index[0]
-stop = subset.index[-1] + 1   # iloc slice end is exclusive
-print(f'Oct-Nov 2024: {len(subset)} rows · partition {start}:{stop}')
+stop = subset.index[-1] + 1  # iloc slice end is exclusive
+print(f"Oct-Nov 2024: {len(subset)} rows · partition {start}:{stop}")
 ```
 
 Run this against whichever catalogue you are about to process — the row

@@ -19,9 +19,9 @@ this host? Three subcommands, sharing a task-JSON exchange file:
 
 Usage::
 
-    PYTHONPATH=src pixi run -e batch python scripts/benchmark_gfm_aois.py sample
-    PYTHONPATH=src pixi run -e batch python scripts/benchmark_gfm_aois.py run-a
-    PYTHONPATH=src pixi run -e batch python scripts/benchmark_gfm_aois.py run-b --workers 2 4 6
+    pixi run -e batch python scripts/benchmark_gfm_aois.py sample
+    pixi run -e batch python scripts/benchmark_gfm_aois.py run-a
+    pixi run -e batch python scripts/benchmark_gfm_aois.py run-b --workers 2 4 6
 """
 
 from __future__ import annotations

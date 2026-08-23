@@ -23,7 +23,7 @@ measured effect, not a plausibility argument.
 
 Usage (real EODC STAC network access required, no auth):
 
-    PYTHONPATH=src python scripts/profile_gfm_batch_rss.py \
+    python scripts/profile_gfm_batch_rss.py \
         --bbox -1.5 38.8 2.5 42.0 --start 2024-10-20 --end 2024-11-10 \
         --max-cells 6
 

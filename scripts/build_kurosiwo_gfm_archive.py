@@ -21,13 +21,13 @@ whose STAC metadata lacks a valid ``Equi7Tile``/bbox are recorded to
 
 Usage::
 
-    PYTHONPATH=src pixi run -e events build-kurosiwo-gfm-archive \
+    pixi run -e events build-kurosiwo-gfm-archive \
         --archive s3://atlantis/zarr/kurosiwo_events \
         --db-path kurosiwo_gfm_cube_tracker.db
 
 Per-event backfill into the per-year cubes (the default path)::
 
-    PYTHONPATH=src pixi run -e events build-kurosiwo-gfm-archive \
+    pixi run -e events build-kurosiwo-gfm-archive \
         --year 2025 --events BGD-2024-000223-FIN --db-path backfill_BGD_2025.db
 
 ``--year`` sets the archive to ``s3://atlantis/zarr/{year}`` (overriding

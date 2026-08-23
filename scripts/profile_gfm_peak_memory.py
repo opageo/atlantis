@@ -19,7 +19,7 @@ non-Python-tracked native allocations, and zero-dependency (stdlib
 
 Usage (network access to the public EODC STAC API required, no auth):
 
-    PYTHONPATH=src python scripts/profile_gfm_peak_memory.py \
+    python scripts/profile_gfm_peak_memory.py \
         --bbox -1.5 38.8 0.5 40.0 \
         --start 2024-10-29 --end 2024-11-04 \
         --window-size 3000
