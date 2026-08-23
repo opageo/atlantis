@@ -434,7 +434,7 @@ ds = reader.read(
 )
 
 # gfm group channels: water_fraction, exclusion_mask, reference_water
-print(ds.water_fraction)   # lazy, CF-decoded (float [0,1], NaN = NODATA)
+print(ds.water_fraction)  # lazy, CF-decoded (float [0,1], NaN = NODATA)
 ```
 
 Notes:
