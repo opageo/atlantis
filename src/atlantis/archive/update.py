@@ -1157,7 +1157,7 @@ def launch_tmux_update(
     if existing.returncode == 0:
         raise UpdateError(f"tmux session {name!r} already exists")
 
-    command = f"cd {repo_root} && PYTHONPATH=src pixi run -e batch {' '.join(worker)} > {log_path} 2>&1"
+    command = f"cd {repo_root} &&  pixi run -e batch {' '.join(worker)} > {log_path} 2>&1"
     subprocess.run(["tmux", "new-session", "-d", "-s", name, command], check=True)
     return name, log_path, command
 
