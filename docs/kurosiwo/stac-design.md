@@ -198,8 +198,8 @@ The correct retrieval path is via STAC search using `source_date` + tile bbox:
 
 ```python
 # stac_api.py — get_scenes_for_actid() + query_stac_for_scenes()
-scenes = get_scenes_for_actid(actid=1111002)   # groups catalogue by source_date
-items  = query_stac_for_scenes(scenes)          # queries CDSE STAC by bbox + datetime
+scenes = get_scenes_for_actid(actid=1111002)  # groups catalogue by source_date
+items = query_stac_for_scenes(scenes)  # queries CDSE STAC by bbox + datetime
 ```
 
 Source scene → tile mapping:
@@ -234,12 +234,12 @@ import pystac
 
 cat = pystac.Catalog.from_file("data/stac/catalog.json")
 labeled = cat.get_child("kurosiwo-labeled")
-event   = labeled.get_child("kurosiwo-labeled-1111002")
+event = labeled.get_child("kurosiwo-labeled-1111002")
 
 for item in event.get_items():
     print(item.id, item.properties.get("ks:pflood"))
     flood_mask = item.assets["mk0_mna"].href
-    master_vv  = item.assets["ms1_ivv"].href
+    master_vv = item.assets["ms1_ivv"].href
 ```
 
 ### Browse with STAC Browser (optional)

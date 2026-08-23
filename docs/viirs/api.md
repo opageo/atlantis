@@ -13,7 +13,7 @@ from atlantis.models.event import FloodEvent
 
 event = FloodEvent(
     event_id="valencia_2024",
-    bbox=(-1.2, 39.0, 0.2, 39.8),   # west, south, east, north
+    bbox=(-1.2, 39.0, 0.2, 39.8),  # west, south, east, north
     start_date=date(2024, 10, 30),
     end_date=date(2024, 11, 1),
 )
@@ -23,7 +23,7 @@ fetch_results = fetcher.fetch(event, Path("data/viirs/valencia_2024"))
 
 # Load into xarray for analysis / plotting
 ds = fetcher.to_dataset(fetch_results[0])
-flood = ds["flood_fraction"]                # xarray DataArray, CRS=EPSG:4326
+flood = ds["flood_fraction"]  # xarray DataArray, CRS=EPSG:4326
 print(int((flood > 0).sum().item()), "pixels with non-zero flood fraction")
 ```
 
@@ -86,22 +86,21 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 viirs_codes = {
-    1:   ("Fill / No data",   "#000000"),
-    17:  ("Vegetation",       "#2ca02c"),
-    20:  ("Snow / ice",       "#17becf"),
-    30:  ("Cloud",            "#cccccc"),
-    99:  ("Permanent water",  "#1f77b4"),
+    1: ("Fill / No data", "#000000"),
+    17: ("Vegetation", "#2ca02c"),
+    20: ("Snow / ice", "#17becf"),
+    30: ("Cloud", "#cccccc"),
+    99: ("Permanent water", "#1f77b4"),
     130: ("Flood (30% frac)", "#ffeb3b"),
     160: ("Flood (60% frac)", "#FF9800"),
-    200: ("Flood (100%)",     "#FF0000"),
+    200: ("Flood (100%)", "#FF0000"),
 }
 
 fetcher_raw = VIIRSFetcher(classify=False)
 ds_raw = fetcher_raw.to_dataset(fetcher_raw.fetch(event, Path("data/viirs/raw"))[0])
 raw = ds_raw["raw"]
 
-fig, (ax, ax_leg) = plt.subplots(1, 2, figsize=(14, 7),
-                                  gridspec_kw={"width_ratios": [3, 1]})
+fig, (ax, ax_leg) = plt.subplots(1, 2, figsize=(14, 7), gridspec_kw={"width_ratios": [3, 1]})
 raw.plot(ax=ax, cmap="turbo", add_colorbar=True)
 ax.set_title("VIIRS raw composite (375 m)")
 
@@ -131,6 +130,7 @@ plt.show()
 
 ```python
 from atlantis.fetchers.viirs.backend import ViirsBackend, ListingLocation
+
 
 class MyBackend(ViirsBackend):
     def get_listing_location(self, base_url, event_date, data_format) -> ListingLocation: ...

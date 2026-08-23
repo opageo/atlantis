@@ -707,11 +707,9 @@ from atlantis.models.event import FloodEvent
 class Sentinel2Fetcher(AbstractFloodFetcher):
     source_id: str = "sentinel2"
 
-    def search(self, event: FloodEvent) -> list[SearchResult]:
-        ...
+    def search(self, event: FloodEvent) -> list[SearchResult]: ...
 
-    def fetch(self, event: FloodEvent, output_dir: Path) -> list[FetchResult]:
-        ...
+    def fetch(self, event: FloodEvent, output_dir: Path) -> list[FetchResult]: ...
 ```
 
 Importing the module in `cli.py` is still enough to expose it through the registry.

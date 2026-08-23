@@ -173,7 +173,7 @@ import pandas as pd
 from atlantis.fetchers.viirs.inventory import load_inventory  # or fetchers.modis.inventory
 
 old = load_inventory("s3://atlantis/assets/viirs/viirs_archive_catalog.parquet")
-new = pd.read_parquet("viirs_archive_catalog.parquet")   # just-built range
+new = pd.read_parquet("viirs_archive_catalog.parquet")  # just-built range
 combined = pd.concat([old, new], ignore_index=True).drop_duplicates(subset=["date", "aoi_id"])
 combined.to_parquet("viirs_archive_catalog.parquet", index=False)
 # then upload the merged file to s3://atlantis/assets/viirs/viirs_archive_catalog.parquet
@@ -374,6 +374,8 @@ Use an archive and tracker path appropriate to the catalogue being ingested.
 Do not reuse a tracker for a different source or catalogue revision: `DONE`
 means only that its recorded task id completed, not that the task came from the
 same inventory file.
+
+#### Table of CLI options
 
 | Flag                                        | VIIRS default                        | MODIS default                       | GFM default                         | Purpose                                                                                                                                                                                              |
 | ------------------------------------------- | ------------------------------------ | ----------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -718,8 +720,9 @@ refresh.
 ```python
 # VIIRS
 from atlantis.fetchers.viirs.inventory import load_inventory
-df = load_inventory('s3://atlantis/assets/viirs/viirs_archive_catalog.parquet')
-df = df.sort_values(['date', 'aoi_id']).reset_index(drop=True)
+
+df = load_inventory("s3://atlantis/assets/viirs/viirs_archive_catalog.parquet")
+df = df.sort_values(["date", "aoi_id"]).reset_index(drop=True)
 
 # MODIS — same recipe, different sort key
 # from atlantis.fetchers.modis.inventory import load_inventory
@@ -732,12 +735,12 @@ df = df.sort_values(['date', 'aoi_id']).reset_index(drop=True)
 # df = load_inventory('s3://atlantis/assets/gfm/gfm_archive_catalog.parquet')
 # df = df.sort_values(['date', 'equi7_tile']).reset_index(drop=True)
 
-d = df['date'].astype(str)
-mask = d.str.startswith('2024-10') | d.str.startswith('2024-11')
+d = df["date"].astype(str)
+mask = d.str.startswith("2024-10") | d.str.startswith("2024-11")
 subset = df[mask]
 start = subset.index[0]
-stop = subset.index[-1] + 1   # iloc slice end is exclusive
-print(f'Oct-Nov 2024: {len(subset)} rows · partition {start}:{stop}')
+stop = subset.index[-1] + 1  # iloc slice end is exclusive
+print(f"Oct-Nov 2024: {len(subset)} rows · partition {start}:{stop}")
 ```
 
 Run this against whichever catalogue you are about to process — the row

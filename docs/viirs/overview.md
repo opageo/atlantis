@@ -445,8 +445,8 @@ LON0, LAT0 = -180.0, 90.0
 
 with rasterio.open("…_viirs_harmonised.tif") as src:
     t = src.transform
-    cx0 = t.a * 0.5 + t.c          # first pixel centre, lon
-    cy0 = t.e * 0.5 + t.f          # first pixel centre, lat
+    cx0 = t.a * 0.5 + t.c  # first pixel centre, lon
+    cy0 = t.e * 0.5 + t.f  # first pixel centre, lat
     kx = (cx0 - LON0) / RES - 0.5  # must be an integer
     ky = (LAT0 - cy0) / RES - 0.5
     print(f"pixel size : {t.a:.12f} (= 1/60: {RES:.12f})")
