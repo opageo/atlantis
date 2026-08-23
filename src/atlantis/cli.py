@@ -4253,6 +4253,8 @@ def batch_gfm_cube(
             f"  [bold]{len(task_list)}[/bold] cells → {archive}" + (f"  (partition {partition})" if partition else "")
         )
     else:
+        if start > end:
+            raise typer.BadParameter("--start-date must be on or before --end-date")
         task_list, dropped = build_tasks_for_window(event, bbox_t, start, end, buffer_km=buffer_km)
         console.print(
             f"  [bold]{len(task_list)}[/bold] task(s) "
