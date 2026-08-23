@@ -418,14 +418,13 @@ $$
 # (lifted verbatim from ifs-floodbench/Scripts/extract_modis_flood.py)
 import numpy as np
 
+
 def modis_ll_tiles_for_aoi(north, west, south, east):
     h_min = int(np.floor((west + 180.0) / 10.0))
     h_max = int(np.floor((east + 180.0) / 10.0))
     v_min = int(np.floor((90.0 - north) / 10.0))
     v_max = int(np.floor((90.0 - south) / 10.0))
-    return [f"h{h:02d}v{v:02d}"
-            for h in range(h_min, h_max + 1)
-            for v in range(v_min, v_max + 1)]
+    return [f"h{h:02d}v{v:02d}" for h in range(h_min, h_max + 1) for v in range(v_min, v_max + 1)]
 ```
 
 ## Data access

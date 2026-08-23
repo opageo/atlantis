@@ -375,6 +375,8 @@ Do not reuse a tracker for a different source or catalogue revision: `DONE`
 means only that its recorded task id completed, not that the task came from the
 same inventory file.
 
+#### Table of CLI options
+
 | Flag                                        | VIIRS default                        | MODIS default                       | GFM default                         | Purpose                                                                                                                                                                                              |
 | ------------------------------------------- | ------------------------------------ | ----------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--partition`                               | full catalogue                       | full catalogue                      | full catalogue                      | Row slice `start:stop` (e.g. `0:1000`) — for GFM this slices STAC-item rows _before_ the `(date, equi7_tile)` grouping (see §5)                                                                      |

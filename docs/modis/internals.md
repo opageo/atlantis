@@ -137,8 +137,10 @@ tile coverage for an AOI bbox analytically — there is no packaged
 ```python
 def modis_tiles_for_bbox(bbox: tuple[float, float, float, float]) -> list[tuple[int, int]]:
     west, south, east, north = bbox
-    h_min = floor((west + 180) / 10);  h_max = floor((east + 180) / 10)
-    v_min = floor((90 - north) / 10);  v_max = floor((90 - south) / 10)
+    h_min = floor((west + 180) / 10)
+    h_max = floor((east + 180) / 10)
+    v_min = floor((90 - north) / 10)
+    v_max = floor((90 - south) / 10)
     return [(h, v) for h in range(h_min, h_max + 1) for v in range(v_min, v_max + 1)]
 ```
 

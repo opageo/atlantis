@@ -34,9 +34,9 @@ event = FloodEvent(
 
 fetcher = MODISFetcher(
     backend="lance_geotiff",  # default
-    composite="F2",           # 2-day max-water composite (recommended default)
+    composite="F2",  # 2-day max-water composite (recommended default)
     classify=True,
-    stream=True,              # /vsicurl/ + GDAL_HTTP_HEADERS bearer
+    stream=True,  # /vsicurl/ + GDAL_HTTP_HEADERS bearer
 )
 
 results = fetcher.fetch(event, Path("data/lance_smoke"))
@@ -150,9 +150,7 @@ from atlantis.harmoniser import Harmoniser, write_harmonised_raster
 
 harmoniser = Harmoniser()
 ds_harm = harmoniser.harmonise(ds, source_id="modis")
-write_harmonised_raster(
-    ds_harm["flood_fraction"], Path("harmonised/Pakistan_2022_modis.tif")
-)
+write_harmonised_raster(ds_harm["flood_fraction"], Path("harmonised/Pakistan_2022_modis.tif"))
 ```
 
 ## Search diagnostics
@@ -223,6 +221,7 @@ from atlantis.fetchers.modis.backend import (
     ListingLocation,
     ModisListingEntry,
 )
+
 
 class MyBackend(ModisBackend):
     name = "my_backend"
