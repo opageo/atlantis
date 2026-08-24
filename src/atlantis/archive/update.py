@@ -156,7 +156,7 @@ def _source_spec(opts: UpdateOptions) -> dict[str, Any]:
             "catalogue_builder": build_viirs_catalog,
             "probe": None,
             "dedupe": ("date", "aoi_id"),
-            "required": ("date", "aoi_id", "task_id", "source_uri"),
+            "required": ("date", "aoi_id", "s3_key", "task_id", "source_uri"),
             "sample_bounds": lambda t: bounds_from_aoi_id(int(t["aoi_id"])),
             "consume_label": lambda payload: f"aoi{int(payload['aoi_id']):03d}",
         }
@@ -525,6 +525,10 @@ def _validate_catalogue(df: pd.DataFrame, year: int, required: tuple[str, ...] =
         raise UpdateError(f"catalogue for {year} is missing columns {missing}")
     if df.empty:
         raise UpdateError(f"catalogue for {year} is empty after merge")
+    if "s3_key" in required:
+        invalid_s3_keys = df["s3_key"].map(lambda value: not isinstance(value, str) or not value.strip())
+        if invalid_s3_keys.any():
+            raise UpdateError(f"catalogue for {year} contains invalid s3_key values")
     lo, hi = df["date"].min(), df["date"].max()
     if lo < f"{year}-01-01" or hi > f"{year}-12-31":
         raise UpdateError(f"catalogue rows outside year {year}: {lo} … {hi}")

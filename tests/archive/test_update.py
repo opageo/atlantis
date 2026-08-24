@@ -1740,6 +1740,17 @@ class TestViirsIntegration:
         done = {tid for tid, st in read_tracker(tracker_path(opts, year)).items() if st == "DONE"}
         assert done == set(pd.read_parquet(catalogue_uri(opts, year))["task_id"])
 
+    def test_refresh_rejects_invalid_existing_s3_key(self, tmp_path):
+        opts = _viirs_opts(tmp_path)
+        year = 2026
+        canonical = Path(catalogue_uri(opts, year))
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{"date": "2026-01-01", "aoi_id": 3, "s3_key": None}]).to_parquet(canonical, index=False)
+        opts.catalogue_builder = FakeViirsCatalogueBuilder(year, self.AOIS, dates=[date(2026, 1, 2)])
+
+        with pytest.raises(UpdateError, match="invalid s3_key"):
+            refresh_catalogue(opts, year, date(2026, 1, 2), date(2026, 1, 2), "r1")
+
     def test_status_report_viirs(self, tmp_path, monkeypatch):
         opts = self._setup(tmp_path, monkeypatch, 2026, dates=[date(2026, 1, 1)])
         self._run_window(opts, monkeypatch, date(2026, 1, 1), date(2026, 1, 1))
