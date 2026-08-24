@@ -2318,7 +2318,7 @@ def _register_archive_source_app(app: typer.Typer, source: str) -> None:
             for window in windows:
                 console.print(f"  {window.year} {window.kind}: {window.start} → {window.end}")
             worker = build_worker_command(opts, datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
-            console.print(f"  worker: PYTHONPATH=src pixi run -e batch {' '.join(worker)}")
+            console.print(f"  worker: pixi run -e batch {' '.join(worker)}")
             return
         if not windows:
             warn("Resolved window is empty — nothing to do.")

@@ -64,7 +64,13 @@ def _tile_rows(days, tiles, year=2026):
         for h, v in tiles:
             task_id = f"modis-{ds.replace('-', '')}-h{h:02d}v{v:02d}"
             rows.append(
-                {"date": ds, "h": h, "v": v, "task_id": task_id, "source_uri": f"https://laads/{ds}/{task_id}.hdf"}
+                {
+                    "date": ds,
+                    "h": h,
+                    "v": v,
+                    "task_id": task_id,
+                    "source_uri": f"https://laads/{ds}/{task_id}.hdf",
+                }
             )
     return rows
 
@@ -1253,7 +1259,7 @@ class TestLauncher:
         )
         name, log_path, command = launch_tmux_update(opts, run_id="run", repo_root=Path("/repo"))
         assert name == "atlantis-modis-update-2026-run"
-        assert "cd /repo && PYTHONPATH=src pixi run -e batch" in command
+        assert "cd /repo && pixi run -e batch" in command
         assert "atlantis.cli archive modis _run-update" in command
         assert command.endswith(f"> {log_path} 2>&1")
         assert str(log_path).endswith(f"{tmp_path}/state/2026/logs/run.log")

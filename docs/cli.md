@@ -713,7 +713,7 @@ the axis after finishing.
 
 ```bash
 # Query partition bounds first:
-PYTHONPATH=src python -c "
+python -c "
 from atlantis.fetchers.viirs.inventory import load_inventory
 df = load_inventory('s3://atlantis/assets/viirs/viirs_archive_catalog.parquet')
 df = df.sort_values(['date', 'aoi_id']).reset_index(drop=True)

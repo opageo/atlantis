@@ -25,7 +25,7 @@ platforms = ["linux-64", "osx-arm64", "osx-64"]
 # ============================================================================
 
 [dependencies]
-python = ">=3.11,<3.15"
+python = ">=3.12,<3.15"
 
 # --- Core runtime (mirrors pyproject.toml [project].dependencies) ---
 typer = ">=0.26.7"
@@ -43,9 +43,9 @@ pyarrow = "*"
 matplotlib = ">=3.11.0"
 ipympl = ">=0.10.0"
 plotly = ">=6.7.0"
-rasterstats = ">=0.21.0"
 odc-stac = ">=0.4"
 cartopy = ">0.22"
+
 
 # --- Geo extras (mirrors pyproject.toml [project.optional-dependencies].geo) ---
 xarray = ">=2024.1"
@@ -60,7 +60,7 @@ beautifulsoup4 = ">=4.12"
 requests = ">=2.34.2"
 
 # --- GDAL + HDF4 binary stack (replaces manual build in docs/gdal-install.md) ---
-gdal = "*"
+gdal = ">=3.13"
 libgdal-hdf4 = "*"
 hdf4 = "*"
 proj = "*"
@@ -71,16 +71,7 @@ geos = "*"
 # ============================================================================
 
 [pypi-dependencies]
-# atlantis = { path = ".", editable = true }
-
-# ----------------------------------------------------------------------------
-# GDAL is provided by the conda stack above (gdal/libgdal-hdf4). pyproject.toml
-# pins gdal==3.13.0 for pure-uv users, but conda-forge may pin a different
-# build per platform (e.g. 3.12.3 on osx-arm64). This override lets pixi's PyPI
-# solve accept whatever GDAL conda installs instead of failing on the pin.
-# ----------------------------------------------------------------------------
-[pypi-options.dependency-overrides]
-gdal = ">=3.11"
+atlantis = { path = ".", editable = true }
 
 # ============================================================================
 # Feature: dev (development tools)
@@ -205,17 +196,17 @@ viz = { features = ["dev", "viz"] }
 # ============================================================================
 
 [tasks]
-setup = "PYTHONPATH=src python scripts/setup.py"
+setup = " python scripts/setup.py"
 docs = { cmd = "mkdocs serve", env = { PYTHONPATH = "src" } }
 docs-build = { cmd = "mkdocs build --strict", env = { PYTHONPATH = "src" } }
-demo = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+demo = """ python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source viirs \
   --bbox "-1.5 38.8 0.5 40.0" \
   --start-date 2024-10-29 --end-date 2024-11-04 \
   --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
   --plot --harmonise --no-keep-processed \
   --output ./data/Valencia_2024"""
-demo-modis = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+demo-modis = """ python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source modis \
   --bbox "-1.5 38.8 0.5 40.0" \
   --start-date 2024-10-29 --end-date 2024-11-04 \
@@ -223,21 +214,21 @@ demo-modis = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
   --plot --harmonise --no-keep-processed \
   --output ./data/Valencia_2024"""
-demo-gfm = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+demo-gfm = """ python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source gfm \
   --bbox "-1.5 38.8 0.5 40.0" \
   --start-date 2024-10-29 --end-date 2024-11-04 \
   --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
   --plot --harmonise --no-keep-processed \
   --output ./data/Valencia_2024"""
-demo-raw = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+demo-raw = """ python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source viirs \
   --bbox "-1.5 38.8 0.5 40.0" \
   --start-date 2024-10-29 --end-date 2024-11-04 \
   --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
   --no-classify --plot --harmonise --no-keep-processed \
   --output ./data/Valencia_2024"""
-demo-modis-raw = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+demo-modis-raw = """ python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source modis \
   --bbox "-1.5 38.8 0.5 40.0" \
   --start-date 2024-10-29 --end-date 2024-11-04 \
@@ -245,7 +236,7 @@ demo-modis-raw = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --strategy all --peak-window-days 2 --max-observations 3 --peak-priority balanced \
   --no-classify --plot --harmonise --no-keep-processed \
   --output ./data/Valencia_2024"""
-demo-gfm-raw = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+demo-gfm-raw = """ python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source gfm \
   --bbox "-1.5 38.8 0.5 40.0" \
   --start-date 2024-10-29 --end-date 2024-11-04 \
@@ -260,41 +251,41 @@ format = "ruff format ."
 format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
 verify-gdal = """python -c "from osgeo import gdal; assert gdal.GetDriverByName('HDF4'), 'HDF4 driver missing'; print('GDAL', gdal.__version__, '— HDF4 driver: OK')" """
-validate-gfm = "PYTHONPATH=src python -m atlantis.cli validate-gfm --require-raw"
-web = "PYTHONPATH=src python -m atlantis.cli web launch --host 0.0.0.0 --port 8080"
+validate-gfm = " python -m atlantis.cli validate-gfm --require-raw"
+web = " python -m atlantis.cli web launch --host 0.0.0.0 --port 8080"
 
 # ============================================================================
 # Incremental archive updates (atlantis archive {modis,viirs} update)
 # ============================================================================
 
-modis-archive-update = "PYTHONPATH=src python -m atlantis.cli archive modis update --foreground"
-modis-archive-update-dry-run = "PYTHONPATH=src python -m atlantis.cli archive modis update --foreground --dry-run"
-modis-archive-status = "PYTHONPATH=src python -m atlantis.cli archive modis status"
-modis-archive-seed-tracker = "PYTHONPATH=src python -m atlantis.cli archive modis seed-tracker"
+modis-archive-update = " python -m atlantis.cli archive modis update --foreground"
+modis-archive-update-dry-run = " python -m atlantis.cli archive modis update --foreground --dry-run"
+modis-archive-status = " python -m atlantis.cli archive modis status"
+modis-archive-seed-tracker = " python -m atlantis.cli archive modis seed-tracker"
 
-viirs-archive-update = "PYTHONPATH=src python -m atlantis.cli archive viirs update --foreground"
-viirs-archive-update-dry-run = "PYTHONPATH=src python -m atlantis.cli archive viirs update --foreground --dry-run"
-viirs-archive-status = "PYTHONPATH=src python -m atlantis.cli archive viirs status"
-viirs-archive-seed-tracker = "PYTHONPATH=src python -m atlantis.cli archive viirs seed-tracker"
+viirs-archive-update = " python -m atlantis.cli archive viirs update --foreground"
+viirs-archive-update-dry-run = " python -m atlantis.cli archive viirs update --foreground --dry-run"
+viirs-archive-status = " python -m atlantis.cli archive viirs status"
+viirs-archive-seed-tracker = " python -m atlantis.cli archive viirs seed-tracker"
 
 # ============================================================================
 # GEOID-Flood event archive (metadata → AOI blocks → GFM cube)
 # ============================================================================
 
 [tasks.download-geoidflood-catalog]
-cmd = "PYTHONPATH=src python scripts/download_geoidflood_catalog.py"
+cmd = " python scripts/download_geoidflood_catalog.py"
 default-environment = "events"
 
 [tasks.estimate-geoidflood-aois]
-cmd = "PYTHONPATH=src python scripts/estimate_geoidflood_aois.py"
+cmd = " python scripts/estimate_geoidflood_aois.py"
 default-environment = "events"
 
 [tasks.estimate-geoidflood-aois-with-items]
-cmd = "PYTHONPATH=src python scripts/estimate_geoidflood_aois.py --with-items"
+cmd = " python scripts/estimate_geoidflood_aois.py --with-items"
 default-environment = "events"
 
 [tasks.build-geoidflood-gfm-archive]
-cmd = "PYTHONPATH=src python scripts/build_geoidflood_gfm_archive.py"
+cmd = " python scripts/build_geoidflood_gfm_archive.py"
 default-environment = "events"
 
 # ============================================================================
@@ -302,19 +293,19 @@ default-environment = "events"
 # ============================================================================
 
 [tasks.download-kurosiwo-catalog]
-cmd = "PYTHONPATH=src python scripts/download_kurosiwo.py"
+cmd = " python scripts/download_kurosiwo.py"
 default-environment = "events"
 
 [tasks.estimate-kurosiwo-aois]
-cmd = "PYTHONPATH=src python scripts/estimate_kurosiwo_aois.py"
+cmd = " python scripts/estimate_kurosiwo_aois.py"
 default-environment = "events"
 
 [tasks.estimate-kurosiwo-aois-with-items]
-cmd = "PYTHONPATH=src python scripts/estimate_kurosiwo_aois.py --with-items"
+cmd = " python scripts/estimate_kurosiwo_aois.py --with-items"
 default-environment = "events"
 
 [tasks.build-kurosiwo-gfm-archive]
-cmd = "PYTHONPATH=src python scripts/build_kurosiwo_gfm_archive.py"
+cmd = " python scripts/build_kurosiwo_gfm_archive.py"
 default-environment = "events"
 
 # ============================================================================
@@ -322,12 +313,12 @@ default-environment = "events"
 # ============================================================================
 
 [tasks.backfill-geoidflood-gfm]
-cmd = "PYTHONPATH=src python scripts/build_geoidflood_gfm_archive.py --year {{ year }} --events {{ events }}"
+cmd = " python scripts/build_geoidflood_gfm_archive.py --year {{ year }} --events {{ events }}"
 args = [{ arg = "year" }, { arg = "events" }]
 default-environment = "events"
 
 [tasks.backfill-kurosiwo-gfm]
-cmd = "PYTHONPATH=src python scripts/build_kurosiwo_gfm_archive.py --year {{ year }} --events {{ events }}"
+cmd = " python scripts/build_kurosiwo_gfm_archive.py --year {{ year }} --events {{ events }}"
 args = [{ arg = "year" }, { arg = "events" }]
 default-environment = "events"
 
@@ -336,7 +327,7 @@ default-environment = "events"
 # ============================================================================
 
 [tasks.example-harvey-viirs]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Harvey_2017 --source viirs \
   --bbox "-97.27 28.24 -95.54 29.80" \
   --start-date 2017-08-28 --end-date 2017-08-31 \
@@ -345,7 +336,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Harvey_2017"""
 
 [tasks.example-bihar-viirs]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Bihar_2019 --source viirs \
   --bbox "84.84 24.92 86.49 26.16" \
   --start-date 2019-09-16 --end-date 2019-09-20 \
@@ -354,7 +345,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Bihar_2019"""
 
 [tasks.example-vamco-viirs]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Vamco_2020 --source viirs \
   --bbox "121.14 16.72 122.25 18.45" \
   --start-date 2020-11-12 --end-date 2020-11-14 \
@@ -363,7 +354,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Vamco_2020"""
 
 [tasks.example-westafrica-viirs]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event WestAfrica_2020 --source viirs \
   --bbox "-0.86 8.26 1.99 11.73" \
   --start-date 2020-10-13 --end-date 2020-10-15 \
@@ -384,7 +375,7 @@ depends-on = [
 # ============================================================================
 
 [tasks.example-harvey-viirs-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Harvey_2017 --source viirs \
   --bbox "-97.27 28.24 -95.54 29.80" \
   --start-date 2017-08-28 --end-date 2017-08-31 \
@@ -393,7 +384,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Harvey_2017"""
 
 [tasks.example-bihar-viirs-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Bihar_2019 --source viirs \
   --bbox "84.84 24.92 86.49 26.16" \
   --start-date 2019-09-16 --end-date 2019-09-20 \
@@ -402,7 +393,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Bihar_2019"""
 
 [tasks.example-vamco-viirs-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Vamco_2020 --source viirs \
   --bbox "121.14 16.72 122.25 18.45" \
   --start-date 2020-11-12 --end-date 2020-11-14 \
@@ -411,7 +402,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Vamco_2020"""
 
 [tasks.example-westafrica-viirs-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event WestAfrica_2020 --source viirs \
   --bbox "-0.86 8.26 1.99 11.73" \
   --start-date 2020-10-13 --end-date 2020-10-15 \
@@ -432,7 +423,7 @@ depends-on = [
 # ============================================================================
 
 [tasks.example-harvey-modis]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Harvey_2017 --source modis \
   --bbox "-97.27 28.24 -95.54 29.80" \
   --start-date 2017-08-28 --end-date 2017-08-31 \
@@ -442,7 +433,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Harvey_2017"""
 
 [tasks.example-bihar-modis]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Bihar_2019 --source modis \
   --bbox "84.84 24.92 86.49 26.16" \
   --start-date 2019-09-16 --end-date 2019-09-20 \
@@ -452,7 +443,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Bihar_2019"""
 
 [tasks.example-vamco-modis]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Vamco_2020 --source modis \
   --bbox "121.14 16.72 122.25 18.45" \
   --start-date 2020-11-12 --end-date 2020-11-14 \
@@ -462,7 +453,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Vamco_2020"""
 
 [tasks.example-westafrica-modis]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event WestAfrica_2020 --source modis \
   --bbox "-0.86 8.26 1.99 11.73" \
   --start-date 2020-10-13 --end-date 2020-10-15 \
@@ -484,7 +475,7 @@ depends-on = [
 # ============================================================================
 
 [tasks.example-harvey-modis-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Harvey_2017 --source modis \
   --bbox "-97.27 28.24 -95.54 29.80" \
   --start-date 2017-08-28 --end-date 2017-08-31 \
@@ -494,7 +485,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Harvey_2017"""
 
 [tasks.example-bihar-modis-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Bihar_2019 --source modis \
   --bbox "84.84 24.92 86.49 26.16" \
   --start-date 2019-09-16 --end-date 2019-09-20 \
@@ -504,7 +495,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Bihar_2019"""
 
 [tasks.example-vamco-modis-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Vamco_2020 --source modis \
   --bbox "121.14 16.72 122.25 18.45" \
   --start-date 2020-11-12 --end-date 2020-11-14 \
@@ -514,7 +505,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Vamco_2020"""
 
 [tasks.example-westafrica-modis-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event WestAfrica_2020 --source modis \
   --bbox "-0.86 8.26 1.99 11.73" \
   --start-date 2020-10-13 --end-date 2020-10-15 \
@@ -536,7 +527,7 @@ depends-on = [
 # ============================================================================
 
 [tasks.example-harvey-gfm]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Harvey_2017 --source gfm \
   --bbox "-97.27 28.24 -95.54 29.80" \
   --start-date 2017-08-28 --end-date 2017-08-31 \
@@ -545,7 +536,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Harvey_2017"""
 
 [tasks.example-bihar-gfm]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Bihar_2019 --source gfm \
   --bbox "84.84 24.92 86.49 26.16" \
   --start-date 2019-09-16 --end-date 2019-09-20 \
@@ -554,7 +545,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Bihar_2019"""
 
 [tasks.example-vamco-gfm]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Vamco_2020 --source gfm \
   --bbox "121.14 16.72 122.25 18.45" \
   --start-date 2020-11-12 --end-date 2020-11-14 \
@@ -563,7 +554,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Vamco_2020"""
 
 [tasks.example-westafrica-gfm]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event WestAfrica_2020 --source gfm \
   --bbox "-0.86 8.26 1.99 11.73" \
   --start-date 2020-10-13 --end-date 2020-10-15 \
@@ -572,7 +563,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/WestAfrica_2020"""
 
 [tasks.example-valencia-gfm]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source gfm \
   --bbox "-1.5 38.8 0.5 40.0" \
   --start-date 2024-10-29 --end-date 2024-11-04 \
@@ -594,7 +585,7 @@ depends-on = [
 # ============================================================================
 
 [tasks.example-harvey-gfm-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Harvey_2017 --source gfm \
   --bbox "-97.27 28.24 -95.54 29.80" \
   --start-date 2017-08-28 --end-date 2017-08-31 \
@@ -603,7 +594,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Harvey_2017"""
 
 [tasks.example-bihar-gfm-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Bihar_2019 --source gfm \
   --bbox "84.84 24.92 86.49 26.16" \
   --start-date 2019-09-16 --end-date 2019-09-20 \
@@ -612,7 +603,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Bihar_2019"""
 
 [tasks.example-vamco-gfm-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Vamco_2020 --source gfm \
   --bbox "121.14 16.72 122.25 18.45" \
   --start-date 2020-11-12 --end-date 2020-11-14 \
@@ -621,7 +612,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/Vamco_2020"""
 
 [tasks.example-westafrica-gfm-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event WestAfrica_2020 --source gfm \
   --bbox "-0.86 8.26 1.99 11.73" \
   --start-date 2020-10-13 --end-date 2020-10-15 \
@@ -630,7 +621,7 @@ cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
   --output ./data/WestAfrica_2020"""
 
 [tasks.example-valencia-gfm-raw]
-cmd = """PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+cmd = """ python -m atlantis.cli --verbose fetch \
   --event Valencia_2024 --source gfm \
   --bbox "-1.5 38.8 0.5 40.0" \
   --start-date 2024-10-29 --end-date 2024-11-04 \

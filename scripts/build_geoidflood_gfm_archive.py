@@ -28,13 +28,13 @@ never collide in the tracker.
 
 Usage::
 
-    PYTHONPATH=src pixi run -e events build-geoidflood-gfm-archive \
+     pixi run -e events build-geoidflood-gfm-archive \
         --archive s3://atlantis/zarr/geoidflood_events \
         --db-path geoidflood_gfm_cube_tracker.db
 
 Per-event backfill into the per-year cubes (the default path)::
 
-    PYTHONPATH=src pixi run -e events build-geoidflood-gfm-archive \
+     pixi run -e events build-geoidflood-gfm-archive \
         --year 2025 --events EMSR712-10 --db-path backfill_EMSR712_2025.db
 
 ``--year`` sets the archive to ``s3://atlantis/zarr/{year}`` (overriding
