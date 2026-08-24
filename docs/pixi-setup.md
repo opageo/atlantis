@@ -37,7 +37,7 @@ This resolves and installs:
 - GDAL **with the HDF4 driver** (`libgdal-hdf4` from conda-forge) — no manual
   build required
 - Dev tools (pytest, ruff, pre-commit, …)
-- The `atlantis` package itself (available via `PYTHONPATH=src`)
+- The `atlantis` package itself (available via ``)
 
 Verify the GDAL/HDF4 stack:
 
@@ -117,10 +117,10 @@ List all available tasks:
 pixi task list
 ```
 
-For custom fetch commands, use the module path with `PYTHONPATH=src`:
+For custom fetch commands, use the module path with ``:
 
 ```bash
-PYTHONPATH=src python -m atlantis.cli --verbose fetch \
+ python -m atlantis.cli --verbose fetch \
   --event Harvey_2017 --source viirs \
   --bbox "-97.27 28.24 -95.54 29.80" \
   --start-date 2017-08-28 --end-date 2017-08-31 \

@@ -64,7 +64,7 @@ The commands you'll use most often:
 - `pixi run example-bihar-gfm` — Bihar floods (Sentinel-1 GFM)
 
 For custom fetch commands, run `python -m atlantis.cli fetch` with the
-`PYTHONPATH=src` prefix (all pixi tasks do this automatically). Add
+`` prefix (all pixi tasks do this automatically). Add
 `--verbose` before the subcommand for debug logging.
 
 See [docs/cli.md](docs/cli.md) for the full CLI reference, [CLI_Examples.md](CLI_Examples.md)

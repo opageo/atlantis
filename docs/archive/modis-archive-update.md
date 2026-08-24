@@ -90,7 +90,7 @@ shell process.
 All execution is Pixi-only:
 
 ```text
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis _run-update ...
+pixi run -e batch python -m atlantis.cli archive modis _run-update ...
 pixi run -e batch modis-archive-update                   # foreground, production defaults
 pixi run -e batch modis-archive-update-dry-run           # resolve + report only
 pixi run -e batch modis-archive-seed-tracker -- --year YYYY
@@ -108,11 +108,11 @@ Login token — see §6), AWS credentials for `s3://atlantis`, pixi, and tmux
 (detached mode only). The token is loaded from the repo `.env` by the CLI.
 
 1. Dry run — resolve and print the plan without launching the worker:
-   `PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --foreground --dry-run`
+   `pixi run -e batch python -m atlantis.cli archive modis update --foreground --dry-run`
 2. Foreground run (production defaults, current terminal):
    `pixi run -e batch modis-archive-update`
 3. Detached tmux (the CLI default; returns immediately):
-   `PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --year 2026`
+   `pixi run -e batch python -m atlantis.cli archive modis update --year 2026`
    `tmux attach -t atlantis-modis-update-2026-<runid>`
 4. Inspect progress / results:
    `pixi run -e batch modis-archive-status -- --year 2026`
@@ -394,7 +394,7 @@ from the watermark and stops. After the January run (watermark
 `2026-01-31`), continuing costs exactly one command:
 
 ```text
-PYTHONPATH=src pixi run -e batch python -m atlantis.cli archive modis update --year 2026
+pixi run -e batch python -m atlantis.cli archive modis update --year 2026
 ```
 
 What it does:

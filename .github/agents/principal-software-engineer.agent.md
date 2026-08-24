@@ -47,7 +47,7 @@ This repository is managed with **pixi**, not bare pip/venv. Prefer pixi over an
 - **Pick the right environment**: `default` (dev + ui), `ml` (dev + ml — numpy/scikit-learn/pytorch), `notebooks` (dev + ml + notebooks — jupyterlab/earthkit-data), `batch` (dev + batch — dask/distributed), `stac` (dev + stac), `docs` (mkdocs-material), `viz` (dev + viz — HoloViz stack). Use `pixi run -e <environment> <task-or-command>` when work falls outside the default env, e.g. `pixi run -e ml pytest tests/ml`.
 - **Don't hand-build GDAL**: HDF4-enabled GDAL comes from the conda-forge stack (`gdal`, `libgdal-hdf4`, `hdf4`, `proj`, `geos`) declared in `[dependencies]`. Use `pixi run verify-gdal` to confirm the HDF4 driver is present instead of proposing a manual build.
 - **New dependencies go in `pixi.toml`, not a raw pip install**: core runtime deps → `[dependencies]`; optional capability groups → the matching `[feature.<name>.dependencies]` (or `[feature.<name>.pypi-dependencies]` for PyPI-only packages); platform-specific pins → `[feature.<name>.target.<platform>.dependencies]`.
-- **`PYTHONPATH=src` is the convention** for source-relative commands, matching every existing task — carry it forward in anything new.
+- **`` is the convention** for source-relative commands, matching every existing task — carry it forward in anything new.
 - **If a needed command doesn't exist as a task yet**, propose adding it to `[tasks]` in `pixi.toml` rather than documenting a one-off shell invocation — keeps the workflow reproducible and discoverable via `pixi run`.
 
 ## Technical Debt Management

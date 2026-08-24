@@ -2286,7 +2286,7 @@ def archive_modis_update(
         for window in windows:
             console.print(f"  {window.year} {window.kind}: {window.start} → {window.end}")
         worker = build_worker_command(opts, datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
-        console.print(f"  worker: PYTHONPATH=src pixi run -e batch {' '.join(worker)}")
+        console.print(f"  worker: pixi run -e batch {' '.join(worker)}")
         return
     if not windows:
         warn("Resolved window is empty — nothing to do.")

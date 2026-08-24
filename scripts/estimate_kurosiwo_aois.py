@@ -16,8 +16,8 @@ before any heavy processing.
 
 Usage::
 
-    PYTHONPATH=src pixi run -e batch python scripts/estimate_kurosiwo_aois.py
-    PYTHONPATH=src pixi run -e batch python scripts/estimate_kurosiwo_aois.py --with-items
+    pixi run -e batch python scripts/estimate_kurosiwo_aois.py
+    pixi run -e batch python scripts/estimate_kurosiwo_aois.py --with-items
 """
 
 from __future__ import annotations
