@@ -2145,8 +2145,25 @@ def archive_event(
     _archive_event_impl(event, source, input_dir, archive_root, ensure_masks)
 
 
-modis_archive_app = typer.Typer(help="Incremental MODIS yearly archive updates.")
-archive_app.add_typer(modis_archive_app, name="modis")
+#: Per-source archive-update CLI profile: defaults, labels, and help text.
+_ARCHIVE_SOURCES = {
+    "modis": {
+        "label": "MODIS",
+        "state_root": Path("/mnt/atlantis-state/modis"),
+        "catalogue_base": "s3://atlantis/assets/modis",
+        "backup_base": "s3://atlantis/archive-state/modis",
+        "catalogue_help": "Yearly catalogue base: <base>/modis_archive_catalog_<year>.parquet.",
+        "lookback_help": "Weekly-run lookback (late LAADS publications).",
+    },
+    "viirs": {
+        "label": "VIIRS",
+        "state_root": Path("/mnt/atlantis-state/viirs"),
+        "catalogue_base": "s3://atlantis/assets/viirs",
+        "backup_base": "s3://atlantis/archive-state/viirs",
+        "catalogue_help": "Yearly catalogue base: <base>/viirs_archive_catalog_<year>.parquet.",
+        "lookback_help": "Weekly-run lookback (late NOAA S3 publications).",
+    },
+}
 
 
 def _archive_storage_options(uri: str) -> dict[str, str] | None:
@@ -2164,6 +2181,7 @@ def _archive_storage_options(uri: str) -> dict[str, str] | None:
 
 def _resolve_update_options(
     *,
+    source: str,
     year: int | None,
     start: str | None,
     end: str | None,
@@ -2185,6 +2203,7 @@ def _resolve_update_options(
     from atlantis.archive.update import UpdateOptions
 
     return UpdateOptions(
+        source=source,
         year=year,
         start=date.fromisoformat(start) if start else None,
         end=date.fromisoformat(end) if end else None,
@@ -2206,307 +2225,378 @@ def _resolve_update_options(
     )
 
 
-@modis_archive_app.command("update", help="Launch a detached tmux MODIS archive update for the resolved window(s).")
-def archive_modis_update(
-    year: int | None = typer.Option(None, "--year", help="Restrict to one archive year."),
-    start: str | None = typer.Option(None, "--start", help="Explicit inclusive start YYYY-MM-DD (repair/backfill)."),
-    end: str | None = typer.Option(None, "--end", help="Explicit inclusive end YYYY-MM-DD."),
-    lookback_days: int = typer.Option(14, "--lookback-days", help="Weekly-run lookback (late LAADS publications)."),
-    availability_lag_days: int = typer.Option(
-        7, "--availability-lag-days", help="Avoid querying data still being published."
-    ),
-    archive_base: str = typer.Option(
-        "s3://atlantis/zarr", "--archive-base", help="Archive base: <base>/<year>/datacube.zarr."
-    ),
-    state_root: Path = typer.Option(
-        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
-    ),
-    catalogue_base: str = typer.Option(
-        "s3://atlantis/assets/modis",
-        "--catalogue-base",
-        help="Yearly catalogue base: <base>/modis_archive_catalog_<year>.parquet.",
-    ),
-    backup_base: str = typer.Option(
-        "s3://atlantis/archive-state/modis",
-        "--backup-base",
-        help="Tracker/manifest/catalogue backup root.",
-    ),
-    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
-    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
-    memory_limit: str = typer.Option("2.5GB", "--memory-limit", help="Memory cap per worker."),
-    dashboard_port: int = typer.Option(8788, "--dashboard-port", help="Dask dashboard port."),
-    retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
-    log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Resolve and print the plan without launching."),
-    retry_failed: bool = typer.Option(
-        True, "--retry-failed/--no-retry-failed", help="Retry previously FAILED tasks (default on)."
-    ),
-    session_name: str | None = typer.Option(None, "--session-name", help="Override the generated tmux session name."),
-    attach: bool = typer.Option(False, "--attach", help="Attach to the tmux session after launch."),
-    foreground: bool = typer.Option(False, "--foreground", help="Run the worker in this terminal (no tmux)."),
-) -> None:
-    """Resolve the update window and run it — detached tmux by default.
+def _register_archive_source_app(app: typer.Typer, source: str) -> None:
+    """Register the update / status / seed / reindex commands for one archive source."""
+    spec = _ARCHIVE_SOURCES[source]
+    label = spec["label"]
+    default_state_root = spec["state_root"]
+    default_catalogue_base = spec["catalogue_base"]
+    default_backup_base = spec["backup_base"]
 
-    The actual work runs through ``_run-update`` (an internal foreground
-    worker); this command only starts that worker in a named tmux session and
-    reports where to inspect it. Never launches ``update`` recursively.
-    """
-    from datetime import datetime, timezone
+    @app.command("update", help=f"Launch a detached tmux {label} archive update for the resolved window(s).")
+    def archive_source_update(
+        year: int | None = typer.Option(None, "--year", help="Restrict to one archive year."),
+        start: str | None = typer.Option(
+            None, "--start", help="Explicit inclusive start YYYY-MM-DD (repair/backfill)."
+        ),
+        end: str | None = typer.Option(None, "--end", help="Explicit inclusive end YYYY-MM-DD."),
+        lookback_days: int = typer.Option(14, "--lookback-days", help=spec["lookback_help"]),
+        availability_lag_days: int = typer.Option(
+            7, "--availability-lag-days", help="Avoid querying data still being published."
+        ),
+        archive_base: str = typer.Option(
+            "s3://atlantis/zarr", "--archive-base", help="Archive base: <base>/<year>/datacube.zarr."
+        ),
+        state_root: Path = typer.Option(
+            default_state_root, "--state-root", help="Persistent state root (per-year subdirs)."
+        ),
+        catalogue_base: str = typer.Option(
+            default_catalogue_base,
+            "--catalogue-base",
+            help=spec["catalogue_help"],
+        ),
+        backup_base: str = typer.Option(
+            default_backup_base,
+            "--backup-base",
+            help="Tracker/manifest/catalogue backup root.",
+        ),
+        workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+        workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+        memory_limit: str = typer.Option("2.5GB", "--memory-limit", help="Memory cap per worker."),
+        dashboard_port: int = typer.Option(8788, "--dashboard-port", help="Dask dashboard port."),
+        retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
+        log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Resolve and print the plan without launching."),
+        retry_failed: bool = typer.Option(
+            True, "--retry-failed/--no-retry-failed", help="Retry previously FAILED tasks (default on)."
+        ),
+        session_name: str | None = typer.Option(
+            None, "--session-name", help="Override the generated tmux session name."
+        ),
+        attach: bool = typer.Option(False, "--attach", help="Attach to the tmux session after launch."),
+        foreground: bool = typer.Option(False, "--foreground", help="Run the worker in this terminal (no tmux)."),
+    ) -> None:
+        """Resolve the update window and run it — detached tmux by default.
 
-    from atlantis.archive.update import (
-        UpdateError,
-        build_worker_command,
-        launch_tmux_update,
-        resolve_windows,
-        run_update,
+        The actual work runs through ``_run-update`` (an internal foreground
+        worker); this command only starts that worker in a named tmux session and
+        reports where to inspect it. Never launches ``update`` recursively.
+        """
+        from datetime import datetime, timezone
+
+        from atlantis.archive.update import (
+            UpdateError,
+            build_worker_command,
+            launch_tmux_update,
+            resolve_windows,
+            run_update,
+        )
+
+        opts = _resolve_update_options(
+            source=source,
+            year=year,
+            start=start,
+            end=end,
+            lookback_days=lookback_days,
+            availability_lag_days=availability_lag_days,
+            archive_base=archive_base,
+            state_root=state_root,
+            catalogue_base=catalogue_base,
+            backup_base=backup_base,
+            workers_min=workers_min,
+            workers_max=workers_max,
+            memory_limit=memory_limit,
+            dashboard_port=dashboard_port,
+            retries=retries,
+            log_every=log_every,
+            dry_run=dry_run,
+            retry_failed=retry_failed,
+        )
+
+        windows = resolve_windows(opts)
+        if dry_run:
+            for window in windows:
+                console.print(f"  {window.year} {window.kind}: {window.start} → {window.end}")
+            worker = build_worker_command(opts, datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+            console.print(f"  worker: PYTHONPATH=src pixi run -e batch {' '.join(worker)}")
+            return
+        if not windows:
+            warn("Resolved window is empty — nothing to do.")
+            return
+
+        if foreground:
+            try:
+                summary = run_update(opts)
+            except UpdateError as exc:
+                fail(str(exc))
+                raise typer.Exit(code=1) from exc
+            ok(f"Update finished: {summary['status']}")
+            return
+
+        run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        try:
+            name, log_path, _ = launch_tmux_update(
+                opts, run_id=run_id, repo_root=Path(__file__).resolve().parents[2], session_name=session_name
+            )
+        except UpdateError as exc:
+            fail(str(exc))
+            raise typer.Exit(code=1) from exc
+        ok(f"Launched tmux session {name}")
+        console.print(f"  log:        {log_path}")
+        console.print(f"  archive:    {windows[0].year} → {archive_base}/{windows[0].year}")
+        console.print(f"  tracker:    {state_root}/{windows[0].year}/cube_tracker.db")
+        console.print(f"  follow-up:  tmux attach -t {name}")
+        console.print(f"  status:     atlantis archive {source} status --year {windows[0].year}")
+        if attach:
+            import subprocess
+
+            subprocess.run(["tmux", "attach-session", "-t", name], check=False)
+
+    @app.command(
+        "_run-update",
+        hidden=True,
+        help=f"Run the {label} archive update in the foreground (internal worker).",
     )
+    def archive_source_run_update(
+        year: int | None = typer.Option(None, "--year", help="Restrict to one archive year."),
+        start: str | None = typer.Option(
+            None, "--start", help="Explicit inclusive start YYYY-MM-DD (repair/backfill)."
+        ),
+        end: str | None = typer.Option(None, "--end", help="Explicit inclusive end YYYY-MM-DD."),
+        lookback_days: int = typer.Option(14, "--lookback-days", help=spec["lookback_help"]),
+        availability_lag_days: int = typer.Option(
+            7, "--availability-lag-days", help="Avoid querying data still being published."
+        ),
+        archive_base: str = typer.Option(
+            "s3://atlantis/zarr", "--archive-base", help="Archive base: <base>/<year>/datacube.zarr."
+        ),
+        state_root: Path = typer.Option(
+            default_state_root, "--state-root", help="Persistent state root (per-year subdirs)."
+        ),
+        catalogue_base: str = typer.Option(
+            default_catalogue_base,
+            "--catalogue-base",
+            help=spec["catalogue_help"],
+        ),
+        backup_base: str = typer.Option(
+            default_backup_base,
+            "--backup-base",
+            help="Tracker/manifest/catalogue backup root.",
+        ),
+        workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
+        workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
+        memory_limit: str = typer.Option("2.5GB", "--memory-limit", help="Memory cap per worker."),
+        dashboard_port: int = typer.Option(8788, "--dashboard-port", help="Dask dashboard port."),
+        retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
+        log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Resolve and report the plan without processing."),
+        retry_failed: bool = typer.Option(
+            True, "--retry-failed/--no-retry-failed", help="Retry previously FAILED tasks (default on)."
+        ),
+    ) -> None:
+        """Foreground worker: refresh catalogue, reconcile, ingest, validate, manifest."""
+        from atlantis.archive.update import UpdateError, run_update
 
-    opts = _resolve_update_options(
-        year=year,
-        start=start,
-        end=end,
-        lookback_days=lookback_days,
-        availability_lag_days=availability_lag_days,
-        archive_base=archive_base,
-        state_root=state_root,
-        catalogue_base=catalogue_base,
-        backup_base=backup_base,
-        workers_min=workers_min,
-        workers_max=workers_max,
-        memory_limit=memory_limit,
-        dashboard_port=dashboard_port,
-        retries=retries,
-        log_every=log_every,
-        dry_run=dry_run,
-        retry_failed=retry_failed,
-    )
-
-    windows = resolve_windows(opts)
-    if dry_run:
-        for window in windows:
-            console.print(f"  {window.year} {window.kind}: {window.start} → {window.end}")
-        worker = build_worker_command(opts, datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
-        console.print(f"  worker: PYTHONPATH=src pixi run -e batch {' '.join(worker)}")
-        return
-    if not windows:
-        warn("Resolved window is empty — nothing to do.")
-        return
-
-    if foreground:
+        opts = _resolve_update_options(
+            source=source,
+            year=year,
+            start=start,
+            end=end,
+            lookback_days=lookback_days,
+            availability_lag_days=availability_lag_days,
+            archive_base=archive_base,
+            state_root=state_root,
+            catalogue_base=catalogue_base,
+            backup_base=backup_base,
+            workers_min=workers_min,
+            workers_max=workers_max,
+            memory_limit=memory_limit,
+            dashboard_port=dashboard_port,
+            retries=retries,
+            log_every=log_every,
+            dry_run=dry_run,
+            retry_failed=retry_failed,
+        )
         try:
             summary = run_update(opts)
         except UpdateError as exc:
             fail(str(exc))
             raise typer.Exit(code=1) from exc
-        ok(f"Update finished: {summary['status']}")
-        return
+        if summary["status"] == "noop":
+            warn("Resolved window is empty — nothing to do.")
+            return
+        years = [entry["year"] for entry in summary.get("years", [])]
+        ok(f"Update {summary['status']} for year(s) {years}")
 
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    try:
-        name, log_path, _ = launch_tmux_update(
-            opts, run_id=run_id, repo_root=Path(__file__).resolve().parents[2], session_name=session_name
+    @app.command("status", help="Inspect yearly tracker, catalogue, archive, and manifest state.")
+    def archive_source_status(
+        year: int | None = typer.Option(
+            None, "--year", help="Archive year to inspect (default: all years with local state)."
+        ),
+        state_root: Path = typer.Option(
+            default_state_root, "--state-root", help="Persistent state root (per-year subdirs)."
+        ),
+        archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
+        catalogue_base: str = typer.Option(default_catalogue_base, "--catalogue-base", help="Yearly catalogue base."),
+    ) -> None:
+        """Report completion, gaps, recent failures, watermark, and lock state.
+
+        With no ``--year``, every year with local state under ``--state-root`` is
+        summarised in one table plus a monthly overview strip.
+        """
+        from atlantis.archive.update import UpdateOptions, status_report
+
+        opts = UpdateOptions(
+            source=source,
+            state_root=state_root,
+            archive_base=archive_base,
+            catalogue_base=catalogue_base,
+            storage_options=_archive_storage_options(archive_base),
         )
-    except UpdateError as exc:
-        fail(str(exc))
-        raise typer.Exit(code=1) from exc
-    ok(f"Launched tmux session {name}")
-    console.print(f"  log:        {log_path}")
-    console.print(f"  archive:    {windows[0].year} → {archive_base}/{windows[0].year}")
-    console.print(f"  tracker:    {state_root}/{windows[0].year}/cube_tracker.db")
-    console.print(f"  follow-up:  tmux attach -t {name}")
-    console.print(f"  status:     atlantis archive modis status --year {windows[0].year}")
-    if attach:
-        import subprocess
 
-        subprocess.run(["tmux", "attach-session", "-t", name], check=False)
+        if year is not None:
+            _print_year_status(opts, year, source)
+            return
+        if not state_root.exists():
+            warn(f"No state under {state_root} — run `archive {source} update` first, or pass --year.")
+            return
+        years = sorted(int(p.name) for p in state_root.iterdir() if p.is_dir() and p.name.isdigit())
+        if not years:
+            warn(f"No yearly state under {state_root} — run `archive {source} update` first, or pass --year.")
+            return
 
-
-@modis_archive_app.command(
-    "_run-update",
-    hidden=True,
-    help="Run the MODIS archive update in the foreground (internal worker).",
-)
-def archive_modis_run_update(
-    year: int | None = typer.Option(None, "--year", help="Restrict to one archive year."),
-    start: str | None = typer.Option(None, "--start", help="Explicit inclusive start YYYY-MM-DD (repair/backfill)."),
-    end: str | None = typer.Option(None, "--end", help="Explicit inclusive end YYYY-MM-DD."),
-    lookback_days: int = typer.Option(14, "--lookback-days", help="Weekly-run lookback (late LAADS publications)."),
-    availability_lag_days: int = typer.Option(
-        7, "--availability-lag-days", help="Avoid querying data still being published."
-    ),
-    archive_base: str = typer.Option(
-        "s3://atlantis/zarr", "--archive-base", help="Archive base: <base>/<year>/datacube.zarr."
-    ),
-    state_root: Path = typer.Option(
-        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
-    ),
-    catalogue_base: str = typer.Option(
-        "s3://atlantis/assets/modis",
-        "--catalogue-base",
-        help="Yearly catalogue base: <base>/modis_archive_catalog_<year>.parquet.",
-    ),
-    backup_base: str = typer.Option(
-        "s3://atlantis/archive-state/modis",
-        "--backup-base",
-        help="Tracker/manifest/catalogue backup root.",
-    ),
-    workers_min: int = typer.Option(2, "--workers-min", help="Minimum Dask worker processes."),
-    workers_max: int = typer.Option(6, "--workers-max", help="Maximum Dask worker processes (adaptive)."),
-    memory_limit: str = typer.Option("2.5GB", "--memory-limit", help="Memory cap per worker."),
-    dashboard_port: int = typer.Option(8788, "--dashboard-port", help="Dask dashboard port."),
-    retries: int = typer.Option(3, "--retries", help="Dask retry count per tile."),
-    log_every: int = typer.Option(50, "--log-every", help="Log a progress line every N completions."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Resolve and report the plan without processing."),
-    retry_failed: bool = typer.Option(
-        True, "--retry-failed/--no-retry-failed", help="Retry previously FAILED tasks (default on)."
-    ),
-) -> None:
-    """Foreground worker: refresh catalogue, reconcile, ingest, validate, manifest."""
-    from atlantis.archive.update import UpdateError, run_update
-
-    opts = _resolve_update_options(
-        year=year,
-        start=start,
-        end=end,
-        lookback_days=lookback_days,
-        availability_lag_days=availability_lag_days,
-        archive_base=archive_base,
-        state_root=state_root,
-        catalogue_base=catalogue_base,
-        backup_base=backup_base,
-        workers_min=workers_min,
-        workers_max=workers_max,
-        memory_limit=memory_limit,
-        dashboard_port=dashboard_port,
-        retries=retries,
-        log_every=log_every,
-        dry_run=dry_run,
-        retry_failed=retry_failed,
-    )
-    try:
-        summary = run_update(opts)
-    except UpdateError as exc:
-        fail(str(exc))
-        raise typer.Exit(code=1) from exc
-    if summary["status"] == "noop":
-        warn("Resolved window is empty — nothing to do.")
-        return
-    years = [entry["year"] for entry in summary.get("years", [])]
-    ok(f"Update {summary['status']} for year(s) {years}")
-
-
-@modis_archive_app.command("status", help="Inspect yearly tracker, catalogue, archive, and manifest state.")
-def archive_modis_status(
-    year: int | None = typer.Option(
-        None, "--year", help="Archive year to inspect (default: all years with local state)."
-    ),
-    state_root: Path = typer.Option(
-        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
-    ),
-    archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
-    catalogue_base: str = typer.Option("s3://atlantis/assets/modis", "--catalogue-base", help="Yearly catalogue base."),
-) -> None:
-    """Report completion, gaps, recent failures, watermark, and lock state.
-
-    With no ``--year``, every year with local state under ``--state-root`` is
-    summarised in one table plus a monthly overview strip.
-    """
-    from atlantis.archive.update import UpdateOptions, status_report
-
-    opts = UpdateOptions(
-        state_root=state_root,
-        archive_base=archive_base,
-        catalogue_base=catalogue_base,
-        storage_options=_archive_storage_options(archive_base),
-    )
-
-    if year is not None:
-        _print_year_status(opts, year)
-        return
-    if not state_root.exists():
-        warn(f"No state under {state_root} — run `archive modis update` first, or pass --year.")
-        return
-    years = sorted(int(p.name) for p in state_root.iterdir() if p.is_dir() and p.name.isdigit())
-    if not years:
-        warn(f"No yearly state under {state_root} — run `archive modis update` first, or pass --year.")
-        return
-
-    command_header("archive modis status", subtitle="all years")
-    reports = {y: status_report(opts, y) for y in years}
-    rows = [
-        [
-            str(y),
-            f"{reports[y].get('DONE', 0)} / {reports[y].get('FAILED', 0)} / {reports[y].get('total', 0)}",
-            "—" if reports[y]["watermark"] is None else reports[y]["watermark"].isoformat(),
-            str(reports[y]["time_axis_sorted"]) if reports[y]["archive_dates"] else "—",
-            "—" if reports[y]["last_manifest"] is None else reports[y]["last_manifest"].get("status", "—"),
+        command_header(f"archive {source} status", subtitle="all years")
+        reports = {y: status_report(opts, y) for y in years}
+        rows = [
+            [
+                str(y),
+                f"{reports[y].get('DONE', 0)} / {reports[y].get('FAILED', 0)} / {reports[y].get('total', 0)}",
+                "—" if reports[y]["watermark"] is None else reports[y]["watermark"].isoformat(),
+                str(reports[y]["time_axis_sorted"]) if reports[y]["archive_dates"] else "—",
+                "—" if reports[y]["last_manifest"] is None else reports[y]["last_manifest"].get("status", "—"),
+            ]
+            for y in years
         ]
-        for y in years
-    ]
-    console.print(
-        summary_table(
-            "MODIS archive — all years",
-            ["Year", "DONE/FAILED/total", "Watermark", "Axis sorted", "Last run"],
-            rows,
+        console.print(
+            summary_table(
+                f"{label} archive — all years",
+                ["Year", "DONE/FAILED/total", "Watermark", "Axis sorted", "Last run"],
+                rows,
+            )
         )
+        section_rule("Monthly overview (dominant state)")
+        for y in years:
+            console.print(_render_year_overview(reports[y]["date_states"], y))
+        console.print(_render_heatmap_legend())
+        info("Pass --year for the full per-date heatmap, recent failures, and manifest.")
+
+    @app.command(
+        "seed-tracker",
+        help="Build a year's tracker from the archive (DONE for every date on the time axis).",
     )
-    section_rule("Monthly overview (dominant state)")
-    for y in years:
-        console.print(_render_year_overview(reports[y]["date_states"], y))
-    console.print(_render_heatmap_legend())
-    info("Pass --year for the full per-date heatmap, recent failures, and manifest.")
+    def archive_source_seed_tracker(
+        year: int = typer.Option(..., "--year", help="Archive year to seed."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Report what would be seeded without writing."),
+        state_root: Path = typer.Option(
+            default_state_root, "--state-root", help="Persistent state root (per-year subdirs)."
+        ),
+        archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
+        catalogue_base: str = typer.Option(default_catalogue_base, "--catalogue-base", help="Yearly catalogue base."),
+    ) -> None:
+        """Onboard an already-archived year that has no tracker.
 
+        Marks every catalogue task whose date is present on the archive time axis
+        as ``DONE`` (the archive cannot be decomposed per tile, but a date on the
+        axis proves it was written). Catalogue dates missing from the axis stay
+        pending and are reported, so the next ``update`` run only processes
+        genuinely missing work. Idempotent — existing task rows are never
+        overwritten.
+        """
+        from atlantis.archive.update import UpdateError, UpdateOptions, date_ranges, seed_tracker
 
-@modis_archive_app.command(
-    "seed-tracker",
-    help="Build a year's tracker from the archive (DONE for every date on the time axis).",
-)
-def archive_modis_seed_tracker(
-    year: int = typer.Option(..., "--year", help="Archive year to seed."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Report what would be seeded without writing."),
-    state_root: Path = typer.Option(
-        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
-    ),
-    archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
-    catalogue_base: str = typer.Option("s3://atlantis/assets/modis", "--catalogue-base", help="Yearly catalogue base."),
-) -> None:
-    """Onboard an already-archived year that has no tracker.
+        opts = UpdateOptions(
+            source=source,
+            state_root=state_root,
+            archive_base=archive_base,
+            catalogue_base=catalogue_base,
+            storage_options=_archive_storage_options(archive_base),
+        )
+        try:
+            summary = seed_tracker(opts, year, dry_run=dry_run)
+        except UpdateError as exc:
+            fail(str(exc))
+            raise typer.Exit(code=1) from exc
+        verb = "Would seed" if dry_run else "Seeded"
+        ok(f"{verb} {summary['seeded']} DONE task(s) for {year} (axis {summary['axis_dates']} date(s))")
+        if summary["pending_dates"]:
+            ranges = _format_missing_ranges(date_ranges(summary["pending_dates"]))
+            warn(f"{len(summary['pending_dates'])} catalogue date(s) missing from the archive: {ranges}")
+            info(
+                f"Run `archive {source} _reindex-time --year {year}` then "
+                f"`archive {source} update --year {year}` to fill them."
+            )
 
-    Marks every catalogue task whose date is present on the archive time axis
-    as ``DONE`` (the archive cannot be decomposed per tile, but a date on the
-    axis proves it was written). Catalogue dates missing from the axis stay
-    pending and are reported, so the next ``update`` run only processes
-    genuinely missing work. Idempotent — existing task rows are never
-    overwritten.
-    """
-    from atlantis.archive.update import UpdateError, UpdateOptions, date_ranges, seed_tracker
-
-    opts = UpdateOptions(
-        state_root=state_root,
-        archive_base=archive_base,
-        catalogue_base=catalogue_base,
-        storage_options=_archive_storage_options(archive_base),
+    @app.command(
+        "_reindex-time", hidden=True, help=f"Sort a year's {source} group time axis in place (one-off migration)."
     )
-    try:
-        summary = seed_tracker(opts, year, dry_run=dry_run)
-    except UpdateError as exc:
-        fail(str(exc))
-        raise typer.Exit(code=1) from exc
-    verb = "Would seed" if dry_run else "Seeded"
-    ok(f"{verb} {summary['seeded']} DONE task(s) for {year} (axis {summary['axis_dates']} date(s))")
-    if summary["pending_dates"]:
-        ranges = _format_missing_ranges(date_ranges(summary["pending_dates"]))
-        warn(f"{len(summary['pending_dates'])} catalogue date(s) missing from the archive: {ranges}")
-        info(f"Run `archive modis _reindex-time --year {year}` then `archive modis update --year {year}` to fill them.")
+    def archive_source_reindex_time(
+        year: int = typer.Option(..., "--year", help="Archive year to reindex."),
+        archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
+        catalogue_base: str = typer.Option(
+            default_catalogue_base, "--catalogue-base", help="Yearly catalogue base (optional)."
+        ),
+        state_root: Path = typer.Option(
+            default_state_root, "--state-root", help="Persistent state root (per-year subdirs)."
+        ),
+    ) -> None:
+        """Rewrite the year's group time axis strictly ascending.
+
+        Inserts empty NODATA slots for catalogue dates missing from the axis, so a
+        subsequent update run can fill them without violating append-only ordering.
+        """
+        import pandas as pd
+
+        from atlantis.archive._store import store_for
+        from atlantis.archive.reindex_time import reindex_group_time
+        from atlantis.archive.update import MODIS_VAR_NAMES, VIIRS_VAR_NAMES, UpdateOptions, archive_root, catalogue_uri
+        from atlantis.batch.catalog import load_catalogue
+
+        opts = UpdateOptions(
+            source=source,
+            archive_base=archive_base,
+            catalogue_base=catalogue_base,
+            state_root=state_root,
+            storage_options=_archive_storage_options(archive_base),
+        )
+        expected_dates = None
+        uri = catalogue_uri(opts, year)
+        try:
+            df = load_catalogue(uri)
+        except FileNotFoundError:
+            info(f"No catalogue at {uri} — sorting only (no slot insertion).")
+        else:
+            expected_dates = sorted(set(pd.to_datetime(df["date"]).dt.date))
+
+        var_names = {"modis": MODIS_VAR_NAMES, "viirs": VIIRS_VAR_NAMES}[source]
+        store = store_for(archive_root(opts, year), "datacube.zarr", opts.storage_options)
+        target = reindex_group_time(
+            store,
+            source,
+            list(var_names),
+            expected_dates=expected_dates,
+            storage_options=opts.storage_options,
+        )
+        ok(f"Reindexed {year} {source} group: {len(target)} time slot(s), ascending.")
 
 
-def _print_year_status(opts, year: int) -> None:
+def _print_year_status(opts, year: int, source: str) -> None:
     """Full per-year status view: metrics table, per-date heatmap, failures."""
     from atlantis.archive.update import status_report
 
+    label = _ARCHIVE_SOURCES[source]["label"]
     report = status_report(opts, year)
 
-    command_header("archive modis status", subtitle=str(year))
+    command_header(f"archive {source} status", subtitle=str(year))
     done_failed_total = (
         f"{report.get('DONE', 0)} / {report.get('FAILED', 0)} / {report.get('total', 0)}"
         if report["tracker_exists"]
@@ -2534,7 +2624,7 @@ def _print_year_status(opts, year: int) -> None:
     if lock is not None:
         lock_label = f"pid {lock.get('pid')} since {lock.get('started_at')}"
         rows.append(["Lock", lock_label + (" (STALE)" if lock.get("stale") else "")])
-    console.print(summary_table(f"MODIS {year} — update status", ["Metric", "Value"], rows))
+    console.print(summary_table(f"{label} {year} — update status", ["Metric", "Value"], rows))
 
     if report["date_states"]:
         section_rule("Per-date completion")
@@ -2556,58 +2646,15 @@ def _print_year_status(opts, year: int) -> None:
             f" · watermark {last.get('watermark')}"
         )
     if report.get("time_axis_sorted") is False and report["archive_dates"]:
-        warn(f"Time axis not ascending — run `atlantis archive modis _reindex-time --year {year}` to repair.")
+        warn(f"Time axis not ascending — run `atlantis archive {source} _reindex-time --year {year}` to repair.")
 
 
-@modis_archive_app.command(
-    "_reindex-time", hidden=True, help="Sort a year's modis group time axis in place (one-off migration)."
-)
-def archive_modis_reindex_time(
-    year: int = typer.Option(..., "--year", help="Archive year to reindex."),
-    archive_base: str = typer.Option("s3://atlantis/zarr", "--archive-base", help="Archive base."),
-    catalogue_base: str = typer.Option(
-        "s3://atlantis/assets/modis", "--catalogue-base", help="Yearly catalogue base (optional)."
-    ),
-    state_root: Path = typer.Option(
-        Path("/mnt/atlantis-state/modis"), "--state-root", help="Persistent state root (per-year subdirs)."
-    ),
-) -> None:
-    """Rewrite the year's ``modis`` group time axis strictly ascending.
-
-    Inserts empty NODATA slots for catalogue dates missing from the axis, so a
-    subsequent update run can fill them without violating append-only ordering.
-    """
-    import pandas as pd
-
-    from atlantis.archive._store import store_for
-    from atlantis.archive.reindex_time import reindex_group_time
-    from atlantis.archive.update import MODIS_VAR_NAMES, UpdateOptions, archive_root, catalogue_uri
-    from atlantis.batch.catalog import load_catalogue
-
-    opts = UpdateOptions(
-        archive_base=archive_base,
-        catalogue_base=catalogue_base,
-        state_root=state_root,
-        storage_options=_archive_storage_options(archive_base),
-    )
-    expected_dates = None
-    uri = catalogue_uri(opts, year)
-    try:
-        df = load_catalogue(uri)
-    except FileNotFoundError:
-        info(f"No catalogue at {uri} — sorting only (no slot insertion).")
-    else:
-        expected_dates = sorted(set(pd.to_datetime(df["date"]).dt.date))
-
-    store = store_for(archive_root(opts, year), "datacube.zarr", opts.storage_options)
-    target = reindex_group_time(
-        store,
-        "modis",
-        list(MODIS_VAR_NAMES),
-        expected_dates=expected_dates,
-        storage_options=opts.storage_options,
-    )
-    ok(f"Reindexed {year} modis group: {len(target)} time slot(s), ascending.")
+modis_archive_app = typer.Typer(help="Incremental MODIS yearly archive updates.")
+viirs_archive_app = typer.Typer(help="Incremental VIIRS yearly archive updates.")
+archive_app.add_typer(modis_archive_app, name="modis")
+archive_app.add_typer(viirs_archive_app, name="viirs")
+_register_archive_source_app(modis_archive_app, "modis")
+_register_archive_source_app(viirs_archive_app, "viirs")
 
 
 def _format_missing_ranges(ranges: list[tuple[date, date]] | None) -> str:

@@ -264,13 +264,18 @@ validate-gfm = "PYTHONPATH=src python -m atlantis.cli validate-gfm --require-raw
 web = "PYTHONPATH=src python -m atlantis.cli web launch --host 0.0.0.0 --port 8080"
 
 # ============================================================================
-# Incremental MODIS archive updates (atlantis archive modis update)
+# Incremental archive updates (atlantis archive {modis,viirs} update)
 # ============================================================================
 
 modis-archive-update = "PYTHONPATH=src python -m atlantis.cli archive modis update --foreground"
 modis-archive-update-dry-run = "PYTHONPATH=src python -m atlantis.cli archive modis update --foreground --dry-run"
 modis-archive-status = "PYTHONPATH=src python -m atlantis.cli archive modis status"
 modis-archive-seed-tracker = "PYTHONPATH=src python -m atlantis.cli archive modis seed-tracker"
+
+viirs-archive-update = "PYTHONPATH=src python -m atlantis.cli archive viirs update --foreground"
+viirs-archive-update-dry-run = "PYTHONPATH=src python -m atlantis.cli archive viirs update --foreground --dry-run"
+viirs-archive-status = "PYTHONPATH=src python -m atlantis.cli archive viirs status"
+viirs-archive-seed-tracker = "PYTHONPATH=src python -m atlantis.cli archive viirs seed-tracker"
 
 # ============================================================================
 # GEOID-Flood event archive (metadata → AOI blocks → GFM cube)
