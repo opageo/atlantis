@@ -80,7 +80,6 @@ class UpdateError(RuntimeError):
 class UpdateOptions:
     """Resolved options for an update run (mirrors the CLI surface)."""
 
-    source: str = "modis"  # "modis" | "viirs" — cube group, catalogues, harmoniser
     year: int | None = None
     start: date | None = None
     end: date | None = None
@@ -98,6 +97,7 @@ class UpdateOptions:
     log_every: int = 50
     dry_run: bool = False
     retry_failed: bool = True
+    source: str = "modis"  # "modis" | "viirs" — cube group, catalogues, harmoniser
     storage_options: dict[str, Any] | None = None
     catalogue_builder: Callable | None = None  # injectable for tests
     today: date | None = None  # injectable clock for tests

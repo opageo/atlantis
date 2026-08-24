@@ -52,6 +52,18 @@ def _opts(tmp_path, **kw) -> UpdateOptions:
     return UpdateOptions(**defaults)
 
 
+def test_update_options_preserves_positional_year_start_end():
+    start = date(2026, 1, 2)
+    end = date(2026, 1, 3)
+
+    opts = UpdateOptions(2026, start, end)
+
+    assert opts.year == 2026
+    assert opts.start == start
+    assert opts.end == end
+    assert opts.source == "modis"
+
+
 def _catalogue_df(rows):
     return pd.DataFrame(rows, columns=["date", "h", "v", "task_id", "source_uri"])
 
