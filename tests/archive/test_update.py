@@ -1565,3 +1565,164 @@ class TestIntegration:
         manifests = sorted((tmp_path / "state" / "2026" / "manifests").glob("*.json"))
         assert manifests and json.loads(manifests[-1].read_text())["status"] == "failed"
         assert (tmp_path / "backup" / "2026" / "cube_tracker.db").exists()
+
+
+# ── VIIRS integration (local store, fake catalogue + fake batch engine) ──────
+
+
+def _viirs_opts(tmp_path, **kw) -> UpdateOptions:
+    defaults = dict(
+        source="viirs",
+        state_root=tmp_path / "state",
+        archive_base=str(tmp_path / "zarr"),
+        catalogue_base=str(tmp_path / "assets"),
+        backup_base=str(tmp_path / "backup"),
+    )
+    defaults.update(kw)
+    return UpdateOptions(**defaults)
+
+
+def _viirs_rows(days, aois, year=2026):
+    """Raw VIIRS inventory rows (``date, aoi_id, s3_key``) for January day numbers."""
+    rows = []
+    for d in days:
+        ds = f"{year}-01-{d:02d}"
+        for aoi in aois:
+            s3_key = (
+                f"JPSS_Blended_Products/VFM_1day_GLB/TIF/{year}/01/{d:02d}/"
+                f"VIIRS-Flood-1day-GLB{aoi:03d}_v1r0_blend_s{year}01{d:02d}0000000"
+                f"_e{year}01{d:02d}2359590_c1.tif"
+            )
+            rows.append({"date": ds, "aoi_id": aoi, "s3_key": s3_key})
+    return rows
+
+
+class FakeViirsCatalogueBuilder:
+    """Builds a VIIRS parquet catalogue for a window from a fixed AOI set (no network)."""
+
+    def __init__(self, year, aois, dates=None):
+        self.year = year
+        self.aois = aois
+        self.dates = dates
+        self.calls = []
+
+    def __call__(self, start, end, output, on_progress=None):
+        self.calls.append((start, end))
+        if self.dates is None:
+            s, e = date.fromisoformat(start), date.fromisoformat(end)
+            days = [s + timedelta(days=i) for i in range((e - s).days + 1)]
+        else:
+            days = self.dates
+        rows = []
+        for d in days:
+            rows.extend(_viirs_rows([d.day], self.aois, year=d.year) if d.year == self.year else [])
+        pd.DataFrame(rows, columns=["date", "aoi_id", "s3_key"]).to_parquet(output, index=False)
+        return output
+
+
+def _viirs_payload_for(task, value=50):
+    """Synthetic harmonised payload for one AOI window (0–5° box)."""
+    window = grid.bounds_to_window(0.0, 0.0, 5.0, 5.0)
+    y = grid.global_y_coords()[window.row_start : window.row_stop]
+    x = grid.global_x_coords()[window.col_start : window.col_stop]
+    shape = (len(y), len(x))
+    return {
+        "task_id": task["task_id"],
+        "date": task["date"],
+        "aoi_id": int(task["aoi_id"]),
+        "water_fraction": np.full(shape, value, dtype="uint8"),
+        "exclusion_mask": np.zeros(shape, dtype="uint8"),
+        "reference_water": np.zeros(shape, dtype="uint8"),
+        "cloud_mask": np.zeros(shape, dtype="uint8"),
+        "snow_ice": np.zeros(shape, dtype="uint8"),
+        "shadow": np.zeros(shape, dtype="uint8"),
+        "y": y,
+        "x": x,
+    }
+
+
+def _build_legacy_viirs_axis(opts, year, dates, aois=None):
+    """Write *dates* through a non-prefilled viirs writer session (legacy-style archive)."""
+    from atlantis.archive.update import VIIRS_VAR_NAMES
+    from atlantis.archive.writer import ArchiveWriter
+
+    aois = aois or [3]
+    writer = ArchiveWriter(archive_root(opts, year))
+    with writer.session("viirs", list(VIIRS_VAR_NAMES)) as session:
+        for d in dates:
+            for aoi in aois:
+                task = {"task_id": f"viirs-{d:%Y%m%d}-aoi{aoi:03d}", "date": d.isoformat(), "aoi_id": aoi}
+                session.write(_payload_to_dataset(_viirs_payload_for(task)), time=d)
+
+
+class TestViirsIntegration:
+    AOIS = [3, 7]
+
+    def _setup(self, tmp_path, monkeypatch, year=2026, dates=None):
+        opts = _viirs_opts(tmp_path)
+        opts.catalogue_builder = FakeViirsCatalogueBuilder(year, self.AOIS, dates=dates)
+        monkeypatch.setattr("atlantis.fetchers.viirs.batch_processor.harmonise_granule_payload", _viirs_payload_for)
+        monkeypatch.setattr("atlantis.fetchers.viirs.catalog.bounds_from_aoi_id", lambda aoi: (0.0, 0.0, 5.0, 5.0))
+        return opts
+
+    def _run_window(self, opts, monkeypatch, start, end, fail_task_ids=()):
+        fake_run = _fake_run_cube_batch(_viirs_payload_for, fail_task_ids)
+        monkeypatch.setattr("atlantis.archive.update.run_cube_batch", fake_run)
+        opts.start, opts.end = start, end
+        return run_update(opts)
+
+    def test_new_year_prefills_axis_and_weekly_append(self, tmp_path, monkeypatch):
+        """A new VIIRS year pre-fills the axis; weekly runs append into existing slots."""
+        from atlantis.archive.update import _source_group
+
+        year = 2026
+        opts = self._setup(tmp_path, monkeypatch, year, dates=[date(2026, 1, 1), date(2026, 1, 2)])
+        summary = self._run_window(opts, monkeypatch, date(2026, 1, 1), date(2026, 1, 2))
+        assert summary["status"] == "ok"
+        _, axis = read_archive_dates(opts, year)
+        assert len(axis) == 365 and axis[0] == date(2026, 1, 1) and axis[-1] == date(2026, 12, 31)
+        assert group_is_prefilled(_source_group(opts, year))
+        assert summary["years"][0]["watermark"] == "2026-01-02"
+
+        opts.catalogue_builder = FakeViirsCatalogueBuilder(
+            year, self.AOIS, dates=[date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3)]
+        )
+        summary = self._run_window(opts, monkeypatch, date(2026, 1, 2), date(2026, 1, 3))
+        _, axis = read_archive_dates(opts, year)
+        assert len(axis) == 365
+        assert summary["years"][0]["watermark"] == "2026-01-03"
+
+        manifests = sorted((tmp_path / "state" / str(year) / "manifests").glob("*.json"))
+        assert len(manifests) == 2
+        last = json.loads(manifests[-1].read_text())
+        assert last["status"] == "ok" and last["source"] == "viirs" and last["watermark"] == "2026-01-03"
+        backup = tmp_path / "backup" / str(year)
+        assert (backup / "viirs-2026.parquet").exists()
+        assert (backup / "cube_tracker.db").exists()
+        s = stats(tracker_path(opts, year))
+        assert s.get("DONE") == 6 and s.get("FAILED", 0) == 0
+
+    def test_seed_tracker_marks_axis_dates_done(self, tmp_path, monkeypatch):
+        """VIIRS seed-tracker: axis dates seed DONE from the catalogue, idempotently."""
+        from atlantis.archive.update import refresh_catalogue, seed_tracker
+
+        year = 2025
+        dates = [date(2025, 1, 1), date(2025, 1, 2)]
+        opts = self._setup(tmp_path, monkeypatch, year, dates=dates)
+        refresh_catalogue(opts, year, dates[0], dates[-1], "r1")
+        _build_legacy_viirs_axis(opts, year, dates, self.AOIS)
+        summary = seed_tracker(opts, year)  # no tracker exists yet: seed from the archive
+        assert summary["seeded"] == 4  # 2 dates × 2 AOIs on the axis
+        done = {tid for tid, st in read_tracker(tracker_path(opts, year)).items() if st == "DONE"}
+        assert done == set(pd.read_parquet(catalogue_uri(opts, year))["task_id"])
+
+    def test_status_report_viirs(self, tmp_path, monkeypatch):
+        opts = self._setup(tmp_path, monkeypatch, 2026, dates=[date(2026, 1, 1)])
+        self._run_window(opts, monkeypatch, date(2026, 1, 1), date(2026, 1, 1))
+        report = status_report(opts, 2026)
+        assert report["tracker_exists"] is True
+        assert report["watermark"] == date(2026, 1, 1)
+        assert report["expected_tasks"] == 2 and report["pending_tasks"] == 0
+        assert report["prefilled_year"] is True
+        assert report["missing_ranges"] == []
+        assert report["last_manifest"]["source"] == "viirs"
