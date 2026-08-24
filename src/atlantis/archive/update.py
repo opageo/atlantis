@@ -97,10 +97,10 @@ class UpdateOptions:
     log_every: int = 50
     dry_run: bool = False
     retry_failed: bool = True
-    source: str = "modis"  # "modis" | "viirs" — cube group, catalogues, harmoniser
     storage_options: dict[str, Any] | None = None
     catalogue_builder: Callable | None = None  # injectable for tests
     today: date | None = None  # injectable clock for tests
+    source: str = "modis"  # "modis" | "viirs" — cube group, catalogues, harmoniser
 
     def __post_init__(self) -> None:
         defaults = {
@@ -115,7 +115,9 @@ class UpdateOptions:
                 "s3://atlantis/archive-state/viirs",
             ),
         }
-        state_root, catalogue_base, backup_base = defaults.get(self.source, defaults["modis"])
+        if self.source not in defaults:
+            raise ValueError(f"unsupported archive source: {self.source!r}")
+        state_root, catalogue_base, backup_base = defaults[self.source]
         if self.state_root is None:
             self.state_root = state_root
         if self.catalogue_base is None:
@@ -160,17 +162,19 @@ def _source_spec(opts: UpdateOptions) -> dict[str, Any]:
             "sample_bounds": lambda t: bounds_from_aoi_id(int(t["aoi_id"])),
             "consume_label": lambda payload: f"aoi{int(payload['aoi_id']):03d}",
         }
-    return {
-        "var_names": MODIS_VAR_NAMES,
-        "harmoniser": harmonise_modis_granule_payload,
-        "to_tasks": to_tasks,
-        "catalogue_builder": build_catalog,
-        "probe": probe_download,
-        "dedupe": ("date", "h", "v"),
-        "required": _REQUIRED_CATALOGUE_COLUMNS,
-        "sample_bounds": lambda t: tile_bounds_from_hv(int(t["h"]), int(t["v"])),
-        "consume_label": lambda payload: f"h{int(payload['h']):02d}v{int(payload['v']):02d}",
-    }
+    if opts.source == "modis":
+        return {
+            "var_names": MODIS_VAR_NAMES,
+            "harmoniser": harmonise_modis_granule_payload,
+            "to_tasks": to_tasks,
+            "catalogue_builder": build_catalog,
+            "probe": probe_download,
+            "dedupe": ("date", "h", "v"),
+            "required": _REQUIRED_CATALOGUE_COLUMNS,
+            "sample_bounds": lambda t: tile_bounds_from_hv(int(t["h"]), int(t["v"])),
+            "consume_label": lambda payload: f"h{int(payload['h']):02d}v{int(payload['v']):02d}",
+        }
+    raise ValueError(f"unsupported archive source: {opts.source!r}")
 
 
 @dataclass
@@ -1080,6 +1084,8 @@ def seed_tracker(opts: UpdateOptions, year: int, *, dry_run: bool = False) -> di
     df = _load_year_catalogue(opts, year)
     if df is None:
         raise UpdateError(f"no catalogue found for {year}")
+    spec = _source_spec(opts)
+    df = pd.DataFrame(spec["to_tasks"](df))
     group = _source_group(opts, year)
     archive_dates, axis = read_archive_dates(opts, year, group)
     if not axis:
@@ -1140,6 +1146,7 @@ def status_report(opts: UpdateOptions, year: int) -> dict[str, Any]:
     prefilled = group is not None and group_is_prefilled(group)
     report["prefilled_year"] = prefilled
     if df is not None:
+        df = pd.DataFrame(_source_spec(opts)["to_tasks"](df))
         tracker_rows = read_tracker(db) if db.exists() else {}
         report["date_states"] = date_states(df, tracker_rows)
         report["state_counts"], report["state_ranges"] = state_summary(df, tracker_rows, year)
