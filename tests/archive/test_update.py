@@ -180,6 +180,12 @@ def _any_year_builder(start, end, output, on_progress=None):
 
 
 class TestRoutingAndWindows:
+    def test_source_defaults(self):
+        opts = UpdateOptions(source="viirs")
+        assert opts.state_root == Path("/mnt/atlantis-state/viirs")
+        assert opts.catalogue_base == "s3://atlantis/assets/viirs"
+        assert opts.backup_base == "s3://atlantis/archive-state/viirs"
+
     def test_archive_root_per_year(self, tmp_path):
         opts = _opts(tmp_path)
         assert archive_root(opts, 2025) == f"{tmp_path}/zarr/2025"

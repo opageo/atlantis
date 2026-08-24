@@ -87,9 +87,9 @@ class UpdateOptions:
     lookback_days: int = 14
     availability_lag_days: int = 7
     archive_base: str = "s3://atlantis/zarr"
-    state_root: Path = Path("/mnt/atlantis-state/modis")
-    catalogue_base: str = "s3://atlantis/assets/modis"
-    backup_base: str = "s3://atlantis/archive-state/modis"
+    state_root: Path | None = None
+    catalogue_base: str | None = None
+    backup_base: str | None = None
     workers_min: int = 2
     workers_max: int = 6
     memory_limit: str = "2.5GB"
@@ -101,6 +101,27 @@ class UpdateOptions:
     storage_options: dict[str, Any] | None = None
     catalogue_builder: Callable | None = None  # injectable for tests
     today: date | None = None  # injectable clock for tests
+
+    def __post_init__(self) -> None:
+        defaults = {
+            "modis": (
+                Path("/mnt/atlantis-state/modis"),
+                "s3://atlantis/assets/modis",
+                "s3://atlantis/archive-state/modis",
+            ),
+            "viirs": (
+                Path("/mnt/atlantis-state/viirs"),
+                "s3://atlantis/assets/viirs",
+                "s3://atlantis/archive-state/viirs",
+            ),
+        }
+        state_root, catalogue_base, backup_base = defaults.get(self.source, defaults["modis"])
+        if self.state_root is None:
+            self.state_root = state_root
+        if self.catalogue_base is None:
+            self.catalogue_base = catalogue_base
+        if self.backup_base is None:
+            self.backup_base = backup_base
 
 
 @dataclass(frozen=True)
