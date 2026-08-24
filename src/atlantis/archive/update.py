@@ -1,8 +1,8 @@
-"""Incremental MODIS yearly archive updates (orchestration).
+"""Incremental yearly archive updates — orchestration (MODIS, VIIRS).
 
-Wraps the existing building blocks — ``batch modis catalog`` (LAADS inventory),
-the resume-safe cube batch engine, the SQLite tracker, and ``ArchiveWriter`` —
-into a yearly update flow:
+Wraps the existing building blocks — the source catalogue builders (LAADS /
+NOAA S3 inventories), the resume-safe cube batch engine, the SQLite tracker,
+and ``ArchiveWriter`` — into a yearly update flow:
 
 1. refresh + merge the year's yearly catalogue (candidate-then-promote);
 2. reconcile expected task IDs against the tracker and the archive (requeue
@@ -12,11 +12,13 @@ into a yearly update flow:
 4. validate, advance the contiguous watermark, and write an immutable run
    manifest; back up tracker/manifest/catalogue in a ``finally`` path.
 
-Invariants: one writer per MODIS year (per-year lock), the tracker is the
+Invariants: one writer per source-year (per-year lock), the tracker is the
 task-level source of truth, a ``DONE`` task is trusted only when its date
 exists on the archive axis, and an older missing date is never appended at the
 physical end of the time axis (append-only policy — earlier holes require
-``atlantis archive modis _reindex-time`` first).
+``atlantis archive <source> _reindex-time`` first). The per-source differences
+(group name, cube schema, harmoniser, tile scheme, preflight probe) live in
+:func:`_source_spec`.
 """
 
 from __future__ import annotations
@@ -55,6 +57,9 @@ from atlantis.utils.io import DownloadContentError
 
 MODIS_VAR_NAMES = ("water_fraction", "exclusion_mask", "reference_water", "recurring_flood")
 
+#: VIIRS cube schema (mirrors ``run_viirs_cube_batch``).
+VIIRS_VAR_NAMES = ("water_fraction", "exclusion_mask", "reference_water", "cloud_mask", "snow_ice", "shadow")
+
 #: Lock is stale when its owning PID is gone or it is older than this.
 LOCK_MAX_AGE = timedelta(hours=24)
 
@@ -75,6 +80,7 @@ class UpdateError(RuntimeError):
 class UpdateOptions:
     """Resolved options for an update run (mirrors the CLI surface)."""
 
+    source: str = "modis"  # "modis" | "viirs" — cube group, catalogues, harmoniser
     year: int | None = None
     start: date | None = None
     end: date | None = None
@@ -105,6 +111,45 @@ class YearWindow:
     start: date
     end: date
     kind: str  # "reconciliation" | "catch-up" | "weekly"
+
+
+def _source_spec(opts: UpdateOptions) -> dict[str, Any]:
+    """Per-source functions and schema names for an update run.
+
+    Resolved lazily (callables looked up through module globals / fresh
+    imports at call time) so tests can keep monkeypatching
+    ``harmonise_modis_granule_payload`` / ``probe_download`` /
+    ``run_cube_batch`` on this module. ``probe`` is ``None`` for sources with
+    no auth preflight (VIIRS NOAA S3 is public).
+    """
+    if opts.source == "viirs":
+        from atlantis.fetchers.viirs.batch_processor import harmonise_granule_payload
+        from atlantis.fetchers.viirs.catalog import bounds_from_aoi_id
+        from atlantis.fetchers.viirs.catalog import build_catalog as build_viirs_catalog
+        from atlantis.fetchers.viirs.inventory import to_tasks as to_viirs_tasks
+
+        return {
+            "var_names": VIIRS_VAR_NAMES,
+            "harmoniser": harmonise_granule_payload,
+            "to_tasks": to_viirs_tasks,
+            "catalogue_builder": build_viirs_catalog,
+            "probe": None,
+            "dedupe": ("date", "aoi_id"),
+            "required": ("date", "aoi_id", "task_id", "source_uri"),
+            "sample_bounds": lambda t: bounds_from_aoi_id(int(t["aoi_id"])),
+            "consume_label": lambda payload: f"aoi{int(payload['aoi_id']):03d}",
+        }
+    return {
+        "var_names": MODIS_VAR_NAMES,
+        "harmoniser": harmonise_modis_granule_payload,
+        "to_tasks": to_tasks,
+        "catalogue_builder": build_catalog,
+        "probe": probe_download,
+        "dedupe": ("date", "h", "v"),
+        "required": _REQUIRED_CATALOGUE_COLUMNS,
+        "sample_bounds": lambda t: tile_bounds_from_hv(int(t["h"]), int(t["v"])),
+        "consume_label": lambda payload: f"h{int(payload['h']):02d}v{int(payload['v']):02d}",
+    }
 
 
 @dataclass
@@ -143,7 +188,7 @@ def logs_dir(opts: UpdateOptions, year: int) -> Path:
 
 
 def local_catalogue_path(opts: UpdateOptions, year: int) -> Path:
-    return year_state_dir(opts, year) / "catalogues" / f"modis-{year}.parquet"
+    return year_state_dir(opts, year) / "catalogues" / f"{opts.source}-{year}.parquet"
 
 
 def archive_root(opts: UpdateOptions, year: int) -> str:
@@ -151,7 +196,7 @@ def archive_root(opts: UpdateOptions, year: int) -> str:
 
 
 def catalogue_uri(opts: UpdateOptions, year: int) -> str:
-    return f"{opts.catalogue_base.rstrip('/')}/modis_archive_catalog_{year}.parquet"
+    return f"{opts.catalogue_base.rstrip('/')}/{opts.source}_archive_catalog_{year}.parquet"
 
 
 def _now_iso() -> str:
@@ -414,7 +459,8 @@ def refresh_catalogue(
     Returns:
         ``(full-year catalogue df, sha256 of the promoted bytes)``.
     """
-    builder = opts.catalogue_builder or build_catalog
+    spec = _source_spec(opts)
+    builder = opts.catalogue_builder or spec["catalogue_builder"]
     cdir = year_state_dir(opts, year) / "catalogues"
     cdir.mkdir(parents=True, exist_ok=True)
     fresh = cdir / f"fresh-{run_id}.parquet"
@@ -422,6 +468,13 @@ def refresh_catalogue(
     logger.info("Refreshing catalogue {} → {} for {}", start, end, year)
     builder(start=start.isoformat(), end=end.isoformat(), output=str(fresh), on_progress=None)
     new_rows = pd.read_parquet(fresh)
+    # Some builders (VIIRS) write only the raw inventory; derive the task
+    # columns from the same ``to_tasks`` the batch engine uses.
+    missing_task_cols = [col for col in ("task_id", "source_uri") if col not in new_rows.columns]
+    if missing_task_cols:
+        derived = spec["to_tasks"](new_rows)
+        for col in missing_task_cols:
+            new_rows[col] = [t[col] for t in derived]
 
     existing = None
     uri = catalogue_uri(opts, year)
@@ -430,12 +483,12 @@ def refresh_catalogue(
 
     combined = new_rows if existing is None else pd.concat([existing, new_rows], ignore_index=True)
     combined["date"] = pd.to_datetime(combined["date"]).dt.strftime("%Y-%m-%d")
-    # Same tile republished by LAADS: the fresh row (later in the concat) wins.
-    combined = combined.drop_duplicates(subset=["date", "h", "v"], keep="last")
-    combined = combined.sort_values(["date", "h", "v"], ignore_index=True)
+    # Same tile republished by the source: the fresh row (later in the concat) wins.
+    combined = combined.drop_duplicates(subset=list(spec["dedupe"]), keep="last")
+    combined = combined.sort_values(["date", *spec["dedupe"][1:]], ignore_index=True)
     year_start, year_end = f"{year}-01-01", f"{year}-12-31"
     combined = combined[(combined["date"] >= year_start) & (combined["date"] <= year_end)]
-    _validate_catalogue(combined, year)
+    _validate_catalogue(combined, year, spec["required"])
 
     local = local_catalogue_path(opts, year)
     combined.to_parquet(local, index=False)
@@ -445,8 +498,8 @@ def refresh_catalogue(
     return combined, checksum
 
 
-def _validate_catalogue(df: pd.DataFrame, year: int) -> None:
-    missing = [c for c in _REQUIRED_CATALOGUE_COLUMNS if c not in df.columns]
+def _validate_catalogue(df: pd.DataFrame, year: int, required: tuple[str, ...] = _REQUIRED_CATALOGUE_COLUMNS) -> None:
+    missing = [c for c in required if c not in df.columns]
     if missing:
         raise UpdateError(f"catalogue for {year} is missing columns {missing}")
     if df.empty:
@@ -529,30 +582,35 @@ def read_archive_dates(
     year: int,
     group: Any | None = None,
 ) -> tuple[set[date], list[date]]:
-    """Return ``(dates on the year's modis time axis, sorted axis list)``.
+    """Return ``(dates on the year's source-group time axis, sorted axis list)``.
 
-    A year whose archive store does not exist yet (or has no ``modis`` group)
-    yields an empty axis. Pass an already-opened *group* (e.g. from
-    :func:`_modis_group`, to also read the prefill marker) to avoid a second
+    A year whose archive store does not exist yet (or has no ``opts.source``
+    group) yields an empty axis. Pass an already-opened *group* (e.g. from
+    :func:`_source_group`, to also read the prefill marker) to avoid a second
     store open.
     """
     if group is None:
-        group = _modis_group(opts, year)
+        group = _source_group(opts, year)
     if group is None:
         return set(), []
     axis = sorted(datacube.decode_axis_dates(group))
     return set(axis), axis
 
 
-def _modis_group(opts: UpdateOptions, year: int) -> Any | None:
-    """Open the year's ``modis`` group read-only, or None when absent."""
+def _source_group(opts: UpdateOptions, year: int) -> Any | None:
+    """Open the year's source group (``opts.source``) read-only, or None when absent."""
     import zarr
 
     store = store_for(archive_root(opts, year), "datacube.zarr", opts.storage_options)
     try:
-        return datacube.open_root(store, mode="r")["modis"]
+        return datacube.open_root(store, mode="r")[opts.source]
     except (KeyError, FileNotFoundError, zarr.errors.GroupNotFoundError):
         return None
+
+
+def _modis_group(opts: UpdateOptions, year: int) -> Any | None:
+    """Open the year's ``modis`` group read-only (back-compat alias)."""
+    return _source_group(opts, year)
 
 
 def group_is_prefilled(group: Any) -> bool:
@@ -576,7 +634,7 @@ def check_holes(opts: UpdateOptions, window: YearWindow, expected_dates: set[dat
     axis_max = max(archive_dates)
     holes = sorted(d for d in expected_dates - archive_dates if d < axis_max)
     if holes:
-        cmd = f"`atlantis archive modis _reindex-time --year {opts.year or window.year}`"
+        cmd = f"`atlantis archive {opts.source} _reindex-time --year {opts.year or window.year}`"
         raise UpdateError(
             f"append-only policy: earlier hole(s) {holes[0]} … {holes[-1]} below axis tail {axis_max} "
             f"require the offline migration first: {cmd}"
@@ -596,16 +654,21 @@ def check_samples(opts: UpdateOptions, year: int, samples: list[dict[str, Any]])
     """Warn when a sampled DONE tile window is entirely NODATA (diagnostic)."""
     if not samples:
         return
+    bounds_fn = _source_spec(opts)["sample_bounds"]
     store = store_for(archive_root(opts, year), "datacube.zarr", opts.storage_options)
-    group = datacube.open_root(store, mode="r")["modis"]
+    group = datacube.open_root(store, mode="r")[opts.source]
     units = group["time"].attrs.get("units", "days since 2020-01-01")
     epoch = str(units).rsplit("since ", 1)[-1].strip()
     times = np.asarray(group["time"][:], dtype="int64")
     arr = group["water_fraction"]
     for t in samples:
+        try:
+            west, south, east, north = bounds_fn(t)
+            window = grid.bounds_to_window(west, south, east, north)
+        except Exception as exc:  # noqa: BLE001 - sampling is diagnostic-only
+            logger.warning("sample bounds unavailable for {} ({}) — skipping sample check", t["task_id"], exc)
+            continue
         time_idx = int(np.where(times == datacube.date_to_int(_to_date(t["date"]), epoch))[0][0])
-        west, south, east, north = tile_bounds_from_hv(int(t["h"]), int(t["v"]))
-        window = grid.bounds_to_window(west, south, east, north)
         block = arr[time_idx, window.row_start : window.row_stop, window.col_start : window.col_stop]
         if not np.any(block != 255):
             logger.warning("sample {} is all-NODATA in the archive", t["task_id"])
@@ -702,6 +765,7 @@ def _probe_pending_download(
 
 def run_window_batch(opts: UpdateOptions, year: int, tasks: list[dict[str, Any]], db_path: Path) -> dict[str, int]:
     """Run the cube batch for *tasks* with an ascending-order writer session."""
+    spec = _source_spec(opts)
     archive = archive_root(opts, year)
     writer = ArchiveWriter(archive, None, storage_options=opts.storage_options)
     cfg = BatchConfig(
@@ -713,14 +777,14 @@ def run_window_batch(opts: UpdateOptions, year: int, tasks: list[dict[str, Any]]
         retries=opts.retries,
         log_every=opts.log_every,
     )
-    with writer.session("modis", list(MODIS_VAR_NAMES), prefill_year=year) as session:
+    with writer.session(opts.source, list(spec["var_names"]), prefill_year=year) as session:
         ordered = OrderedConsume(session, db_path, tasks)
 
         def consume(payload: dict[str, Any]) -> str:
             ordered.write(_payload_to_dataset(payload), time=_to_date(payload["date"]))
-            return f"{archive}#modis/{payload['date']}/h{int(payload['h']):02d}v{int(payload['v']):02d}"
+            return f"{archive}#{opts.source}/{payload['date']}/{spec['consume_label'](payload)}"
 
-        final = run_cube_batch(tasks, harmonise_modis_granule_payload, consume, cfg)
+        final = run_cube_batch(tasks, spec["harmoniser"], consume, cfg)
         ordered.drain()
     return final
 
@@ -745,7 +809,7 @@ def write_manifest(
 ) -> Path:
     manifest = {
         "run_id": run_id,
-        "source": "modis",
+        "source": opts.source,
         "year": window.year,
         "window": {"start": window.start.isoformat(), "end": window.end.isoformat(), "kind": window.kind},
         "archive_root": archive_root(opts, window.year),
@@ -846,17 +910,19 @@ def _run_year(opts: UpdateOptions, window: YearWindow, run_id: str) -> dict[str,
     backed_up = False
     try:
         with YearLock(opts, year):
-            modis_group = _modis_group(opts, year)
-            prefilled = modis_group is not None and group_is_prefilled(modis_group)
-            archive_dates, axis = read_archive_dates(opts, year, modis_group)
+            spec = _source_spec(opts)
+            source_group = _source_group(opts, year)
+            prefilled = source_group is not None and group_is_prefilled(source_group)
+            archive_dates, axis = read_archive_dates(opts, year, source_group)
             print(
-                f"[modis {year} {window.kind}] window {window.start} → {window.end} "
+                f"[{opts.source} {year} {window.kind}] window {window.start} → {window.end} "
                 f"· archive {archive_root(opts, year)} · tracker {db} · axis {len(axis)} date(s)"
             )
             if prefilled:
                 logger.info(
-                    "[modis {}] prefilled year: the time axis contains every day by construction, "
+                    "[{} {}] prefilled year: the time axis contains every day by construction, "
                     "so the DONE-but-missing requeue heuristic is inert",
+                    opts.source,
                     year,
                 )
             if opts.dry_run:
@@ -865,14 +931,14 @@ def _run_year(opts: UpdateOptions, window: YearWindow, run_id: str) -> dict[str,
             init_db(db)
             df, checksum = refresh_catalogue(opts, year, window.start, window.end, run_id)
             window_df = df[(df["date"] >= window.start.isoformat()) & (df["date"] <= window.end.isoformat())]
-            tasks = to_tasks(window_df)
+            tasks = spec["to_tasks"](window_df)
             tracker_rows = read_tracker(db)
             if not opts.retry_failed:
                 failed_ids = {tid for tid, status in tracker_rows.items() if status == "FAILED"}
                 skipped = [t for t in tasks if t["task_id"] in failed_ids]
                 tasks = [t for t in tasks if t["task_id"] not in failed_ids]
                 if skipped:
-                    print(f"[modis {year}] --no-retry-failed: leaving {len(skipped)} FAILED task(s) unretried")
+                    print(f"[{opts.source} {year}] --no-retry-failed: leaving {len(skipped)} FAILED task(s) unretried")
 
             expected_dates = {_to_date(t["date"]) for t in tasks}
             check_holes(opts, window, expected_dates, archive_dates)
@@ -880,14 +946,15 @@ def _run_year(opts: UpdateOptions, window: YearWindow, run_id: str) -> dict[str,
             year_dates = {_to_date(d) for d in pd.to_datetime(df["date"]).dt.date}
             report = reconcile_window(tasks, tracker_rows, archive_dates, year_dates, db, prefilled=prefilled)
             print(
-                f"[modis {year}] expected {report.expected} · DONE {report.done} · FAILED "
+                f"[{opts.source} {year}] expected {report.expected} · DONE {report.done} · FAILED "
                 f"{report.failed} · missing {report.pending} · requeued {report.requeued} "
                 f"· orphans {len(report.orphan_dates)}"
             )
 
             final: dict[str, int] = {"total": 0, "DONE": 0, "FAILED": 0}
             if tasks and not opts.dry_run:
-                _probe_pending_download(tasks, db)
+                if spec["probe"] is not None:
+                    _probe_pending_download(tasks, db)
                 final = run_window_batch(opts, year, tasks, db)
 
             validate_year(opts, window, tasks, db)
@@ -988,13 +1055,13 @@ def seed_tracker(opts: UpdateOptions, year: int, *, dry_run: bool = False) -> di
     df = _load_year_catalogue(opts, year)
     if df is None:
         raise UpdateError(f"no catalogue found for {year}")
-    group = _modis_group(opts, year)
+    group = _source_group(opts, year)
     archive_dates, axis = read_archive_dates(opts, year, group)
     if not axis:
-        raise UpdateError(f"archive has no modis group for {year}")
+        raise UpdateError(f"archive has no {opts.source} group for {year}")
     if group is not None and group_is_prefilled(group):
         raise UpdateError(
-            f"cannot seed tracker for {year}: the modis time axis is prefilled "
+            f"cannot seed tracker for {year}: the {opts.source} time axis is prefilled "
             "(atlantis_time_prefill) — axis dates are not evidence of data; "
             "re-run the (resume-safe) cube build to rebuild the tracker, or use "
             "the tracker from the original build"
@@ -1043,7 +1110,7 @@ def status_report(opts: UpdateOptions, year: int) -> dict[str, Any]:
     report["catalogue_rows"] = None if df is None else int(len(df))
     report["watermark"] = last_complete_for_year(opts, year)
 
-    group = _modis_group(opts, year)
+    group = _source_group(opts, year)
     archive_dates, axis = read_archive_dates(opts, year, group)
     prefilled = group is not None and group_is_prefilled(group)
     report["prefilled_year"] = prefilled
@@ -1092,7 +1159,7 @@ def status_report(opts: UpdateOptions, year: int) -> dict[str, Any]:
 
 def build_worker_command(opts: UpdateOptions, run_id: str) -> list[str]:
     """The exact ``_run-update`` argv the tmux session will execute."""
-    args = ["python", "-m", "atlantis.cli", "archive", "modis", "_run-update"]
+    args = ["python", "-m", "atlantis.cli", "archive", opts.source, "_run-update"]
     if opts.year is not None:
         args += ["--year", str(opts.year)]
     if opts.start is not None:
@@ -1149,7 +1216,7 @@ def launch_tmux_update(
     worker = build_worker_command(opts, run_id)
     windows = resolve_windows(opts)
     first_year = opts.year if opts.year is not None else (windows[0].year if windows else date.today().year)
-    name = session_name or f"atlantis-modis-update-{first_year}-{run_id}"
+    name = session_name or f"atlantis-{opts.source}-update-{first_year}-{run_id}"
     log_path = logs_dir(opts, first_year) / f"{run_id}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
