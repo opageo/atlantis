@@ -69,6 +69,7 @@ Example: `pixi run atlantis --verbose fetch --event ...`
 | `batch viirs run`         | Batch-process the VIIRS JPSS catalogue → 1 arcmin COGs on S3 via Dask.    | implemented |
 | `batch viirs cube run`    | Build a consolidated Zarr v3 datacube from VIIRS granules (resume-safe).  | implemented |
 | `batch viirs cube status` | Report cube-build progress from the SQLite tracker (works offline).       | implemented |
+| `batch gfm cube run`      | Build the GFM cube — catalog mode (`--inventory`) or bbox × date window.  | implemented |
 
 ## `setup`
 
@@ -713,34 +714,74 @@ pixi run atlantis batch modis cube status [OPTIONS]
 
 ## `batch gfm cube run`
 
-Build a consolidated Zarr v3 datacube (`datacube.zarr`) from the GFM
-catalog. Same resume-safe, streaming engine as `batch viirs cube run` — see
-[archive/cube-build.md](archive/cube-build.md) for the shared-archive
-workflow and the GFM-specific settings below.
+Build a consolidated Zarr v3 datacube (`datacube.zarr`) from GFM — same
+resume-safe, streaming engine as `batch viirs cube run` (see
+[archive/cube-build.md](archive/cube-build.md) for the shared-archive workflow
+and the GFM-specific settings below). Two modes, selected by what you pass:
+
+- **Catalog mode** — pass `--inventory <catalog.parquet>` (the pre-built
+  global catalog from `batch gfm catalog`), optionally sliced with
+  `--partition`.
+- **Bbox mode** — omit `--inventory` and pass `--bbox` + `--start-date` +
+  `--end-date` to process whatever GFM exists inside an arbitrary bbox × date
+  window: catalogue-covered days (2021–2025) are built offline from the S3
+  catalogues, every other day is searched live on the EODC STAC API day by
+  day, and days without GFM items produce no tasks.
 
 ```bash
 pixi run atlantis batch gfm cube run [OPTIONS]
 ```
 
-| Option                 | Default                                                     | Description                                                                                                          |
-| ---------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `--inventory`, `-i`    | `s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet` | Path or S3 URI to the GFM catalog Parquet file.                                                                      |
-| `--archive`, `-a`      | `s3://atlantis/zarr/gfm_cube`                               | Cube root — a local directory or an `s3://` URI.                                                                     |
-| `--partition`          | full catalog                                                | Row slice of the catalog, e.g. `0:10000` (slices STAC-item rows, see cube-build.md §5).                              |
-| `--gfm-coarsen-factor` | `None` (→ `ATLANTIS_GFM_COARSEN_FACTOR` / `4`)              | Spatial coarsening factor before reprojection.                                                                       |
-| `--gfm-resampling`     | `None` (→ `ATLANTIS_GFM_RESAMPLING` / `average`)            | Resampling method for reprojection.                                                                                  |
-| `--gfm-window-size`    | `None` (→ `ATLANTIS_GFM_WINDOW_SIZE` / `5000`)              | Native pixels per window; `0` disables windowing.                                                                    |
-| `--workers-min`        | `2`                                                         | Minimum Dask worker processes.                                                                                       |
-| `--workers-max`        | `5`                                                         | Maximum Dask worker processes (adaptive).                                                                            |
-| `--memory-limit`       | `5GB`                                                       | Memory cap per worker.                                                                                               |
-| `--dashboard-port`     | `8789`                                                      | Dask dashboard port (distinct from VIIRS's `8787` / MODIS's `8788`).                                                 |
-| `--db-path`            | `gfm_cube_tracker.db`                                       | SQLite resume database path.                                                                                         |
-| `--retries`            | `3`                                                         | Dask retry count per cell.                                                                                           |
-| `--log-every`          | `50`                                                        | Log a progress line every N completions.                                                                             |
-| `--prefill-year`       | auto-detect from `zarr/<YYYY>` archive root                 | Pre-fill the `time` axis with every day of this year (365/366 slots) so any event date lands in a pre-existing slot. |
-| `--no-prefill`         | `False`                                                     | Disable time-axis prefill (overrides auto-detection and `--prefill-year`).                                           |
+| Option                 | Default                                          | Description                                                                                                          |
+| ---------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `--inventory`, `-i`    | — (catalog mode)                                 | Path or S3 URI to the GFM catalog Parquet file. Provide it for catalog mode; omit it for bbox mode.                  |
+| `--archive`, `-a`      | `s3://atlantis/zarr/gfm_cube`                    | Cube root — a local directory or an `s3://` URI.                                                                     |
+| `--partition`          | full catalog                                     | Row slice of the catalog, e.g. `0:10000` (slices STAC-item rows, see cube-build.md §5). Catalog mode only.           |
+| `--event`, `-e`        | `custom`                                         | Event id embedded in task ids and tracker keys. Bbox mode.                                                           |
+| `--bbox`               | — (bbox mode)                                    | Bounding box as `west south east north` (EPSG:4326). Selects bbox mode with the date flags.                          |
+| `--start-date`         | — (bbox mode)                                    | Start date `YYYY-MM-DD` (inclusive).                                                                                 |
+| `--end-date`           | — (bbox mode)                                    | End date `YYYY-MM-DD` (inclusive).                                                                                   |
+| `--buffer-km`          | `25.0`                                           | Widen the bbox by N km on all sides before tile selection (0 disables). Bbox mode.                                   |
+| `--tasks-only`         | `False`                                          | Only build and write the task list (JSON + `<tasks>.dropped.json`), do not run the batch.                            |
+| `--tasks`              | `data/benchmark/gfm_bbox_tasks_<event>.json`     | Task list JSON path (used with `--tasks-only`).                                                                      |
+| `--gfm-coarsen-factor` | `None` (→ `ATLANTIS_GFM_COARSEN_FACTOR` / `4`)   | Spatial coarsening factor before reprojection.                                                                       |
+| `--gfm-resampling`     | `None` (→ `ATLANTIS_GFM_RESAMPLING` / `average`) | Resampling method for reprojection.                                                                                  |
+| `--gfm-window-size`    | `None` (→ `ATLANTIS_GFM_WINDOW_SIZE` / `5000`)   | Native pixels per window; `0` disables windowing.                                                                    |
+| `--workers-min`        | `2`                                              | Minimum Dask worker processes.                                                                                       |
+| `--workers-max`        | `5`                                              | Maximum Dask worker processes (adaptive).                                                                            |
+| `--memory-limit`       | `5GB`                                            | Memory cap per worker.                                                                                               |
+| `--dashboard-port`     | `8789`                                           | Dask dashboard port (distinct from VIIRS's `8787` / MODIS's `8788`).                                                 |
+| `--db-path`            | `gfm_cube_tracker.db`                            | SQLite resume database path.                                                                                         |
+| `--retries`            | `3`                                              | Dask retry count per cell.                                                                                           |
+| `--log-every`          | `50`                                             | Log a progress line every N completions.                                                                             |
+| `--prefill-year`       | auto-detect from `zarr/<YYYY>` archive root      | Pre-fill the `time` axis with every day of this year (365/366 slots) so any event date lands in a pre-existing slot. |
+| `--no-prefill`         | `False`                                          | Disable time-axis prefill (overrides auto-detection and `--prefill-year`).                                           |
 
 With a `zarr/<YYYY>` archive root the run pre-fills the source group's `time`
 axis with the full year by default (see
 [archive/cube-build.md](archive/cube-build.md) → "Pre-filled time axis for
 year builds").
+
+Examples:
+
+```bash
+# catalog mode — process a slice of the pre-built catalog
+pixi run atlantis batch gfm cube run \
+  --inventory s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet \
+  --partition 0:10000
+
+# bbox mode — process the Valencia 2024 flood bbox over its flood window
+pixi run atlantis batch gfm cube run \
+  --bbox "-1.5 38.8 0.5 40.0" \
+  --start-date 2024-10-29 --end-date 2024-11-10 \
+  --archive s3://atlantis/zarr/gfm_cube
+
+# or inspect the scope first without running the batch:
+pixi run atlantis batch gfm cube run \
+  --bbox "-1.5 38.8 0.5 40.0" \
+  --start-date 2024-10-29 --end-date 2024-11-10 \
+  --tasks-only
+```
+
+The bbox-mode form is also exposed as the `backfill-gfm-bbox` pixi task
+(`--event --bbox --start --end`).

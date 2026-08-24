@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 
 import pandas as pd
@@ -168,6 +169,17 @@ def _fake_item(item_id, tile, bbox, href="s3://x/item.json"):
     return SimpleNamespace(id=item_id, self_href=href, properties={"Equi7Tile": tile}, bbox=bbox)
 
 
+class _RecordingBackend:
+    """STAC backend stand-in that records every searched event."""
+
+    def __init__(self, calls: list):
+        self.calls = calls
+
+    def search(self, event):
+        self.calls.append(event)
+        return []
+
+
 class TestBuildTasksLive:
     def test_groups_by_tile_and_reports_dropped(self, monkeypatch):
         from atlantis.fetchers.gfm import event_tasks as et
@@ -198,3 +210,104 @@ class TestBuildTasksLive:
             assert task["bbox"] == [14.7, 12.0, 15.3, 12.6]
         assert [d["item_id"] for d in dropped] == ["no-tile", "bad-bbox", "no-tile", "bad-bbox"]
         assert "reason" in dropped[0]
+
+
+class TestBuildTasksForWindow:
+    def test_catalogue_window_is_offline(self, monkeypatch):
+        import atlantis.fetchers.gfm.inventory as inventory_mod
+        from atlantis.fetchers.gfm import event_tasks as et
+
+        live_calls = []
+        monkeypatch.setattr(inventory_mod, "load_inventory", lambda uri: CATALOGUE)
+        monkeypatch.setattr(et, "GfmStacBackend", _RecordingBackend(live_calls))
+
+        tasks, dropped = et.build_tasks_for_window(
+            "custom", (14.79, 12.17, 14.92, 12.32), date(2021, 8, 1), date(2021, 8, 2), buffer_km=0
+        )
+
+        assert dropped == []
+        assert live_calls == []  # catalogue years are built offline, no live search
+        assert len(tasks) == 2
+        assert {t["date"] for t in tasks} == {"2021-08-01", "2021-08-02"}
+        assert all(t["event_id"] == "custom" and t["aoi_id"] == "1" for t in tasks)
+        assert all(t["equi7_tile"] == "AF020M_E030N066T3" for t in tasks)
+
+    def test_live_window_buffers_bbox_and_reports_dropped(self, monkeypatch):
+        from atlantis.fetchers.gfm import event_tasks as et
+
+        raw = (14.79, 12.17, 14.92, 12.32)
+        events_seen = []
+
+        class FakeBackend:
+            def search(self, event):
+                events_seen.append(event)
+                return [
+                    _fake_item("ok1", "AF020M_E030N066T3", [14.7, 12.0, 15.2, 12.5]),
+                    _fake_item("no-tile", None, [14.7, 12.0, 15.2, 12.5]),
+                ]
+
+        monkeypatch.setattr(et, "GfmStacBackend", FakeBackend)
+
+        tasks, dropped = et.build_tasks_for_window("custom", raw, date(2020, 8, 1), date(2020, 8, 2))
+
+        # 2020 is not a catalogue year → one live search per day, bbox buffered by 25 km
+        assert len(events_seen) == 2
+        assert events_seen[0].bbox == tuple(buffer_bbox(*raw, et.DEFAULT_AOI_BUFFER_KM))
+        assert len(tasks) == 2  # one valid item per day
+        assert [d["item_id"] for d in dropped] == ["no-tile", "no-tile"]
+
+    def test_buffer_km_zero_disables_buffering(self, monkeypatch):
+        from atlantis.fetchers.gfm import event_tasks as et
+
+        raw = (14.79, 12.17, 14.92, 12.32)
+        events_seen = []
+
+        class FakeBackend:
+            def search(self, event):
+                events_seen.append(event)
+                return []
+
+        monkeypatch.setattr(et, "GfmStacBackend", FakeBackend)
+
+        et.build_tasks_for_window("custom", raw, date(2020, 8, 1), date(2020, 8, 1), buffer_km=0)
+        assert events_seen[0].bbox == raw
+
+    def test_window_starting_in_catalogue_year_still_live_searches_beyond(self, monkeypatch):
+        import atlantis.fetchers.gfm.inventory as inventory_mod
+        from atlantis.fetchers.gfm import event_tasks as et
+
+        monkeypatch.setattr(inventory_mod, "load_inventory", lambda uri: CATALOGUE)
+        seen = {}
+
+        def fake_live(table, events, make_task_id):
+            seen["events"] = set(events)
+            seen["table_event"] = table["event_id"].iloc[0]
+            seen["table_dates"] = (table["date_start"].iloc[0], table["date_end"].iloc[0])
+            return [], []
+
+        monkeypatch.setattr(et, "build_tasks_live", fake_live)
+
+        # entirely within a catalogue year → offline only
+        et.build_tasks_for_window(
+            "custom", (14.79, 12.17, 14.92, 12.32), date(2021, 8, 1), date(2021, 8, 2), buffer_km=0
+        )
+        assert "events" not in seen
+
+        # window reaches a non-catalogue year → live is invoked for the window
+        et.build_tasks_for_window(
+            "custom", (14.79, 12.17, 14.92, 12.32), date(2021, 8, 1), date(2026, 1, 1), buffer_km=0
+        )
+        assert seen["events"] == {"custom"}
+        assert seen["table_dates"] == ("2021-08-01", "2026-01-01")
+
+    def test_invalid_bbox_raises(self):
+        from atlantis.fetchers.gfm.event_tasks import build_tasks_for_window as build
+
+        with pytest.raises(ValueError, match="invalid bbox"):
+            build("x", (15.2, 12.0, 14.7, 12.5), date(2020, 1, 1), date(2020, 1, 2), buffer_km=0)
+
+    def test_start_after_end_raises(self):
+        from atlantis.fetchers.gfm.event_tasks import build_tasks_for_window as build
+
+        with pytest.raises(ValueError, match="after end date"):
+            build("x", (1.0, 1.0, 2.0, 2.0), date(2020, 2, 1), date(2020, 1, 1), buffer_km=0)

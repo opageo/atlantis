@@ -318,6 +318,15 @@ args = [{ arg = "year" }, { arg = "events" }]
 default-environment = "events"
 
 # ============================================================================
+# Custom bbox × date-window GFM archive build (atlantis batch gfm cube run)
+# ============================================================================
+
+[tasks.backfill-gfm-bbox]
+cmd = "python -m atlantis.cli batch gfm cube run --event {{ event }} --bbox {{ bbox }} --start-date {{ start }} --end-date {{ end }}"
+args = [{ arg = "event" }, { arg = "bbox" }, { arg = "start" }, { arg = "end" }]
+default-environment = "events"
+
+# ============================================================================
 # VIIRS examples
 # ============================================================================
 

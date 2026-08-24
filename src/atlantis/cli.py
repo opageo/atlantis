@@ -23,6 +23,7 @@ from atlantis.config import HarmoniseConfig, get_config  # noqa: E402
 # Import fetchers to register them
 from atlantis.fetchers import fetcher_registry, get_fetcher, gfm, list_fetchers, modis, rfm, viirs  # noqa: E402, F401
 from atlantis.fetchers.base import FetchResult  # noqa: E402
+from atlantis.fetchers.gfm.event_tasks import DEFAULT_AOI_BUFFER_KM  # noqa: E402
 from atlantis.fetchers.viirs.layers import (  # noqa: E402
     DEFAULT_EXCLUDED_CATEGORIES,
     parse_category_list,
@@ -4039,11 +4040,15 @@ def _host_ram_bytes() -> int:
 
 @gfm_cube_app.command("run")
 def batch_gfm_cube(
-    inventory: str = typer.Option(
-        _GFM_CATALOGUE,
+    inventory: str | None = typer.Option(
+        None,
         "--inventory",
         "-i",
-        help="Path or S3 URI to the GFM catalog Parquet file.",
+        help=(
+            "Path or S3 URI to the GFM catalog Parquet file. Providing it selects "
+            "catalog mode; omitting it selects bbox mode (requires --bbox, "
+            "--start-date and --end-date)."
+        ),
     ),
     archive: str = typer.Option(
         "s3://atlantis/zarr/gfm_cube",
@@ -4054,7 +4059,43 @@ def batch_gfm_cube(
     partition: str | None = typer.Option(
         None,
         "--partition",
-        help="Row slice of the catalog to process, e.g. '0:10000'. None = full catalog.",
+        help="Row slice of the catalog to process, e.g. '0:10000'. None = full catalog (catalog mode only).",
+    ),
+    event: str = typer.Option(
+        "custom",
+        "--event",
+        "-e",
+        help="Event id embedded in task ids and tracker keys (bbox mode).",
+    ),
+    bbox: str | None = typer.Option(
+        None,
+        "--bbox",
+        help="Bounding box as 'west south east north' (EPSG:4326) — selects bbox mode.",
+    ),
+    start_date: str | None = typer.Option(
+        None,
+        "--start-date",
+        help="Start date YYYY-MM-DD (inclusive) — bbox mode.",
+    ),
+    end_date: str | None = typer.Option(
+        None,
+        "--end-date",
+        help="End date YYYY-MM-DD (inclusive) — bbox mode.",
+    ),
+    buffer_km: float = typer.Option(
+        DEFAULT_AOI_BUFFER_KM,
+        "--buffer-km",
+        help="Widen the bbox by N km on all sides before tile selection (0 disables) — bbox mode.",
+    ),
+    tasks_only: bool = typer.Option(
+        False,
+        "--tasks-only",
+        help="Only build and write the task list, do not run the batch.",
+    ),
+    tasks: Path | None = typer.Option(
+        None,
+        "--tasks",
+        help="Task list JSON path (default: data/benchmark/gfm_bbox_tasks_<event>.json in bbox mode).",
     ),
     coarsen_factor: int | None = typer.Option(
         None,
@@ -4117,12 +4158,23 @@ def batch_gfm_cube(
         help="Disable time-axis prefill (overrides auto-detection and --prefill-year).",
     ),
 ) -> None:
-    """Build the GFM datacube from the catalog — resume-safe and streaming.
+    """Build the GFM datacube — resume-safe and streaming.
+
+    Two modes, selected by what you pass:
+
+    * **Catalog mode** — pass ``--inventory <catalog.parquet>`` to process the
+      whole catalog (optionally sliced with ``--partition``). This is the
+      pre-built global catalog from ``batch gfm catalog``.
+    * **Bbox mode** — omit ``--inventory`` and pass ``--bbox`` +
+      ``--start-date`` + ``--end-date`` to process whatever GFM exists inside
+      an arbitrary bbox × date window (catalogue-covered days 2021–2025 built
+      offline, the rest searched live on the EODC STAC API day by day).
 
     Dask harmonises ``(date, equi7_tile)`` cells in parallel while a single
     coordinator streams each result into the consolidated Zarr cube. Every
     finished cell is recorded in --db-path, so the run can be interrupted and
-    resumed.
+    resumed. ``--tasks-only`` writes the task list (and dropped items to
+    ``<tasks>.dropped.json``) without starting the batch.
 
     With a ``zarr/<YYYY>`` archive root the ``time`` axis is pre-filled with
     every day of the year (365/366 slots) by default, so later backfills land
@@ -4132,21 +4184,46 @@ def batch_gfm_cube(
     Run it detached so an SSH disconnect can't stop the coordinator, e.g.::
 
         tmux new -s cube
-        atlantis batch gfm cube run --partition 0:10000
+        atlantis batch gfm cube run --inventory s3://atlantis/assets/gfm/gfm_archive_catalog_2025.parquet \
+            --partition 0:10000
+        atlantis batch gfm cube run \
+            --bbox "-1.5 38.8 0.5 40.0" \
+            --start-date 2024-10-29 --end-date 2024-11-10
 
     Check progress at any time with::
 
         atlantis batch gfm cube status --partition 0:10000
     """
+    import json
     import os
 
     from atlantis.archive.cube_batch import run_gfm_cube_batch
     from atlantis.batch import BatchConfig
     from atlantis.config import reload_config
+    from atlantis.fetchers.gfm.event_tasks import build_tasks_for_window, is_valid_bbox
     from atlantis.fetchers.gfm.inventory import load_inventory, slice_partition, to_tasks
     from atlantis.utils.setup import AWS_PROFILES
 
     command_header("batch gfm cube", subtitle=archive)
+
+    # ── Mode selection: --inventory → catalog mode, otherwise bbox mode ────
+    bbox_t = _parse_bbox(bbox) if bbox else None
+    start = _parse_date(start_date, "start-date") if start_date else None
+    end = _parse_date(end_date, "end-date") if end_date else None
+    has_bbox_mode = bbox is not None or start_date is not None or end_date is not None
+    if inventory is not None and has_bbox_mode:
+        raise typer.BadParameter("--inventory cannot be combined with --bbox/--start-date/--end-date")
+    if inventory is None and not has_bbox_mode:
+        raise typer.BadParameter(
+            "No task source: pass --inventory <catalog.parquet>, or --bbox with --start-date/--end-date"
+        )
+    if inventory is None:
+        if not (bbox is not None and start_date is not None and end_date is not None):
+            raise typer.BadParameter("--bbox, --start-date and --end-date must be provided together (bbox mode)")
+        if partition is not None:
+            raise typer.BadParameter("--partition is only valid in catalog mode (--inventory)")
+        if not is_valid_bbox(bbox_t):
+            raise typer.BadParameter("--bbox must be a valid west south east north bbox within lon/lat range")
 
     # ── Override config from CLI flags (re-read after setting env) ───────
     if coarsen_factor is not None:
@@ -4168,20 +4245,42 @@ def batch_gfm_cube(
     # ── Resolve time-axis prefill (--prefill-year / auto-detect / --no-prefill)
     prefill_year = _resolve_prefill_year(archive, prefill_year, no_prefill)
 
-    info(f"Loading catalog from {inventory} …")
-    df = slice_partition(load_inventory(inventory), partition)
-    tasks = to_tasks(df)
-    console.print(
-        f"  [bold]{len(tasks)}[/bold] cells → {archive}" + (f"  (partition {partition})" if partition else "")
-    )
+    dropped: list[dict] = []
+    if inventory is not None:
+        info(f"Loading catalog from {inventory} …")
+        df = slice_partition(load_inventory(inventory), partition)
+        task_list = to_tasks(df)
+        console.print(
+            f"  [bold]{len(task_list)}[/bold] cells → {archive}" + (f"  (partition {partition})" if partition else "")
+        )
+    else:
+        if start > end:
+            raise typer.BadParameter("--start-date must be on or before --end-date")
+        task_list, dropped = build_tasks_for_window(event, bbox_t, start, end, buffer_km=buffer_km)
+        console.print(
+            f"  [bold]{len(task_list)}[/bold] task(s) "
+            f"({sum(len(t['item_hrefs']) for t in task_list):,} items) → {archive}"
+        )
     console.print(f"  [bold]tracker:[/bold] {db_path}")
     console.print(
         f"  [bold]coarsen factor:[/bold] {cfg_obj.gfm_coarsen_factor}  "
         f"[bold]resampling:[/bold] {cfg_obj.gfm_resampling}  "
         f"[bold]window size:[/bold] {cfg_obj.gfm_window_size}"
     )
+
+    if tasks_only:
+        out = tasks or Path("data/benchmark") / f"gfm_bbox_tasks_{event}.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(task_list, indent=1))
+        if dropped:
+            drop_path = out.with_name(f"{out.stem}.dropped.json")
+            drop_path.write_text(json.dumps(dropped, indent=1))
+            info(f"{len(dropped)} item(s) dropped for missing/invalid metadata → {drop_path}")
+        ok(f"Task list written → {out}")
+        return
+
     if prefill_year is not None:
-        _check_task_dates_in_year(tasks, prefill_year)
+        _check_task_dates_in_year(task_list, prefill_year)
     warn("Run detached (tmux / nohup) so an SSH disconnect can't stop the build.")
 
     # Fail fast if the worker budget cannot fit on this host: GFM's native
@@ -4210,11 +4309,11 @@ def batch_gfm_cube(
     )
 
     final = run_gfm_cube_batch(
-        tasks, archive_root=archive, cfg=cfg, storage_options=storage_options, prefill_year=prefill_year
+        task_list, archive_root=archive, cfg=cfg, storage_options=storage_options, prefill_year=prefill_year
     )
     if prefill_year is not None:
-        _validate_prefilled_axis(archive, "gfm", tasks, prefill_year, storage_options)
-    ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(tasks)} → {archive}")
+        _validate_prefilled_axis(archive, "gfm", task_list, prefill_year, storage_options)
+    ok(f"DONE={final.get('DONE', 0)} FAILED={final.get('FAILED', 0)} of {len(task_list)} → {archive}")
 
 
 @gfm_cube_app.command("status")
