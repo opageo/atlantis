@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,21 @@ def _parse_aoi_id(s3_key: str) -> int | None:
     filename = s3_key.rsplit("/", 1)[-1]
     match = _AOI_RE.search(filename)
     return int(match.group(1)) if match else None
+
+
+@lru_cache(maxsize=1)
+def _aoi_grid() -> gpd.GeoDataFrame:
+    """The packaged AOI grid in EPSG:4326, loaded once per process."""
+    return gpd.read_file(_AOI_GRID_PATH).to_crs("EPSG:4326")
+
+
+def bounds_from_aoi_id(aoi_id: int) -> tuple[float, float, float, float]:
+    """Return ``(west, south, east, north)`` total bounds for one packaged AOI tile."""
+    grid = _aoi_grid()
+    row = grid[grid["AOI_ID"] == aoi_id]
+    if row.empty:
+        raise ValueError(f"no packaged VIIRS AOI tile {aoi_id}")
+    return tuple(row.total_bounds)
 
 
 def build_catalog(
