@@ -1,7 +1,7 @@
 """Raster processing for GFM flood data.
 
 Encapsulates the load → coarsen → reproject → accumulate pipeline
-from the reference ``extract_gfm.py`` script.
+from an earlier exploratory prototype.
 
 GFM encoding (verified against EODC STAC COGs):
     ``ensemble_flood_extent``: 0 = dry / observed-not-flooded, 1 = flood,

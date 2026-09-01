@@ -7,6 +7,7 @@ import geopandas as gpd
 import pandas as pd
 
 from atlantis.models.event import FloodEvent
+from atlantis.utils.io import is_lfs_pointer
 
 KUROSIWO_DEFAULT_CATALOGUE = Path("assets/ks_catalogue.gpkg")
 KUROSIWO_DEFAULT_METADATA = Path("data/metadata/kurosiwo_metadata_v1.csv")
@@ -22,18 +23,6 @@ KUROSIWO_REQUIRED_COLUMNS = {
     "lon_min",
     "lon_max",
 }
-
-
-def is_lfs_pointer(path: Path) -> bool:
-    """Check whether a file is a Git LFS pointer instead of real content."""
-    try:
-        with path.open("r", encoding="utf-8") as file_handle:
-            first_line = file_handle.readline()
-    except UnicodeDecodeError:
-        return False
-    except OSError:
-        return False
-    return first_line.startswith("version https://git-lfs.github.com/spec")
 
 
 def load_kurosiwo_catalogue(catalogue_path: Path) -> gpd.GeoDataFrame:

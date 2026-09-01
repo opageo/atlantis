@@ -38,14 +38,16 @@ class MLLoaderValidator:
 
         Returns:
             True if Dataset creation succeeds, False otherwise.
+
+        Raises:
+            NotImplementedError: This smoke test is not yet implemented.
         """
-        # TODO: Implement dataset creation smoke test
         # Expected implementation:
         # 1. Read ML-ready Zarr for event/source
         # 2. Create custom Dataset class
         # 3. Instantiate and test __len__, __getitem__
         # 4. Return success status
-        return False  # Placeholder
+        raise NotImplementedError("Dataset creation smoke test is not yet implemented")
 
     def test_dataloader_batching(
         self,
@@ -62,9 +64,11 @@ class MLLoaderValidator:
 
         Returns:
             True if batching succeeds, False otherwise.
+
+        Raises:
+            NotImplementedError: This smoke test is not yet implemented.
         """
-        # TODO: Implement dataloader batching smoke test
-        return False  # Placeholder
+        raise NotImplementedError("DataLoader batching smoke test is not yet implemented")
 
     def test_gpu_transfer(
         self,
@@ -79,13 +83,15 @@ class MLLoaderValidator:
 
         Returns:
             True if GPU transfer succeeds, False otherwise.
+
+        Raises:
+            NotImplementedError: This smoke test is not yet implemented.
         """
-        # TODO: Implement GPU transfer smoke test
         # Expected implementation:
         # 1. Create sample batch
         # 2. Move to GPU if available
         # 3. Return success status
-        return False  # Placeholder
+        raise NotImplementedError("GPU transfer smoke test is not yet implemented")
 
     def validate_all(
         self,

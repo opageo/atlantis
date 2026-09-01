@@ -34,3 +34,17 @@ aws s3 ls --recursive --summarize --human-readable s3://atlantis/zarr/2024/datac
 Total Objects: 171272
    Total Size: 11.5 GiB
 ```
+
+## Run a specific GEOID/Kurosiwo event
+
+```bash
+uv run  scripts/build_geoidflood_gfm_archive.py --tasks /tmp/EMSR292-1.json --year 2018 --events EMSR292-1 --db-path gfb_EMSR292_2018.db --workers 2 2
+```
+
+## Run a group of GEOID/Kurosiwo events - standard approach
+
+Pass the main event-id and this will process all the sub-events of the catalogue
+
+```bash
+uv run  scripts/build_geoidflood_gfm_archive.py --tasks /home/slagaras/atlantis/data/benchmark/gfm_aoi_tasks_geoidflood_all-EMSR184.json --year 2016 --events EMSR184  --db-path EMSR184.db
+```

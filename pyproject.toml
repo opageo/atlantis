@@ -38,7 +38,8 @@ atlantis = "atlantis.cli:cli"
 
 [project.optional-dependencies]
 geo = ["pyproj>=3.6", "shapely>=2.0"]
-ml = ["torch>=2.12.0", "scikit-learn>=1.9.0"]
+ml = [
+] # reserved for future ML training code (torch/scikit-learn removed — unused)
 batch = [
   "atlantis[geo]",
   "dask[distributed]>=2026.7.1", # LocalCluster + Client + as_completed
@@ -88,7 +89,6 @@ dev = [
   "atlantis[geo]",
   "atlantis[viz]",
   "atlantis[stac]",
-  "geoparquet-io",
 ]
 docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=0.25"]
 
