@@ -6,26 +6,26 @@ readme = "README.md"
 requires-python = ">=3.12, <3.15"
 authors = [{ name = "Stylianos Lagaras" }, { name = "Ioannis Kalfas" }]
 dependencies = [
-  "typer>=0.27.1",
+  "typer>=0.27.2",
   "loguru>=0.7.0",
   "rich>=13.0.0",
   "boto3",
   "universal-pathlib",
-  "s3fs>=2026.7.0",
+  "s3fs>=2026.9.0",
   "python-dotenv>=1.2.3",
-  "pydantic>=2.0",
+  "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
   "geopandas>=1.1.4",
   "pandas[pyarrow] < 3",
-  "matplotlib>=3.11.1",
+  "matplotlib>=3.11.2",
   "ipympl>=0.10.0",
   "plotly>=6.9.0",
   "odc-stac>=0.5.3",
-  "numpy>=2.5.2",
+  "numpy>=2.5.3",
   "rasterio>=1.5.1",
   "rioxarray>=0.23.0",
   "xarray",
-  "zarr>=3.3.0",
+  "zarr>=3.4.0",
   "requests>=2.34.2",
   "gdal==3.13.0",
   "pystac>=1.15.2",
@@ -37,8 +37,8 @@ dependencies = [
 atlantis = "atlantis.cli:cli"
 
 [project.optional-dependencies]
-geo = ["pyproj>=3.6", "shapely>=2.0"]
-ml = ["torch>=2.12.0", "scikit-learn>=1.9.0"]
+geo = ["pyproj>=3.8.0", "shapely>=2.0"]
+ml = ["torch>=2.14.0", "scikit-learn>=1.9.1"]
 batch = [
   "atlantis[geo]",
   "dask[distributed]>=2026.7.1", # LocalCluster + Client + as_completed
@@ -54,7 +54,7 @@ stac = [
 viz = [
   "atlantis[geo]",    # xarray/zarr datacube reads
   "hvplot>=0.10",     # xarray .hvplot interface (time slider)
-  "holoviews>=1.18",  # backing element model
+  "holoviews>=1.23.2",  # backing element model
   "panel>=1.4",       # local dashboard server (`panel serve`)
   "datashader>=0.19", # server-side rasterisation of large grids
   "numba>=0.60",
@@ -63,13 +63,13 @@ viz = [
 notebooks = [
   "atlantis[geo,ml]",
   "earthkit-data",
-  "affine>=2.4",
-  "cartopy>=0.22",
+  "affine>=3.0.1",
+  "cartopy>=0.26.0",
   "beautifulsoup4>=4.12",
   "requests>=2.34.2",
   "metview>=1.16",
 ]
-ui = ["nicegui>=3.16.0"]
+ui = ["nicegui>=3.17.1"]
 
 [dependency-groups]
 dev = [
@@ -79,9 +79,9 @@ dev = [
   "pytest-cov>=6.0.0",
   "pytest-timeout>=2.3.0",
   "pytest-xdist>=3.2.0",
-  "ruff>=0.15.22",
+  "ruff>=0.16.8",
   "pre-commit>=4.6.2",
-  "ipython>=9.16.1",
+  "ipython>=9.17.1",
   "ipykernel>=7.3.0",
   "nbstripout>=0.9.1",
   "ripgrep>=15.1.0",
