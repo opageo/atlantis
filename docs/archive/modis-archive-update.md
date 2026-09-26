@@ -380,7 +380,8 @@ The first scheduled work is deliberately staged:
 
 ## 9. Out of scope
 
-- VIIRS/GFM updates and a generic multi-source scheduler.
+- GFM updates and a generic multi-source scheduler (VIIRS updates now exist —
+  see [viirs-archive-update.md](./viirs-archive-update.md)).
 - Concurrent MODIS writers for the same archive year.
 - Automatic deletion of archive dates, tracker rows, or orphaned data.
 - Maintaining the full-history `modis_archive_catalog.parquet` (a future
