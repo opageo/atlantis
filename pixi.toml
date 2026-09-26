@@ -276,6 +276,14 @@ modis-archive-status = " python -m atlantis.cli archive modis status"
 modis-archive-seed-tracker = " python -m atlantis.cli archive modis seed-tracker"
 
 # ============================================================================
+# Multi-year archive: merge s3://atlantis/zarr/{2016..2025} → zarr/archive + STAC
+# ============================================================================
+
+[tasks.merge-yearly-zarr]
+cmd = "python scripts/merge_yearly_zarr.py"
+default-environment = "stac"
+
+# ============================================================================
 # GEOID-Flood event archive (metadata → AOI blocks → GFM cube)
 # ============================================================================
 
