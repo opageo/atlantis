@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import random
 import re
@@ -75,7 +76,7 @@ _PREFILL_ATTR = "atlantis_time_prefill"
 _MERGED_ATTR = "atlantis_merged_years"
 _COORDS = ("time", "y", "x")
 
-#: ``(size, etag)`` of a stored object; the ETag is ``None`` on local filesystems.
+#: ``(size, token)`` of a stored object; local files use a content digest.
 Obj = tuple[int, str | None]
 
 
@@ -138,6 +139,18 @@ def _filesystem(root: str, storage_options: dict[str, Any] | None) -> fsspec.Abs
     return fsspec.filesystem("file", auto_mkdir=True)
 
 
+def _object_token(fs: fsspec.AbstractFileSystem, path: str, info: dict[str, Any]) -> str | None:
+    if token := info.get("ETag"):
+        return str(token)
+    if isinstance(fs, LocalFileSystem):
+        digest = hashlib.blake2b(digest_size=16)
+        with fs.open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    return None
+
+
 def _list_files(fs: fsspec.AbstractFileSystem, array_dir: str) -> dict[str, Obj]:
     """Stored objects of an array keyed by path relative to the array, ``zarr.json`` excluded."""
     out: dict[str, Obj] = {}
@@ -145,7 +158,7 @@ def _list_files(fs: fsspec.AbstractFileSystem, array_dir: str) -> dict[str, Obj]
     for path, info in fs.find(array_dir + "/", detail=True).items():
         rel = path[len(array_dir) + 1 :]
         if rel and rel != "zarr.json":
-            out[rel] = (int(info["size"]), info.get("ETag"))
+            out[rel] = (int(info["size"]), _object_token(fs, path, info))
     return out
 
 
