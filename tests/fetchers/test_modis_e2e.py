@@ -60,6 +60,8 @@ def produced_tifs(
     request: pytest.FixtureRequest,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> list[UPath]:
+    if not os.getenv("EARTHDATA_TOKEN"):
+        pytest.fail("You are lacking the EARTHDATA_TOKEN environment variable, which is required for MODIS tests.")
     output_dir = UPath(tmp_path_factory.mktemp("output"))
 
     strategy = request.cls.strategy
@@ -83,8 +85,6 @@ def _run_modis_pipeline(strategy: str, output_dir: UPath) -> list[UPath]:
 
 @pytest.mark.e2e
 class TestModisE2EAll:
-    if not os.getenv("EARTHDATA_TOKEN"):
-        pytest.fail("You are lacking the EARTHDATA_TOKEN environment variable, which is required for MODIS tests.")
     strategy = "all"
 
     @pytest.mark.parametrize("layer_raster", LAYERS_RASTERS)
