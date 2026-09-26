@@ -38,7 +38,6 @@ atlantis = "atlantis.cli:cli"
 
 [project.optional-dependencies]
 geo = ["pyproj>=3.8.0", "shapely>=2.0"]
-ml = ["torch>=2.14.0", "scikit-learn>=1.9.1"]
 batch = [
   "atlantis[geo]",
   "dask[distributed]>=2026.8.0", # LocalCluster + Client + as_completed
@@ -61,7 +60,7 @@ viz = [
   "geoviews>=1.11",    # optional basemap / coastlines
 ]
 notebooks = [
-  "atlantis[geo,ml]",
+  "atlantis[geo]",
   "earthkit-data",
   "affine>=3.0.1",
   "cartopy>=0.26.0",
@@ -88,7 +87,6 @@ dev = [
   "atlantis[geo]",
   "atlantis[viz]",
   "atlantis[stac]",
-  "geoparquet-io",
 ]
 docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=0.25"]
 

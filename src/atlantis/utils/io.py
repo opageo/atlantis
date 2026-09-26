@@ -121,6 +121,16 @@ def _looks_like_html(payload: bytes) -> bool:
     return head.startswith(b"<!doctype html") or head.startswith(b"<html")
 
 
+def is_lfs_pointer(path: Path) -> bool:
+    """Return True if *path* looks like a Git LFS pointer instead of real data."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(64)
+    except OSError:
+        return False
+    return head.startswith(b"version https://git-lfs.github.com/spec/v1")
+
+
 def download_file(
     url: str,
     output_path: Path | None = None,

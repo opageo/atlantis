@@ -37,6 +37,8 @@ from pathlib import Path
 
 from osgeo import gdal
 
+from atlantis.utils.io import is_lfs_pointer
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _ASSET_HASHES_PATH = _REPO_ROOT / "config" / "asset_hashes.json"
 _ENV_PATH = _REPO_ROOT / ".env"
@@ -105,16 +107,6 @@ def _write_asset_hashes(hashes: dict[str, str]) -> None:
 
 
 # ── File helpers ───────────────────────────────────────────────────────────
-
-
-def _is_lfs_pointer(path: Path) -> bool:
-    """Return True if *path* looks like a Git-LFS pointer instead of real data."""
-    try:
-        with open(path, "rb") as fh:
-            head = fh.read(64)
-        return head.startswith(b"version https://git-lfs.github.com/spec/v1")
-    except OSError:
-        return False
 
 
 def _git_restore(path: Path) -> bool:
@@ -710,7 +702,7 @@ def run_setup(
 
         if abs_path.exists() and abs_path.stat().st_size > 0:
             # Check for LFS pointer files
-            if _is_lfs_pointer(abs_path):
+            if is_lfs_pointer(abs_path):
                 _print(f"[bold yellow]⚠[/bold yellow]  [LFS-POINTER] {label} — {rel_path}")
                 _print("       Run: git lfs pull -- {rel_path}")
                 any_missing = True
@@ -886,7 +878,7 @@ def get_missing_assets() -> list[str]:
         abs_path = _REPO_ROOT / rel_path
         if not abs_path.exists() or abs_path.stat().st_size == 0:
             missing.append(label)
-        elif _is_lfs_pointer(abs_path):
+        elif is_lfs_pointer(abs_path):
             missing.append(f"{label} (LFS pointer, not pulled)")
         elif str(rel_path) in _HASHED_ASSETS:
             expected = _asset_expected_hash(str(rel_path))
