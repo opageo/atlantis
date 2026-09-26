@@ -19,7 +19,7 @@ dependencies = [
   "pandas[pyarrow] < 3",
   "matplotlib>=3.11.2",
   "ipympl>=0.10.0",
-  "plotly>=6.9.0",
+  "plotly>=7.0.0",
   "odc-stac>=0.5.3",
   "numpy>=2.5.3",
   "rasterio>=1.5.1",
@@ -52,13 +52,13 @@ stac = [
   "xpystac>=0.1",           # open a STAC Item/Asset/Collection as xarray (Zarr)
 ]
 viz = [
-  "atlantis[geo]",    # xarray/zarr datacube reads
-  "hvplot>=0.10",     # xarray .hvplot interface (time slider)
-  "holoviews>=1.23.2",  # backing element model
-  "panel>=1.4",       # local dashboard server (`panel serve`)
-  "datashader>=0.19", # server-side rasterisation of large grids
+  "atlantis[geo]",     # xarray/zarr datacube reads
+  "hvplot>=0.10",      # xarray .hvplot interface (time slider)
+  "holoviews>=1.23.2", # backing element model
+  "panel>=1.4",        # local dashboard server (`panel serve`)
+  "datashader>=0.19",  # server-side rasterisation of large grids
   "numba>=0.60",
-  "geoviews>=1.11",   # optional basemap / coastlines
+  "geoviews>=1.11",    # optional basemap / coastlines
 ]
 notebooks = [
   "atlantis[geo,ml]",
