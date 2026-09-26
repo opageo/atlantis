@@ -167,6 +167,7 @@ Group attributes are **bounded** (fixed keys, never per-write growth):
 | `last_updated`          | ISO timestamp of the most recent write                                                                           |
 | `atlantis_events`       | **optional** named-event bookmarks — empty `{}` for the daily archive                                            |
 | `atlantis_time_prefill` | **prefilled-year marker** — the year the `time` axis was pre-filled with (see §3.1); absent on data-proven axes  |
+| `atlantis_merged_years` | years merged into a multi-year store by `scripts/merge_yearly_zarr.py` (replaces `atlantis_time_prefill` there)  |
 | `archive_config`        | fingerprint of `chunk_size` / `shard_size` / `scale_factor` / `time_units` the group was created with — see §3.5 |
 
 The **daily archive is label-free**: routine writes record only `source_id` /

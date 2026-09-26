@@ -695,6 +695,54 @@ run` (§4.1), the year's **state-root tracker** must be the build's tracker or
     contains the date.
 - Full guide: [`modis-archive-update.md`](./modis-archive-update.md).
 
+### 4.5 Merging the yearly stores into one multi-year archive
+
+The yearly stores (`s3://atlantis/zarr/<YYYY>/datacube.zarr`) share grid,
+codecs, chunking, sharding and time epoch (see
+[zarr-spec.md §3.5](./zarr-spec.md)), and every shard object holds exactly one
+time slot. [`scripts/merge_yearly_zarr.py`](../../scripts/merge_yearly_zarr.py)
+therefore merges them by **server-side copying** each shard with its time index
+rewritten — nothing is decoded or re-encoded, and only the `time` axis changes.
+It then consolidates the store and rebuilds its STAC catalog next to it:
+
+```bash
+pixi run merge-yearly-zarr --dry-run   # validate + plan (read-only)
+pixi run merge-yearly-zarr             # → s3://atlantis/zarr/archive/{datacube.zarr,stac}
+```
+
+Defaults: `--years 2016-2025`, `--src-root s3://atlantis/zarr`,
+`--dest s3://atlantis/zarr/archive`. Run it detached (`tmux`) — a full merge is
+~1.45 M copies.
+
+- **Pre-checks (fail before any write):** per source, every array `zarr.json`
+  must be identical across years except `shape`, `archive_config` must match,
+  and no date may repeat. Empty out-of-year slots (legacy 366-slot prefills of
+  365-day years, e.g. GFM 2021/2025) are dropped; populated ones fail.
+- **Merged group attributes:** `atlantis_time_prefill` is dropped (it names one
+  year) and replaced by `atlantis_merged_years`; `atlantis_events` are unioned;
+  variables with no data in any year are omitted (e.g. VIIRS 2025's empty
+  `recurring_flood`).
+- **Time axis:** by default **contiguous** — every day of the `--years` span
+  (2016-01-01 … 2025-12-31, 3,653 slots) for every source, so every source shares
+  one time index and any day, including gaps no yearly store covers (e.g. VIIRS
+  2021–2022), has a pre-existing slot a later backfill region-writes into.
+  Unwritten days read NODATA (255) and still get a STAC item. `--sparse` keeps
+  only the days present in the yearly stores.
+- **Re-runnable:** shards whose destination copy already has the same
+  size + ETag are skipped, so re-running after yearly stores change re-copies
+  only modified shards. Widening `--years` at the end (e.g. `2016-2026`) extends
+  the axis in place — existing slots keep their index, so only the new year's
+  shards are copied. Any other axis change stops the run; `--rebuild-changed`
+  deletes and rebuilds that group.
+- **STAC:** built like `atlantis stac build` with per-date bboxes (as the
+  yearly `stac/` catalogs were); this scans every populated date, so pass
+  `--no-compute-bbox` for a fast metadata-only catalog, or `--skip-merge` to
+  rebuild only the catalog.
+- The merged store is a **read-only snapshot**: `batch … cube run`,
+  `archive modis update` and event backfills keep writing to the yearly stores.
+  Correct a day in its yearly store, then re-run the merge; a write made
+  directly into the merged store is overwritten by the next merge run.
+
 ---
 
 ## 5. Picking a partition — slicing by date
