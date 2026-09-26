@@ -28,6 +28,11 @@ environment).
 - [`archive modis _run-update`](#archive-modis-_run-update)
 - [`archive modis seed-tracker`](#archive-modis-seed-tracker)
 - [`archive modis _reindex-time`](#archive-modis-_reindex-time)
+- [`archive viirs update`](#archive-viirs-update)
+- [`archive viirs status`](#archive-viirs-status)
+- [`archive viirs _run-update`](#archive-viirs-_run-update)
+- [`archive viirs seed-tracker`](#archive-viirs-seed-tracker)
+- [`archive viirs _reindex-time`](#archive-viirs-_reindex-time)
 - [`validate`](#validate) _(placeholder)_
 - [`list-sources`](#list-sources)
 - [`list-layers`](#list-layers)
@@ -451,6 +456,109 @@ pixi run atlantis archive modis _reindex-time --year 2026
 | `--archive-base`   | `s3://atlantis/zarr`         | Archive base.                                            |
 | `--catalogue-base` | `s3://atlantis/assets/modis` | Yearly catalogue base (optional; sort-only when absent). |
 | `--state-root`     | `/mnt/atlantis-state/modis`  | Persistent state root.                                   |
+
+### `archive viirs update`
+
+The same incremental yearly archive-update flow as
+[`archive modis update`](#archive-modis-update), for the VIIRS group: weekly,
+resume-safe ingestion of newly published NOAA S3 AOI tiles into the yearly
+Zarr archive, with the same reconciliation, ascending-order writer, watermark,
+manifest, and S3 state backup. No `EARTHDATA_TOKEN` is needed — NOAA S3 is
+public (AWS credentials for `s3://atlantis` still apply) and there is no
+download preflight probe. See
+[archive/viirs-archive-update.md](archive/viirs-archive-update.md) for the
+full operational guide.
+
+```bash
+pixi run atlantis archive viirs update --year 2026
+tmux attach -t atlantis-viirs-update-2026-<runid>
+```
+
+| Option                                 | Default                             | Description                                                           |
+| -------------------------------------- | ----------------------------------- | --------------------------------------------------------------------- |
+| `--year`                               | resolved from today                 | Restrict to one archive year.                                         |
+| `--start`                              | derived                             | Explicit inclusive start `YYYY-MM-DD` (repair/backfill).              |
+| `--end`                                | `today - lag`                       | Explicit inclusive end `YYYY-MM-DD`.                                  |
+| `--lookback-days`                      | `14`                                | Weekly-run lookback (late NOAA S3 publications, failed prior runs).   |
+| `--availability-lag-days`              | `7`                                 | Avoid querying data still being published.                            |
+| `--archive-base`                       | `s3://atlantis/zarr`                | Archive base: `<base>/<year>/datacube.zarr`.                          |
+| `--state-root`                         | `/mnt/atlantis-state/viirs`         | Persistent state root (per-year subdirs).                             |
+| `--catalogue-base`                     | `s3://atlantis/assets/viirs`        | Yearly catalogue base: `<base>/viirs_archive_catalog_<year>.parquet`. |
+| `--backup-base`                        | `s3://atlantis/archive-state/viirs` | Tracker/manifest/catalogue backup root.                               |
+| `--workers-min` / `--workers-max`      | `2` / `6`                           | Dask worker count (adaptive).                                         |
+| `--memory-limit`                       | `2.5GB`                             | Memory cap per worker.                                                |
+| `--dashboard-port`                     | `8788`                              | Dask dashboard port.                                                  |
+| `--retries`                            | `3`                                 | Dask retry count per tile.                                            |
+| `--log-every`                          | `50`                                | Log a progress line every N completions.                              |
+| `--retry-failed` / `--no-retry-failed` | on                                  | Retry previously `FAILED` tasks (off: leave them, watermark stalls).  |
+| `--dry-run`                            | off                                 | Resolve and print the plan without launching.                         |
+| `--session-name`                       | generated                           | Override the tmux session name.                                       |
+| `--attach`                             | off                                 | Attach to the tmux session after launch.                              |
+| `--foreground`                         | off                                 | Run the worker in this terminal (no tmux).                            |
+
+### `archive viirs status`
+
+Same report as [`archive modis status`](#archive-modis-status) for the VIIRS
+group: per-year counts, watermark, missing ranges, axis sortedness, recent
+failures, manifest, lock state, heatmap, and — without `--year` — an
+all-years summary.
+
+```bash
+pixi run viirs-archive-status                       # all years at a glance
+pixi run atlantis archive viirs status --year 2026  # full per-date view
+```
+
+| Option             | Default                      | Description              |
+| ------------------ | ---------------------------- | ------------------------ |
+| `--year`           | all years with local state   | Archive year to inspect. |
+| `--state-root`     | `/mnt/atlantis-state/viirs`  | Persistent state root.   |
+| `--archive-base`   | `s3://atlantis/zarr`         | Archive base.            |
+| `--catalogue-base` | `s3://atlantis/assets/viirs` | Yearly catalogue base.   |
+
+### `archive viirs _run-update`
+
+Internal foreground worker spawned by `update` (and run directly by
+`--foreground` / the `viirs-archive-update` pixi task). Accepts the same
+options as `update` minus `--session-name`, `--attach`, and `--foreground`.
+Hidden from `--help`.
+
+### `archive viirs seed-tracker`
+
+Same onboarding as [`archive modis seed-tracker`](#archive-modis-seed-tracker)
+for the VIIRS group: build a year's tracker from the archive, marking every
+catalogue task whose date is on the axis as `DONE`. Refuses prefilled years.
+
+```bash
+pixi run atlantis archive viirs seed-tracker --year 2024
+pixi run atlantis archive viirs seed-tracker --year 2024 --dry-run  # preview
+```
+
+| Option             | Default                      | Description                                  |
+| ------------------ | ---------------------------- | -------------------------------------------- |
+| `--year`           | — (required)                 | Archive year to seed.                        |
+| `--dry-run`        | off                          | Report what would be seeded without writing. |
+| `--state-root`     | `/mnt/atlantis-state/viirs`  | Persistent state root.                       |
+| `--archive-base`   | `s3://atlantis/zarr`         | Archive base.                                |
+| `--catalogue-base` | `s3://atlantis/assets/viirs` | Yearly catalogue base.                       |
+
+### `archive viirs _reindex-time`
+
+One-off offline migration, same as
+[`archive modis _reindex-time`](#archive-modis-_reindex-time) for the VIIRS
+group: rewrite a year's `viirs` group time axis into strictly ascending order,
+inserting empty NODATA slots for catalogue dates missing from the axis.
+Hidden from `--help`.
+
+```bash
+pixi run atlantis archive viirs _reindex-time --year 2026
+```
+
+| Option             | Default                      | Description                                              |
+| ------------------ | ---------------------------- | -------------------------------------------------------- |
+| `--year`           | — (required)                 | Archive year to reindex.                                 |
+| `--archive-base`   | `s3://atlantis/zarr`         | Archive base.                                            |
+| `--catalogue-base` | `s3://atlantis/assets/viirs` | Yearly catalogue base (optional; sort-only when absent). |
+| `--state-root`     | `/mnt/atlantis-state/viirs`  | Persistent state root.                                   |
 
 ## `validate`
 
