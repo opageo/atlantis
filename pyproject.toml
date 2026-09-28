@@ -70,6 +70,7 @@ notebooks = [
   "metview>=1.16",
 ]
 ui = ["nicegui>=3.17.1"]
+hf = ["huggingface-hub"]
 
 [dependency-groups]
 dev = [
