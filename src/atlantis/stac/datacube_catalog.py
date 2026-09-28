@@ -21,22 +21,23 @@ See :mod:`atlantis.archive` for the cube schema and grid.
 from __future__ import annotations
 
 import tempfile
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from time import monotonic
+from typing import Any, Callable, Iterable
 
+import fsspec
 import numpy as np
 import pystac
 from loguru import logger
 from pystac.extensions.datacube import DatacubeExtension, Dimension, Variable
 
 from atlantis.archive import grid
+from atlantis.archive._store import is_remote, store_for
 from atlantis.archive.reader import ArchiveReader
 from atlantis.config import ArchiveConfig, StacConfig
-
-if TYPE_CHECKING:
-    import xarray as xr
 
 __all__ = [
     "BuildProgress",
@@ -57,6 +58,8 @@ _VAR_UNITS: dict[str, str] = {"water_fraction": "1"}
 _GLOBAL_BBOX = (grid.ORIGIN_LON, grid.ORIGIN_LAT - 180.0, grid.ORIGIN_LON + 360.0, grid.ORIGIN_LAT)
 
 BBox = tuple[float, float, float, float]
+#: Half-open ``(r0, r1, c0, c1)`` pixel window on the global grid.
+Window = tuple[int, int, int, int]
 
 
 @dataclass
@@ -205,71 +208,91 @@ def _zarr_asset(
 # ── populated-extent computation ───────────────────────────────────────────
 
 
-def _valid_mask_2d(ds: "xr.Dataset", var: str) -> "xr.DataArray":
-    """Reduce *var* to a lazy ``(y, x)`` validity mask (True where not fill/NaN)."""
-    da = ds[var]
-    extra_dims = [d for d in da.dims if d not in ("y", "x")]
-    valid = da.notnull()
-    if extra_dims:
-        valid = valid.any(dim=extra_dims)
-    return valid
-
-
-def _bbox_from_mask(valid2d: "xr.DataArray", yvals: np.ndarray, xvals: np.ndarray) -> BBox | None:
-    """Bounding box of the True region of a ``(y, x)`` mask, or ``None`` if empty."""
-    arr = np.asarray(valid2d.values)
-    if not arr.any():
-        return None
-    rows = np.where(arr.any(axis=1))[0]
-    cols = np.where(arr.any(axis=0))[0]
-    r0, r1 = int(rows[0]), int(rows[-1])
-    c0, c1 = int(cols[0]), int(cols[-1])
+def _window_bbox(win: Window, yvals: np.ndarray, xvals: np.ndarray) -> BBox:
+    """Edge bbox of a pixel window (pixel centres ± half-resolution)."""
+    r0, r1, c0, c1 = win
     north = float(yvals[r0]) + _RES / 2.0  # y descends north→south
-    south = float(yvals[r1]) - _RES / 2.0
+    south = float(yvals[r1 - 1]) - _RES / 2.0
     west = float(xvals[c0]) - _RES / 2.0
-    east = float(xvals[c1]) + _RES / 2.0
+    east = float(xvals[c1 - 1]) + _RES / 2.0
     return (west, south, east, north)
 
 
-def _populated_window(ds: "xr.Dataset", var: str) -> tuple[int, int, int, int] | None:
-    """Half-open ``(r0, r1, c0, c1)`` index window bounding *var*'s populated pixels.
+def _union(a: Window | None, b: Window) -> Window:
+    if a is None:
+        return b
+    return (min(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), max(a[3], b[3]))
 
-    Computed once per source so per-date extent scans run on a small subset rather
-    than the full global grid.
+
+def _stored_blocks(reader: ArchiveReader, source_id: str, var: str) -> dict[int, list[tuple[int, int]]]:
+    """Stored ``(row, col)`` chunk-grid blocks of *var* per time slot, from the object listing."""
+    href = _store_href(reader.archive_root, reader.config.store)
+    if is_remote(reader.archive_root):
+        fs, base = fsspec.url_to_fs(href, **(reader.storage_options or {}))
+    else:
+        fs, base = fsspec.filesystem("file"), href
+    prefix = f"{base.rstrip('/')}/{source_id}/{var}/c/"
+    blocks: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    for path in fs.find(prefix):
+        t, row, col = path[len(prefix) :].split("/")
+        blocks[int(t)].append((int(row), int(col)))
+    return dict(blocks)
+
+
+def _slot_windows(reader: ArchiveReader, source_id: str, var: str) -> dict[int, Window]:
+    """Populated pixel window of *var* per time slot (slots without data are absent).
+
+    Only slots holding stored blocks are read, each over its blocks' bounding
+    region, so the cost follows the data present — not axis length × global grid.
     """
-    arr = np.asarray(_valid_mask_2d(ds, var).values)
-    if not arr.any():
-        return None
-    rows = np.where(arr.any(axis=1))[0]
-    cols = np.where(arr.any(axis=0))[0]
-    return int(rows[0]), int(rows[-1]) + 1, int(cols[0]), int(cols[-1]) + 1
+    import zarr
+
+    store = store_for(reader.archive_root, reader.config.store, reader.storage_options or None)
+    arr = zarr.open_group(store, path=source_id, mode="r", use_consolidated=False)[var]
+    bh, bw = (arr.shards or arr.chunks)[1:]
+    n_time, height, width = arr.shape
+    fill = arr.attrs.get("_FillValue", arr.fill_value)
+    slots = sorted(_stored_blocks(reader, source_id, var).items())
+    logger.info(f"{source_id}: scanning extents of {len(slots)} populated slot(s)")
+    started = monotonic()
+    out: dict[int, Window] = {}
+    for done, (t, blocks) in enumerate(slots, 1):
+        if done % 100 == 0:
+            rate = done / max(monotonic() - started, 1e-6)
+            eta_min = (len(slots) - done) / rate / 60
+            logger.info(f"{source_id}: scanned {done}/{len(slots)} slots · ETA {eta_min:.1f} min")
+        if t >= n_time:
+            continue
+        rows = [b[0] for b in blocks]
+        cols = [b[1] for b in blocks]
+        r0, c0 = min(rows) * bh, min(cols) * bw
+        r1, c1 = min((max(rows) + 1) * bh, height), min((max(cols) + 1) * bw, width)
+        raw = np.asarray(arr[t, r0:r1, c0:c1])
+        valid = raw != fill
+        if raw.dtype.kind == "f":
+            valid &= ~np.isnan(raw)
+        if not valid.any():
+            continue
+        rr = np.flatnonzero(valid.any(axis=1))
+        cc = np.flatnonzero(valid.any(axis=0))
+        out[t] = (r0 + int(rr[0]), r0 + int(rr[-1]) + 1, c0 + int(cc[0]), c0 + int(cc[-1]) + 1)
+    return out
 
 
 # ── item / collection builders ─────────────────────────────────────────────
 
 
 def _build_date_item(
-    ds: "xr.Dataset",
     source_id: str,
     d: date,
     store_href: str,
     *,
-    fallback_bbox: BBox,
+    bbox: BBox,
     config: StacConfig,
-    var: str,
     var_names: list[str],
-    yvals: np.ndarray,
-    xvals: np.ndarray,
     storage_options: dict[str, Any] | None = None,
 ) -> pystac.Item:
     """Build the STAC Item for one populated ``(source, date)``."""
-    bbox = fallback_bbox
-    if config.compute_item_bbox and var in ds:
-        ds_d = ds.sel(time=np.datetime64(d))
-        computed = _bbox_from_mask(_valid_mask_2d(ds_d, var), yvals, xvals)
-        if computed is not None:
-            bbox = computed
-
     item = pystac.Item(
         id=f"{source_id}-{d.isoformat()}",
         geometry=_bbox_geometry(bbox),
@@ -333,24 +356,19 @@ def build_source_collection(
 
     var_names = [str(v) for v in ds.data_vars if str(v) != "crs"]
 
-    # Restrict to the populated bounding window once so per-date scans stay cheap.
-    window = _populated_window(ds, var) if (config.compute_item_bbox and var in ds) else None
-    if window is not None:
-        r0, r1, c0, c1 = window
-        ds = ds.isel(y=slice(r0, r1), x=slice(c0, c1))
+    day_of = [np.datetime64(t, "D").astype(object) for t in ds["time"].values]
+    date_windows: dict[date, Window] = {}
+    if config.compute_item_bbox and var in ds:
+        for t, win in _slot_windows(reader, source_id, var).items():
+            date_windows[day_of[t]] = _union(date_windows.get(day_of[t]), win)
     yvals = ds["y"].values
     xvals = ds["x"].values
-    if window is not None and yvals.size and xvals.size:
-        src_bbox: BBox = (
-            float(xvals[0]) - _RES / 2.0,
-            float(yvals[-1]) - _RES / 2.0,
-            float(xvals[-1]) + _RES / 2.0,
-            float(yvals[0]) + _RES / 2.0,
-        )
-    else:
-        src_bbox = _GLOBAL_BBOX
+    window: Window | None = None
+    for win in date_windows.values():
+        window = _union(window, win)
+    src_bbox: BBox = _window_bbox(window, yvals, xvals) if window is not None else _GLOBAL_BBOX
 
-    dates = sorted({np.datetime64(t, "D").astype(object) for t in ds["time"].values})
+    dates = sorted(set(day_of))
     d_min, d_max = dates[0], dates[-1]
     _emit(prog.on_source_total, source_id, len(dates))
 
@@ -387,16 +405,12 @@ def build_source_collection(
     for d in dates:
         collection.add_item(
             _build_date_item(
-                ds,
                 source_id,
                 d,
                 store_href,
-                fallback_bbox=src_bbox,
+                bbox=_window_bbox(date_windows[d], yvals, xvals) if d in date_windows else src_bbox,
                 config=config,
-                var=var,
                 var_names=var_names,
-                yvals=yvals,
-                xvals=xvals,
                 storage_options=storage_options,
             )
         )
@@ -466,15 +480,29 @@ def build_datacube_catalog(
 # ── persistence ─────────────────────────────────────────────────────────────
 
 
-def _write_catalog_remote(catalog: pystac.Catalog, dest: str, storage_options: dict[str, Any] | None) -> None:
-    """Stage a self-contained catalog locally then upload the JSON tree to S3."""
+def _write_catalog_remote(
+    catalog: pystac.Catalog,
+    dest: str,
+    storage_options: dict[str, Any] | None,
+    *,
+    max_workers: int = 32,
+) -> None:
+    """Stage a self-contained catalog locally then upload the whole JSON tree to S3.
+
+    Every file is uploaded recursively (catalog, collections and all items), in
+    parallel. Deeper files go first so the ``catalog.json``/``collection.json``
+    parents only appear once the items they link to exist.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     import boto3
+    from botocore.config import Config
 
     no_scheme = dest[len("s3://") :]
     bucket, _, prefix = no_scheme.partition("/")
     prefix = prefix.strip("/")
 
-    client_kwargs: dict[str, Any] = {}
+    client_kwargs: dict[str, Any] = {"config": Config(max_pool_connections=max_workers)}
     if storage_options:
         endpoint = storage_options.get("endpoint_url") or (storage_options.get("client_kwargs") or {}).get(
             "endpoint_url"
@@ -487,11 +515,24 @@ def _write_catalog_remote(catalog: pystac.Catalog, dest: str, storage_options: d
         catalog.normalize_hrefs(tmp)
         catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
         root = Path(tmp)
-        uploaded = 0
+        by_depth: dict[int, list[Path]] = defaultdict(list)
         for json_path in root.rglob("*.json"):
-            key = (f"{prefix}/" if prefix else "") + str(json_path.relative_to(root))
+            by_depth[len(json_path.relative_to(root).parts)].append(json_path)
+        total = sum(len(v) for v in by_depth.values())
+        logger.info(f"Uploading {total} STAC JSON files → s3://{bucket}/{prefix}")
+
+        def _upload(json_path: Path) -> None:
+            key = (f"{prefix}/" if prefix else "") + json_path.relative_to(root).as_posix()
             s3.upload_file(str(json_path), bucket, key, ExtraArgs={"ContentType": "application/json"})
-            uploaded += 1
+
+        uploaded = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for depth in sorted(by_depth, reverse=True):
+                for fut in as_completed([pool.submit(_upload, p) for p in by_depth[depth]]):
+                    fut.result()
+                    uploaded += 1
+                    if uploaded % 1000 == 0:
+                        logger.info(f"Uploaded {uploaded}/{total} STAC JSON files")
     logger.info(f"Catalog saved → s3://{bucket}/{prefix} ({uploaded} JSON files)")
 
 

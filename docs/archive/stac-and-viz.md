@@ -189,15 +189,17 @@ catalog/collection/item links are relativised).
 For a sparse global cube, a per-date global bbox would be meaningless, so item
 bboxes are derived from the data:
 
-1. **Per source, once** — reduce `water_fraction` to a `(y, x)` validity mask
-   (`notnull().any("time")`) and take its bounding index window
-   ([`_populated_window`](../src/atlantis/stac/datacube_catalog.py)). The cube is
-   subset to this window so the next step stays cheap.
-2. **Per date** — within that window, compute the bounding box of non-fill
-   pixels for the day ([`_bbox_from_mask`](../src/atlantis/stac/datacube_catalog.py)),
-   mapping pixel centres ± ½-resolution to edges.
-3. **Fallback** — the global bbox `[-180, -90, 180, 90]` when a date is empty or
-   when `StacConfig.compute_item_bbox = False`.
+1. **Per source, list stored blocks** — the `water_fraction` shard objects
+   (`c/<t>/<row>/<col>`) are listed once
+   ([`_stored_blocks`](../src/atlantis/stac/datacube_catalog.py)), so only time
+   slots that hold data are scanned — never the full `time × global grid` cube.
+2. **Per populated slot** — read the bounding region of that slot's blocks and
+   take the bounding window of non-fill pixels
+   ([`_slot_windows`](../src/atlantis/stac/datacube_catalog.py)), mapping pixel
+   centres ± ½-resolution to edges. The collection extent is the union of these.
+3. **Fallback** — the source extent (or the global bbox `[-180, -90, 180, 90]`
+   if nothing is populated) for empty dates or when
+   `StacConfig.compute_item_bbox = False`.
 
 > Setting `compute_item_bbox = False` (CLI `--no-compute-bbox`) skips the scan
 > entirely and gives every item the source extent — faster, coarser discovery.
@@ -211,7 +213,7 @@ graph TD
     A["build_datacube_catalog(archive_root, sources?)"] --> B["ArchiveReader.list_sources()"]
     B --> C{"for each source"}
     C --> D["reader.read(source) → lazy xr.Dataset"]
-    D --> E["_populated_window() → subset to populated region"]
+    D --> E["_slot_windows() → per-date populated windows"]
     E --> F["Collection + datacube ext + zarr asset"]
     F --> G{"for each populated date"}
     G --> H["_build_date_item(): bbox, datacube ext, zarr asset"]
