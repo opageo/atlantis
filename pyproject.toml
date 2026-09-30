@@ -27,7 +27,7 @@ dependencies = [
   "xarray",
   "zarr>=3.4.0",
   "requests>=2.34.2",
-  "gdal==3.13.0",
+  "gdal==3.13.3",
   "pystac>=1.15.2",
   "pystac-client>=0.7",
   "beautifulsoup4>=4.12",
