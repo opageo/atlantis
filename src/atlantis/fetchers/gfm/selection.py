@@ -18,12 +18,9 @@ from __future__ import annotations
 import numpy as np
 
 from atlantis.fetchers._selection import is_better_peak_candidate as is_better_peak_candidate
-from atlantis.fetchers._selection import parse_yyyymmdd
 from atlantis.fetchers._selection import select_peak_window as _select_peak_window
 from atlantis.fetchers._selection import subsample_around_peak as subsample_around_peak
 from atlantis.fetchers.gfm.processor import GfmProcessedTile
-
-_parse_yyyymmdd = parse_yyyymmdd
 
 
 def flood_pixel_count(processed: GfmProcessedTile) -> int:

@@ -20,7 +20,6 @@ GFM/VIIRS selectors via :mod:`atlantis.fetchers._selection`.
 from __future__ import annotations
 
 from atlantis.fetchers._selection import is_better_peak_candidate as is_better_peak_candidate
-from atlantis.fetchers._selection import parse_yyyymmdd
 from atlantis.fetchers._selection import select_peak_window as _select_peak_window
 from atlantis.fetchers._selection import subsample_around_peak as subsample_around_peak
 from atlantis.fetchers.modis.processor import (
@@ -29,8 +28,6 @@ from atlantis.fetchers.modis.processor import (
     UNUSUAL_FLOOD_CODE,
     ProcessedTile,
 )
-
-_parse_yyyymmdd = parse_yyyymmdd
 
 
 def flood_pixel_count(processed: ProcessedTile, *, include_recurring: bool = False) -> int:

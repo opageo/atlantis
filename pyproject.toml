@@ -94,14 +94,6 @@ docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=0.25"]
 [tool.uv]
 default-groups = ["dev"]
 
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-
 [tool.hatch.build]
 include = ["src/atlantis/fetchers/viirs/data/*.geojson"]
 

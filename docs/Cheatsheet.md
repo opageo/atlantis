@@ -38,13 +38,13 @@ Total Objects: 171272
 ## Run a specific GEOID/Kurosiwo event
 
 ```bash
-uv run  scripts/build_geoidflood_gfm_archive.py --tasks /tmp/EMSR292-1.json --year 2018 --events EMSR292-1 --db-path gfb_EMSR292_2018.db --workers 2 2
+uv run scripts/build_geoidflood_gfm_archive.py --tasks /tmp/EMSR292-1.json --year 2018 --events EMSR292-1 --db-path gfb_EMSR292_2018.db --workers 2 2
 ```
 
 ## Run a group of GEOID/Kurosiwo events - standard approach
 
-Pass the main event-id and this will process all the sub-events of the catalogue
+Pass the parent event ID to process all of its sub-events in the catalogue.
 
 ```bash
-uv run  scripts/build_geoidflood_gfm_archive.py --tasks /home/slagaras/atlantis/data/benchmark/gfm_aoi_tasks_geoidflood_all-EMSR184.json --year 2016 --events EMSR184  --db-path EMSR184.db
+uv run scripts/build_geoidflood_gfm_archive.py --tasks data/benchmark/gfm_aoi_tasks_geoidflood_all-EMSR184.json --year 2016 --events EMSR184 --db-path EMSR184.db
 ```

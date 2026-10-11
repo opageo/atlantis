@@ -36,7 +36,8 @@ def select_peak_window(
 ) -> list[str]:
     """Return the subset of *date_tokens* falling within a window around the peak.
 
-    The peak is the date with the maximum *count_fn* score. Backs each fetcher's
+    The peak is the date with the maximum *count_fn* score (ties broken by the
+    earliest date). Backs each fetcher's
     ``select_peak_window()`` (GFM/MODIS/VIIRS), which supplies its own
     ``count_fn`` (typically that module's ``flood_pixel_count``).
 
