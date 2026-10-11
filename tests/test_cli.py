@@ -105,8 +105,10 @@ def _dummy_fetch_result(
 
 
 def test_version():
-    """Test version is correctly set."""
-    assert __version__ == "0.1.0"
+    """__version__ comes from the installed package metadata (set from the git tag)."""
+    from importlib.metadata import version
+
+    assert __version__ == version("atlantis")
 
 
 def _no_bookmark(*_args, **_kwargs):
