@@ -1,6 +1,5 @@
 Search in the ATBD document of VIIRS https://www.star.nesdis.noaa.gov/jpss/documents/ATBD/ATBD_VIIRS_Flood_Mapping_v1.0.pdf about the bare-land classification methodology and definition
 **Response**
-
 ## Bare-land classification in the VIIRS Flood Mapping ATBD
 
 The ATBD does **not provide a standalone ecological or land-cover definition of “bare land.”** Instead, bare land is an **operational spectral class** used by the flood-detection algorithm to distinguish non-vegetated dry surfaces from vegetation, water, cloud, snow/ice, and shadows.
@@ -9,21 +8,21 @@ The ATBD does **not provide a standalone ecological or land-cover definition of 
 
 Within the VFM processing chain, a **clear-sky bare-land pixel** is a cloud-free and snow/ice-free land pixel whose VIIRS spectral and thermal characteristics are classified as bare land rather than vegetation, water, or cloud. In the final `WaterDetection` output, it is represented by:
 
-- **Value 16: Clear-sky bare land**
-- **Value 17: Clear-sky vegetation**
-- Collectively, these belong to the broader category of **clear-sky land**, which the ATBD describes as including vegetation and bare soil.
+* **Value 16: Clear-sky bare land**
+* **Value 17: Clear-sky vegetation**
+* Collectively, these belong to the broader category of **clear-sky land**, which the ATBD describes as including vegetation and bare soil.
 
 Thus, “bare land” in this product should be understood as an **algorithmic dry-land category**, not necessarily permanently barren terrain. Depending on the scene, it can include desert, exposed soil, sparsely vegetated land, urban-like surfaces, burned areas, volcanic terrain, and other surfaces that spectrally resemble bare soil. The ATBD explicitly discusses desert, urban land, dark volcanic land, burn scars, cropland, grassland, and shrubland as conditions that can affect the water-versus-bare-land decision.
 
----
+***
 
 ## 2. Physical basis for distinguishing bare land
 
 The main physical distinction is based on reflectance in three VIIRS imaging bands:
 
-- **I1 visible:** approximately 0.64 µm
-- **I2 near infrared:** approximately 0.865 µm
-- **I3 short-wave infrared:** approximately 1.61 µm
+* **I1 visible:** approximately 0.64 µm
+* **I2 near infrared:** approximately 0.865 µm
+* **I3 short-wave infrared:** approximately 1.61 µm
 
 The ATBD states that bare-land reflectance generally **increases with wavelength**, reaching its maximum in the SWIR band. Water shows the opposite behavior: it normally has low reflectance in all three bands, with reflectance close to zero in SWIR when sun glint is absent. Vegetation is differentiated principally by its relatively high NIR reflectance.
 
@@ -51,7 +50,7 @@ $
 
 The ATBD emphasizes that no single reflectance band or index independently separates water, vegetation, and bare land under all conditions. Classification therefore uses the variables jointly.
 
----
+***
 
 ## 3. Bare-land classification methodology
 
@@ -69,8 +68,8 @@ This screening uses VIS, NIR and SWIR reflectances, NDVI, NDSI, NDWI, and the I5
 
 The clear-sky land pixels are then divided into:
 
-- pixels without relevant sun-glint contamination, and
-- pixels under minor-to-moderate sun-glint conditions.
+* pixels without relevant sun-glint contamination, and
+* pixels under minor-to-moderate sun-glint conditions.
 
 This division uses a lookup table derived from the MERIS sun-glint flag approach. The distinction is important because sun glint can increase water reflectance, especially in NIR and SWIR, making water resemble bare land.
 
@@ -78,21 +77,21 @@ This division uses a lookup table derived from the MERIS sun-glint flag approach
 
 The principal classifier is a **J48graft/J48 decision tree based on the C4.5 algorithm**. It classifies clear-sky land pixels into:
 
-- water,
-- mixed water,
-- vegetation,
-- bare land, and
-- residual cloud.
+* water,
+* mixed water,
+* vegetation,
+* bare land, and
+* residual cloud.
 
 The decision tree uses:
 
-- VIS reflectance,
-- NIR reflectance,
-- SWIR reflectance,
-- NDVI,
-- NDSI,
-- NDWI, and
-- I5 brightness temperature.
+* VIS reflectance,
+* NIR reflectance,
+* SWIR reflectance,
+* NDVI,
+* NDSI,
+* NDWI, and
+* I5 brightness temperature.
 
 The ATBD reports that approximately **600,000 training samples from more than 500 VIIRS granules** were collected across North America, Africa, Europe, Asia, and Australia. The training population contained four principal reference categories: water, bare land, vegetation, and cloud.
 
@@ -112,7 +111,7 @@ The operational system contains **16 decision trees** for supra-vegetation/bare-
 
 The ATBD’s example tree for discriminating water from bare land places the **SWIR reflectance at the root node**, indicating that SWIR has the greatest information-gain ratio in that example. NDSI and visible reflectance appear at lower levels of the tree and provide additional separation.
 
----
+***
 
 ## 4. Post-classification checks affecting bare land
 
@@ -138,7 +137,7 @@ Water affected by moderate sun glint can be classified as bare land because SWIR
 
 Urban surfaces with aerosol, pollution, or thin snow can exhibit reduced SWIR and increased VIS/NIR signals, producing false water detections. The ATBD therefore applies sensor-angle-dependent NDSI thresholds, with stricter conditions in parts of the Northern Hemisphere between 60°E and 180°E.
 
----
+***
 
 ## 5. Bare land in minor-water detection
 
@@ -154,7 +153,7 @@ For a candidate currently classified as bare land:
 
 Different thresholds are specified for desert, urban land, grassland/open shrubland, cropland/closed shrubland, and other land-cover types. This indicates that “bare-land classification” is not based on one universal threshold, but on the pixel’s **spectral departure from an expected local dry-land background**.
 
----
+***
 
 ## Concise interpretation
 
@@ -162,8 +161,8 @@ Different thresholds are specified for desert, urban land, grassland/open shrubl
 
 The most relevant parts of the ATBD are:
 
-- **Section 2.3.1.1**, Physical basis for water detection, pages 18 to 21
-- **Section 2.3.2.1.1**, Cloud and snow/ice masking, page 27
-- **Section 2.3.2.1.3**, Supra-vegetation/bare-land water detection, pages 30 to 33
-- **Section 2.3.2.5**, Change detection for minor water extraction, pages 39 to 41
-- **Table 2-4**, output class definitions, page 43
+* **Section 2.3.1.1**, Physical basis for water detection, pages 18 to 21
+* **Section 2.3.2.1.1**, Cloud and snow/ice masking, page 27
+* **Section 2.3.2.1.3**, Supra-vegetation/bare-land water detection, pages 30 to 33
+* **Section 2.3.2.5**, Change detection for minor water extraction, pages 39 to 41
+* **Table 2-4**, output class definitions, page 43

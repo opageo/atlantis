@@ -114,15 +114,15 @@ All `N` dates are stacked into a `(N, H, W)` array per layer and reduced
 using the operator declared for each layer in the
 [VIIRS layer registry](../layers.md#layers-viirs):
 
-| Layer                                | Operator   | Rationale                                                    |
-| :----------------------------------- | :--------- | :----------------------------------------------------------- |
-| `water_fraction`                     | `nanmean`  | Continuous variable → arithmetic mean                        |
-| `flood_fraction`                     | `nanmean`  | Continuous variable → arithmetic mean                        |
-| `exclusion_mask`                     | `all_true` | Excluded only if every observation was fill/cloud            |
-| `reference_water`                    | `majority` | Ignore excluded dates when reducing the reference-water mask |
-| `cloud_mask` / `snow_ice` / `shadow` | `mode`     | Categorical 0/1 derived masks → most-frequent value          |
-| `raw`                                | `mode`     | Categorical VFM codes → most-frequent value                  |
-| `cloud_fraction`                     | scalar     | Per-tile metadata (`np.mean`), not a pixel array             |
+| Layer                                | Operator     | Rationale                                                    |
+| :----------------------------------- | :----------- | :----------------------------------------------------------- |
+| `water_fraction`                     | `nanmean`    | Continuous variable → arithmetic mean                        |
+| `flood_fraction`                     | `nanmean`    | Continuous variable → arithmetic mean                        |
+| `exclusion_mask`                     | `all_true`   | Excluded only if every observation was fill/cloud            |
+| `reference_water`                    | `majority`   | Ignore excluded dates when reducing the reference-water mask |
+| `cloud_mask` / `snow_ice` / `shadow` | `mode`       | Categorical 0/1 derived masks → most-frequent value          |
+| `raw`                                | `mode`       | Categorical VFM codes → most-frequent value                  |
+| `cloud_fraction`                     | scalar       | Per-tile metadata (`np.mean`), not a pixel array             |
 
 > **Why `all_true` / `majority` for VIIRS?** VIIRS is optical, so cloud and
 > fill gaps are common. `exclusion_mask` therefore uses a conservative rule: a

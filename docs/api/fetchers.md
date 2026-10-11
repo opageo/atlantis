@@ -1,5 +1,5 @@
 # Fetchers
 
 ::: atlantis.fetchers
-options:
-show_submodules: true
+    options:
+      show_submodules: true
