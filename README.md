@@ -130,6 +130,10 @@ If you use Atlantis in your work, please cite it. Citation metadata is in
 to get APA or BibTeX. Each [release](https://github.com/opageo/atlantis/releases)
 is archived on Zenodo with its own DOI.
 
+The authors contributed equally and share ownership of the code equally; names
+are listed in alphabetical order. See
+[AUTHORS.md](https://github.com/opageo/atlantis/blob/main/AUTHORS.md).
+
 ## License
 
 The code is licensed under the [Apache License 2.0](https://github.com/opageo/atlantis/blob/main/LICENSE).

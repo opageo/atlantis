@@ -1,5 +1,7 @@
 cff-version: 1.2.0
-message: "If you use Atlantis, please cite it using the metadata below."
+message: >-
+  If you use Atlantis, please cite it using the metadata below. The authors
+  contributed equally; names are listed in alphabetical order (see AUTHORS.md).
 type: software
 title: "Atlantis: ML-ready archive of satellite-derived flood inundation observations"
 abstract: >-

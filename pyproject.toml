@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.12, <3.15"
 authors = [{ name = "Ioannis Kalfas" }, { name = "Stylianos Lagaras" }]
 dependencies = [
