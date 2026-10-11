@@ -1,6 +1,6 @@
 [project]
 name = "atlantis"
-version = "0.1.1"
+dynamic = ["version"]
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -97,6 +97,11 @@ docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=0.25"]
 [tool.uv]
 default-groups = ["dev"]
 
+[tool.hatch.version]
+# The version comes from the git tag (e.g. v0.1.0 -> 0.1.0). See docs/releasing.md.
+source = "vcs"
+fallback-version = "0.0.0"
+
 [tool.hatch.build]
 include = ["src/atlantis/fetchers/viirs/data/*.geojson"]
 
@@ -163,5 +168,5 @@ format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
 
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.27", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"

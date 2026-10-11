@@ -14,7 +14,6 @@
 
 [workspace]
 name = "atlantis"
-version = "0.1.1"
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 authors = ["Ioannis Kalfas", "Stylianos Lagaras"]
 channels = ["conda-forge"]

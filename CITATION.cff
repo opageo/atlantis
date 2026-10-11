@@ -14,7 +14,6 @@ authors:
     family-names: Lagaras
 repository-code: "https://github.com/opageo/atlantis"
 license: Apache-2.0
-version: 0.1.1
 keywords:
   - floods
   - remote sensing

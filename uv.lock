@@ -237,7 +237,6 @@ wheels = [
 
 [[package]]
 name = "atlantis"
-version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -338,10 +337,6 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "affine", marker = "extra == 'notebooks'", specifier = ">=3.0.1" },
-    { name = "atlantis", extras = ["geo"], marker = "extra == 'batch'" },
-    { name = "atlantis", extras = ["geo"], marker = "extra == 'notebooks'" },
-    { name = "atlantis", extras = ["geo"], marker = "extra == 'stac'" },
-    { name = "atlantis", extras = ["geo"], marker = "extra == 'viz'" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "beautifulsoup4", marker = "extra == 'notebooks'", specifier = ">=4.12" },
     { name = "boto3" },
@@ -368,7 +363,11 @@ requires-dist = [
     { name = "plotly", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
+    { name = "pyproj", marker = "extra == 'batch'", specifier = ">=3.8.0" },
     { name = "pyproj", marker = "extra == 'geo'", specifier = ">=3.8.0" },
+    { name = "pyproj", marker = "extra == 'notebooks'", specifier = ">=3.8.0" },
+    { name = "pyproj", marker = "extra == 'stac'", specifier = ">=3.8.0" },
+    { name = "pyproj", marker = "extra == 'viz'", specifier = ">=3.8.0" },
     { name = "pystac", specifier = ">=1.15.2" },
     { name = "pystac", marker = "extra == 'stac'", specifier = ">=1.15.2" },
     { name = "pystac-client", specifier = ">=0.7" },
@@ -381,7 +380,11 @@ requires-dist = [
     { name = "rio-cogeo", marker = "extra == 'batch'", specifier = ">=5.0" },
     { name = "rioxarray", specifier = ">=0.23.0" },
     { name = "s3fs", specifier = ">=2026.9.0" },
+    { name = "shapely", marker = "extra == 'batch'", specifier = ">=2.0" },
     { name = "shapely", marker = "extra == 'geo'", specifier = ">=2.0" },
+    { name = "shapely", marker = "extra == 'notebooks'", specifier = ">=2.0" },
+    { name = "shapely", marker = "extra == 'stac'", specifier = ">=2.0" },
+    { name = "shapely", marker = "extra == 'viz'", specifier = ">=2.0" },
     { name = "stac-geoparquet", marker = "extra == 'stac'", specifier = ">=0.8.2" },
     { name = "typer", specifier = ">=0.27.2" },
     { name = "universal-pathlib" },
@@ -389,7 +392,7 @@ requires-dist = [
     { name = "xpystac", marker = "extra == 'stac'", specifier = ">=0.1" },
     { name = "zarr", specifier = ">=3.4.0" },
 ]
-provides-extras = ["geo", "batch", "stac", "viz", "notebooks", "ui", "hf"]
+provides-extras = ["batch", "geo", "hf", "notebooks", "stac", "ui", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
