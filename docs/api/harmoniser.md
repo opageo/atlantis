@@ -1,5 +1,5 @@
 # Harmoniser
 
 ::: atlantis.harmoniser
-    options:
-      show_submodules: true
+options:
+show_submodules: true

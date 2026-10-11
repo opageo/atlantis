@@ -30,19 +30,6 @@ class ListingLocation:
     date_token: str
 
 
-@dataclass(frozen=True)
-class RemoteFile:
-    """Information about a remote file found in a listing.
-
-    Attributes:
-        filename: The name of the file.
-        url: The full URL to download the file.
-    """
-
-    filename: str
-    url: str
-
-
 class ViirsBackend(ABC):
     """Abstract base class for VIIRS data source backends.
 

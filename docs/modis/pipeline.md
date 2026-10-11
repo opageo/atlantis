@@ -178,8 +178,8 @@ markedly in cloud cover.
 
 > **Peak dates can differ across composites.** `argmax flood_pixel_count` is
 > computed independently for each fetch. F1/F1C/F2/F3 are different
-> accumulation rules over the underlying detections — a pixel needs *at
-> least N* water detections across the previous *N* days to appear in the
+> accumulation rules over the underlying detections — a pixel needs _at
+> least N_ water detections across the previous _N_ days to appear in the
 > N-Day composite (see
 > [overview.md § Composites](overview.md#composites-how-the-four-flood-layers-are-built))
 > — not the same raster thresholded differently. Fetching one event
@@ -196,15 +196,15 @@ All layers are reduced by [`atlantis.layers.aggregate_layer`](../../src/atlantis
 using the operator declared for each layer in the
 [MODIS layer registry](../layers.md#layers-modis):
 
-| Layer             | Operator  | Why                                                                         |
-| ----------------- | --------- | --------------------------------------------------------------------------- |
-| `water_fraction`  | `nanmean` | Continuous → arithmetic mean; insufficient-data pixels (NaN) are skipped    |
-| `flood_fraction`  | `nanmean` | Continuous → arithmetic mean; insufficient-data pixels (NaN) are skipped    |
-| `exclusion_mask`  | `mode`    | Categorical 0/1 → most-frequent; ties resolve to the lowest value           |
-| `reference_water` | `mode`    | Categorical 0/1/2 mask → most-frequent                                      |
-| `recurring_flood` | `mode`    | Categorical 0/1/2 mask → most-frequent                                      |
-| `raw`             | `mode`    | Categorical 0/1/2/3/255 composite → most-frequent                           |
-| `cloud_fraction`  | scalar    | Scalar metadata (`np.mean` of per-tile values)                              |
+| Layer             | Operator  | Why                                                                      |
+| ----------------- | --------- | ------------------------------------------------------------------------ |
+| `water_fraction`  | `nanmean` | Continuous → arithmetic mean; insufficient-data pixels (NaN) are skipped |
+| `flood_fraction`  | `nanmean` | Continuous → arithmetic mean; insufficient-data pixels (NaN) are skipped |
+| `exclusion_mask`  | `mode`    | Categorical 0/1 → most-frequent; ties resolve to the lowest value        |
+| `reference_water` | `mode`    | Categorical 0/1/2 mask → most-frequent                                   |
+| `recurring_flood` | `mode`    | Categorical 0/1/2 mask → most-frequent                                   |
+| `raw`             | `mode`    | Categorical 0/1/2/3/255 composite → most-frequent                        |
+| `cloud_fraction`  | scalar    | Scalar metadata (`np.mean` of per-tile values)                           |
 
 > **Why `mode` for MODIS masks?** MODIS derivations are categorical 0/1/2/3/255
 > masks. Mode preserves the most-frequent class per pixel and breaks ties by the

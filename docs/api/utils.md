@@ -1,5 +1,5 @@
 # Utils
 
 ::: atlantis.utils
-    options:
-      show_submodules: true
+options:
+show_submodules: true

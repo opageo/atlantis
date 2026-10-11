@@ -20,10 +20,10 @@ COPY --from=ghcr.io/prefix-dev/pixi:latest /usr/local/bin/pixi /usr/local/bin/pi
 RUN apt-get -qq update && \
     apt-get install -y curl tmux make g++ locales openssh-client git-lfs && \
     locale-gen en_US.UTF-8
-    
+
 RUN git config --system --add safe.directory '*' && \
     git config --system core.autocrlf input
-    
+
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8
 

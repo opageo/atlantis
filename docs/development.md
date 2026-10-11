@@ -72,7 +72,7 @@ containerized, ready-to-go environment for running all Atlantis features.
 2. `~/.aws/config` and `~/.aws/credentials` configured for the Atlantis S3
    bucket and dataset providers — request credentials from the administrators
 3. An `EARTHDATA_TOKEN` for the MODIS pipeline (see below)
-4. *(Contributors only)* SSH agent forwarding to authenticate against GitHub
+4. _(Contributors only)_ SSH agent forwarding to authenticate against GitHub
    when already connected via Remote-SSH (see below)
 
 ### Earthdata Token

@@ -1,5 +1,5 @@
 # Models
 
 ::: atlantis.models
-    options:
-      show_submodules: true
+options:
+show_submodules: true

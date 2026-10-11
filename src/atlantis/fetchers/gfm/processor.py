@@ -60,20 +60,6 @@ GFM_NATIVE_GSD_M: float = 20.0
 #: Nominal metres per degree of latitude/longitude at the equator.
 _METERS_PER_DEGREE: float = 111_320.0
 
-#: STAC configuration for odc.stac.load — marks nodata = 255.
-GFM_STAC_CFG: dict = {
-    "GFM": {
-        "assets": {
-            "ensemble_flood_extent": {"data_type": "uint8", "nodata": GFM_NODATA},
-            "ensemble_water_extent": {"data_type": "uint8", "nodata": GFM_NODATA},
-            "reference_water_mask": {"data_type": "uint8", "nodata": GFM_NODATA},
-            "exclusion_mask": {"data_type": "uint8", "nodata": GFM_NODATA},
-            "ensemble_likelihood": {"data_type": "uint8", "nodata": GFM_NODATA},
-            "advisory_flags": {"data_type": "uint8", "nodata": GFM_NODATA},
-        }
-    }
-}
-
 # Measured: a single eager odc.stac.load of all 6 GFM_BANDS at native ~20 m
 # resolution over a full EQUI7 tile peaks ~15 GiB RSS. Splitting the load
 # keeps at most 3 native bands + derivatives resident instead of 6 + 3.

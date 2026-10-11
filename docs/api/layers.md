@@ -1,5 +1,5 @@
 # Layers
 
 ::: atlantis.layers
-    options:
-      show_submodules: true
+options:
+show_submodules: true
