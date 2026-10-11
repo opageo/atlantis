@@ -8,10 +8,10 @@ abstract: >-
   accessible via a CLI, a Python API, and a Zarr/STAC archive for machine-learning
   workflows. Developed during ECMWF Code for Earth 2026.
 authors:
-  - given-names: Stylianos
-    family-names: Lagaras
   - given-names: Ioannis
     family-names: Kalfas
+  - given-names: Stylianos
+    family-names: Lagaras
 repository-code: "https://github.com/opageo/atlantis"
 license: Apache-2.0
 version: 0.1.1
