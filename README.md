@@ -121,3 +121,13 @@ See [docs/setup.md](docs/setup.md) for a full description of each credential
 All contributor documentation — `uv` setup, devcontainers, running tests,
 E2E workflow, CI triggers — is consolidated in
 [docs/development.md](docs/development.md).
+
+## License
+
+The code is licensed under the [Apache License 2.0](LICENSE).
+
+The Atlantis dataset on Hugging Face
+([opageo/atlantis](https://huggingface.co/datasets/opageo/atlantis)) is licensed
+under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It is derived
+from GFM (Copernicus), MODIS (NASA), VIIRS (NOAA), GEOID-Flood and KuroSiwo, so
+please credit those sources too when you use it.
