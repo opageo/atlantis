@@ -54,16 +54,15 @@ class ArchiveChecker:
 
         Returns:
             ValidationResult with pass/fail status.
+
+        Raises:
+            NotImplementedError: This check is not yet implemented.
         """
-        # TODO: Implement spatial alignment check
         # Expected implementation:
         # 1. Check all variables have same dimensions
         # 2. Check lat/lon arrays are identical
         # 3. Return ValidationResult
-        return ValidationResult(
-            passed=True,
-            message="Spatial alignment check placeholder - not yet implemented",
-        )
+        raise NotImplementedError("Spatial alignment check is not yet implemented")
 
     def check_nan_patterns(self, dataset: "xr.Dataset") -> ValidationResult:
         """Check for unusual NaN patterns in data.
@@ -73,16 +72,15 @@ class ArchiveChecker:
 
         Returns:
             ValidationResult with pass/fail status.
+
+        Raises:
+            NotImplementedError: This check is not yet implemented.
         """
-        # TODO: Implement NaN pattern check
         # Expected implementation:
         # 1. Calculate NaN fraction per variable
         # 2. Flag if > 90% NaN (likely missing data)
         # 3. Return ValidationResult with details
-        return ValidationResult(
-            passed=True,
-            message="NaN pattern check placeholder - not yet implemented",
-        )
+        raise NotImplementedError("NaN pattern check is not yet implemented")
 
     def check_crs_consistency(self, dataset: "xr.Dataset") -> ValidationResult:
         """Check CRS is consistent across dataset.
@@ -92,12 +90,11 @@ class ArchiveChecker:
 
         Returns:
             ValidationResult with pass/fail status.
+
+        Raises:
+            NotImplementedError: This check is not yet implemented.
         """
-        # TODO: Implement CRS consistency check
-        return ValidationResult(
-            passed=True,
-            message="CRS consistency check placeholder - not yet implemented",
-        )
+        raise NotImplementedError("CRS consistency check is not yet implemented")
 
     def check_value_ranges(
         self,
@@ -116,12 +113,11 @@ class ArchiveChecker:
 
         Returns:
             ValidationResult with pass/fail status.
+
+        Raises:
+            NotImplementedError: This check is not yet implemented.
         """
-        # TODO: Implement value range check
-        return ValidationResult(
-            passed=True,
-            message=f"Value range check placeholder for {variable} - not yet implemented",
-        )
+        raise NotImplementedError(f"Value range check for {variable!r} is not yet implemented")
 
     def run_all_checks(self, dataset: "xr.Dataset") -> list[ValidationResult]:
         """Run all validation checks on a dataset.

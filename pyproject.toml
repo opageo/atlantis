@@ -1,10 +1,12 @@
 [project]
 name = "atlantis"
-version = "0.1.1"
+dynamic = ["version"]
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.12, <3.15"
-authors = [{ name = "Stylianos Lagaras" }, { name = "Ioannis Kalfas" }]
+authors = [{ name = "Ioannis Kalfas" }, { name = "Stylianos Lagaras" }]
 dependencies = [
   "typer>=0.27.2",
   "loguru>=0.7.0",
@@ -38,7 +40,6 @@ atlantis = "atlantis.cli:cli"
 
 [project.optional-dependencies]
 geo = ["pyproj>=3.8.0", "shapely>=2.0"]
-ml = ["torch>=2.14.0", "scikit-learn>=1.9.1"]
 batch = [
   "atlantis[geo]",
   "dask[distributed]>=2026.8.0", # LocalCluster + Client + as_completed
@@ -61,7 +62,7 @@ viz = [
   "geoviews>=1.11",    # optional basemap / coastlines
 ]
 notebooks = [
-  "atlantis[geo,ml]",
+  "atlantis[geo]",
   "earthkit-data",
   "affine>=3.0.1",
   "cartopy>=0.26.0",
@@ -81,6 +82,7 @@ dev = [
   "pytest-timeout>=2.3.0",
   "pytest-xdist>=3.2.0",
   "ruff>=0.16.8",
+  "vulture>=2.16",
   "pre-commit>=4.6.2",
   "ipython>=9.17.1",
   "ipykernel>=7.3.0",
@@ -89,20 +91,16 @@ dev = [
   "atlantis[geo]",
   "atlantis[viz]",
   "atlantis[stac]",
-  "geoparquet-io",
 ]
 docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=0.25"]
 
 [tool.uv]
 default-groups = ["dev"]
 
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
+[tool.hatch.version]
+# The version comes from the git tag (e.g. v0.1.0 -> 0.1.0). See docs/releasing.md.
+source = "vcs"
+fallback-version = "0.0.0"
 
 [tool.hatch.build]
 include = ["src/atlantis/fetchers/viirs/data/*.geojson"]
@@ -151,13 +149,24 @@ omit = ["*/tests/*", "*/scripts/*", "*/utils/setup.py", "*/stac/*", "*/cli.py"]
 show_missing = true
 fail_under = 80
 
+[tool.vulture]
+paths = ["src/atlantis", "vulture_whitelist.py"]
+min_confidence = 60
+ignore_decorators = [
+  "@*.command",
+  "@*.callback",
+  "@*.page",
+  "@register_fetcher",
+]
+
 [tool.poe.tasks]
 test = "pytest -n auto tests/"
 lint = "ruff check ."
 lint-fix = "ruff check . --fix"
+deadcode = "vulture"
 format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"

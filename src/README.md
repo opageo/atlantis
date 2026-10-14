@@ -681,8 +681,7 @@ Validation is still planned. The API surface exists (`checker.py`, `ml_loader.py
 ```bash
 uv sync                           # Core only
 uv sync --extra geo               # xarray, zarr, rioxarray, odc-stac, pystac-client, pyproj, shapely, rasterio, requests, beautifulsoup4
-uv sync --extra ml                # torch, numpy, scikit-learn, matplotlib
-uv sync --extra notebooks         # geo + ml + notebook-only tooling such as earthkit-data, cartopy, metview
+uv sync --extra notebooks         # geo + notebook-only tooling such as earthkit-data, cartopy, metview
 ```
 
 For the working fetch paths, `uv sync --extra geo` is the relevant setup step. MODIS additionally requires an `EARTHDATA_TOKEN` environment variable.

@@ -137,7 +137,6 @@ Beyond the default (geo + dev), several opt-in environments are available:
 
 | Environment | Adds                                         | Activate with             |
 | ----------- | -------------------------------------------- | ------------------------- |
-| `ml`        | PyTorch (CPU), NumPy, scikit-learn           | `pixi shell -e ml`        |
 | `notebooks` | earthkit-data, cartopy, metview¹             | `pixi shell -e notebooks` |
 | `batch`     | Dask distributed, bokeh dashboard, rio-cogeo | `pixi shell -e batch`     |
 | `docs`      | MkDocs Material, mkdocstrings                | `pixi run -e docs docs`   |
@@ -149,7 +148,7 @@ notebooks environment installs everything except metview.
 Run a task in a specific environment:
 
 ```bash
-pixi run -e ml test
+pixi run -e batch test
 pixi run -e notebooks python notebooks/ecmwf/Extract_VIIRS_inundation.ipynb
 ```
 

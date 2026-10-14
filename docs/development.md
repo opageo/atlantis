@@ -141,6 +141,8 @@ uv build          # build package
 make clean        # clean build artifacts
 ```
 
+Releases are made by pushing a version tag; see [Releasing](releasing.md).
+
 ## Documentation site
 
 ```bash

@@ -98,7 +98,9 @@ nav:
   - "Batch Processing":
       - "VIIRS JPSS": batch/viirs/jpss.md
       - "Incremental MODIS Archive Updates": archive/modis-archive-update.md
-  - Development: development.md
+  - Development:
+      - "Development Guide": development.md
+      - Releasing: releasing.md
   - API Reference:
       - Config: api/config.md
       - Models: api/models.md

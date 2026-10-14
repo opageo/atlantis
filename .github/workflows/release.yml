@@ -1,0 +1,99 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds the package, smoke-tests the wheel,
+# creates the GitHub Release (which Zenodo archives) and, when enabled,
+# publishes to PyPI. See docs/releasing.md.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/osgeo/gdal:ubuntu-full-3.13.0
+      options: --user root
+
+    steps:
+      # git must be installed before checkout so the full history and tags are
+      # cloned; hatch-vcs derives the package version from the tag.
+      - run: apt-get update && apt-get install -y git curl g++
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.x"
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      # A ".dev" or "+local" version means the build was not exactly on the tag.
+      - name: Check the version comes from the tag
+        run: |
+          ls dist
+          if ls dist | grep -E '\.dev|\+'; then
+            echo "::error::Built a development version; is ${GITHUB_REF_NAME} on HEAD with full history?"
+            exit 1
+          fi
+
+      - name: Smoke-test the wheel in a clean environment
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/atlantis --help
+          /tmp/smoke/bin/python -c "import atlantis; print(atlantis.__version__)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=(--generate-notes --verify-tag)
+          # Tags like v0.2.0-rc1 are marked as pre-releases.
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" "${flags[@]}"
+
+  pypi:
+    # Off until the PyPI project exists and its trusted publisher is configured.
+    # Enable by setting the repository variable PUBLISH_TO_PYPI=true.
+    if: vars.PUBLISH_TO_PYPI == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

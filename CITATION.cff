@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: >-
+  If you use Atlantis, please cite it using the metadata below. The authors
+  contributed equally; names are listed in alphabetical order (see AUTHORS.md).
+type: software
+title: "Atlantis: ML-ready archive of satellite-derived flood inundation observations"
+abstract: >-
+  Atlantis fetches, harmonises and archives flood inundation observations from
+  VIIRS (optical), MODIS (optical) and GFM (SAR) on a common 1-arcmin grid,
+  accessible via a CLI, a Python API, and a Zarr/STAC archive for machine-learning
+  workflows. Developed during ECMWF Code for Earth 2026.
+authors:
+  - given-names: Ioannis
+    family-names: Kalfas
+  - given-names: Stylianos
+    family-names: Lagaras
+repository-code: "https://github.com/opageo/atlantis"
+license: Apache-2.0
+keywords:
+  - inundation
+  - floods
+  - remote sensing
+  - VIIRS
+  - MODIS
+  - GFM
+  - Sentinel-1
+  - Zarr
+  - STAC
+  - machine learning

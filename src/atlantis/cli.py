@@ -770,25 +770,6 @@ def _harmonise_viirs(
     )
 
 
-def _plot_gfm(
-    ds,
-    event_id,
-    date_label,
-    *,
-    output_png_path,
-):
-    """Save a PNG visualisation of GFM flood extent."""
-    output_png_path = Path(output_png_path)
-    output_png_path.parent.mkdir(parents=True, exist_ok=True)
-    if "flood_fraction" in ds:
-        plot_classified(
-            ds["flood_fraction"],
-            title=f"{event_id}: GFM flood extent {date_label}",
-            output_path=output_png_path,
-        )
-    console.print(f"  Plot → {output_png_path.name}")
-
-
 def _harmonise_gfm(
     ds,
     event_id,

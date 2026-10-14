@@ -3,9 +3,9 @@
 import numpy as np
 from rasterio.transform import from_origin
 
+from atlantis.fetchers._selection import parse_yyyymmdd
 from atlantis.fetchers.viirs.processor import ProcessedTile
 from atlantis.fetchers.viirs.selection import (
-    _parse_yyyymmdd,
     flood_pixel_count,
     is_better_peak_candidate,
     select_peak_window,
@@ -40,23 +40,23 @@ class TestIsBetterPeakCandidate:
         assert is_better_peak_candidate(4, 4) is False
 
 
-# ── _parse_yyyymmdd ───────────────────────────────────────────────────────────
+# ── parse_yyyymmdd ───────────────────────────────────────────────────────────
 
 
 class TestParseYyyymmdd:
     def test_valid_token(self):
         from datetime import date
 
-        assert _parse_yyyymmdd("20200722") == date(2020, 7, 22)
+        assert parse_yyyymmdd("20200722") == date(2020, 7, 22)
 
     def test_aggregated_token_returns_none(self):
-        assert _parse_yyyymmdd("aggregated") is None
+        assert parse_yyyymmdd("aggregated") is None
 
     def test_short_token_returns_none(self):
-        assert _parse_yyyymmdd("2020072") is None
+        assert parse_yyyymmdd("2020072") is None
 
     def test_long_token_returns_none(self):
-        assert _parse_yyyymmdd("202007220") is None
+        assert parse_yyyymmdd("202007220") is None
 
 
 # ── select_peak_window ────────────────────────────────────────────────────────

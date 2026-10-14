@@ -30,10 +30,10 @@ updates:
         update-types:
           - "major"
 
+    # The gdal Python bindings must match the GDAL system library exactly
+    # (3.13.0 in the CI container and pixi). Bump all of them together by hand.
     ignore:
       - dependency-name: "gdal"
-        update-types:
-          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     # Workflow files stored in the default location of `.github/workflows`

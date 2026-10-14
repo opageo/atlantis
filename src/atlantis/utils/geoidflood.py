@@ -25,12 +25,14 @@ import geopandas as gpd
 import pandas as pd
 import shapely.wkb
 
+from atlantis.utils.io import is_lfs_pointer
+
 GEOIDFLOOD_DEFAULT_CATALOGUE = Path("assets/geoidflood_tile_catalog.parquet")
 GEOIDFLOOD_DEFAULT_METADATA = Path("data/metadata/geoidflood_metadata_v1.csv")
 
 #: Hugging Face dataset repository hosting the GEOID-Flood tile catalogues.
 GEOIDFLOOD_HF_REPO = "links-ads/geoid-flood"
-GEOIDFLOOD_HF_BASE_URL = "https://huggingface.co/datasets/links-ads/geoid-flood/resolve/main"
+GEOIDFLOOD_HF_BASE_URL = f"https://huggingface.co/datasets/{GEOIDFLOOD_HF_REPO}/resolve/main"
 
 #: Catalogues shipped in the dataset: the main tree (train/val/test) and the
 #: held-out tree (EMSR857–871). Same schema, disjoint event ids — merged on
@@ -52,16 +54,6 @@ GEOIDFLOOD_REQUIRED_COLUMNS = {
 #: Delineation times later than this year are corrupt metadata (the release
 #: contains rows dated 2041) and are dropped when deriving date windows.
 MAX_DELINEATION_YEAR = 2027
-
-
-def is_lfs_pointer(path: Path) -> bool:
-    """Check whether a file is a Git LFS pointer instead of real content."""
-    try:
-        with path.open("r", encoding="utf-8") as file_handle:
-            first_line = file_handle.readline()
-    except (UnicodeDecodeError, OSError):
-        return False
-    return first_line.startswith("version https://git-lfs.github.com/spec")
 
 
 def fetch_geoidflood_catalog(dest: Path, trees: tuple[str, ...] = GEOIDFLOOD_CATALOG_TREES) -> Path:
