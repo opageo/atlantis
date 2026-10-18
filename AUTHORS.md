@@ -3,7 +3,7 @@
 Atlantis is developed and maintained by:
 
 - Ioannis Kalfas
-- Stylianos Lagaras
+- Stelios Lagaras
 
 ## Statement of equal contribution and joint ownership
 

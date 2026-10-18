@@ -12,7 +12,7 @@ abstract: >-
 authors:
   - given-names: Ioannis
     family-names: Kalfas
-  - given-names: Stylianos
+  - given-names: Stelios
     family-names: Lagaras
 repository-code: "https://github.com/opageo/atlantis"
 license: Apache-2.0
