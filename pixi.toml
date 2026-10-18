@@ -14,9 +14,8 @@
 
 [workspace]
 name = "atlantis"
-version = "0.1.1"
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
-authors = ["Stylianos Lagaras", "Ioannis Kalfas"]
+authors = ["Ioannis Kalfas", "Stelios Lagaras"]
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64", "osx-64"]
 
@@ -28,34 +27,35 @@ platforms = ["linux-64", "osx-arm64", "osx-64"]
 python = ">=3.12,<3.15"
 
 # --- Core runtime (mirrors pyproject.toml [project].dependencies) ---
-typer = ">=0.26.7"
+typer = ">=0.27.2"
 loguru = ">=0.7.0"
 rich = ">=13.0.0"
 boto3 = "*"
 universal_pathlib = "*"
-s3fs = ">=2024.6.0"
-python-dotenv = ">=1.0.0"
-pydantic = ">=2.0"
-pydantic-settings = ">=2.14.2"
-geopandas = ">=1.1"
+s3fs = ">=2026.9.0"
+python-dotenv = ">=1.2.3"
+pydantic = ">=2.13.5"
+pydantic-settings = ">=2.15.0"
+geopandas = ">=1.1.4"
 pandas = "<3"
 pyarrow = "*"
-matplotlib = ">=3.11.0"
+matplotlib = ">=3.11.2"
 ipympl = ">=0.10.0"
-plotly = ">=6.7.0"
-odc-stac = ">=0.4"
-cartopy = ">0.22"
+plotly = ">=7.0.0"
+odc-stac = ">=0.5.3"
+numpy = ">=2.5.3"
+cartopy = ">=0.26.0"
 
 
 # --- Geo extras (mirrors pyproject.toml [project.optional-dependencies].geo) ---
 xarray = ">=2024.1"
-zarr = ">=3.0"
-rioxarray = ">=0.15"
-pystac = ">=1.14"
+zarr = ">=3.4.0"
+rioxarray = ">=0.23.0"
+pystac = ">=1.15.2"
 pystac-client = ">=0.7"
-pyproj = ">=3.6"
+pyproj = ">=3.8.0"
 shapely = ">=2.0"
-rasterio = ">=1.3"
+rasterio = ">=1.5.1"
 beautifulsoup4 = ">=4.12"
 requests = ">=2.34.2"
 
@@ -83,7 +83,7 @@ atlantis = { path = ".", editable = true }
 [pypi-options.dependency-overrides]
 gdal = ">=3.13"
 python-dotenv = ">=1.2"
-s3fs = ">=2026.6"
+s3fs = ">=2026.9.0"
 
 # ============================================================================
 # Feature: dev (development tools)
@@ -96,6 +96,7 @@ pytest-timeout = ">=2.3.0"
 pytest-xdist = ">=3.2.0"
 pytest-env = "*"
 ruff = ">=0.11.0"
+vulture = ">=2.16"
 pre-commit = ">=4.2.0"
 ipython = ">=9.14.1"
 ipykernel = ">=7.3.0"
@@ -106,25 +107,11 @@ ripgrep = "*"
 poethepoet = ">=0.46.0"
 
 # ============================================================================
-# Feature: ml (machine learning)
-# ============================================================================
-
-[feature.ml.dependencies]
-numpy = ">=2.0"
-scikit-learn = ">=1.9.0"
-
-[feature.ml.target.linux-64.dependencies]
-pytorch-cpu = ">=2.0"
-
-[feature.ml.target.osx-arm64.dependencies]
-pytorch = ">=2.0"
-
-# ============================================================================
 # Feature: batch (distributed processing)
 # ============================================================================
 
 [feature.batch.dependencies]
-dask = ">=2024.10"
+dask = ">=2026.8.0"
 distributed = "*"
 bokeh = ">=3.0"
 rio-cogeo = ">=5.0"
@@ -134,7 +121,7 @@ rio-cogeo = ">=5.0"
 # ============================================================================
 
 [feature.events.dependencies]
-dask = ">=2024.10"
+dask = ">=2026.8.0"
 distributed = "*"
 
 # ============================================================================
@@ -144,8 +131,7 @@ distributed = "*"
 [feature.notebooks.dependencies]
 jupyterlab = ">=4.0"
 earthkit-data = "*"
-affine = ">=2.4"
-cartopy = ">=0.22"
+affine = ">=3.0.1"
 
 [feature.notebooks.target.linux-64.dependencies]
 metview-python = "*"
@@ -155,7 +141,7 @@ metview-python = "*"
 # ============================================================================
 
 [feature.ui.pypi-dependencies]
-nicegui = ">=2.0"
+nicegui = ">=3.17.1"
 # Feature: docs (MkDocs + Material for site generation)
 # ============================================================================
 
@@ -169,10 +155,10 @@ mkdocstrings = { version = ">=0.25", extras = ["python"] }
 # ============================================================================
 
 [feature.stac.dependencies]
-pystac = ">=1.9"
+pystac = ">=1.15.2"
 
 [feature.stac.pypi-dependencies]
-stac-geoparquet = ">=0.6"
+stac-geoparquet = ">=0.8.2"
 xpystac = ">=0.1"
 
 # ============================================================================
@@ -181,9 +167,9 @@ xpystac = ">=0.1"
 
 [feature.viz.dependencies]
 hvplot = ">=0.10"
-holoviews = ">=1.18"
+holoviews = ">=1.23.2"
 panel = ">=1.4"
-datashader = ">=0.16"
+datashader = ">=0.19"
 geoviews = ">=1.11"
 bokeh = ">=3.0"
 xpystac = ">=0.1"
@@ -195,8 +181,7 @@ xpystac = ">=0.1"
 
 [environments]
 default = { features = ["dev", "ui"], solve-group = "default" }
-ml = { features = ["dev", "ml"], solve-group = "default" }
-notebooks = { features = ["dev", "ml", "notebooks"], solve-group = "default" }
+notebooks = { features = ["dev", "notebooks"], solve-group = "default" }
 batch = { features = ["dev", "batch"], solve-group = "default" }
 events = { features = ["dev", "events"], solve-group = "default" }
 ui = { features = ["dev", "ui"], solve-group = "default" }
@@ -259,6 +244,7 @@ test = { cmd = "pytest -n auto tests/ -m 'not slow'", env = { PYTHONPATH = "src"
 test-all = { cmd = "pytest -n auto tests/", env = { PYTHONPATH = "src" } }
 lint = "ruff check ."
 lint-fix = "ruff check . --fix"
+deadcode = "vulture"
 format = "ruff format ."
 format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"

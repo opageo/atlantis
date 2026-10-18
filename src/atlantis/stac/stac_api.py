@@ -10,6 +10,8 @@ import geopandas as gpd
 from loguru import logger
 from pystac_client import Client
 
+from atlantis.utils.io import is_lfs_pointer
+
 os.environ["GDAL_HTTP_TCP_KEEPALIVE"] = "YES"
 os.environ["AWS_PROFILE"] = "eodata"  # Loads credentials from ~/.aws/credentials
 os.environ["AWS_S3_ENDPOINT"] = "eodata.dataspace.copernicus.eu"
@@ -26,15 +28,6 @@ WGS84 = "EPSG:4326"
 
 def get_catalogue(catalogue_path: Path = CATALOGUE_PATH) -> gpd.GeoDataFrame:
     """Load the KuroSiwo catalogue GeoPackage, falling back to LFS hydration if needed."""
-
-    def is_lfs_pointer(path: Path) -> bool:
-        try:
-            with open(path, "r", encoding="utf8") as fh:
-                first = fh.readline()
-            return first.startswith("version https://git-lfs.github.com/spec")
-        except Exception:
-            return False
-
     # Ensure the asset is present and not an LFS pointer; try to fetch if needed
     if catalogue_path.exists():
         if is_lfs_pointer(catalogue_path):

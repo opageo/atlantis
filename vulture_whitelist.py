@@ -1,0 +1,80 @@
+"""Vulture whitelist: names vulture reports as unused but that are intentionally kept.
+
+Run with ``pixi run deadcode`` (or ``uv run poe deadcode``). Any new finding
+outside this file is likely real dead code. To regenerate a draft:
+``vulture src/atlantis --make-whitelist``.
+"""
+
+# ruff: noqa
+# fmt: off
+
+# -- False positives: framework hooks, dynamic attributes, stub signatures ---
+_.setup  # unused method (src/atlantis/batch/orchestrator.py:37)
+model_config  # unused variable (src/atlantis/config.py:60)
+_.settings_customise_sources  # unused method (src/atlantis/config.py:94)
+env_settings  # unused variable (src/atlantis/config.py:99)
+model_config  # unused variable (src/atlantis/config.py:144)
+model_config  # unused variable (src/atlantis/config.py:187)
+model_config  # unused variable (src/atlantis/config.py:230)
+model_config  # unused variable (src/atlantis/config.py:281)
+model_config  # unused variable (src/atlantis/config.py:315)
+model_config  # unused variable (src/atlantis/config.py:338)
+ItemCollection  # unused import (src/atlantis/fetchers/gfm/backend.py:14)
+_._atlantis_memfile  # unused attribute (src/atlantis/fetchers/modis/processor.py:332)
+_._atlantis_memfile  # unused attribute (src/atlantis/fetchers/modis/processor.py:364)
+_.enabled  # unused attribute (src/atlantis/ui/pages/fetch.py:240)
+_.enabled  # unused attribute (src/atlantis/ui/pages/fetch.py:301)
+_.flush  # unused method (src/atlantis/utils/checklist.py:388)
+min_val  # unused variable (src/atlantis/validation/checker.py:103)
+max_val  # unused variable (src/atlantis/validation/checker.py:104)
+batch_size  # unused variable (src/atlantis/validation/ml_loader.py:56)
+_.sizing_mode  # unused attribute (src/atlantis/viz/dashboard.py:299)
+
+# -- Baseline: unused in production but kept for now (public API, test-only
+#    helpers, documented constants, planned features). Revisit after the first
+#    release; see .github/prompts/dead-code-cleanup.md for the per-item notes.
+aoi_blocks  # unused function (src/atlantis/archive/grid.py:129)
+aoi_block_id  # unused function (src/atlantis/archive/grid.py:181)
+_modis_group  # unused function (src/atlantis/archive/update.py:640)
+_.write_checkpoint  # unused method (src/atlantis/archive/writer.py:346)
+_.is_checkpointed  # unused method (src/atlantis/archive/writer.py:368)
+gfm_api_url  # unused variable (src/atlantis/config.py:240)
+log_level  # unused variable (src/atlantis/config.py:353)
+FloodFetcher  # unused class (src/atlantis/fetchers/base.py:18)
+_._build_fetch_result  # unused method (src/atlantis/fetchers/gfm/__init__.py:530)
+kurosiwo_task_id  # unused function (src/atlantis/fetchers/gfm/event_tasks.py:79)
+event_date_windows  # unused function (src/atlantis/fetchers/gfm/event_tasks.py:84)
+count_items_per_aoi_date  # unused function (src/atlantis/fetchers/gfm/event_tasks.py:342)
+item_count  # unused variable (src/atlantis/fetchers/gfm/processor.py:459)
+item_ids  # unused variable (src/atlantis/fetchers/gfm/processor.py:460)
+reference_native  # unused variable (src/atlantis/fetchers/gfm/processor.py:1445)
+layout_dir  # unused variable (src/atlantis/fetchers/modis/backend.py:373)
+MODIS_PIXEL_SIZE_DEG  # unused variable (src/atlantis/fetchers/modis/processor.py:57)
+cloud_aware_score  # unused function (src/atlantis/fetchers/modis/selection.py:57)
+clear_registry  # unused function (src/atlantis/fetchers/registry.py:64)
+FLOOD_MIN_CODE  # unused variable (src/atlantis/fetchers/viirs/layers.py:25)
+SEASONAL_WATER_CODES  # unused variable (src/atlantis/fetchers/viirs/layers.py:35)
+OPEN_WATER_CODES  # unused variable (src/atlantis/fetchers/viirs/layers.py:36)
+classify_viirs_flood_fraction  # unused function (src/atlantis/fetchers/viirs/processor.py:186)
+_.validate_crs  # unused method (src/atlantis/harmoniser/reprojector.py:258)
+_.tile_dataset  # unused method (src/atlantis/harmoniser/tiler.py:58)
+_.get_tile_bbox  # unused method (src/atlantis/harmoniser/tiler.py:139)
+render_all_markdown  # unused function (src/atlantis/layers/docs.py:200)
+fetch_timestamp  # unused variable (src/atlantis/models/metadata.py:27)
+snow_flag  # unused variable (src/atlantis/models/metadata.py:32)
+quality_bitmask  # unused variable (src/atlantis/models/metadata.py:33)
+permanent_water_mask_available  # unused variable (src/atlantis/models/metadata.py:34)
+license  # unused variable (src/atlantis/models/metadata.py:54)
+temporal_coverage  # unused variable (src/atlantis/models/metadata.py:55)
+spatial_coverage  # unused variable (src/atlantis/models/metadata.py:56)
+KS_CRS  # unused variable (src/atlantis/stac/stac_api.py:25)
+plotly_legend_from_codes  # unused function (src/atlantis/ui/components/map_viewer.py:69)
+history_page  # unused function (src/atlantis/ui/pages/history.py:12)
+_.warn_substep  # unused method (src/atlantis/utils/checklist.py:206)
+_._console  # unused attribute (src/atlantis/utils/checklist.py:548)
+bbox_area  # unused function (src/atlantis/utils/geo.py:84)
+_validate_not_html  # unused function (src/atlantis/utils/io.py:218)
+get_etag  # unused function (src/atlantis/utils/io.py:229)
+skip  # unused function (src/atlantis/utils/ui.py:96)
+_.check_value_ranges  # unused method (src/atlantis/validation/checker.py:99)
+_.run_all_checks  # unused method (src/atlantis/validation/checker.py:122)

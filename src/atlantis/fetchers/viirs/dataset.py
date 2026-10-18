@@ -20,20 +20,3 @@ def processed_tile_to_dataset(
 ) -> xr.Dataset:
     """Convert a :class:`ProcessedTile` to an rioxarray-backed Dataset."""
     return dataset_from_processed(processed, registry, event_id=event_id, source_id=source_id)
-
-
-def processed_tiles_to_multi_dataset(
-    tiles: list[tuple[str, ProcessedTile]],
-    event_id: str,
-    source_id: str = "viirs",
-) -> xr.Dataset:
-    """Convert multiple ProcessedTiles to a multi-date xarray Dataset."""
-    import xarray as xr
-
-    datasets = []
-    for date_token, result in tiles:
-        ds = processed_tile_to_dataset(result.processed, event_id=event_id, source_id=source_id)
-        ds = ds.expand_dims(time=[date_token])
-        datasets.append(ds)
-
-    return xr.concat(datasets, dim="time")

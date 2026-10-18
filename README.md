@@ -120,4 +120,26 @@ See [docs/setup.md](docs/setup.md) for a full description of each credential
 
 All contributor documentation — `uv` setup, devcontainers, running tests,
 E2E workflow, CI triggers — is consolidated in
-[docs/development.md](docs/development.md).
+[docs/development.md](docs/development.md). How to publish a new version is
+described in [docs/releasing.md](docs/releasing.md).
+
+## Citing Atlantis
+
+If you use Atlantis in your work, please cite it. Citation metadata is in
+[CITATION.cff](https://github.com/opageo/atlantis/blob/main/CITATION.cff); on GitHub, use **Cite this repository** in the sidebar
+to get APA or BibTeX. Each [release](https://github.com/opageo/atlantis/releases)
+is archived on Zenodo with its own DOI.
+
+The authors contributed equally and share ownership of the code equally; names
+are listed in alphabetical order. See
+[AUTHORS.md](https://github.com/opageo/atlantis/blob/main/AUTHORS.md).
+
+## License
+
+The code is licensed under the [Apache License 2.0](https://github.com/opageo/atlantis/blob/main/LICENSE).
+
+The Atlantis dataset on Hugging Face
+([opageo/atlantis](https://huggingface.co/datasets/opageo/atlantis)) is licensed
+under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It is derived
+from GFM (Copernicus), MODIS (NASA), VIIRS (NOAA), GEOID-Flood and KuroSiwo, so
+please credit those sources too when you use it.
