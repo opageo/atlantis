@@ -92,7 +92,7 @@ dev = [
   "atlantis[viz]",
   "atlantis[stac]",
 ]
-docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=0.25"]
+docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=1.0.7"]
 
 [tool.uv]
 default-groups = ["dev"]
