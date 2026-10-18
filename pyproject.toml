@@ -168,5 +168,5 @@ format-fix = "ruff format ."
 precommit = "pre-commit run --all-files"
 
 [build-system]
-requires = ["hatchling>=1.27", "hatch-vcs>=0.4"]
+requires = ["hatchling>=1.27", "hatch-vcs>=0.5.0"]
 build-backend = "hatchling.build"
