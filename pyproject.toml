@@ -18,7 +18,8 @@ dependencies = [
   "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
   "geopandas>=1.1.4",
-  "pandas[pyarrow] < 3",
+  "pandas < 3",
+  "pyarrow",
   "matplotlib>=3.11.2",
   "ipympl>=0.10.0",
   "plotly>=7.0.0",
@@ -27,11 +28,13 @@ dependencies = [
   "rasterio>=1.5.1",
   "rioxarray>=0.23.0",
   "xarray",
-  "zarr>=3.4.0",
+  "zarr~=3.4",
   "requests>=2.34.2",
   "gdal==3.13.0",
   "pystac>=1.15.2",
   "pystac-client>=0.7",
+  "pyproj>=3.8.0",
+  "shapely>=2.0",
   "beautifulsoup4>=4.12",
 ]
 
@@ -39,21 +42,17 @@ dependencies = [
 atlantis = "atlantis.cli:cli"
 
 [project.optional-dependencies]
-geo = ["pyproj>=3.8.0", "shapely>=2.0"]
 batch = [
-  "atlantis[geo]",
   "dask[distributed]>=2026.8.0", # LocalCluster + Client + as_completed
   "rio-cogeo>=5.0",              # `rio cogeo validate` for verification
 ]
 stac = [
-  "atlantis[geo]",
   "pystac>=1.15.2",
   "pystac-client>=0.7",     # pystac, pystac-client, xarray, zarr
   "stac-geoparquet>=0.8.2", # serverless columnar item index (scale path)
   "xpystac>=0.1",           # open a STAC Item/Asset/Collection as xarray (Zarr)
 ]
 viz = [
-  "atlantis[geo]",     # xarray/zarr datacube reads
   "hvplot>=0.10",      # xarray .hvplot interface (time slider)
   "holoviews>=1.23.2", # backing element model
   "panel>=1.4",        # local dashboard server (`panel serve`)
@@ -62,9 +61,8 @@ viz = [
   "geoviews>=1.11",    # optional basemap / coastlines
 ]
 notebooks = [
-  "atlantis[geo]",
   "earthkit-data",
-  "affine>=3.0.1",
+  "affine~=3.0",
   "cartopy>=0.26.0",
   "beautifulsoup4>=4.12",
   "requests>=2.34.2",
@@ -72,6 +70,14 @@ notebooks = [
 ]
 ui = ["nicegui>=3.17.1"]
 hf = ["huggingface-hub"]
+all = [
+  "atlantis[batch]",
+  "atlantis[stac]",
+  "atlantis[viz]",
+  "atlantis[notebooks]",
+  "atlantis[ui]",
+  "atlantis[hf]",
+]
 
 [dependency-groups]
 dev = [
@@ -88,9 +94,9 @@ dev = [
   "ipykernel>=7.3.0",
   "nbstripout>=0.9.1",
   "ripgrep>=15.1.0",
-  "atlantis[geo]",
   "atlantis[viz]",
   "atlantis[stac]",
+  "atlantis[hf]",
 ]
 docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=1.0.7"]
 
