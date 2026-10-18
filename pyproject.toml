@@ -18,7 +18,7 @@ dependencies = [
   "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
   "geopandas>=1.1.4",
-  "pandas[pyarrow] < 3",
+  "pandas[pyarrow]<4",
   "matplotlib>=3.11.2",
   "ipympl>=0.10.0",
   "plotly>=7.0.0",
