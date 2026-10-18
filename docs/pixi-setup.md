@@ -1,8 +1,14 @@
 # Setting up Atlantis with pixi
 
-[Pixi](https://pixi.sh) provides a single-command setup that installs **all**
-dependencies — including GDAL with HDF4 support — from conda-forge. No manual
+[Pixi](https://pixi.sh) provides a single-command setup that installs the
+**system dependencies** — GDAL with HDF4 support and the packages built against
+it (rasterio, geopandas, pyproj, shapely, pyarrow) — from conda-forge. No manual
 compilation or system package management is needed.
+
+`pyproject.toml` stays the **single source of truth for all PyPI dependencies**:
+pixi installs `atlantis` itself (editable) with the `all` extra, so every
+optional group from `pyproject.toml` (`batch`, `stac`, `viz`, `notebooks`, `ui`,
+`hf`) is installed by default.
 
 > **Disclaimer (Conda):** Atlantis does not officially support Conda-only
 > workflows. We only provide `environment.yml` as a convenience export from
@@ -32,12 +38,13 @@ pixi install
 
 This resolves and installs:
 
-- Python (3.11–3.14)
-- All runtime + geo dependencies (rasterio, xarray, geopandas, pystac, …)
+- Python (3.12–3.14)
 - GDAL **with the HDF4 driver** (`libgdal-hdf4` from conda-forge) — no manual
-  build required
+  build required — plus rasterio, geopandas, pyproj, shapely and pyarrow built
+  against it
+- The `atlantis` package itself and all its runtime dependencies **plus every
+  extra** (`atlantis[all]`), from `pyproject.toml`
 - Dev tools (pytest, ruff, pre-commit, …)
-- The `atlantis` package itself (available via ``)
 
 Verify the GDAL/HDF4 stack:
 
@@ -131,19 +138,31 @@ For custom fetch commands, use the module path with ``:
 
 ---
 
-## 6. Optional environments
+## 6. Named environments
 
-Beyond the default (geo + dev), several opt-in environments are available:
+Because the default environment already installs **all** extras, the named
+environments are mostly **aliases of `default`**: they contain the same PyPI
+packages and exist so you can target a purpose with `pixi run -e <env>` /
+`pixi shell -e <env>`. They all share one solve group, so conda package versions
+are identical across them.
 
-| Environment | Adds                                         | Activate with             |
-| ----------- | -------------------------------------------- | ------------------------- |
-| `notebooks` | earthkit-data, cartopy, metview¹             | `pixi shell -e notebooks` |
-| `batch`     | Dask distributed, bokeh dashboard, rio-cogeo | `pixi shell -e batch`     |
-| `docs`      | MkDocs Material, mkdocstrings                | `pixi run -e docs docs`   |
-| `viz`       | HoloViz dashboard stack (panel, hvplot, …)   | `pixi shell -e viz`       |
+| Environment | Same packages as `default`? | Extra on top                     | Activate with             |
+| ----------- | --------------------------- | -------------------------------- | ------------------------- |
+| `default`   | —                           | —                                | `pixi shell`              |
+| `batch`     | yes                         | —                                | `pixi shell -e batch`     |
+| `events`    | yes                         | — (per-event GFM backfill tasks) | `pixi shell -e events`    |
+| `stac`      | yes                         | —                                | `pixi shell -e stac`      |
+| `ui`        | yes                         | —                                | `pixi shell -e ui`        |
+| `viz`       | yes                         | —                                | `pixi shell -e viz`       |
+| `notebooks` | no                          | JupyterLab, metview¹ (conda)     | `pixi shell -e notebooks` |
+| `docs`      | no                          | MkDocs Material, mkdocstrings    | `pixi run -e docs docs`   |
 
-¹ `metview-python` is only available on `linux-64`. On macOS (osx-arm64) the
-notebooks environment installs everything except metview.
+¹ `metview-python` is only available on `linux-64`. On macOS the `notebooks`
+environment installs everything except the conda `metview-python` package.
+
+Several tasks pin their environment with `default-environment` (for example the
+GEOID-Flood / KuroSiwo archive tasks use `events`, and `merge-yearly-zarr` uses
+`stac`), so `pixi run <task>` picks the right one automatically.
 
 Run a task in a specific environment:
 
@@ -151,6 +170,15 @@ Run a task in a specific environment:
 pixi run -e batch test
 pixi run -e notebooks python notebooks/ecmwf/Extract_VIIRS_inundation.ipynb
 ```
+
+> **Disk space:** every named environment is installed as its own copy under
+> `.pixi/envs/`, even when it is identical to `default` (several GB each). Only
+> run `pixi install -e <env>` (or `pixi run -e <env>`) for the ones you use, and
+> remove the rest with `rm -rf .pixi/envs/<env>`.
+
+To change which packages an environment gets, add a `[feature.<name>.*]` table in
+`pixi.toml` and reference it in `[environments]`. Do not add PyPI packages there;
+put them in `pyproject.toml` (see [section 8](#8-bumping-dependencies)).
 
 ---
 
@@ -175,13 +203,22 @@ environment and lockfile cache lives in `.pixi/`.
 
 ### Regenerating the lockfile
 
-If you add or bump a dependency in `pixi.toml`:
+If you add or bump a dependency in `pyproject.toml` or `pixi.toml`:
 
 ```bash
-pixi install --frozen=false
+pixi lock
 ```
 
 This re-solves and updates `pixi.lock`. Commit the updated lockfile.
+
+If the solve fails with a message like _"affine==3.0.0 … may be causing a
+conflict"_, a conda package was pinned by an older lockfile and conflicts with a
+newer `pyproject.toml` bound. Refresh that package and lock again:
+
+```bash
+pixi update <package>
+pixi lock
+```
 
 ### Lockfile conflicts after rebase
 
@@ -198,22 +235,28 @@ conda-forge GDAL takes precedence.
 
 ### Platforms
 
-The lockfile covers `linux-64` and `osx-arm64`. Windows and Intel macOS are
-not currently supported via pixi (use the `uv sync` path instead).
+The lockfile covers all major platforms `linux-64`, `osx-arm64`, `osx-64`, `win-64`.
 
 ---
 
 ## 8. Bumping dependencies
 
-When a dependency version is updated in `pyproject.toml`, mirror the change in
-`pixi.toml` and regenerate the lockfile:
+Edit PyPI dependencies **only in `pyproject.toml`** — `pixi.toml` picks them up
+automatically. Then regenerate the lockfile:
 
 ```bash
-# Edit pixi.toml to match the new version constraint
-pixi install
-git add pixi.toml pixi.lock
-git commit -m "chore: bump <package> in pixi.toml"
+pixi lock
+git add pyproject.toml pixi.lock
+git commit -m "chore: bump <package>"
 ```
+
+Only touch `pixi.toml` for system packages (GDAL, HDF4, PROJ, GEOS and packages
+compiled against them: `rasterio`, `geopandas`, `pyproj`, `shapely`, `pyarrow`,
+and the `pandas < 3` bound that must match `pyproject.toml`). New optional
+dependency groups added to `pyproject.toml` are picked up automatically as long
+as they are included in the `all` extra. The `dev` and `docs` tools (and
+`jupyterlab`) are the one exception: pixi cannot read PEP 735
+`[dependency-groups]`, so they are listed unpinned in `pixi.toml`.
 
 ---
 

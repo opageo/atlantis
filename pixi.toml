@@ -22,7 +22,7 @@ name = "atlantis"
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 authors = ["Ioannis Kalfas", "Stelios Lagaras"]
 channels = ["conda-forge"]
-platforms = ["linux-64", "osx-arm64", "osx-64"]
+platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
 
 # ============================================================================
 # System dependencies: GDAL/HDF4 binary stack + packages built against it
@@ -93,33 +93,11 @@ ripgrep = "*"
 poethepoet = "*"
 
 # ============================================================================
-# Features below only add pyproject.toml extras ([project.optional-dependencies])
-# ============================================================================
-
-[feature.batch.pypi-dependencies]
-atlantis = { path = ".", editable = true, extras = ["batch"] }
-
-[feature.events.pypi-dependencies]
-atlantis = { path = ".", editable = true, extras = ["batch"] }
-
-[feature.ui.pypi-dependencies]
-atlantis = { path = ".", editable = true, extras = ["ui"] }
-
-[feature.stac.pypi-dependencies]
-atlantis = { path = ".", editable = true, extras = ["stac"] }
-
-[feature.viz.pypi-dependencies]
-atlantis = { path = ".", editable = true, extras = ["viz"] }
-
-# ============================================================================
 # Feature: notebooks (Jupyter / ECMWF benchmarking)
 # ============================================================================
 
 [feature.notebooks.dependencies]
 jupyterlab = "*"
-
-[feature.notebooks.pypi-dependencies]
-atlantis = { path = ".", editable = true, extras = ["notebooks"] }
 
 # metview needs the native Metview binary, only packaged for linux-64
 [feature.notebooks.target.linux-64.dependencies]
@@ -134,9 +112,23 @@ metview-python = "*"
 mkdocs-material = "*"
 mkdocstrings-python = "*"
 
+# ============================================================================
+# Alias features: intentionally empty. All PyPI extras already come from
+# `atlantis[all]` in the default [pypi-dependencies]; these exist only so the
+# matching environments below can be targeted with `pixi run -e <env>`.
+# ============================================================================
+
+[feature.batch]
+[feature.events]
+[feature.stac]
+[feature.ui]
+[feature.viz]
+
 
 # ============================================================================
 # Environments
+# environments are aliases of default kept for pixi run -e <env>, pixi installs
+# all extras from pyproject.toml by default
 # ============================================================================
 
 [environments]
@@ -145,9 +137,9 @@ notebooks = { features = ["dev", "notebooks"], solve-group = "default" }
 batch = { features = ["dev", "batch"], solve-group = "default" }
 events = { features = ["dev", "events"], solve-group = "default" }
 ui = { features = ["dev", "ui"], solve-group = "default" }
-stac = { features = ["dev", "stac"] }
-docs = { features = ["docs"], solve-group = "default" }
-viz = { features = ["dev", "viz"] }
+stac = { features = ["dev", "stac"], solve-group = "default" }
+docs = { features = ["dev", "docs"], solve-group = "default" }
+viz = { features = ["dev", "viz"], solve-group = "default" }
 
 # ============================================================================
 # ============================================================================
