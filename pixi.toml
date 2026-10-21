@@ -2,10 +2,15 @@
 # Atlantis — pixi.toml
 #
 # Alternative setup method using pixi (conda-forge based).
-# Provides all dependencies including GDAL with HDF4 support out of the box.
+#
+# Pixi is only a wrapper for SYSTEM dependencies: GDAL with HDF4 support and the
+# binary packages that link against it (rasterio, geopandas, pyproj, shapely).
+# pyproject.toml is the single source of truth for every other PyPI dependency;
+# pixi installs the project itself and pulls those from PyPI via its extras.
+# Never add a pure-Python dependency here — add it to pyproject.toml instead.
 #
 # Quick start:
-#   pixi install          # install default env (geo + dev + GDAL/HDF4)
+#   pixi install          # install default env (GDAL/HDF4 + atlantis + dev)
 #   pixi run setup        # bootstrap data assets & credentials
 #   pixi run demo         # run Valencia 2024 VIIRS flood example
 #
@@ -17,47 +22,14 @@ name = "atlantis"
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 authors = ["Ioannis Kalfas", "Stelios Lagaras"]
 channels = ["conda-forge"]
-platforms = ["linux-64", "osx-arm64", "osx-64"]
+platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
 
 # ============================================================================
-# Default dependencies: runtime + geo extras + GDAL/HDF4 binary stack
+# System dependencies: GDAL/HDF4 binary stack + packages built against it
 # ============================================================================
 
 [dependencies]
 python = ">=3.12,<3.15"
-
-# --- Core runtime (mirrors pyproject.toml [project].dependencies) ---
-typer = ">=0.27.2"
-loguru = ">=0.7.0"
-rich = ">=13.0.0"
-boto3 = "*"
-universal_pathlib = "*"
-s3fs = ">=2026.9.0"
-python-dotenv = ">=1.2.3"
-pydantic = ">=2.13.5"
-pydantic-settings = ">=2.15.0"
-geopandas = ">=1.1.4"
-pandas = "<3"
-pyarrow = "*"
-matplotlib = ">=3.11.2"
-ipympl = ">=0.10.0"
-plotly = ">=7.0.0"
-odc-stac = ">=0.5.3"
-numpy = ">=2.5.3"
-cartopy = ">=0.26.0"
-
-
-# --- Geo extras (mirrors pyproject.toml [project.optional-dependencies].geo) ---
-xarray = ">=2024.1"
-zarr = ">=3.4.0"
-rioxarray = ">=0.23.0"
-pystac = ">=1.15.2"
-pystac-client = ">=0.7"
-pyproj = ">=3.8.0"
-shapely = ">=2.0"
-rasterio = ">=1.5.1"
-beautifulsoup4 = ">=4.12"
-requests = ">=2.34.2"
 
 # --- GDAL + HDF4 binary stack (replaces manual build in docs/gdal-install.md) ---
 gdal = ">=3.13"
@@ -66,12 +38,26 @@ hdf4 = "*"
 proj = "*"
 geos = "*"
 
+# --- Packages shipped with / compiled against the GDAL, PROJ and GEOS binaries ---
+# Unpinned on purpose: version bounds live in pyproject.toml, and pixi's PyPI
+# solve validates these conda builds against them.
+rasterio = "*"
+geopandas = "*"
+pyproj = "*"
+shapely = "*"
+pyarrow = "*"
+# Conda picks pandas before the PyPI solve runs, so keep this bound in sync with
+# pyproject.toml (pandas < 3).
+pandas = "<3"
+
 # ============================================================================
-# Editable install of the project itself (resolves `atlantis` CLI entry point)
+# Editable install of the project itself. Every PyPI dependency comes from
+# pyproject.toml ([project].dependencies + the `geo` extra); features below
+# add further extras.
 # ============================================================================
 
 [pypi-dependencies]
-atlantis = { path = ".", editable = true }
+atlantis = { path = ".", editable = true, extras = ["all"] }
 
 # ----------------------------------------------------------------------------
 # GDAL is provided by the conda stack above (gdal/libgdal-hdf4). pyproject.toml
@@ -82,101 +68,67 @@ atlantis = { path = ".", editable = true }
 # ----------------------------------------------------------------------------
 [pypi-options.dependency-overrides]
 gdal = ">=3.13"
-python-dotenv = ">=1.2"
-s3fs = ">=2026.9.0"
 
 # ============================================================================
 # Feature: dev (development tools)
+#
+# pixi cannot read PEP 735 [dependency-groups], so the tools from the `dev`
+# group of pyproject.toml are installed unpinned here; pyproject.toml remains
+# the place for version bounds.
 # ============================================================================
 
 [feature.dev.dependencies]
-pytest = ">=9.1.1"
-pytest-cov = ">=6.0.0"
-pytest-timeout = ">=2.3.0"
-pytest-xdist = ">=3.2.0"
+pytest = "*"
+pytest-cov = "*"
+pytest-timeout = "*"
+pytest-xdist = "*"
 pytest-env = "*"
-ruff = ">=0.11.0"
-vulture = ">=2.16"
-pre-commit = ">=4.2.0"
-ipython = ">=9.14.1"
-ipykernel = ">=7.3.0"
-nbstripout = ">=0.9.1"
+ruff = "*"
+vulture = "*"
+pre-commit = "*"
+ipython = "*"
+ipykernel = "*"
+nbstripout = "*"
 ripgrep = "*"
-
-[feature.dev.pypi-dependencies]
-poethepoet = ">=0.46.0"
-
-# ============================================================================
-# Feature: batch (distributed processing)
-# ============================================================================
-
-[feature.batch.dependencies]
-dask = ">=2026.8.0"
-distributed = "*"
-bokeh = ">=3.0"
-rio-cogeo = ">=5.0"
-
-# ============================================================================
-# Feature: events (per-event GFM backfill into the year cubes)
-# ============================================================================
-
-[feature.events.dependencies]
-dask = ">=2026.8.0"
-distributed = "*"
+poethepoet = "*"
 
 # ============================================================================
 # Feature: notebooks (Jupyter / ECMWF benchmarking)
 # ============================================================================
 
 [feature.notebooks.dependencies]
-jupyterlab = ">=4.0"
-earthkit-data = "*"
-affine = ">=3.0.1"
+jupyterlab = "*"
 
+# metview needs the native Metview binary, only packaged for linux-64
 [feature.notebooks.target.linux-64.dependencies]
 metview-python = "*"
 
 # ============================================================================
-# Feature: ui (NiceGUI web dashboard)
-# ============================================================================
-
-[feature.ui.pypi-dependencies]
-nicegui = ">=3.17.1"
 # Feature: docs (MkDocs + Material for site generation)
+# Mirrors the `docs` dependency group of pyproject.toml (unpinned, see `dev`).
 # ============================================================================
 
 [feature.docs.dependencies]
-python = ">=3.11,<3.15"
-
-[feature.docs.pypi-dependencies]
-mkdocs-material = ">=9.0"
-mkdocstrings = { version = ">=0.25", extras = ["python"] }
-# Feature: stac (STAC layer over the Zarr datacube)
-# ============================================================================
-
-[feature.stac.dependencies]
-pystac = ">=1.15.2"
-
-[feature.stac.pypi-dependencies]
-stac-geoparquet = ">=0.8.2"
-xpystac = ">=0.1"
+mkdocs-material = "*"
+mkdocstrings-python = "*"
 
 # ============================================================================
-# Feature: viz (local HoloViz dashboard server)
+# Alias features: intentionally empty. All PyPI extras already come from
+# `atlantis[all]` in the default [pypi-dependencies]; these exist only so the
+# matching environments below can be targeted with `pixi run -e <env>`.
 # ============================================================================
 
-[feature.viz.dependencies]
-hvplot = ">=0.10"
-holoviews = ">=1.23.2"
-panel = ">=1.4"
-datashader = ">=0.19"
-geoviews = ">=1.11"
-bokeh = ">=3.0"
-xpystac = ">=0.1"
+[feature.batch]
+[feature.events]
+[feature.stac]
+[feature.ui]
+[feature.viz]
 
 
 # ============================================================================
 # Environments
+# environments are aliases of default kept for pixi run -e <env>, pixi installs
+# all extras from pyproject.toml by default
 # ============================================================================
 
 [environments]
@@ -185,9 +137,9 @@ notebooks = { features = ["dev", "notebooks"], solve-group = "default" }
 batch = { features = ["dev", "batch"], solve-group = "default" }
 events = { features = ["dev", "events"], solve-group = "default" }
 ui = { features = ["dev", "ui"], solve-group = "default" }
-stac = { features = ["dev", "stac"] }
-docs = { features = ["docs"], solve-group = "default" }
-viz = { features = ["dev", "viz"] }
+stac = { features = ["dev", "stac"], solve-group = "default" }
+docs = { features = ["dev", "docs"], solve-group = "default" }
+viz = { features = ["dev", "viz"], solve-group = "default" }
 
 # ============================================================================
 # ============================================================================

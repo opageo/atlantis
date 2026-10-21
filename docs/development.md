@@ -12,7 +12,7 @@ CI triggers, and testing GitHub Actions locally.
 Three commands to go from clone to VIIRS flood data:
 
 ```bash
-uv sync --extra geo
+uv sync
 uv run atlantis setup
 uv run atlantis demo
 ```

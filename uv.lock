@@ -248,10 +248,12 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "odc-stac" },
-    { name = "pandas", extra = ["pyarrow"] },
+    { name = "pandas" },
     { name = "plotly" },
+    { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyproj" },
     { name = "pystac" },
     { name = "pystac-client" },
     { name = "python-dotenv" },
@@ -260,6 +262,7 @@ dependencies = [
     { name = "rich" },
     { name = "rioxarray" },
     { name = "s3fs" },
+    { name = "shapely" },
     { name = "typer" },
     { name = "universal-pathlib" },
     { name = "xarray" },
@@ -267,15 +270,31 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "affine" },
+    { name = "beautifulsoup4" },
+    { name = "cartopy" },
+    { name = "dask", extra = ["distributed"] },
+    { name = "datashader" },
+    { name = "earthkit-data" },
+    { name = "geoviews" },
+    { name = "holoviews" },
+    { name = "huggingface-hub" },
+    { name = "hvplot" },
+    { name = "metview" },
+    { name = "nicegui" },
+    { name = "numba" },
+    { name = "panel" },
+    { name = "pystac" },
+    { name = "pystac-client" },
+    { name = "requests" },
+    { name = "rio-cogeo" },
+    { name = "stac-geoparquet" },
+    { name = "xpystac" },
+]
 batch = [
     { name = "dask", extra = ["distributed"] },
-    { name = "pyproj" },
     { name = "rio-cogeo" },
-    { name = "shapely" },
-]
-geo = [
-    { name = "pyproj" },
-    { name = "shapely" },
 ]
 hf = [
     { name = "huggingface-hub" },
@@ -286,15 +305,11 @@ notebooks = [
     { name = "cartopy" },
     { name = "earthkit-data" },
     { name = "metview" },
-    { name = "pyproj" },
     { name = "requests" },
-    { name = "shapely" },
 ]
 stac = [
-    { name = "pyproj" },
     { name = "pystac" },
     { name = "pystac-client" },
-    { name = "shapely" },
     { name = "stac-geoparquet" },
     { name = "xpystac" },
 ]
@@ -308,13 +323,11 @@ viz = [
     { name = "hvplot" },
     { name = "numba" },
     { name = "panel" },
-    { name = "pyproj" },
-    { name = "shapely" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "atlantis", extra = ["geo", "stac", "viz"] },
+    { name = "atlantis", extra = ["hf", "stac", "viz"] },
     { name = "ipykernel" },
     { name = "ipython" },
     { name = "nbstripout" },
@@ -336,67 +349,80 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "affine", marker = "extra == 'notebooks'", specifier = ">=3.0.1" },
+    { name = "affine", marker = "extra == 'all'", specifier = "~=3.0" },
+    { name = "affine", marker = "extra == 'notebooks'", specifier = "~=3.0" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
+    { name = "beautifulsoup4", marker = "extra == 'all'", specifier = ">=4.12" },
     { name = "beautifulsoup4", marker = "extra == 'notebooks'", specifier = ">=4.12" },
     { name = "boto3" },
+    { name = "cartopy", marker = "extra == 'all'", specifier = ">=0.26.0" },
     { name = "cartopy", marker = "extra == 'notebooks'", specifier = ">=0.26.0" },
+    { name = "dask", extras = ["distributed"], marker = "extra == 'all'", specifier = ">=2026.8.0" },
     { name = "dask", extras = ["distributed"], marker = "extra == 'batch'", specifier = ">=2026.8.0" },
+    { name = "datashader", marker = "extra == 'all'", specifier = ">=0.19" },
     { name = "datashader", marker = "extra == 'viz'", specifier = ">=0.19" },
+    { name = "earthkit-data", marker = "extra == 'all'" },
     { name = "earthkit-data", marker = "extra == 'notebooks'" },
     { name = "gdal", specifier = "==3.13.0" },
     { name = "geopandas", specifier = ">=1.1.4" },
+    { name = "geoviews", marker = "extra == 'all'", specifier = ">=1.11" },
     { name = "geoviews", marker = "extra == 'viz'", specifier = ">=1.11" },
+    { name = "holoviews", marker = "extra == 'all'", specifier = ">=1.23.2" },
     { name = "holoviews", marker = "extra == 'viz'", specifier = ">=1.23.2" },
+    { name = "huggingface-hub", marker = "extra == 'all'" },
     { name = "huggingface-hub", marker = "extra == 'hf'" },
+    { name = "hvplot", marker = "extra == 'all'", specifier = ">=0.10" },
     { name = "hvplot", marker = "extra == 'viz'", specifier = ">=0.10" },
     { name = "ipympl", specifier = ">=0.10.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "matplotlib", specifier = ">=3.11.2" },
+    { name = "metview", marker = "extra == 'all'", specifier = ">=1.16" },
     { name = "metview", marker = "extra == 'notebooks'", specifier = ">=1.16" },
+    { name = "nicegui", marker = "extra == 'all'", specifier = ">=3.17.1" },
     { name = "nicegui", marker = "extra == 'ui'", specifier = ">=3.17.1" },
+    { name = "numba", marker = "extra == 'all'", specifier = ">=0.60" },
     { name = "numba", marker = "extra == 'viz'", specifier = ">=0.60" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "odc-stac", specifier = ">=0.5.3" },
-    { name = "pandas", extras = ["pyarrow"], specifier = "<3" },
+    { name = "pandas", specifier = "<3" },
+    { name = "panel", marker = "extra == 'all'", specifier = ">=1.4" },
     { name = "panel", marker = "extra == 'viz'", specifier = ">=1.4" },
     { name = "plotly", specifier = ">=7.0.0" },
+    { name = "pyarrow" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "pyproj", marker = "extra == 'batch'", specifier = ">=3.8.0" },
-    { name = "pyproj", marker = "extra == 'geo'", specifier = ">=3.8.0" },
-    { name = "pyproj", marker = "extra == 'notebooks'", specifier = ">=3.8.0" },
-    { name = "pyproj", marker = "extra == 'stac'", specifier = ">=3.8.0" },
-    { name = "pyproj", marker = "extra == 'viz'", specifier = ">=3.8.0" },
+    { name = "pyproj", specifier = ">=3.8.0" },
     { name = "pystac", specifier = ">=1.15.2" },
+    { name = "pystac", marker = "extra == 'all'", specifier = ">=1.15.2" },
     { name = "pystac", marker = "extra == 'stac'", specifier = ">=1.15.2" },
     { name = "pystac-client", specifier = ">=0.7" },
+    { name = "pystac-client", marker = "extra == 'all'", specifier = ">=0.7" },
     { name = "pystac-client", marker = "extra == 'stac'", specifier = ">=0.7" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "rasterio", specifier = ">=1.5.1" },
     { name = "requests", specifier = ">=2.34.2" },
+    { name = "requests", marker = "extra == 'all'", specifier = ">=2.34.2" },
     { name = "requests", marker = "extra == 'notebooks'", specifier = ">=2.34.2" },
     { name = "rich", specifier = ">=13.0.0" },
+    { name = "rio-cogeo", marker = "extra == 'all'", specifier = ">=5.0" },
     { name = "rio-cogeo", marker = "extra == 'batch'", specifier = ">=5.0" },
     { name = "rioxarray", specifier = ">=0.23.0" },
     { name = "s3fs", specifier = ">=2026.9.0" },
-    { name = "shapely", marker = "extra == 'batch'", specifier = ">=2.0" },
-    { name = "shapely", marker = "extra == 'geo'", specifier = ">=2.0" },
-    { name = "shapely", marker = "extra == 'notebooks'", specifier = ">=2.0" },
-    { name = "shapely", marker = "extra == 'stac'", specifier = ">=2.0" },
-    { name = "shapely", marker = "extra == 'viz'", specifier = ">=2.0" },
+    { name = "shapely", specifier = ">=2.0" },
+    { name = "stac-geoparquet", marker = "extra == 'all'", specifier = ">=0.8.2" },
     { name = "stac-geoparquet", marker = "extra == 'stac'", specifier = ">=0.8.2" },
     { name = "typer", specifier = ">=0.27.2" },
     { name = "universal-pathlib" },
     { name = "xarray" },
+    { name = "xpystac", marker = "extra == 'all'", specifier = ">=0.1" },
     { name = "xpystac", marker = "extra == 'stac'", specifier = ">=0.1" },
-    { name = "zarr", specifier = ">=3.4.0" },
+    { name = "zarr", specifier = "~=3.4" },
 ]
-provides-extras = ["batch", "geo", "hf", "notebooks", "stac", "ui", "viz"]
+provides-extras = ["all", "batch", "hf", "notebooks", "stac", "ui", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "atlantis", extras = ["geo"] },
+    { name = "atlantis", extras = ["hf"] },
     { name = "atlantis", extras = ["stac"] },
     { name = "atlantis", extras = ["viz"] },
     { name = "ipykernel", specifier = ">=7.3.0" },
@@ -3193,11 +3219,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/70/44/5191d2e4026f86a2a109053e194d3ba7a31a2d10a9c2348368c63ed4e85a/pandas-2.3.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:3869faf4bd07b3b66a9f462417d0ca3a9df29a9f6abd5d0d0dbab15dac7abe87", size = 13202175, upload-time = "2025-09-29T23:31:59.173Z" },
 ]
 
-[package.optional-dependencies]
-pyarrow = [
-    { name = "pyarrow" },
-]
-
 [[package]]
 name = "panel"
 version = "1.9.4"
@@ -3316,7 +3337,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "platform_machine != 'ARM64' or sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [

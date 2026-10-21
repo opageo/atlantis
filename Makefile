@@ -73,7 +73,7 @@ help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-28s\033[0m %s\n", $$1, $$2}'
 
 setup:  ## Bootstrap data assets and install dependencies
-	uv sync --extra geo
+	uv sync
 	uv run python scripts/setup.py
 
 demo-viirs:  ## Quick demo: Valencia 2024 flood — VIIRS, verbose + peak-window
