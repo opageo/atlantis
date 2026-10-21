@@ -8,24 +8,24 @@ license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.12, <3.15"
 authors = [{ name = "Ioannis Kalfas" }, { name = "Stelios Lagaras" }]
 dependencies = [
-  "typer>=0.27.2",
+  "typer>=0.27.3",
   "loguru>=0.7.0",
   "rich>=13.0.0",
   "boto3",
   "universal-pathlib",
   "s3fs>=2026.9.0",
-  "python-dotenv>=1.2.3",
-  "pydantic>=2.13.5",
-  "pydantic-settings>=2.15.0",
-  "geopandas>=1.1.4",
+  "python-dotenv>=1.2.4",
+  "pydantic>=2.14.1",
+  "pydantic-settings>=2.16.0",
+  "geopandas>=1.2.0",
   "pandas < 3",
   "pyarrow",
   "matplotlib>=3.11.2",
   "ipympl>=0.10.0",
   "plotly>=7.0.0",
   "odc-stac>=0.5.3",
-  "numpy>=2.5.3",
-  "rasterio>=1.5.1",
+  "numpy>=2.5.4",
+  "rasterio>=1.5.2",
   "rioxarray>=0.23.0",
   "xarray",
   "zarr~=3.4",
@@ -34,7 +34,7 @@ dependencies = [
   "pystac>=1.15.2",
   "pystac-client>=0.7",
   "pyproj>=3.8.0",
-  "shapely>=2.0",
+  "shapely>=2.2.0",
   "beautifulsoup4>=4.12",
 ]
 
@@ -44,7 +44,7 @@ atlantis = "atlantis.cli:cli"
 [project.optional-dependencies]
 batch = [
   "dask[distributed]>=2026.8.0", # LocalCluster + Client + as_completed
-  "rio-cogeo>=5.0",              # `rio cogeo validate` for verification
+  "rio-cogeo>=7.0.4",              # `rio cogeo validate` for verification
 ]
 stac = [
   "pystac>=1.15.2",
@@ -57,7 +57,7 @@ viz = [
   "holoviews>=1.23.2", # backing element model
   "panel>=1.4",        # local dashboard server (`panel serve`)
   "datashader>=0.19",  # server-side rasterisation of large grids
-  "numba>=0.60",
+  "numba>=0.68.0",
   "geoviews>=1.11",    # optional basemap / coastlines
 ]
 notebooks = [
@@ -68,7 +68,7 @@ notebooks = [
   "requests>=2.34.2",
   "metview>=1.16",
 ]
-ui = ["nicegui>=3.17.1"]
+ui = ["nicegui>=3.18.0"]
 hf = ["huggingface-hub"]
 all = [
   "atlantis[batch]",
@@ -82,16 +82,16 @@ all = [
 [dependency-groups]
 dev = [
   "pytest-env",
-  "poethepoet>=0.48.0",
+  "poethepoet>=0.49.0",
   "pytest>=9.1.1",
   "pytest-cov>=6.0.0",
   "pytest-timeout>=2.3.0",
   "pytest-xdist>=3.2.0",
-  "ruff>=0.16.8",
+  "ruff>=0.17.1",
   "vulture>=2.16",
-  "pre-commit>=4.6.2",
+  "pre-commit>=4.7.0",
   "ipython>=9.17.1",
-  "ipykernel>=7.3.0",
+  "ipykernel>=7.4.0",
   "nbstripout>=0.9.1",
   "ripgrep>=15.1.0",
   "atlantis[viz]",
