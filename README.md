@@ -44,7 +44,7 @@ pixi run demo      # run the Valencia 2024 flood example
 
 ![CLI Demo](docs/assets/cli_demo.gif)
 
-**New to Atlantis?** Start with [docs/pixi-setup.md](docs/pixi-setup.md) — single-command setup with GDAL + HDF4 out of the box.
+**New to Atlantis?** Read [How Atlantis works](docs/how-atlantis-works.md) for what the sources and layers mean, then follow [docs/pixi-setup.md](docs/pixi-setup.md) for a single-command setup with GDAL + HDF4 out of the box.
 
 **Contributor?** See [docs/development.md](docs/development.md) for `uv` setup, devcontainers, testing and CI.
 

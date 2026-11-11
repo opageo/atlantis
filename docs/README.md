@@ -43,6 +43,9 @@ layers Atlantis computes from them.
 
 ## Getting Started
 
+- [how-atlantis-works.md](./how-atlantis-works.md) - Start here: what each
+  source measures, how Atlantis turns it into shared layers, and how to read
+  the cube.
 - [pixi-setup.md](./pixi-setup.md) - New user onboarding path with a bundled
   GDAL + HDF4 environment (no manual GDAL build).
 - [setup.md](./setup.md) - Shared credentials and one-time account setup
