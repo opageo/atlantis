@@ -1,0 +1,3113 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="ML-ready archive of satellite-derived flood inundation observations">
+      
+      
+      
+        <link rel="canonical" href="https://opageo.github.io/atlantis/how-atlantis-works/">
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../pixi-setup/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>How Atlantis Works - Atlantis</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#how-atlantis-works" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Atlantis" class="md-header__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Atlantis
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              How Atlantis Works
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../sources/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Data Sources
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  CLI
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../batch/viirs/jpss.md" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Batch Processing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../development/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/config/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Atlantis" class="md-nav__button md-logo" aria-label="Atlantis" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    Atlantis
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/opageo/atlantis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    opageo/atlantis
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How Atlantis Works
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How Atlantis Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#in-one-picture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In one picture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-big-ideas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The big ideas
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The big ideas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-ways-a-satellite-sees-water" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two ways a satellite sees water
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#water-is-not-the-same-as-flood" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Water is not the same as flood
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-three-core-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The three core layers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-shared-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One shared grid
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-water_fraction-means" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What water_fraction means
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-the-archive-is-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the archive is built
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-by-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source by source
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Source by source">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#modis-nasas-global-flood-product-mcdwd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODIS: NASA's Global Flood Product (MCDWD)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#viirs-noaas-flood-mapping-product-vfm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VIIRS: NOAA's Flood Mapping product (VFM)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gfm-copernicus-global-flood-monitoring-on-sentinel-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GFM: Copernicus Global Flood Monitoring on Sentinel-1
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inside-the-cube" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inside the cube
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-combine-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you combine sources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-to-go-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where to go next
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Where to go next">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sources-for-the-measurement-descriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sources for the measurement descriptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pixi-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pixi Setup (Newcomers)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials & Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gdal-install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual GDAL Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Sources
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Sources
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layer Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    VIIRS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viirs/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viirs/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viirs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viirs/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MODIS
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MODIS
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modis/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modis/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modis/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modis/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GFM
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    GFM
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gfm/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gfm/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gfm/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gfm/internals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KuroSiwo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KuroSiwo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kurosiwo/stac-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    STAC Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    End-to-End Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Batch Processing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../batch/viirs/jpss.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VIIRS JPSS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archive/modis-archive-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incremental MODIS Archive Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/fetchers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fetchers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/harmoniser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harmoniser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#in-one-picture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In one picture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-big-ideas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The big ideas
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The big ideas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-ways-a-satellite-sees-water" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two ways a satellite sees water
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#water-is-not-the-same-as-flood" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Water is not the same as flood
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-three-core-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The three core layers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-shared-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One shared grid
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-water_fraction-means" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What water_fraction means
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-the-archive-is-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the archive is built
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-by-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source by source
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Source by source">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#modis-nasas-global-flood-product-mcdwd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODIS: NASA's Global Flood Product (MCDWD)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#viirs-noaas-flood-mapping-product-vfm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VIIRS: NOAA's Flood Mapping product (VFM)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gfm-copernicus-global-flood-monitoring-on-sentinel-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GFM: Copernicus Global Flood Monitoring on Sentinel-1
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inside-the-cube" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inside the cube
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-combine-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you combine sources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-to-go-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where to go next
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Where to go next">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sources-for-the-measurement-descriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sources for the measurement descriptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="how-atlantis-works">How Atlantis works</h1>
+<p>This page is the starting point if you are new to Atlantis. It explains what
+the data means before you run anything. The first half is the high-level
+picture. The second half goes source by source and shows exactly how each
+native pixel becomes an Atlantis value.</p>
+<p>If you just want to install and run something, go to
+<a href="../pixi-setup/">Pixi setup</a> and come back here when the output needs
+explaining.</p>
+<h2 id="in-one-picture">In one picture</h2>
+<p><img alt="Before and after Atlantis: three sources with many layers, codes, grids and formats funnel into three shared layers on one global grid" src="../assets/onboarding/atlantis-before-after.png" /></p>
+<p>Three satellite products map surface water. Each has its own layers, value
+codes, pixel size, tiling and file format. Atlantis fetches them, translates
+their codes into the same few layers, and puts everything on one global grid,
+one map per day.</p>
+<h2 id="the-big-ideas">The big ideas</h2>
+<h3 id="two-ways-a-satellite-sees-water">Two ways a satellite sees water</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Optical (MODIS, VIIRS)</th>
+<th>Radar / SAR (GFM on Sentinel-1)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>How it works</td>
+<td>Measures reflected sunlight. Water absorbs infrared, so it looks dark.</td>
+<td>Sends its own microwave pulse. Calm water mirrors it away, so it looks dark.</td>
+</tr>
+<tr>
+<td>Strengths</td>
+<td>Daily, global, long archives</td>
+<td>Sees through clouds and at night; 20 m detail</td>
+</tr>
+<tr>
+<td>Weaknesses</td>
+<td>Blind under clouds; shadows can look like water; 250–375 m pixels</td>
+<td>A pass only every few days; struggles in cities, forests and mountains</td>
+</tr>
+</tbody>
+</table>
+<p>The sources are strong exactly where the others are weak. That is the reason
+to use them together.</p>
+<h3 id="water-is-not-the-same-as-flood">Water is not the same as flood</h3>
+<p>Satellites see <strong>water</strong>. A <strong>flood</strong> is water where there normally isn't
+any. Atlantis therefore stores both:</p>
+<ul>
+<li><code>water_fraction</code>: all water seen that day, including rivers, lakes and sea.</li>
+<li><code>reference_water</code>: where water normally is.</li>
+</ul>
+<p>Flood is roughly water minus reference water. Keeping both lets you choose
+what "normal" means for your use case.</p>
+<h3 id="the-three-core-layers">The three core layers</h3>
+<p>Every source produces the same three core layers:</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Question it answers</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>water_fraction</code></td>
+<td>How much of this pixel is water today?</td>
+<td>0 to 1 (stored as 0–100)</td>
+</tr>
+<tr>
+<td><code>reference_water</code></td>
+<td>Is this normally water?</td>
+<td>0/1 for MODIS and VIIRS; 0/1/2 (none, permanent, seasonal) for GFM</td>
+</tr>
+<tr>
+<td><code>exclusion_mask</code></td>
+<td>Should I ignore this pixel?</td>
+<td>0/1 for MODIS and VIIRS; GFM's own codes for GFM</td>
+</tr>
+</tbody>
+</table>
+<p>Some sources add extras: MODIS has <code>recurring_flood</code>, and VIIRS has
+<code>cloud_mask</code>, <code>snow_ice</code> and <code>shadow</code>. The full list is in
+<a href="../layers/">Layers</a>.</p>
+<h3 id="one-shared-grid">One shared grid</h3>
+<p>All outputs are on the same global grid:</p>
+<ul>
+<li>1 arcminute pixels (1/60°, about 1.85 km at the equator), EPSG:4326</li>
+<li>10 800 × 21 600 pixels covering the whole globe</li>
+<li>the same grid as ECMWF's CaMa-Flood (<code>Globe_flood_area</code>)</li>
+<li>one slice per day</li>
+</ul>
+<p>The same pixel index is the same patch of ground in every source.</p>
+<h3 id="what-water_fraction-means">What <code>water_fraction</code> means</h3>
+<p>One Atlantis pixel holds many native pixels: about 64 MODIS pixels, about 25
+VIIRS pixels, or about 530 GFM pixels (after GFM is pooled to 80 m). Atlantis
+turns each native pixel into a water value between 0 and 1, marks the ones
+that could not be observed (cloud, no data), and averages the rest.</p>
+<p>For example, if 14 native pixels inside one output pixel were observed and 7
+of them are water, <code>water_fraction</code> is 7 / 14 = 0.50. The unobserved pixels
+are ignored, not counted as dry. If nothing was observed, the value is
+missing.</p>
+<p><code>water_fraction</code> is computed per output pixel, never per tile or per file.</p>
+<h3 id="how-the-archive-is-built">How the archive is built</h3>
+<pre class="mermaid"><code>flowchart LR
+    A[Catalogue&lt;br/&gt;source files per day] --&gt; B[Process each file&lt;br/&gt;classify native pixels,&lt;br/&gt;average to 1 arcmin]
+    B --&gt; C[Encode&lt;br/&gt;fraction → uint8 percent,&lt;br/&gt;missing = 255]
+    C --&gt; D[Write&lt;br/&gt;yearly Zarr cubes,&lt;br/&gt;one slot per day]
+    D --&gt; E[Merge + re-shard&lt;br/&gt;one multi-year store]
+    E --&gt; F[Publish&lt;br/&gt;Hugging Face&lt;br/&gt;data.zarr + stac/]</code></pre>
+<p>The published dataset is
+<a href="https://huggingface.co/datasets/opageo/atlantis">opageo/atlantis on Hugging Face</a>:
+one Zarr v3 store with a group per source (<code>gfm/</code>, <code>modis/</code>, <code>viirs/</code>) and a
+STAC catalogue. See <a href="#inside-the-cube">Inside the cube</a> below for the layout.</p>
+<h2 id="source-by-source">Source by source</h2>
+<p>This diagram summarises the rest of the page: what is fetched from each
+source, the recipe applied per pixel, and what ends up in the cube.</p>
+<p><a href="../assets/onboarding/atlantis-data-flow.png"><img alt="Per-source data flow: for GFM, MODIS and VIIRS, the native layer fetched, the Atlantis recipe and the layers stored in the cube" src="../assets/onboarding/atlantis-data-flow.png" /></a></p>
+<p><em>Click the image to open it full size.</em></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>MODIS</th>
+<th>VIIRS</th>
+<th>GFM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Provider</td>
+<td>NASA (LANCE / LAADS DAAC)</td>
+<td>NOAA JPSS (public AWS bucket <code>noaa-jpss</code>)</td>
+<td>Copernicus EMS, via the EODC STAC API</td>
+</tr>
+<tr>
+<td>Sensor</td>
+<td>Optical, Terra + Aqua</td>
+<td>Optical, Suomi-NPP + NOAA-20</td>
+<td>C-band radar, Sentinel-1</td>
+</tr>
+<tr>
+<td>Native pixel</td>
+<td>~250 m, 10° × 10° tiles</td>
+<td>375 m, 15° × 15° tiles</td>
+<td>20 m, Equi7 tiles</td>
+</tr>
+<tr>
+<td>Revisit</td>
+<td>Daily (we use a 2-day composite)</td>
+<td>Daily</td>
+<td>Every few days</td>
+</tr>
+<tr>
+<td>Format</td>
+<td>HDF4</td>
+<td>GeoTIFF, one band of codes</td>
+<td>Cloud-optimised GeoTIFFs</td>
+</tr>
+<tr>
+<td>Access</td>
+<td>Free Earthdata token</td>
+<td>Anonymous</td>
+<td>Public</td>
+</tr>
+</tbody>
+</table>
+<h3 id="modis-nasas-global-flood-product-mcdwd">MODIS: NASA's Global Flood Product (MCDWD)</h3>
+<p><strong>How it is measured.</strong> For every Terra and Aqua pass, NASA applies a
+reflectance test: a pixel is water if it is dark in short-wave infrared,
+not too bright in red, and darker in near-infrared than in red (vegetation is
+the opposite). Clouds and their shadows move
+between passes while floods stay, so the 2-day composite only keeps water seen
+at least twice in two days. Pixels more than 30 m above the nearest stream
+(HAND) are masked as insufficient data. Water is then labelled against a
+reference: normal surface water, recurring (seasonal) flood, or unusual flood.</p>
+<p><strong>What we fetch.</strong> One layer from the HDF4 file, <code>Flood_2Day_250m</code> (the "F2"
+composite, NASA's recommended default):</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>No water</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>Surface (reference) water</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>Recurring flood</td>
+</tr>
+<tr>
+<td><code>3</code></td>
+<td>Unusual flood</td>
+</tr>
+<tr>
+<td><code>255</code></td>
+<td>Insufficient data (cloud, shadow, high ground)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What Atlantis does.</strong></p>
+<ol>
+<li>Codes <code>1</code>, <code>2</code>, <code>3</code> → 1.0; <code>0</code> → 0.0; <code>255</code> → missing.</li>
+<li>Average onto the 1-arcmin grid, skipping missing pixels.</li>
+<li>Masks come straight from the codes: <code>reference_water</code> where <code>1</code> or <code>2</code>,
+   <code>recurring_flood</code> where <code>2</code>, <code>exclusion_mask</code> where <code>255</code>. Masks take the
+   most common value inside the output pixel.</li>
+</ol>
+<p><strong>Where it goes wrong.</strong> Clouds hide the ground and their shadows can look
+like water. 250 m pixels miss narrow rivers and floods that drain within a
+day. Water under tree canopy or between buildings is invisible. Dark surfaces
+such as burn scars or lava can pass the water test. New reservoirs can show up
+as flood until the reference catches up.</p>
+<p><strong>Also available, not used.</strong> The 1-day (F1), cloud-shadow screened 1-day
+(F1C) and 3-day (F3) composites are selectable with <code>--modis-composite</code>. The
+file also has 11 count layers (potential, clear-sky and water observations per
+window) that the default pipeline does not load.</p>
+<p>More detail: <a href="../modis/overview/">MODIS overview</a>.</p>
+<h3 id="viirs-noaas-flood-mapping-product-vfm">VIIRS: NOAA's Flood Mapping product (VFM)</h3>
+<p><strong>How it is measured.</strong> NOAA classifies each pixel as cloud, snow/ice, clear
+land or water using visible, near-infrared, short-wave infrared and thermal
+bands, with a decision tree trained on about 600 000 samples. Cloud and
+terrain shadows are removed. For flood pixels, NOAA then estimates how much of
+the pixel is water by linear mixing: water is dark in short-wave infrared, so
+a pixel's reflectance, placed between nearby pure-land and pure-water pixels,
+gives its water share. The daily product keeps the maximum over the day's
+passes.</p>
+<p><strong>What we fetch.</strong> A single GeoTIFF band where each code means something
+different:</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code>, <code>1</code></td>
+<td>No data / fill</td>
+</tr>
+<tr>
+<td><code>16</code></td>
+<td>Bare land</td>
+</tr>
+<tr>
+<td><code>17</code></td>
+<td>Vegetation</td>
+</tr>
+<tr>
+<td><code>20</code></td>
+<td>Snow / ice</td>
+</tr>
+<tr>
+<td><code>27</code>, <code>38</code></td>
+<td>River or lake ice; mixed ice and water</td>
+</tr>
+<tr>
+<td><code>30</code></td>
+<td>Cloud</td>
+</tr>
+<tr>
+<td><code>50</code></td>
+<td>Cloud or terrain shadow</td>
+</tr>
+<tr>
+<td><code>99</code></td>
+<td>Normal water (reference)</td>
+</tr>
+<tr>
+<td><code>15</code></td>
+<td>Flood, fraction not computed</td>
+</tr>
+<tr>
+<td><code>100</code>–<code>200</code></td>
+<td>Flood, water share = (code − 100)%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What Atlantis does.</strong></p>
+<ol>
+<li><code>100</code>–<code>200</code> → (code − 100) / 100.</li>
+<li><code>99</code> and <code>15</code> → 1.0. Bare land and vegetation (<code>16</code>, <code>17</code>) → 0.0.</li>
+<li>Fill, cloud, snow/ice and shadow → missing (and <code>exclusion_mask = 1</code>).</li>
+<li>Average onto the 1-arcmin grid, skipping missing pixels.</li>
+</ol>
+<p><code>reference_water</code> is code <code>99</code>. VIIRS is the only source with separate
+<code>cloud_mask</code>, <code>snow_ice</code> and <code>shadow</code> layers, which tell you why a pixel is
+missing.</p>
+<p><strong>Where it goes wrong.</strong> Same cloud problem as MODIS, and shadow removal
+depends on guessing cloud height. The fraction is designed for pixels that are
+at least 25% water. Volcanic rock, burn scars and hazy cities can be called
+water. Keeping the daily maximum can overstate flooding if one pass is wrong.</p>
+<p><strong>Coverage gap.</strong> NOAA's public bucket has no VFM data from 2021 to
+9 August 2023.</p>
+<p><strong>Also available, not used.</strong> A 5-day maximum composite (<code>VFM_5day_GLB</code>) with
+far fewer cloud gaps, and NetCDF and shapefile versions of the same maps.</p>
+<p>More detail: <a href="../viirs/overview/">VIIRS overview</a>.</p>
+<h3 id="gfm-copernicus-global-flood-monitoring-on-sentinel-1">GFM: Copernicus Global Flood Monitoring on Sentinel-1</h3>
+<p><strong>How it is measured.</strong> Sentinel-1 measures radar backscatter at 20 m. Calm
+water reflects the pulse away from the satellite and looks dark. Three
+independent algorithms look for that signal:</p>
+<ul>
+<li><strong>LIST</strong> (change detection): flags pixels that got much darker than in an
+  earlier image of the same place.</li>
+<li><strong>DLR</strong> (automatic threshold): finds the brightness cut-off that best
+  separates the dark water peak from the bright land peak in each scene.</li>
+<li><strong>TU Wien</strong> (pixel history): learns from years of data what each pixel
+  normally looks like, wet or dry, and compares today's value to that.</li>
+</ul>
+<p>Their majority vote gives the flood map, and their confidences give a 0–100
+likelihood. The <strong>water</strong> map (<code>ensemble_water_extent</code>) uses LIST and DLR
+only, because TU Wien only detects temporary flooding.</p>
+<p><strong>What we fetch.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Band</th>
+<th>Values</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ensemble_water_extent</code></td>
+<td>0 / 1 / 255</td>
+<td>All open water seen in one Sentinel-1 pass. <strong>Feeds <code>water_fraction</code>.</strong></td>
+</tr>
+<tr>
+<td><code>ensemble_flood_extent</code></td>
+<td>0 / 1 / 255</td>
+<td>Flood only</td>
+</tr>
+<tr>
+<td><code>reference_water_mask</code></td>
+<td>0 / 1 / 2 / 255</td>
+<td>None, permanent, seasonal (per calendar month), from a 2017–2021 baseline</td>
+</tr>
+<tr>
+<td><code>exclusion_mask</code></td>
+<td>native codes</td>
+<td>Where radar flood mapping is unreliable (static)</td>
+</tr>
+<tr>
+<td><code>ensemble_likelihood</code></td>
+<td>0–100</td>
+<td>Confidence: 0 = surely dry, 50 = threshold, 100 = surely flooded</td>
+</tr>
+<tr>
+<td><code>advisory_flags</code></td>
+<td>bitmask</td>
+<td>1 = low backscatter region (snow, frozen or dry soil), 2 = rough water (wind, rain)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What Atlantis does.</strong></p>
+<ol>
+<li>Build 0/1 water and "valid" (observed) masks at 20 m.</li>
+<li>Mean-pool by 4 to 80 m. Each 80 m pixel is then a fraction. This step
+   mainly cuts processing cost (16× fewer pixels to reproject); since the
+   final value is an average, it barely changes the result.</li>
+<li>Reproject, and across all passes on the same date compute
+   water count ÷ valid count.</li>
+<li>Average onto the 1-arcmin grid.</li>
+</ol>
+<p><code>reference_water</code> keeps GFM's three classes. <code>exclusion_mask</code> keeps GFM's own
+codes. It is <strong>not</strong> a 0/1 mask like MODIS and VIIRS.</p>
+<p><strong>The exclusion mask.</strong> GFM excludes places where radar cannot map floods
+reliably: dense forest and built-up areas (radar can't see water under canopy
+or between buildings), places that are dark most of the time anyway (sand,
+dry soil, tarmac), ground 10 m or more above the nearest drainage, radar
+shadow behind steep slopes, and areas with too few Sentinel-1 observations.</p>
+<p><strong>Where it goes wrong.</strong> Wind-roughened water looks bright like land, which
+is what the advisory flag warns about. Flooded vegetation and flooded streets
+can go undetected.</p>
+<p><strong>Only around labelled events.</strong> GFM in the Atlantis dataset is not global and
+daily. It was processed inside the date windows and areas of two benchmark
+collections, <a href="../archive/events-gfm/">GEOID-Flood and KuroSiwo</a>.</p>
+<p><strong>Also available, not stored.</strong> <code>ensemble_likelihood</code> and <code>advisory_flags</code> are
+fetched but not written to the cube. Each algorithm's own flood map is also
+published by GFM; disagreement between them is a natural uncertainty signal.</p>
+<p>More detail: <a href="../gfm/overview/">GFM overview</a>.</p>
+<h2 id="inside-the-cube">Inside the cube</h2>
+<p>Each source group has dimensions <code>(time, y, x)</code>, one slot per day.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>MODIS</th>
+<th>VIIRS</th>
+<th>GFM</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>water_fraction</code></td>
+<td>✓</td>
+<td>✓ (sub-pixel)</td>
+<td>✓ (from counts)</td>
+<td>Stored 0–100; decodes to 0–1. Includes normal water.</td>
+</tr>
+<tr>
+<td><code>reference_water</code></td>
+<td>0/1</td>
+<td>0/1</td>
+<td>0 / 1 permanent / 2 seasonal</td>
+<td>Subtract from water to get flood.</td>
+</tr>
+<tr>
+<td><code>exclusion_mask</code></td>
+<td>0/1</td>
+<td>0/1</td>
+<td>native GFM codes</td>
+<td>1 = could not observe (MODIS/VIIRS).</td>
+</tr>
+<tr>
+<td><code>recurring_flood</code></td>
+<td>✓</td>
+<td>–</td>
+<td>–</td>
+<td>MODIS seasonal flooding.</td>
+</tr>
+<tr>
+<td><code>cloud_mask</code>, <code>snow_ice</code>, <code>shadow</code></td>
+<td>–</td>
+<td>✓</td>
+<td>–</td>
+<td>Why a VIIRS pixel is missing.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Storage.</strong></p>
+<ul>
+<li>Zarr v3, all variables <code>uint8</code>, fill value 255.</li>
+<li><code>water_fraction</code> has <code>scale_factor = 0.01</code>.</li>
+<li>Read unit (inner chunk): 1 day × 256 × 256 pixels, a natural ML training
+  patch.</li>
+<li>Pixel centres: lon = −180 + (i + 0.5) / 60, lat = 90 − (j + 0.5) / 60,
+  rows north to south.</li>
+</ul>
+<p><strong>Reading tip.</strong> Opening the store with xarray's defaults turns every variable
+into float with NaN for 255, including the masks. Use <code>mask_and_scale=False</code>
+if you want the raw <code>uint8</code> class codes, and apply the 0.01 scale to
+<code>water_fraction</code> yourself.</p>
+<p>The full storage spec is in the <a href="../archive/zarr-spec/">Zarr datacube spec</a>.</p>
+<h2 id="before-you-combine-sources">Before you combine sources</h2>
+<p>The layers share names, but not always meanings:</p>
+<table>
+<thead>
+<tr>
+<th>Trap</th>
+<th>What differs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reference_water</code></td>
+<td>GFM: none / permanent / seasonal. MODIS, VIIRS: yes/no.</td>
+</tr>
+<tr>
+<td><code>0</code> in masks</td>
+<td>GFM <code>0</code> = seen and dry. For MODIS and VIIRS, <code>0</code> can also mean "not seen"; check <code>exclusion_mask</code>.</td>
+</tr>
+<tr>
+<td><code>exclusion_mask</code></td>
+<td>MODIS, VIIRS: "couldn't see today". GFM: "radar is unreliable here".</td>
+</tr>
+<tr>
+<td>"Water"</td>
+<td>Three different estimators; expect systematic offsets between sources.</td>
+</tr>
+<tr>
+<td>Time</td>
+<td>MODIS = 2-day composite, VIIRS = 1 day, GFM = pass days inside event windows.</td>
+</tr>
+</tbody>
+</table>
+<p><a href="../layers/#layers-cross-source">Layers: cross-source gotchas</a> has the details.</p>
+<h2 id="where-to-go-next">Where to go next</h2>
+<ul>
+<li><a href="../pixi-setup/">Pixi setup</a>: install and run the Valencia 2024 demo.</li>
+<li><a href="../setup/">Credentials &amp; setup</a>: Earthdata token and other accounts.</li>
+<li><a href="../layers/">Layers</a>: every native and derived layer, generated from the code.</li>
+<li><a href="../cli/">CLI reference</a> and <a href="https://github.com/opageo/atlantis/blob/main/CLI_Examples.md">end-to-end examples</a>.</li>
+<li>Per-source deep dives: <a href="../modis/overview/">MODIS</a>,
+  <a href="../viirs/overview/">VIIRS</a>, <a href="../gfm/overview/">GFM</a>.</li>
+</ul>
+<h3 id="sources-for-the-measurement-descriptions">Sources for the measurement descriptions</h3>
+<ul>
+<li>NASA MCDWD User Guide (MODIS/VIIRS NRT Global Flood Product).</li>
+<li>NOAA VIIRS Flood Mapping ATBD v1.0.</li>
+<li>Copernicus GFM Product Definition Document, and "Estimating Ensemble
+  Likelihoods for the Sentinel-1-Based Global Flood Monitoring Product of the
+  Copernicus Emergency Management Service", IEEE JSTARS, 2023.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.indexes", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
