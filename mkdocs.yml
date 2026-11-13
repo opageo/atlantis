@@ -68,6 +68,7 @@ watch:
 nav:
   - Home: index.md
   - Getting Started:
+      - "How Atlantis Works": how-atlantis-works.md
       - "Pixi Setup (Newcomers)": pixi-setup.md
       - "Credentials & Setup": setup.md
       - "Manual GDAL Installation": gdal-install.md
