@@ -13,7 +13,7 @@ from atlantis.stac import build_datacube_catalog
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("stac_geoparquet") is None,
-    reason="stac-geoparquet not installed (atlantis[stac])",
+    reason="stac-geoparquet not installed (opageo-atlantis[stac])",
 )
 
 

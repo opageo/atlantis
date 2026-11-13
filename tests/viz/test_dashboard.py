@@ -9,7 +9,7 @@ from atlantis.archive import grid
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("hvplot") is None,
-    reason="hvplot not installed (atlantis[viz])",
+    reason="hvplot not installed (opageo-atlantis[viz])",
 )
 
 
@@ -94,7 +94,7 @@ def test_missing_variable_raises():
 
 _no_geoviews = pytest.mark.skipif(
     importlib.util.find_spec("geoviews") is None,
-    reason="geoviews not installed (atlantis[viz])",
+    reason="geoviews not installed (opageo-atlantis[viz])",
 )
 
 

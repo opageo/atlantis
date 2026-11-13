@@ -34,7 +34,7 @@ Four properties drive every design choice:
 | Output format | `rasterio.MemoryFile(driver="COG", compress="DEFLATE", blocksize=512, predictor=2)` | True COG with `overviews="AUTO"` (GDAL chooses the levels). Output is ~2–3 KB → no point touching disk.                                                                                                 |
 | Upload        | `s3fs.S3FileSystem(endpoint_url=...)`                                               | Custom endpoint = ECMWF object store. Credentials come from the `default` boto3 profile written by `atlantis setup`.                                                                                    |
 | Resume DB     | **SQLite, one DB per VM**                                                           | No shared state, no NFS coordination. Two-VM split = trivial `UNION ALL` merge afterwards.                                                                                                              |
-| Packaging     | `atlantis[batch]` extras                                                            | Keeps the core install lean. Adds `dask[distributed]`, `bokeh`, `rio-cogeo`, and pulls in `[geo]` transitively.                                                                                         |
+| Packaging     | `opageo-atlantis[batch]` extras                                                     | Keeps the core install lean. Adds `dask[distributed]`, `bokeh`, `rio-cogeo`, and pulls in `[geo]` transitively.                                                                                         |
 
 ---
 

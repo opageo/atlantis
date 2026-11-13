@@ -8,7 +8,7 @@ Public API:
 * :func:`load_dataset` — read a windowed Dataset directly or via STAC.
 
 Plotting dependencies (hvplot/holoviews/panel/datashader/geoviews) are imported
-lazily; install them with ``pip install atlantis[viz]``.
+lazily; install them with ``pip install opageo-atlantis[viz]``.
 """
 
 from atlantis.viz.dashboard import (

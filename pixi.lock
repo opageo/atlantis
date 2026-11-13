@@ -29512,7 +29512,7 @@ packages:
   size: 387535
   timestamp: 1786599623274
 - pypi: ./
-  name: atlantis
+  name: opageo-atlantis
   requires_dist:
   - beautifulsoup4>=4.12
   - boto3

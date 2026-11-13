@@ -361,7 +361,7 @@ def from_stac(
     try:
         import xpystac  # noqa: F401 - registers the "stac" xarray backend engine
     except ImportError as exc:  # pragma: no cover - optional dep
-        raise ImportError("from_stac requires the 'stac' extra (xpystac). Install atlantis[stac].") from exc
+        raise ImportError("from_stac requires the 'stac' extra (xpystac). Install opageo-atlantis[stac].") from exc
 
     import xarray as xr
 

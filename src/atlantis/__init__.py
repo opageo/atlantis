@@ -5,7 +5,7 @@ from importlib.metadata import PackageNotFoundError, version
 from loguru import logger
 
 try:
-    __version__ = version("atlantis")
+    __version__ = version("opageo-atlantis")
 except PackageNotFoundError:  # running from a source tree without an install
     __version__ = "0.0.0"
 

@@ -1,5 +1,5 @@
 [project]
-name = "atlantis"
+name = "opageo-atlantis"
 dynamic = ["version"]
 description = "ML-ready archive of satellite-derived flood inundation observations (ECMWF Code for Earth 2026)"
 readme = "README.md"
@@ -71,12 +71,12 @@ notebooks = [
 ui = ["nicegui>=3.17.1"]
 hf = ["huggingface-hub"]
 all = [
-  "atlantis[batch]",
-  "atlantis[stac]",
-  "atlantis[viz]",
-  "atlantis[notebooks]",
-  "atlantis[ui]",
-  "atlantis[hf]",
+  "opageo-atlantis[batch]",
+  "opageo-atlantis[stac]",
+  "opageo-atlantis[viz]",
+  "opageo-atlantis[notebooks]",
+  "opageo-atlantis[ui]",
+  "opageo-atlantis[hf]",
 ]
 
 [dependency-groups]
@@ -94,9 +94,9 @@ dev = [
   "ipykernel>=7.3.0",
   "nbstripout>=0.9.1",
   "ripgrep>=15.1.0",
-  "atlantis[viz]",
-  "atlantis[stac]",
-  "atlantis[hf]",
+  "opageo-atlantis[viz]",
+  "opageo-atlantis[stac]",
+  "opageo-atlantis[hf]",
 ]
 docs = ["mkdocs-material>=9.7.7", "mkdocstrings[python]>=1.0.7"]
 

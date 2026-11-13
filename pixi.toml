@@ -57,7 +57,7 @@ pandas = "<3"
 # ============================================================================
 
 [pypi-dependencies]
-atlantis = { path = ".", editable = true, extras = ["all"] }
+opageo-atlantis = { path = ".", editable = true, extras = ["all"] }
 
 # ----------------------------------------------------------------------------
 # GDAL is provided by the conda stack above (gdal/libgdal-hdf4). pyproject.toml
@@ -114,7 +114,7 @@ mkdocstrings-python = "*"
 
 # ============================================================================
 # Alias features: intentionally empty. All PyPI extras already come from
-# `atlantis[all]` in the default [pypi-dependencies]; these exist only so the
+# `opageo-atlantis[all]` in the default [pypi-dependencies]; these exist only so the
 # matching environments below can be targeted with `pixi run -e <env>`.
 # ============================================================================
 

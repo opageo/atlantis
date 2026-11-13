@@ -414,10 +414,10 @@ atlantis viz serve viirs --stac ./data/stac
 Both features are optional extras (declared in
 [`pyproject.toml`](../pyproject.toml) and [`pixi.toml`](../pixi.toml)).
 
-| Extra  | Packages                                                                            |
-| ------ | ----------------------------------------------------------------------------------- |
-| `stac` | `atlantis[geo]` + `stac-geoparquet`, `xpystac`                                      |
-| `viz`  | `atlantis[geo]` + `hvplot`, `holoviews`, `panel`, `datashader`, `geoviews`, `bokeh` |
+| Extra  | Packages                                                                                   |
+| ------ | ------------------------------------------------------------------------------------------ |
+| `stac` | `opageo-atlantis[geo]` + `stac-geoparquet`, `xpystac`                                      |
+| `viz`  | `opageo-atlantis[geo]` + `hvplot`, `holoviews`, `panel`, `datashader`, `geoviews`, `bokeh` |
 
 ```bash
 # uv / pip
