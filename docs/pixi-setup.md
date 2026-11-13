@@ -42,8 +42,8 @@ This resolves and installs:
 - GDAL **with the HDF4 driver** (`libgdal-hdf4` from conda-forge) — no manual
   build required — plus rasterio, geopandas, pyproj, shapely and pyarrow built
   against it
-- The `atlantis` package itself and all its runtime dependencies **plus every
-  extra** (`atlantis[all]`), from `pyproject.toml`
+- The `opageo-atlantis` distribution itself and all its runtime dependencies
+  **plus every extra** (`opageo-atlantis[all]`), from `pyproject.toml`
 - Dev tools (pytest, ruff, pre-commit, …)
 
 Verify the GDAL/HDF4 stack:

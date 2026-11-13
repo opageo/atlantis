@@ -4,6 +4,10 @@ Atlantis is released by pushing a git tag. The tag is the single source of
 truth for the version: there is no version number to edit in `pyproject.toml`,
 `pixi.toml` or the package.
 
+The PyPI distribution is **`opageo-atlantis`**, owned by the **opageo**
+organization. The Python import remains `atlantis` and the command remains
+`atlantis`. Wheels are named `opageo_atlantis-<version>-py3-none-any.whl`.
+
 ## How versions work
 
 The package version is derived from git by
@@ -36,7 +40,8 @@ then runs automatically. It:
 
 - builds the sdist and wheel with `uv build`;
 - checks the built version comes from the tag (no `.dev` versions);
-- installs the wheel in a clean environment and runs `atlantis --help`;
+- installs the wheel in a clean environment, runs `atlantis --help`, and
+  checks `atlantis.__version__` matches the `opageo-atlantis` metadata;
 - creates the [GitHub Release](https://github.com/opageo/atlantis/releases)
   with notes generated from the merged pull requests, and attaches the built
   files;
@@ -48,19 +53,18 @@ them if needed.
 
 To try the process without making a real release, push a pre-release tag such
 as `v0.1.0-rc1`. It goes through the same steps and is marked as a
-pre-release on GitHub.
+pre-release on GitHub. If PyPI publishing is enabled, this also uploads a
+real pre-release to PyPI; it is not a dry run.
 
 ### If the workflow fails
 
-Fix the problem on `main`, then delete the tag and create it again on the new
-commit. If the GitHub Release was already created, delete it on GitHub first.
-
-```bash
-git tag -d v0.1.0
-git push git@github.com:opageo/atlantis.git :refs/tags/v0.1.0
-```
-
-Never re-use a version number that has already been published to PyPI.
+The GitHub Release and PyPI publishing jobs run independently after the
+build, so a GitHub Release can exist even if PyPI publishing fails.
+For a configuration or transient publishing failure, fix the configuration
+and re-run only the failed jobs, keeping the original tag and artifacts.
+If a code change is needed, fix it on `main` and use a new version tag.
+Never re-use a version number or filename already uploaded to PyPI, even if
+the release is incomplete.
 
 ## Release notes
 
@@ -87,18 +91,62 @@ Only releases created after this switch is enabled are archived.
 
 ## PyPI
 
-Publishing to PyPI is **disabled** for now. To enable it:
+### Build and publishing tools
 
-1. Agree on the PyPI distribution name (`atlantis` is taken) and set
-   `name` in `pyproject.toml`. The import name and the `atlantis` command stay
-   the same.
-2. On [pypi.org](https://pypi.org), add a _pending trusted publisher_ for the
-   project: owner `opageo`, repository `atlantis`, workflow `release.yml`,
-   environment `pypi`. No API token is needed.
-3. In the GitHub repository settings, create an environment named `pypi` and a
-   repository variable `PUBLISH_TO_PYPI` set to `true`.
+Hatchling is the build backend, with `hatch-vcs` deriving the version from
+the tag. `uv build` invokes that backend; no switch to the Hatch CLI is
+needed. Publishing is a separate step, using
+[`pypa/gh-action-pypi-publish`](https://github.com/pypa/gh-action-pypi-publish)
+with Trusted Publishing (OIDC), as recommended by
+[Hatch's authentication guide](https://hatch.pypa.io/latest/how-to/publish/auth/).
+The publishing job alone has `id-token: write`; the build job does not.
 
-The next tag pushed is then published to PyPI as well.
+### One-time organization setup
+
+Publishing remains disabled unless the repository variable
+`PUBLISH_TO_PYPI` is `true`. To enable it:
+
+1. Sign in to PyPI with an account authorized to manage publishing for
+   [opageo](https://pypi.org/org/opageo/). Under **Your organizations**,
+   open **Manage** for **opageo**, then **Publishing**. Use the organization's
+   page, not your personal account's Publishing page, so the new project is
+   owned by the organization from its first upload.
+2. Add a **pending GitHub trusted publisher** with these exact values:
+
+   | Field             | Value             |
+   | ----------------- | ----------------- |
+   | PyPI project name | `opageo-atlantis` |
+   | GitHub owner      | `opageo`          |
+   | Repository        | `atlantis`        |
+   | Workflow filename | `release.yml`     |
+   | Environment       | `pypi`            |
+
+   The workflow filename is just `release.yml`, not its full path.
+   You do **not** need to create the project or upload a release manually:
+   the first successful upload creates it and converts the pending
+   publisher into a normal publisher. A pending publisher does not reserve
+   the project name.
+
+3. In the GitHub repository's **Settings > Environments**, create **pypi**.
+   Configure required reviewers if available and restrict deployments to
+   release tags matching `v*.*.*`. Allow tags, not only the `main` branch,
+   because this workflow runs on tag pushes.
+4. In **Settings > Secrets and variables > Actions > Variables**, create
+   the repository variable **PUBLISH_TO_PYPI** with value **true**.
+   No PyPI API token, username, password, or organization-specific upload URL
+   is needed. The organization controls ownership; it does not namespace
+   package names.
+5. Merge these changes before pushing the next version tag. After the
+   workflow succeeds, verify the release at
+   <https://pypi.org/project/opageo-atlantis/> and that it belongs to opageo.
+
+See PyPI's
+[organization pending-publisher announcement](https://blog.pypi.org/posts/2025-11-10-trusted-publishers-coming-to-orgs/)
+and [pending-publisher documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+
+Once published, installation is `pip install opageo-atlantis` (or
+`pip install 'opageo-atlantis[all]'` for all extras); Python code still uses
+`import atlantis`.
 
 **Note:** `pip install` needs the GDAL system library (version 3.13.0) because
 of the `gdal` dependency. Until that is addressed, the recommended install is

@@ -1,4 +1,4 @@
-name: Release
+name: Release and PyPi Publishing
 
 # Pushing a tag like v0.1.0 builds the package, smoke-tests the wheel,
 # creates the GitHub Release (which Zenodo archives) and, when enabled,
@@ -50,9 +50,16 @@ jobs:
       - name: Smoke-test the wheel in a clean environment
         run: |
           uv venv /tmp/smoke
-          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          uv pip install --python /tmp/smoke/bin/python dist/opageo_atlantis-*.whl
           /tmp/smoke/bin/atlantis --help
-          /tmp/smoke/bin/python -c "import atlantis; print(atlantis.__version__)"
+          /tmp/smoke/bin/python - <<'PY'
+          from importlib.metadata import version
+          import atlantis
+
+          expected = version("opageo-atlantis")
+          assert atlantis.__version__ == expected, (atlantis.__version__, expected)
+          print(expected)
+          PY
 
       - uses: actions/upload-artifact@v7
         with:
@@ -81,13 +88,14 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" "${flags[@]}"
 
   pypi:
-    # Off until the PyPI project exists and its trusted publisher is configured.
+    # Off until opageo's pending trusted publisher and the environment are configured.
     # Enable by setting the repository variable PUBLISH_TO_PYPI=true.
     if: vars.PUBLISH_TO_PYPI == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: pypi
+      url: https://pypi.org/project/opageo-atlantis/
     permissions:
       id-token: write
     steps:
@@ -96,4 +104,5 @@ jobs:
           name: dist
           path: dist/
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish to PyPI with Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1

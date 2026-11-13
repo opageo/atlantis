@@ -13,7 +13,7 @@ from atlantis.stac import build_datacube_catalog, write_catalog
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("xpystac") is None,
-    reason="xpystac not installed (atlantis[stac])",
+    reason="xpystac not installed (opageo-atlantis[stac])",
 )
 
 
