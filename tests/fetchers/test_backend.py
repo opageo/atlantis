@@ -31,9 +31,7 @@ class TestListingLocation:
 
     def test_repr(self):
         loc = ListingLocation(locator="https://example.com/path/", date_token="20200101")
-        r = repr(loc)
-        assert "ListingLocation" in r
-        assert "https://example.com" in r
+        assert repr(loc) == "ListingLocation(locator='https://example.com/path/', date_token='20200101')"
 
 
 class TestNoaaS3Backend:

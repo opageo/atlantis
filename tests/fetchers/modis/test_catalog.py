@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
 import pandas as pd
 import pytest
@@ -31,7 +32,7 @@ class TestLaadsShortname:
 class TestLaadsDirectoryUrl:
     def test_url_format(self):
         url = _laads_directory_url("2024-08-22")
-        assert "ladsweb.modaps.eosdis.nasa.gov" in url
+        assert urlparse(url).hostname == "ladsweb.modaps.eosdis.nasa.gov"
         assert "MCDWD_L3" in url
         assert "2024" in url
         # DOY for Aug 22 2024 is 235

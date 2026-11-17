@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import configparser
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -201,37 +202,43 @@ def _read_env_file(path: Path) -> dict[str, str]:
 def _upsert_env_file(path: Path, key: str, value: str) -> None:
     """Insert-or-update ``key=value`` in a simple ``.env`` file.
 
-    Restricts the file to user-only permissions (``0600``) after writing
-    so secrets are not world-readable.
+    The file is restricted to user-only permissions (``0600``) *before* any
+    secret is written, so it is never world-readable, not even briefly.
+    Storing credentials in ``.env`` is intentional: it is the documented,
+    git-ignored place this tool reads them from.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     quoted = f"{key}='{value}'\n"
 
-    if not path.exists():
-        path.write_text(quoted)
-    else:
-        lines = path.read_text().splitlines(keepends=True)
-        found = False
-        for i, raw_line in enumerate(lines):
-            stripped = raw_line.lstrip()
-            if stripped.startswith("#") or "=" not in stripped:
-                continue
-            existing_key, _, _ = stripped.partition("=")
-            if existing_key.strip() == key:
-                lines[i] = quoted
-                found = True
-                break
-        if not found:
-            if lines and not lines[-1].endswith("\n"):
-                lines[-1] = lines[-1] + "\n"
-            lines.append(quoted)
-        path.write_text("".join(lines))
+    lines = path.read_text().splitlines(keepends=True) if path.exists() else []
+    found = False
+    for i, raw_line in enumerate(lines):
+        stripped = raw_line.lstrip()
+        if stripped.startswith("#") or "=" not in stripped:
+            continue
+        existing_key, _, _ = stripped.partition("=")
+        if existing_key.strip() == key:
+            lines[i] = quoted
+            found = True
+            break
+    if not found:
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] = lines[-1] + "\n"
+        lines.append(quoted)
 
-    # Best-effort: tighten perms to user-only (no-op on Windows).
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+    _write_private_file(path, "".join(lines))
+
+
+def _write_private_file(path: Path, content: str) -> None:
+    """Write *content* to *path*, creating or tightening it to mode ``0600`` first."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        # Best-effort for pre-existing files with looser perms (no-op on Windows).
+        try:
+            os.fchmod(fh.fileno(), 0o600)
+        except (AttributeError, OSError):
+            pass
+        fh.write(content)
 
 
 def _resolve_credential(cred: Credential, env_file_values: dict[str, str]) -> str | None:
@@ -374,10 +381,14 @@ def _read_ini(path: Path) -> configparser.RawConfigParser:
 def _write_ini(path: Path, parser: configparser.RawConfigParser, *, secret: bool) -> None:
     """Persist *parser* to *path* with safe permissions on secret files."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as fh:
-        parser.write(fh)
+    buf = io.StringIO()
+    parser.write(buf)
+    if secret:
+        _write_private_file(path, buf.getvalue())
+        return
+    path.write_text(buf.getvalue())
     try:
-        os.chmod(path, 0o600 if secret else 0o644)
+        os.chmod(path, 0o644)
     except OSError:
         pass
 
