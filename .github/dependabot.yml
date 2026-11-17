@@ -31,7 +31,7 @@ updates:
           - "major"
 
     # The gdal Python bindings must match the GDAL system library exactly
-    # (3.13.0 in the CI container and pixi). Bump all of them together by hand.
+    # (3.13.3 in the CI container, devcontainer and pixi). Bump all of them together by hand.
     ignore:
       - dependency-name: "gdal"
 

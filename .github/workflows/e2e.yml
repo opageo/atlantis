@@ -22,7 +22,7 @@ jobs:
 
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/osgeo/gdal:ubuntu-full-3.13.0
+      image: ghcr.io/osgeo/gdal:ubuntu-full-3.13.3
       options: --user root
 
     steps:
