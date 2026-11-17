@@ -10,6 +10,9 @@ concurrency:
   group: e2e-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   e2e:
     if: |
@@ -21,6 +24,11 @@ jobs:
       )
 
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed to remove the run-e2e label after a successful run.
+      issues: write
+      pull-requests: write
     container:
       image: ghcr.io/osgeo/gdal:ubuntu-full-3.13.3
       options: --user root

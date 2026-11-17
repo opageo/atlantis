@@ -12,6 +12,9 @@ on:
       - "**.ipynb"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check-notebooks:
     runs-on: ubuntu-latest
