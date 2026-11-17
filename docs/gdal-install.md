@@ -29,7 +29,7 @@ sudo dnf install -y \
 cd ~
 git clone https://github.com/OSGeo/gdal.git
 cd gdal
-git checkout v3.13.0
+git checkout v3.13.3
 ```
 
 ## 3. Configure (enable HDF4)
@@ -86,7 +86,7 @@ uv pip install --no-binary gdal "GDAL==$(gdal-config --version)"
 
 ```bash
 gdal-config --version
-# Should print: 3.13.0
+# Should print: 3.13.3
 
 python -c "from osgeo import gdal; d = gdal.GetDriverByName('HDF4'); print('HDF4 driver:', 'OK' if d else 'MISSING')"
 # Should print: HDF4 driver: OK

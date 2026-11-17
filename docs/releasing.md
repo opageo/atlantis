@@ -148,6 +148,6 @@ Once published, installation is `pip install opageo-atlantis` (or
 `pip install 'opageo-atlantis[all]'` for all extras); Python code still uses
 `import atlantis`.
 
-**Note:** `pip install` needs the GDAL system library (version 3.13.0) because
+**Note:** `pip install` needs the GDAL system library (version 3.13.3) because
 of the `gdal` dependency. Until that is addressed, the recommended install is
 [pixi](pixi-setup.md) or `uv` from a clone of the repository.
